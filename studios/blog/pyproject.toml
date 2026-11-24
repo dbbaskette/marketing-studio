@@ -9,10 +9,9 @@ target-version = "py311"
 # Sentences for authors are long string literals; the formatter leaves those
 # alone, so line length is not a lint rule (no E501).
 line-length = 100
-# Kept byte-for-byte: vendored upstream material and the original toolkit.
+# Kept byte-for-byte: vendored upstream material.
 extend-exclude = [
     "skills/blog-studio/references/upstream",
-    "skills/blog-writing-toolkit",
 ]
 
 [tool.ruff.format]

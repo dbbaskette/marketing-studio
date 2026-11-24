@@ -1011,12 +1011,7 @@ details > summary {
   font-size: 0.9rem;
 }
 
-/* --- the shared run pattern: where it stops, what it does now ------------------------ */
-
-/* Under a start form's summary: the review level and the stops it leaves, with a way to change it. */
-.stops-line a {
-  color: var(--accent);
-}
+/* --- the shared run pattern: what it does now -------------------------------------- */
 
 /* Under a run's title: the step, its part, the time taken, the cost so far and the limit. */
 .now-line {

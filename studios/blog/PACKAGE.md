@@ -3,14 +3,13 @@
 Blog Studio ships as one skill folder, [`skills/blog-studio/`](skills/blog-studio/SKILL.md):
 the entry file, its references and the Python helpers. What is installed is
 what is used; nothing is fetched while an author writes. Each release publishes
-three archives on the repository's
+two archives on the repository's
 [Releases page](https://github.com/dbbaskette/marketing-studio/releases).
 
 | Archive | Contents | Use |
 | --- | --- | --- |
 | `blog-studio-installer.zip` | `installer/`, the whole `skills/blog-studio/` folder, and the installation and troubleshooting guides | Recommended. Run `sh installer/install.sh`; see the [installation guide](docs/installation.md). |
 | `blog-studio.zip` | The `blog-studio` skill folder alone | Manual install: copy the folder into a skill root yourself. No managed updates or rollback. |
-| `blog-writing-toolkit.zip` | The earlier five-module collection | Reference only; see the end of this page. |
 
 Each archive has a `.sha256` file beside it. Do not install the managed and the
 manual copy under the same name at once; a tool would discover both.
@@ -80,18 +79,3 @@ remains only for those installations: it declares a minimum runtime of 2.0.0,
 so a 1.x bootstrap reports that it needs the installer update. Running the
 current installer upgrades the managed installation in place.
 
----
-
-# Blog writing toolkit (reference)
-
-[`skills/blog-writing-toolkit/`](skills/blog-writing-toolkit/SKILL.md) is the
-original collection of five source modules that Blog Studio grew from:
-`content-strategy`, `blog-write`, `copywriting`, `copy-editing` and `blog`. It
-has one entry point, five module wrappers and unchanged upstream snapshots with
-licenses and commit/hash records in
-[sources.lock.json](skills/blog-writing-toolkit/sources.lock.json). Blog Studio
-does not load it. It is kept for provenance and built as
-`blog-writing-toolkit.zip`; to use it, copy the whole folder into a skill root.
-`python3 skills/blog-writing-toolkit/scripts/validate_package.py` checks its
-hashes, licenses and links. The upstream claims and examples it contains need
-ordinary fact checking before use.

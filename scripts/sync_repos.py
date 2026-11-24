@@ -17,7 +17,8 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
-from studio_core.bundle_sources import load_config, source_spec
+sys.path.insert(0, str(ROOT / 'scripts'))
+from bundle_sources import load_config, source_spec
 from studio_core.install_log import redact
 
 DEFAULTS = {

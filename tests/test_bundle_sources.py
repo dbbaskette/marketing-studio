@@ -12,12 +12,14 @@ import unittest
 from unittest import mock
 
 import marketing_studio
-from studio_core import bundle_sources, companions, distribution
+from studio_core import companions, distribution
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('source_builder', ROOT / 'scripts/build_presentation_bundle.py')
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+# A build-time module under scripts/; the builder imports it, so this is the one it uses.
+bundle_sources = builder.bundle_sources
 
 
 class BundleSourceTests(unittest.TestCase):

@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 
-from . import documents, sources
+from . import sources
 from .contracts import MAX_RECORD_BYTES, MAX_SOURCE_BYTES, canonical, digest
 from .validation import identifier, require, text
 from .workspace import _atomic, _json, _read, data_root, file_lock
@@ -15,7 +15,7 @@ def prepare(raw, *, kind, name, selection=None, provenance=None, extracted=None)
     require(type(raw) is bytes and 0 < len(raw) <= MAX_SOURCE_BYTES, 'Supply one nonempty source within 16 MB.')
     require(kind in sources.SOURCE_KINDS, 'Choose a supported supplied document type.')
     if extracted is None:
-        if kind in ('pdf', 'docx', 'html'): extracted = documents.extract(raw, kind)
+        if kind in ('pdf', 'docx', 'html'): extracted = sources.extract_document(raw, kind)
         elif kind == 'csv':
             value, selection = sources.select_csv(raw, selection)
             extracted = {'text': value, 'warnings': [], 'locations': [], 'readable': True}

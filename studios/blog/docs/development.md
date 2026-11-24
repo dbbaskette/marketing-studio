@@ -18,8 +18,6 @@ The main README is for authors. This page collects repository and maintenance de
   [PACKAGE](../PACKAGE.md).
 - `preview/blog-studio.html`: optional local prompt generator for beginners. It
   does not write articles or store content.
-- `skills/blog-writing-toolkit/`: the original module collection, kept for
-  provenance.
 
 The writing desk's text-keeping rules are shared with the other studios, in the
 monorepo's `core/studio_core/drafting/` (parts and their Markdown reading, the
@@ -178,7 +176,6 @@ loading, and measured performance follow-ups.
 - [Entry-flow validation](m1-entry-validation.md), [focused guidance](m2-m3-validation.md), and [Google fixtures](g0-g3-validation.md).
 - [Usability validation](usability-validation.md) and [privacy review](privacy-review.md).
 - [Package notes and licenses](../skills/blog-studio/references/package-notes.md), [source lock](../skills/blog-studio/sources.lock.json), and [BlogForge asset lock](../skills/blog-studio/blogforge.lock.json).
-- Original collection: [blog-writing-toolkit](../skills/blog-writing-toolkit/SKILL.md).
 
 The skill repository and private writing Hub remain separate. Diagnostic caches
 are disposable local data and must not be imported as team memories.

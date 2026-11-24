@@ -53,13 +53,10 @@
 .review-selection>p{margin-right:auto}
 .writing-change[data-selected=false]{background:var(--solid)}
 .writing-change[data-selected=false] .change-select{color:var(--quiet)}
-.polish-intake #draft-content{min-height:12rem;resize:vertical}
 @media(max-width:600px){
   #studio-toolbar[data-workflow=review] .toolbar-actions{flex-basis:100%;width:100%}
   #studio-toolbar[data-workflow=review] .review-continue{width:100%;min-height:44px}
   .review-selection .button{padding-inline:.65rem}
-  .polish-intake>.button-filled{width:100%}
-  .polish-intake .seg-option{padding-inline:.45rem;white-space:normal}
 }
 @media(max-width:360px){
   .review-selection{display:grid;grid-template-columns:1fr 1fr}
