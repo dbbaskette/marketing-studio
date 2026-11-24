@@ -317,7 +317,7 @@ class SavedWorkTests(StudioCase):
 
 class ObjectionsTests(StudioCase):
     def test_read_every_objection_is_offered_only_where_the_check_objected(self):
-        root = self.saved_start()
+        root = self.start()
         (root / 'reviews').mkdir(exist_ok=True)
         (root / 'reviews' / 'research.md').write_text('## Your request\n\nAdd a source.\n')
         record = self.engine._load(root)
@@ -332,7 +332,7 @@ class ObjectionsTests(StudioCase):
 
 class NoCostYetTests(StudioCase):
     def test_a_training_that_ran_only_its_own_steps_reports_no_cost_yet(self):
-        root = self.saved_start()
+        root = self.start()
         record = self.engine._load(root)
         record['steps'] = {'intake': {'attempts': [{'seconds': 0.5, 'dollars': None}]}}
         self.engine._store(root, record)
@@ -360,7 +360,7 @@ class AheadTests(StudioCase):
     under its own level, and what its agent's jobs have spent so far."""
 
     def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
-        root = self.saved_start()
+        root = self.start()
         record = self.engine._load(root)
         found = self.engine._survey(root, record)
         kinds = {step.id: step.kind for step in found.steps}
@@ -407,8 +407,8 @@ class RedoTests(StudioCase):
     """Ask for changes says, before it is sent, what it writes again and what that took."""
 
     def test_a_change_request_says_what_it_writes_again(self):
-        root = self.saved_start()
-        self.to_gate(root, 'blueprint')
+        self.pause_after('blueprint')
+        root = self.start()
         redo = self.engine.redo(str(root), 'blueprint')
         self.assertEqual(redo['names'][0], 'the blueprint')
         self.assertGreater(redo['steps'], 1, 'what is written from the blueprint comes again')
@@ -445,7 +445,7 @@ class RedoTests(StudioCase):
 
 class FormToGateThreeTests(StudioCase):
     def test_the_form_becomes_a_training_made_through_the_core_in_page_mode(self):
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(root, self.space.training('rolling-restarts'))
         status = workspace.status(root)
         self.assertEqual((status['approval'], status['artifacts']['intake'], status['title']),
@@ -511,41 +511,36 @@ class FormToGateThreeTests(StudioCase):
         (self.space.repo / 'notes.txt').write_text('Staged by someone else.\n')
         self.git('add', 'notes.txt')
         self.engine = self.make(at_once=1)
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
+        self.all_ready(root)
         self.assertEqual(self.log(), ['Set up the Training Studio workspace in trainings/'] + [
             f'Rolling restarts: {what}' for what in (
                 'start the training from the form',
                 'keep the research plan',
-                'ask for a review of the research plan',
-                'The research plan was approved on the page.',
+                'continue the research plan on the desk',
                 'hand the approved questions to research',
-                'keep the finding for availability',
-                'keep the finding for instance-min',
-                'keep the finding for health-checks',
-                'keep the finding for zero-downtime',
-                'keep the research report',
-                'ask for a review of the research report',
-                'The research report was approved on the page.',
+                'record independent research job: author',
+                'record independent research job: review',
+                'complete independent research review',
+                'keep the reviewed research bundle',
+                'continue the research report on the desk',
                 'keep the blueprint',
-                'ask for a review of the blueprint',
-                'The blueprint was approved on the page.',
+                'continue the blueprint on the desk',
                 'keep the learner guide',
-                'ask for a review of the learner guide',
-                'The learner guide was approved on the page.',
+                'continue the learner guide on the desk',
                 'keep the brief',
-                'ask for a review of the brief',
-                'The brief was approved on the page.',
+                'continue the brief on the desk',
                 'keep the practice scenario',
-                'ask for a review of the practice scenario',
-                'The practice scenario was approved on the page.',
+                'continue the practice scenario on the desk',
+                'mark every material ready',
                 'write the index; the training is finished')])
         self.assertEqual(self.git('status', '--porcelain'), 'A  notes.txt\n?? README.md'.strip())
         changed = self.git('log', '--format=', '--name-only').split()
         self.assertTrue(changed)
         self.assertEqual({name.split('/')[0] for name in changed}, {'trainings'})
         self.assertNotIn('sources', {part for name in changed for part in name.split('/')})
-        self.assertTrue(list((root / 'sources').glob('docs-example-com-*.txt')))
+        self.assertTrue(any((root / 'sources').iterdir()))
         self.assertEqual(self.git('log', '-1', '--format=%an <%ae>'),
                          'Alex <alex@example.com>')
 
@@ -573,7 +568,8 @@ class FormToGateThreeTests(StudioCase):
         settings.save(replace(settings.load(), model='a-model', effort='high',
                               step_seconds=300))
         self.workers.cost = 0.25
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         record = self.record(root)
         self.assertEqual((record['agent'], record['model'], record['effort'],
                           record['limits']),
@@ -601,13 +597,15 @@ class FormToGateThreeTests(StudioCase):
     def test_the_agent_is_chosen_when_the_training_starts_and_does_not_change(self):
         other = type(self.workers)()
         self.engine.adapters['codex'] = agents.Scripted(other)
-        root = self.saved_start(agent='codex', model='their-model', effort='ultra')
+        self.pause_after('research-plan', workers=other)
+        root = self.start(agent='codex', model='their-model', effort='ultra')
         self.assertEqual((self.view(root)['agent'], self.view(root)['model'],
                           self.view(root)['effort']), ('codex', 'their-model', 'ultra'))
         settings.save(replace(settings.load(), agent='claude', model='another',
                               effort='low'))
-        self.to_gate(root, 'blueprint')
-        self.assertEqual((len(other.jobs), len(self.workers.jobs)), (6, 0))
+        self.pause_after('blueprint', workers=other)
+        self.engine.act(root, 'resume')
+        self.assertEqual((len(other.jobs), len(self.workers.jobs)), (4, 0))
         self.assertEqual({(job.model, job.effort) for _, job, _ in other.jobs},
                          {('their-model', 'ultra')})
         self.assertEqual(self.view(root)['agent'], 'codex')
@@ -616,9 +614,9 @@ class FormToGateThreeTests(StudioCase):
         # The page always names the agent, so "The agent's own choice" means just that,
         # whatever the settings say. A form that names no agent takes the settings' own.
         settings.save(replace(settings.load(), model='a-model', effort='high'))
-        own = self.saved_start(agent='claude')
-        chosen = self.saved_start(title='Health checks', agent='claude', effort='max')
-        either = self.saved_start(title='Probes')
+        own = self.start(agent='claude')
+        chosen = self.start(title='Health checks', agent='claude', effort='max')
+        either = self.start(title='Probes')
         self.assertEqual([(self.record(root)['model'], self.record(root)['effort'])
                           for root in (own, chosen, either)],
                          [(None, None), (None, 'max'), ('a-model', 'high')])
@@ -626,7 +624,7 @@ class FormToGateThreeTests(StudioCase):
     def test_a_level_the_agent_does_not_take_starts_nothing(self):
         with self.assertRaisesRegex(WorkspaceError, 'The reasoning level is one of: low, '
                                     'medium, high, xhigh, max,'):
-            self.saved_start(effort='ultra')
+            self.start(effort='ultra')
         self.assertFalse(self.space.training('rolling-restarts').exists())
 
     def test_a_level_the_model_does_not_take_starts_nothing(self):
@@ -634,11 +632,11 @@ class FormToGateThreeTests(StudioCase):
                 ('claude-haiku-4-5', 'high', 'Haiku 4.5 takes no reasoning level'),
                 ('claude-opus-4-6', 'xhigh', 'Opus 4.6 takes one of these reasoning levels')):
             with self.subTest(model=model), self.assertRaisesRegex(WorkspaceError, said):
-                self.saved_start(agent='claude', model=model, effort=effort)
+                self.start(agent='claude', model=model, effort=effort)
         # Nor does one the settings hold for a form that names no agent.
         settings.save(replace(settings.load(), model='claude-haiku-4-5', effort=None))
         with self.assertRaisesRegex(WorkspaceError, 'Haiku 4.5 takes no reasoning level'):
-            self.saved_start(effort='low')
+            self.start(effort='low')
         self.assertFalse(self.space.training('rolling-restarts').exists())
         self.assertEqual(self.workers.jobs, [])
 
@@ -652,23 +650,23 @@ class FormToGateThreeTests(StudioCase):
         self.assertFalse(self.space.training('rolling-restarts').exists())
 
     def test_a_title_already_in_the_workspace_is_refused(self):
-        self.saved_start()
+        self.start()
         with self.assertRaisesRegex(WorkspaceError, 'already has a training in trainings/'
                                     'rolling-restarts. Give this one a different title'):
-            self.saved_start(topic='Something else')
+            self.start(topic='Something else')
         self.assertEqual(len(self.engine.trainings()), 1)
 
     def test_without_a_workspace_nothing_starts(self):
         gitstate.settings_path().unlink()
         with self.assertRaisesRegex(WorkspaceError, 'No workspace is set up on this computer'):
-            self.saved_start()
+            self.start()
 
     def test_nothing_a_person_reads_uses_the_words_the_page_avoids(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
         self.workers.then('question:health-checks', fails(SLOW, 'timeout'), fails(SLOW),
                           fails(SLOW))
         self.workers.then('blueprint', fails(), fails(), fails())
-        root, said = self.saved_start(), []
+        root, said = self.start(), []
 
         def note() -> None:
             view = self.view(root)
@@ -680,13 +678,9 @@ class FormToGateThreeTests(StudioCase):
         note()
         self.engine.answer(root, self.view(root)['question']['id'], 'The public platform.')
         note()
-        self.decide(root, 'research-plan')
-        note()
-        said.append(self.decide(root, 'research')['said'])
         note()
         self.assertEqual(self.state(root), 'failed')
-        said += [(root / 'reviews' / f'{name}.md').read_text()
-                 for name in ('research-plan', 'research')]
+        said += [path.read_text() for path in sorted((root / 'reviews').glob('*.md'))]
         said += self.log()
         for text in said:
             self.assertIsNone(AVOIDED.search(str(text or '')), text)
@@ -705,15 +699,16 @@ class WorkerTests(StudioCase):
             return script
 
         self.workers.then('research-plan', looking(self.workers.research_plan))
-        self.workers.then('question', *[looking(self.workers.question)] * 4)
+        self.workers.then('research-result', *[looking(self.workers.research_result)] * 2)
         self.workers.then('blueprint', looking(self.workers.blueprint))
-        root = self.saved_start()
-        self.to_gate(root, 'blueprint')
-        profiles = {kind.partition(':')[0]: (job.profile, spec['fetch'], spec['ask'])
-                    for kind, job, spec in self.workers.jobs}
-        self.assertEqual(profiles, {'research-plan': ('write', False, True),
-                                    'question': ('research', True, False),
-                                    'blueprint': ('write', False, True)})
+        self.pause_after('blueprint')
+        root = self.start()
+        profiles = [(kind.partition(':')[0], job.profile, spec['fetch'], spec['ask'])
+                    for kind, job, spec in self.workers.jobs]
+        self.assertEqual(profiles, [('research-plan', 'write', False, True),
+                                    ('research-result', 'research', True, False),
+                                    ('research-result', 'write', False, False),
+                                    ('blueprint', 'write', False, True)])
         for kind, job, spec in self.workers.jobs:
             self.assertEqual(list(job.tools), worker_tools.command(job.folder))
             self.assertEqual(job.folder.parent, agents.staging())
@@ -722,7 +717,7 @@ class WorkerTests(StudioCase):
         for folder, held in seen:
             self.assertIn(held, (['inputs', 'job.json', 'sources'], ['job.json', 'sources']))
             self.assertFalse(folder.exists(), 'a job folder is removed once its work is kept')
-        self.assertEqual(len({folder for folder, _ in seen}), 6)
+        self.assertEqual(len({folder for folder, _ in seen}), 4)
 
     def test_what_a_worker_is_told_says_what_the_training_is_about(self):
         root = self.saved_start()
@@ -760,7 +755,7 @@ class WorkerTests(StudioCase):
     def test_findings_text_leads_with_the_handoff(self):
         from studio_core import research_contract
         from synthesis_fixture import research_stop
-        root = self.saved_start()
+        root = self.start()
         research_stop(root / 'research')
         record = {'schema': 2, 'digest': 'synthetic-digest', 'findings': [], 'facts': [],
                   'sources': []}
@@ -777,7 +772,7 @@ class WorkerTests(StudioCase):
 
     def test_the_checks_warnings_reach_a_writer_as_notes_and_not_as_orders(self):
         from synthesis_fixture import research_stop
-        root = self.saved_start()
+        root = self.start()
         research_stop(root / 'research')
         brief = root / 'research/brief.md'
         head, _, rest = brief.read_text().partition('\n\n')
@@ -833,10 +828,11 @@ class RetryTests(StudioCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', careless)
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         step = self.steps(root)['research-plan']
         self.assertEqual((self.state(root), step['status'], step['attempts'], step['error']),
-                         ('waiting', 'done', 1, None))
+                         ('paused', 'done', 1, None))
         kept = json.loads((root / pipeline.PLAN).read_text())
         self.assertEqual(([item['id'] for item in kept['items']], kept['scope'],
                           kept['purpose']), (list(QUESTIONS), 'public-web', 'planning'))
@@ -846,17 +842,18 @@ class RetryTests(StudioCase):
             tools.submit_artifact('research-plan', '{"topic": "Rolling restarts"}')
 
         self.workers.then('research-plan', fails(SLOW, 'timeout'), never_right)
-        root = self.saved_start()
+        self.pause_after('research-plan', later=True)
+        root = self.start()
         first, second, third = self.workers.of('research-plan')
         self.assertNotIn('An earlier try', first.task)
         self.assertIn(f'An earlier try at this job did not work: {SLOW}', second.task)
         self.assertIn('An earlier try at this job did not work: What it handed back did not '
-                      'pass the checks: "items" must hold 1 to 30 questions.', third.task)
+                      'pass the checks: "items" must hold 1 to 8 questions.', third.task)
         self.assertEqual(len({first.folder, second.folder, third.folder}), 3)
         step, entry = self.steps(root)['research-plan'], self.record(root)['steps'][
             'research-plan']
         self.assertEqual((self.state(root), step['status'], step['attempts'], step['error']),
-                         ('waiting', 'done', 3, None))
+                         ('paused', 'done', 3, None))
         self.assertEqual(([attempt['outcome'] for attempt in entry['attempts']],
                           entry['failed'], entry['attempts'][0]['error']),
                          (['failed', 'failed', 'kept'], 0, SLOW))
@@ -866,7 +863,7 @@ class RetryTests(StudioCase):
     def test_a_step_that_fails_three_times_stops_the_training_and_says_what_went_wrong(self):
         self.workers.then('research-plan', fails(SLOW, 'timeout'), fails(), fails(
             'It stopped without finishing: its spending limit was reached', 'limit'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual((view['state'], len(self.workers.jobs)), ('failed', 3))
         self.assertEqual(view['problem'], {
@@ -886,24 +883,26 @@ class RetryTests(StudioCase):
 
         self.engine.wake(root)
         self.assertEqual(len(self.workers.jobs), 3, 'a failed run starts nothing by itself')
+        self.pause_after('research-plan')
         after = self.engine.act(root, 'retry')
         self.assertEqual((after['state'], after['problem'], len(self.workers.jobs)),
-                         ('waiting', None, 4))
+                         ('paused', None, 4))
         self.assertEqual(self.steps(root)['research-plan']['status'], 'done')
 
     def test_an_agent_that_cannot_be_used_is_not_tried_again_until_asked(self):
         self.workers.then('research-plan', fails('Claude Code is not installed on this '
                                                  'computer.', 'unavailable'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual((view['state'], len(self.workers.jobs)), ('failed', 1))
         self.assertEqual(view['problem']['what'], 'scripted could not be used. Claude Code is '
                          'not installed on this computer. Check this computer, on the Status screen, says what it needs.')
-        self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
+        self.pause_after('research-plan')
+        self.assertEqual(self.engine.act(root, 'retry')['state'], 'paused')
 
     def test_an_account_at_its_usage_limit_stops_at_once_and_says_to_wait(self):
         self.workers.then('research-plan', fails("You've hit your usage limit.", 'limit'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual((view['state'], len(self.workers.jobs)), ('failed', 1))
         self.assertEqual(view['problem']['what'], "scripted's account reached a usage or rate "
@@ -912,8 +911,7 @@ class RetryTests(StudioCase):
 
     def test_a_worker_that_runs_out_of_time_is_tried_again(self):
         self.workers.then('blueprint', fails(SLOW, 'timeout'))
-        root = self.saved_start()
-        self.to_gate(root, 'blueprint')
+        root = self.start()
         self.assertEqual(self.steps(root)['blueprint']['attempts'], 2)
         self.assertIn(SLOW, self.workers.of('blueprint')[1].task)
 
@@ -922,12 +920,13 @@ class RetryTests(StudioCase):
             raise RuntimeError('the adapter broke')
 
         self.workers.then('research-plan', broken)
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual((view['state'], view['problem']['what'], view['problem']['action']),
                          ('failed', 'The runner could not go on: RuntimeError: the adapter '
                           'broke', 'retry'))
-        self.assertEqual(self.engine.act(root, 'retry')['state'], 'waiting')
+        self.pause_after('research-plan')
+        self.assertEqual(self.engine.act(root, 'retry')['state'], 'paused')
 
 
 class RequestTests(StudioCase):
@@ -1039,7 +1038,7 @@ class RequestTests(StudioCase):
 class QuestionTests(StudioCase):
     def test_a_workers_question_waits_for_an_answer_which_goes_into_the_brief(self):
         self.workers.then('research-plan', asks('Which of the two platforms is this about?'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         asked = view['question']
         self.assertEqual((view['state'], view['sentence']), (
@@ -1057,9 +1056,9 @@ class QuestionTests(StudioCase):
 
         with self.assertRaisesRegex(WorkspaceError, 'not waiting for an answer any more'):
             self.engine.answer(root, 'another-question', 'The first.')
+        self.pause_after('research-plan')
         after = self.engine.answer(root, asked['id'], ' The newer one.\n')
-        self.assertEqual((after['state'], after['question']), ('waiting', None))
-        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        self.assertEqual((after['state'], after['question']), ('paused', None))
         task = self.workers.of('research-plan')[1].task
         self.assertIn('A worker on this job asked the person before. Do not ask these again:'
                       '\n\nQuestion: Which of the two platforms is this about?\nAnswer: The '
@@ -1074,12 +1073,13 @@ class QuestionTests(StudioCase):
 
     def test_a_step_may_ask_only_so_many_questions(self):
         self.workers.then('research-plan', asks('One?'), asks('Two?'), asks('Three?'))
-        root = self.saved_start()
+        self.pause_after('research-plan', later=True)
+        root = self.start()
         for _ in range(3):
             self.assertTrue(self.workers.jobs[-1][2]['ask'])
             self.engine.answer(root, self.view(root)['question']['id'], 'Yes.')
         self.assertFalse(self.workers.jobs[-1][2]['ask'])
-        self.assertEqual((self.state(root), len(self.workers.jobs)), ('waiting', 4))
+        self.assertEqual((self.state(root), len(self.workers.jobs)), ('paused', 4))
         self.assertIsNone(self.view(root)['question'])
 
 
@@ -1160,7 +1160,8 @@ class NoteTests(StudioCase):
                         'a later step\'s job closed the research notes')
 
     def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):
             self.engine.note(root, '   ')
         with self.assertRaisesRegex(WorkspaceError, 'at most 2000 characters'):
@@ -1176,7 +1177,7 @@ class NoteTests(StudioCase):
         self.assertIsNone(self.record(root).get('pending_note'))
 
     def test_a_stuck_training_takes_no_note(self):
-        root = self.saved_start()
+        root = self.start()
         stuck = pipeline.Next('stuck', why='Its folder cannot be read.')
         found = self.engine._survey(root, self.record(root))
         with mock.patch.object(self.engine, '_survey', return_value=replace(found, next=stuck)):
@@ -1264,10 +1265,6 @@ class ResearchTests(StudioCase):
     def test_the_research_purpose_is_the_shared_one(self):
         from runner import engine as engine_module
         from studio_core import research_contract
-        root = self.saved_start()
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         captured = []
 
         def native(engine, root, run, task, sources, product):
@@ -1276,7 +1273,7 @@ class ResearchTests(StudioCase):
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=native), \
                 mock.patch.object(engine_module.research_contract, 'purpose',
                                   wraps=research_contract.purpose) as built:
-            self.decide(root, 'research-plan')
+            root = self.start()
         kind, goal, priorities = built.call_args[0]
         self.assertTrue(kind.startswith('training'), kind)
         self.assertIn('Prioritize learner tasks', priorities)
@@ -1289,10 +1286,7 @@ class ResearchTests(StudioCase):
     def test_bringing_the_research_up_to_date_reaches_the_author(self):
         from types import SimpleNamespace
         from runner import engine as engine_module
-        root = self.saved_start()
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
+        root = self.start()
         found = self.engine._survey(root, self.engine._load(root))
         captured = []
 
@@ -1309,10 +1303,6 @@ class ResearchTests(StudioCase):
 
     def test_a_check_that_still_objects_stops_at_research_and_says_what_it_objected_to(self):
         from runner import engine as engine_module
-        root = self.saved_start()
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         refusal = WorkspaceError(
             'The independent check of the research still needs changes after 3 rounds of '
             'correction: 2 objections, such as fact-b (unsupported): The source does not say so. '
@@ -1322,7 +1312,7 @@ class ResearchTests(StudioCase):
                               'Coverage needs revision: Alternatives are missing.']
         refusal.rounds = 3
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'research-plan')
+            root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertEqual(view['problem'], {
@@ -1347,10 +1337,6 @@ class ResearchTests(StudioCase):
 
     def test_objections_in_groups_are_listed_under_each_group(self):
         from runner import engine as engine_module
-        root = self.saved_start()
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         refusal = WorkspaceError('The independent check of the research still needs changes.')
         refusal.objections = ['f01 (narrow): Too broad.', 'f02 (narrow): Too broad too.',
                               'Coverage needs revision: Alternatives are missing.']
@@ -1361,7 +1347,7 @@ class ResearchTests(StudioCase):
              'items': ['Alternatives are missing.']}]
         refusal.rounds = 3
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'research-plan')
+            root = self.start()
         self.assertIn('Read every objection shows them, under what the check called them.',
                       self.view(root)['problem']['kept'])
         self.assertNotIn('reviews/research.md', self.view(root)['problem']['kept'])
@@ -1373,10 +1359,6 @@ class ResearchTests(StudioCase):
     def test_a_check_that_could_not_read_an_original_stops_at_once_and_says_whose_problem(self):
         from runner import engine as engine_module
         from studio_core import research_contract
-        root = self.saved_start()
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         cause = [{'source': 'source-a', 'title': 'Handbook', 'file': 'sources/supplied/handbook.text',
                   'original': 'sources/supplied/handbook.md',
                   'access_error': 'There is no tool to read it.'}]
@@ -1384,7 +1366,7 @@ class ResearchTests(StudioCase):
         refusal = WorkspaceError(said)
         refusal.objections, refusal.rounds, refusal.cause = ['fact-a (narrow): Not read.'], 0, cause
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'research-plan')
+            root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertEqual(view['problem']['what'], said)
@@ -1466,8 +1448,8 @@ class SynthesisWordsTests(StudioCase):
 
     def test_a_synthesis_run_says_which_of_its_two_jobs_is_in_hand(self):
         from types import SimpleNamespace
-        root = self.saved_start()
-        self.assertEqual(self.state(root), 'waiting')
+        root = self.start()
+        self.assertEqual(self.state(root), 'done')
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         record['research'] = {'run': 'synthesis', 'plan': 'plan'}
@@ -1526,7 +1508,8 @@ class SynthesisWordsTests(StudioCase):
         self.assertEqual(folder_name('research:instance-min'), 'question-instance-min')
 
     def test_a_stop_at_the_research_says_what_its_last_try_took(self):
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         kept = {'outcome': 'kept', 'error': None, 'tokens': 1000}
@@ -1546,7 +1529,8 @@ class SynthesisWordsTests(StudioCase):
 
     def test_the_research_row_carries_both_jobs_time_and_money(self):
         from types import SimpleNamespace
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         record['steps']['research-author'] = {'failed': 0, 'attempts': [
@@ -1583,11 +1567,9 @@ class LimitTests(StudioCase):
     def test_a_training_carries_on_whatever_it_has_cost(self):
         self.workers.cost = 500.0
         self.engine = self.make(at_once=1)
-        root = self.saved_start()
-        self.decide(root, 'research-plan')
+        root = self.start()
         view = self.view(root)
-        self.assertEqual((view['state'], view['problem']), ('waiting', None))
-        self.assertEqual(workspace.status(root)['gate'], 'research')
+        self.assertEqual((view['state'], view['problem']), ('done', None))
         # What the agent reported is still shown, and nothing else is said of money.
         self.assertGreaterEqual(view['spent']['dollars'], 1000.0)
         self.assertEqual(set(view['spent']), {'dollars', 'tokens'})
@@ -1648,7 +1630,7 @@ class LimitTests(StudioCase):
     def test_a_step_that_runs_out_of_time_offers_more_time_for_this_training(self):
         settings.save(replace(settings.load(), step_seconds=600))
         self.workers.then('research-plan', *[fails(SLOW, 'timeout')] * 3)
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['problem'], {
             'what': 'Draft the research plan ran out of the time a step may take: its last try '
@@ -1662,19 +1644,20 @@ class LimitTests(StudioCase):
                          [None] * 3)
         with self.assertRaisesRegex(WorkspaceError, 'nothing to resume'):
             self.engine.act(root, 'resume')
-        self.assertEqual(self.engine.act(root, 'more-time')['state'], 'waiting')
+        self.pause_after('research-plan')
+        self.assertEqual(self.engine.act(root, 'more-time')['state'], 'paused')
         self.assertIsNone(self.workers.of('research-plan')[-1].limits.seconds)
         # The run keeps its time when its limits are read again; Settings keeps its own.
         self.assertEqual((self.record(root)['limits']['step_seconds'],
                           self.record(root)['more_time'], settings.load().step_seconds),
                          (1200, 1200, 600))
-        self.decide(root, 'research-plan')
-        self.assertEqual({job.limits.seconds for job in self.workers.of('question')}, {None})
+        self.engine.act(root, 'resume')
+        self.assertEqual({job.limits.seconds for _, job, _ in self.workers.jobs}, {None})
 
     def test_running_out_of_the_time_more_time_gave_names_the_run_s_own_limit(self):
         settings.save(replace(settings.load(), step_seconds=600))
         self.workers.then('research-plan', *[fails(SLOW, 'timeout')] * 6)
-        root = self.saved_start()
+        root = self.start()
         self.engine.act(root, 'more-time')
         self.assertEqual(self.view(root)['problem']['what'], (
             'Draft the research plan ran out of the time a step may take: its last try was '
@@ -1686,14 +1669,10 @@ class LimitTests(StudioCase):
     def test_a_research_job_that_runs_out_of_time_says_so(self):
         from runner import engine as engine_module
         from runner.agents import Outcome
-        root = self.saved_start()
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
         late.outcome = Outcome(False, 'timeout', SLOW)
         with mock.patch.object(engine_module.research_contract, 'native', side_effect=late):
-            self.decide(root, 'research-plan')
+            root = self.start()
         problem = self.view(root)['problem']
         self.assertEqual((problem['action'], problem['seconds']), ('more-time', 1350))
         self.assertTrue(problem['what'].startswith('The research ran out of the time a step may '
@@ -1702,14 +1681,13 @@ class LimitTests(StudioCase):
     def test_a_step_is_given_no_time_limit_and_no_spending_limit(self):
         settings.save(replace(settings.load(), step_seconds=120))
         self.workers.cost = 1.5
-        root = self.saved_start()
-        self.decide(root, 'research-plan')
+        root = self.start()
         self.assertEqual({job.limits for _, job, _ in self.workers.jobs},
                          {agents.Limits(seconds=None)})
 
     def test_carrying_on_or_trying_again_takes_up_the_limits_this_computer_has_now(self):
         self.workers.then('research-plan', fails(), fails(), fails())
-        root = self.saved_start()
+        root = self.start()
         settings.save(replace(settings.load(), step_seconds=1200))
         self.engine.act(root, 'retry')
         self.assertEqual(self.record(root)['limits'], {'step_seconds': 1200})
@@ -1832,9 +1810,9 @@ class HaltTests(StudioCase):
             return self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', tries)
-        root = self.saved_start(levels=['101'])
+        root = self.start(levels=['101'])
         self.assertEqual(len(refused), 1)
-        self.assertEqual(self.state(root), 'waiting')
+        self.assertEqual(self.state(root), 'done')
         self.assertIsNone(self.engine._load(root).get('halt_after'))
 
     def test_a_stopped_training_stays_stopped_until_it_is_resumed(self):
@@ -1858,10 +1836,10 @@ class HaltTests(StudioCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', pauses)
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.state(root), 'paused')
         self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
-        self.assertEqual(self.engine.act(root, 'resume')['state'], 'waiting')
+        self.assertEqual(self.engine.act(root, 'resume')['state'], 'done')
 
     def test_stopping_ends_a_command_a_step_is_running_and_everything_it_started(self):
         # A step that runs the slides tool or a brand skill runs it as this worker does.
@@ -1878,7 +1856,7 @@ class HaltTests(StudioCase):
         stopping = threading.Thread(target=stops)
         stopping.start()
         started = time.monotonic()
-        root = self.saved_start()
+        root = self.start()
         stopping.join(10)
         self.assertLess(time.monotonic() - started, 10)
         self.assertEqual(still_running(written(pids)), [])
@@ -1886,8 +1864,7 @@ class HaltTests(StudioCase):
         self.assertEqual((said[0]['state'], view['state'], view['sentence'], view['problem']),
                          ('stopped', 'stopped', 'Stopped. Everything finished before it is kept; '
                           'the step that was in hand starts over on resume.', None))
-        self.assertEqual(self.engine.act(root, 'resume')['state'], 'waiting')
-        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        self.assertEqual(self.engine.act(root, 'resume')['state'], 'done')
 
     def test_a_stop_reaches_the_questions_researched_at_once(self):
         seen = []
@@ -1915,7 +1892,8 @@ class HaltTests(StudioCase):
         self.assertEqual(workspace.status(root)['gate'], 'research')
 
     def test_what_cannot_be_done_as_things_stand_is_refused_in_a_sentence(self):
-        root = self.saved_start()
+        self.workers.then('research-plan', asks('Which platform is this about?'))
+        root = self.start()
         self.assertEqual(self.state(root), 'waiting')
         self.refused(root, 'pause', 'Only a training that is working can be paused. This one '
                      'is waiting for you.')
@@ -1926,14 +1904,14 @@ class HaltTests(StudioCase):
                      'finish-level, more-time, without, slide-text, leave-deck, bring-deck.')
 
         self.workers.then('research-plan', fails(), fails(), fails())
-        failed = self.saved_start(title='Health checks')
+        failed = self.start(title='Health checks')
         self.assertEqual(self.state(failed), 'failed')
         self.refused(failed, 'pause', 'This one is stopped on a problem.')
         self.refused(failed, 'stop', 'This training is stopped on a problem, so there is '
                      'nothing to stop.')
         self.refused(failed, 'resume', 'not paused or stopped')
 
-        self.to_end(root)
+        self.engine.answer(root, self.view(root)['question']['id'], 'The public one.')
         self.assertEqual(self.state(root), 'done')
         for action in ACTIONS:
             with self.subTest(action):
@@ -2016,20 +1994,18 @@ class RestartTests(StudioCase):
 
     def test_a_restart_respects_a_pause_a_question_and_a_failure(self):
         self.workers.then('research-plan', asks('Which platform?'))
-        asking = self.saved_start()
-        failing = self.saved_start(title='Health checks')
+        asking = self.start()
         self.workers.then('blueprint', fails(), fails(), fails())
-        self.to_gate(failing, 'research')
-        self.decide(failing, 'research')
+        failing = self.start(title='Health checks')
         def pauses(tools, job):
             self.engine.act(self.space.training('blue-green-deploys'), 'pause')
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', pauses)
-        paused = self.saved_start(title='Blue green deploys')
-        stopped = self.saved_start(title='Canary releases')
+        paused = self.start(title='Blue green deploys')
+        self.pause_after('research-plan', title='canary-releases')
+        stopped = self.start(title='Canary releases')
         self.engine.act(stopped, 'stop')
-        self.decide(stopped, 'research-plan')
         jobs = len(self.workers.jobs)
         self.restart()
         self.assertEqual([self.state(root) for root in (asking, failing, paused, stopped)],
@@ -2038,13 +2014,13 @@ class RestartTests(StudioCase):
         self.assertEqual(self.view(asking)['question']['text'], 'Which platform?')
 
     def test_a_training_someone_else_added_to_the_workspace_becomes_known_here(self):
-        root = self.saved_start()
+        root = self.start()
         home.registry_path().unlink()
         self.restart()
         self.assertEqual([entry['path'] for entry in home.trainings()], [str(root)])
 
     def test_a_run_that_is_done_is_left_alone(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
         (root / 'notes.md').write_text('# Notes someone keeps beside the training\n')
         jobs = len(self.workers.jobs)
@@ -2070,11 +2046,10 @@ class RestartTests(StudioCase):
             seen.append((root / self.engines.IN_HAND).read_text())
             raise Crash()
 
-        root = self.saved_start()
-        self.to_gate(root, 'blueprint')
+        root = self.space.training('rolling-restarts')
         self.workers.then('document', dies)
         with self.assertRaises(Crash):
-            self.decide(root, 'blueprint')
+            self.start()
         self.assertEqual(seen, ['document\n'])
         (root / 'document.md').write_text('# Half made\n')
         self.assertEqual(self.git('status', '--porcelain', '--', str(root)),
@@ -2082,8 +2057,7 @@ class RestartTests(StudioCase):
                          'the note that a step is in hand is never shared')
         self.restart()
         self.assertFalse((root / self.engines.IN_HAND).exists())
-        self.assertEqual((workspace.status(root)['gate'], len(self.workers.of('document'))),
-                         ('document', 2))
+        self.assertEqual((self.state(root), len(self.workers.of('document'))), ('done', 2))
         self.assertNotIn('Half made', (root / 'document.md').read_text())
 
 
@@ -2119,19 +2093,19 @@ class SharingTests(StudioCase):
         self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
 
     def test_the_last_thing_the_runner_does_is_shared_without_another_decision(self):
-        root = self.saved_start()
+        root = self.start()
         self.to_end(root)
+        self.all_ready(root)
         self.assertEqual(self.state(root), 'done')
         self.assertEqual(self.shared()[0],
                          'Rolling restarts: write the index; the training is finished')
         self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
 
     def test_a_repository_that_cannot_be_reached_never_holds_a_run_up(self):
-        root = self.saved_start()
+        root = self.start()
         self.remote.rename(self.base / 'moved-away.git')
-        self.decide(root, 'research-plan')
-        self.assertEqual((self.state(root), workspace.status(root)['gate']),
-                         ('waiting', 'research'))
+        self.all_ready(root)
+        self.assertEqual(self.state(root), 'done')
         found = self.engine.shared()
         self.assertFalse(found['shared'])
         self.assertIn('could not be reached', found['notice'])
@@ -2140,13 +2114,12 @@ class SharingTests(StudioCase):
 
     def test_sharing_only_when_asked(self):
         self.gitstate.share_when('asked')
-        root = self.saved_start()
-        self.decide(root, 'research-plan')
+        root = self.start()
         self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form',
                          'only the claim that starts a training is sent without being asked')
         self.assertEqual(self.engine.shared(), {'shared': False, 'notice': None})
         self.assertEqual(self.engine.share(), {'shared': True, 'notice': None})
-        self.assertIn('Rolling restarts: The research plan was approved on the page.',
+        self.assertIn('Rolling restarts: continue the research plan on the desk',
                       self.shared())
         self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
 
@@ -2187,7 +2160,7 @@ class LiveTests(StudioCase):
     def test_what_a_worker_is_doing_is_shown_while_it_works(self):
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']),
@@ -2214,8 +2187,9 @@ class LiveTests(StudioCase):
         from runner import page
         listed = {item['path']: item for item in page.RunnerPage(8765, self.engine).trainings()}
         self.assertEqual(listed[str(root)]['activity_at'], worker['started_at'])
+        self.engine.act(root, 'pause')    # where a saved run waited: after this step
         go.set()
-        self.until(lambda: self.state(root) == 'waiting')
+        self.until(lambda: self.state(root) == 'paused')
         self.assertEqual(self.view(root)['workers'], [])
         self.assertIsNone(self.engine.brief(root)['busy_since'])
         job, = self.engine.activity(root)['jobs']
@@ -2229,9 +2203,9 @@ class LiveTests(StudioCase):
         settings.save(replace(settings.load(), parallel=1))
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        first = self.saved_start()
+        first = self.start()
         self.assertTrue(entered.wait(30))
-        second = self.saved_start(title='Health checks')
+        second = self.start(title='Health checks')
         self.until(lambda: self.view(second)['sentence'].startswith('Waiting for its turn'))
         time.sleep(0.3)
         view = self.view(second)
@@ -2240,8 +2214,8 @@ class LiveTests(StudioCase):
                          ('working', 'Waiting for its turn. It is next.',
                           [], 1))
         go.set()
-        self.until(lambda: self.state(first) == self.state(second) == 'waiting')
-        self.assertEqual(len(self.workers.jobs), 2)
+        self.until(lambda: self.state(first) == self.state(second) == 'done')
+        self.assertEqual(len(self.workers.of('research-plan')), 2)
 
     def test_research_questions_are_worked_on_several_at_a_time(self):
         self.engine = self.make(at_once=2)
@@ -2295,7 +2269,7 @@ class LiveTests(StudioCase):
     def test_stopping_ends_the_step_in_hand_and_keeps_nothing_from_it(self):
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         self.assertFalse(self.engine._run(root).stop.is_set())
         stopped = self.engine.act(root, 'stop')
@@ -2310,13 +2284,12 @@ class LiveTests(StudioCase):
         self.assertEqual((self.state(root), self.git('status', '--porcelain')),
                          ('stopped', ''))
         self.engine.act(root, 'resume')
-        self.until(lambda: self.state(root) == 'waiting')
-        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
+        self.until(lambda: self.state(root) == 'done')
 
     def test_pausing_lets_the_step_in_hand_finish_and_keeps_it(self):
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         paused = self.engine.act(root, 'pause')
         self.assertEqual((paused['state'], paused['sentence']),
@@ -2326,12 +2299,12 @@ class LiveTests(StudioCase):
         self.assertEqual(workspace.status(root)['artifacts']['research-plan'], 'draft')
         self.assertIsNone(workspace.status(root)['gate'], 'no gate is set while it is paused')
         self.engine.act(root, 'resume')
-        self.until(lambda: workspace.status(root)['gate'] == 'research-plan')
+        self.until(lambda: self.state(root) == 'done')
 
     def test_closing_the_runner_ends_its_workers(self):
         script, entered, go = self.held(lambda tools, job: None)
         self.workers.then('research-plan', script)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         closing = threading.Thread(target=self.engine.close)
         closing.start()
@@ -2351,9 +2324,10 @@ class OutcomeTests(StudioCase):
             return Outcome(False, 'timeout', SLOW, cost=0.1)
 
         self.workers.then('research-plan', gives_out)
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         self.assertEqual((self.state(root), self.steps(root)['research-plan']['attempts']),
-                         ('waiting', 1))
+                         ('paused', 1))
         self.assertEqual(self.view(root)['spent']['dollars'], 0.1)
 
 
@@ -2375,23 +2349,25 @@ class ModelProfileTests(StudioCase):
         self.configure()
         from runner import setup
         self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
-        root = self.saved_start()
+        self.pause_after('research-plan')
+        root = self.start()
         saved = self.record(root)['model_profiles']
         studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
-        self.decide(root, 'research-plan')
+        self.engine.act(root, 'resume')
         self.assertEqual(self.record(root)['model_profiles'], saved)
         choices = self.record(root)['model_jobs']
         self.assertTrue(any(c['step'].startswith('research:') for c in choices))
         self.assertTrue(all(c['model'] == 'main-model' for c in choices))
         for kind, job, spec in self.workers.jobs:
             self.assertEqual((job.model, job.effort), ('main-model', 'medium'))
-            self.assertEqual(job.profile, 'research' if kind.startswith('question:') else 'write')
+            self.assertEqual(job.profile, 'research' if kind.startswith('question:')
+                             or 'research' in spec else 'write')
 
     def test_codex_and_explicit_work_override(self):
         self.configure('codex')
-        root = self.saved_start(title='By task')
+        root = self.start(title='By task')
         self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
-        other = self.saved_start(title='Work override', agent='codex', model='own-model', effort='high')
+        other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.jobs[-1][1].model, 'own-model')
 
@@ -2424,18 +2400,16 @@ class FormPlanTests(StudioCase):
     def test_a_documents_only_training_writes_its_plan_from_the_form(self):
         from studio_core import research_contract
         with mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):
-            root = self.saved_start(source_scope='supplied-only', research_questions=['Why?', 'What next?'], saved_contract={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'})
+            root = self.start(source_scope='supplied-only', research_questions=['Why?', 'What next?'], saved_contract={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'})
         self.send(root, 'synthetic.md')
         shown = self.engine.supply(root, 'done')
         plan = json.loads((root / pipeline.PLAN).read_text())
         self.assertEqual([i['question'] for i in plan['items']], ['Why?', 'What next?'])
         self.assertTrue(all(i['public_query'] is None for i in plan['items']))
-        self.assertEqual(workspace.statuses(root, workspace.load(root))['research-plan'], 'draft')
         self.assertEqual(self.workers.of('research-plan'), [])
-        self.assertEqual(workspace.status(root)['gate'], 'research-plan')
 
     def test_a_public_web_training_still_drafts_its_plan(self):
-        root = self.saved_start(research_questions=['Why now?'])
+        root = self.start(research_questions=['Why now?'])
         self.assertEqual(len(self.workers.of('research-plan')), 1)
         self.assertIn('Why now?', self.workers.of('research-plan')[0].task)
 
@@ -2446,7 +2420,7 @@ class ResearchAccountTests(StudioCase):
         from studio_core import research_contract, research_view
         from types import SimpleNamespace
         import desk
-        root = self.saved_start(); self.to_gate(root, 'research')
+        root = self.start()
         research_stop(root / research_contract.CASE / 'research')
         record = self.engine._load(root); record['research_contract'] = {'schema': 2}
         self.engine._store(root, record)
@@ -2462,9 +2436,8 @@ class ResearchAccountTests(StudioCase):
 
 class ResearchPriceTests(StudioCase):
     def test_a_research_change_is_priced_with_what_it_makes_again(self):
-        root = self.saved_start(levels=['101', '201'])
-        record = self.engine._load(root); record['research_contract'] = {'schema': 2}
-        self.engine._store(root, record)
+        self.pause_after('research-plan')
+        root = self.start(levels=['101', '201'])
         session = workspace.load(root)
         for name in ['blueprint@101', 'document@101', 'blueprint@201', 'document@201']:
             workspace.write_atomic(root / workspace.artifact(root, session, name)['file'], b'# Synthetic document\n')
