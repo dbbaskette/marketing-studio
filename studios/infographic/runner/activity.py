@@ -27,6 +27,7 @@ LABELS = {
     'approve': 'Approving and preparing your files',
     'review': 'Recording your review and running checks',
     'refresh-page': 'Updating the page',
+    'desk-submit': 'Saving work from the conversation',
 }
 
 
@@ -37,8 +38,7 @@ UNCERTAIN = 'It ended without a confirmed result. Check the saved work before tr
 STOPPED = 'Stopped on request. Nothing is running for it now, and your saved work is kept.'
 
 
-class Stopped(Exception):
-    """The person asked the running operation to stop: it ends at its next step."""
+from .contracts import Stopped  # noqa: E402  (raised at a step or a save once Stop is asked)
 
 
 def ending(item):
@@ -68,7 +68,7 @@ class Activity:
         else:
             self.end(ident, item)
 
-    def begin(self, ident, action, *, stop=None):
+    def begin(self, ident, action, *, stop=None, stoppable=True):
         """Claim the one operation slot of an infographic. Returns (item, report): `report`
         names each step as it starts and, when `stop` is set, ends the work at that step."""
         with self.lock:
@@ -87,6 +87,7 @@ class Activity:
                     'started_at': activity_log.now(), 'lines': activity_log.Lines()}
             if stop is not None:
                 item['stop'] = stop
+                item['stoppable'] = stoppable
             self.items[ident] = item
         self._checkpoint(ident, action, 'accepted')
         self._checkpoint(ident, action, 'working')
@@ -128,11 +129,13 @@ class Activity:
         self._kept(ident, item, assisted)
         self._checkpoint(ident, item['action'], 'ready' if item['state'] == 'complete' else 'stopped')
 
-    def stop(self, ident):
+    def stop(self, ident, *, force=False):
         """Ask the running operation of one infographic to stop. True when one was asked."""
         with self.lock:
             item = self.items.get(ident)
             if item is None or item['state'] != 'running' or item.get('stop') is None:
+                return False
+            if not item.get('stoppable', True) and not force:
                 return False
             item['stop'].set()
             item['stopping'] = True
@@ -182,7 +185,7 @@ class Activity:
             if item is None:
                 return None
             shown = {key: item[key] for key in ('id', 'action', 'label', 'state', 'reason', 'problem', 'result', 'recovery', 'stopping') if key in item} | {
-                'stoppable': item.get('stop') is not None and item['state'] == 'running',
+                'stoppable': item.get('stop') is not None and item.get('stoppable', True) and item['state'] == 'running',
                 'elapsed_seconds': max(0, int((self.clock() if item['ended'] is None else item['ended']) - item['started']))}
             if item['state'] == 'running' and len(item['lines']):
                 # What its assistant is doing now, as every studio shows a running job.

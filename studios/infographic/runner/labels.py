@@ -142,13 +142,19 @@ def change(previous, current, earlier=(), fingerprint=None):
                                           or ['its details']))
         # Work held out of date by this change is named as such (contracts.advance): kept,
         # with an Update and a Keep as it is on the page.
-        from .contracts import STALE_PARTS, stale_parts
+        from .contracts import STALE_PARTS, _holds, stale_parts
         before, after = stale_parts(previous), stale_parts(current)
+        # Facts whose source was replaced or removed are dropped, and said so by number.
+        dropped = len((after.get('facts') or {}).get('dropped', [])) - len((before.get('facts') or {}).get('dropped', []))
+        if dropped > 0:
+            summary += '; dropped ' + (('1 fact' if dropped == 1 else str(dropped) + ' facts')
+                                       + ' whose source was replaced or removed')
         marked = [{'facts': 'facts', 'stories': 'story', 'page': 'page', 'artwork': 'artwork'}[part]
-                  for part in STALE_PARTS if part in after and after[part] != before.get(part)]
+                  for part in STALE_PARTS if part in after and after[part] != before.get(part)
+                  and _holds(current, part)]
         if marked:
             summary += '; kept the ' + joined(marked) + ' and marked ' + ('it' if len(marked) == 1 else 'them') + ' out of date'
-        gone = cleared(previous, current)
+        gone = [word for word in cleared(previous, current) if not (word == 'facts' and dropped > 0)]
         if gone:
             summary += '; cleared the ' + joined(gone)
             lost = False

@@ -143,3 +143,26 @@ class ResearchJobsTests(Isolated):
         source = adopted['sources'][-1]
         self.assertEqual(source['kind'], 'research')
         self.assertTrue(sources.read(self.store, adopted, source).strip())
+
+    def test_research_is_retried_after_a_rename_against_the_current_revision(self):
+        self.assertEqual(self.run_job()['state'], 'complete')
+        project = self.store.read(self.p['id'])
+        self.store.edit_brief(project['id'], {**project['brief'], 'title': 'Renamed before retry'},
+                              expected_revision=project['revision'])
+        with patch.object(research_jobs.settings, 'snapshot', return_value={'assistant': {'agent': 'codex'}}):
+            self.jobs.control(self.p['id'], 'retry')
+            deadline = time.monotonic() + 25
+            while self.jobs.active and time.monotonic() < deadline: time.sleep(.025)
+        self.assertEqual(self.jobs.read(self.p['id'])['state'], 'complete')
+
+    def test_use_research_asks_before_acknowledging_its_gaps(self):
+        from runner import research
+        self.assertEqual(self.run_job()['state'], 'complete')
+        prepare = research.prepare
+        with patch.object(research, 'prepare', side_effect=lambda *a, **k: {**prepare(*a, **k), 'warnings': ['Synthetic gap.']}):
+            asked = self.jobs.control(self.p['id'], 'use')
+            self.assertTrue(asked['needs_acknowledgement'])
+            self.assertEqual(asked['warnings'], ['Synthetic gap.'])
+            self.assertEqual(self.store.read(self.p['id'])['sources'], [], 'Nothing is added until the person acknowledges.')
+            used = self.jobs.control(self.p['id'], 'use', acknowledge_warnings=True)
+        self.assertEqual(used['project']['sources'][-1]['kind'], 'research')

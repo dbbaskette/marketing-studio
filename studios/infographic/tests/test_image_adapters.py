@@ -49,6 +49,16 @@ class AdapterTests(Isolated):
             self.assertEqual(answer['inspection'], 'unknown')
             validate_image_result(answer)
 
+    def test_gemini_asks_for_the_page_shape_portrait_or_landscape(self):
+        asked = []
+        def transport(model, key, payload, seconds):
+            asked.append(payload['response_format']['aspect_ratio'])
+            return 200, self.response()
+        adapter = Gemini(self.folder, model='synthetic-image-model', key=lambda: 'synthetic-key', transport=transport)
+        for index, (width, height) in enumerate(((1080, 1350), (595.3, 841.9), (1920, 1080), (1200, 628))):
+            adapter.generate(attempt_id='shape' + str(index), brief={**self.brief, 'canvas': {'width': width, 'height': height}})
+        self.assertEqual(asked, ['4:5', '2:3', '16:9', '16:9'])
+
     def test_gemini_errors_are_normalized_without_reflected_secrets_or_retry(self):
         for status, state, reason in [(401, 'failed', 'sign-in-required'),
                                       (403, 'failed', 'image-model-unavailable'),

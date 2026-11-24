@@ -253,7 +253,7 @@ class Jobs:
             shown['problem'] = str(done.get('problem') or 'It could not be kept.')[:500]
         return shown
 
-    def control(self, ident, action):
+    def control(self, ident, action, *, acknowledge_warnings=False):
         with self.lock:
             root, state = self._state(ident)
             require(state is not None, 'Start research for this infographic first.')
@@ -273,13 +273,21 @@ class Jobs:
                 if action == 'preview':
                     return preview
                 # Use research: its findings are added as a source in one step; the page then
-                # asks for facts and a story from them.
+                # asks for facts and a story from them. Extraction gaps are the person's to
+                # acknowledge, as for any source: until they do, the preview is returned instead.
+                require(type(acknowledge_warnings) is bool, 'Choose whether to acknowledge the gaps explicitly.')
+                if preview.get('warnings') and not acknowledge_warnings:
+                    return {'preview': preview, 'warnings': preview['warnings'], 'needs_acknowledgement': True}
                 from . import intake
                 return {'project': intake.adopt(self.store, ident, preview['id'], expected_revision=project['revision'],
-                                                acknowledge_warnings=bool(preview.get('warnings')))}
+                                                acknowledge_warnings=acknowledge_warnings)}
             if action in ('retry', 'resume'):
                 require(active is None, 'Wait for current research invocations to finish before resuming.')
-                return self.start(ident, state['project_revision'], None, retry=True)
+                # What research reads is unchanged (a rename leaves it so): go on against the
+                # infographic's current revision.
+                project = self.store.read(ident)
+                require(unchanged(project, state), 'The infographic changed. Start research for its current brief.')
+                return self.start(ident, project['revision'], None, retry=True)
             raise Invalid('Choose pause, stop, resume, retry, preview or use research.')
 
     def stop(self):

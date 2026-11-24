@@ -56,7 +56,7 @@ def parser():
     desk = commands.add_parser('desk', help='Checked conversation operations: show, context and submit (desk_chat.py).')
     desk.add_argument('desk_action', choices=('show', 'context', 'submit'))
     desk.add_argument('id')
-    desk.add_argument('--target', help='facts, stories, story:<id>, art-direction or stale:<part> (context).')
+    desk.add_argument('--target', help='facts, stories, story:<id> or art-direction (context).')
     desk.add_argument('--file', type=Path, help='JSON {"kind", "target", "expected_basis", "payload"} (submit).')
     extra=commands.add_parser('handoff-inventory');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True)
     extra=commands.add_parser('handoff-preview');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True);extra.add_argument('--file',required=True);extra.add_argument('--expected-sha256',required=True);extra.add_argument('--view',choices=('job-aid',))

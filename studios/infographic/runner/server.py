@@ -44,10 +44,11 @@ class Page(shared.Page):
         # Long actions run as background jobs, one at a time per infographic.
         self.actions = action_jobs.Actions(store, self.activity) if store is not None else None
 
-    # Whether a request came from this computer. Marketing Studio's network bridge passes on
-    # only the headers it lists (marketing_studio/network.py, forward()), so this page's own
-    # LOCAL header reaches the server only from a page opened here; the bridge's VIA mark says
-    # network outright. A folder path on this computer is read only for a local caller.
+    # Whether a request came from this computer. Marketing Studio's network bridge marks every
+    # request it carries `X-Marketing-Studio-Via: network`, which alone makes a caller remote; a
+    # caller cannot forge or strip it. As a second, stricter condition this page's own LOCAL
+    # header is required too (the bridge never passes it on). A folder path on this computer is
+    # read only for a local caller.
     LOCAL = 'X-Infographic-Studio-Local'
     VIA = 'X-Marketing-Studio-Via'
 
@@ -153,12 +154,19 @@ class Page(shared.Page):
                              'renderer_available': found['renderer_available']}
             except Exception:   # unreadable settings: say it was not checked, as before
                 providers = {'providers': 'not-checked', 'generation_available': False}
+            from .contracts import sizes
             return shared.as_json(HTTPStatus.OK, {'product': PRODUCT, 'foundation': False,
-                                  'configured': self.store is not None, **providers})
+                                  'configured': self.store is not None, **providers,
+                                  'sizes': sizes()})
         if path == '/api/projects':
-            # Home shows the work each infographic is doing now; observing starts nothing.
+            # Home shows the work each infographic is doing now; observing starts nothing. A
+            # finished job's result and receipt are read for one infographic (/api/activity),
+            # never sent with every card.
+            def card(ident):
+                shown = self.doing(ident)
+                return {k: v for k, v in shown.items() if k not in ('result', 'recovery')} if shown else shown
             return shared.as_json(HTTPStatus.OK, {'projects': [
-                {**item, 'activity': self.doing(item['id'])} for item in self.store.listing()]})
+                {**item, 'activity': card(item['id'])} for item in self.store.listing()]})
         if path == '/api/project':
             return shared.as_json(HTTPStatus.OK, {'project': self.store.read(one('id'))})
         if path == '/api/source':
@@ -195,9 +203,11 @@ class Page(shared.Page):
                 raise Invalid(str(error)) from None
             return shared.as_json(200, result)
         if path == '/api/research-control':
-            require(isinstance(sent, dict) and set(sent) == {'id', 'action'}, 'Choose one research control.')
+            require(isinstance(sent, dict) and {'id', 'action'} <= set(sent) <= {'id', 'action', 'acknowledge_warnings'}
+                    and type(sent.get('acknowledge_warnings', False)) is bool, 'Choose one research control.')
             try:
-                result = self.research.control(sent['id'], sent['action'])
+                result = self.research.control(sent['id'], sent['action'],
+                                               acknowledge_warnings=sent.get('acknowledge_warnings', False))
             except (ValueError, OSError) as error:
                 raise Invalid(str(error)) from None
             return shared.as_json(200, result)
@@ -216,11 +226,19 @@ class Page(shared.Page):
                 return shared.as_json(200, desk_chat.context(self.store, sent['id'], sent['target']))
             require(isinstance(sent, dict) and set(sent) == {'id', 'kind', 'target', 'expected_basis', 'payload'},
                     'Submit id, kind, target, expected_basis and payload together.')
-            require(sent['id'] not in self.actions.running(),
-                    'This infographic is still working. Save from the conversation once it has finished.')
             ident = sent.pop('id')
-            return shared.as_json(200, desk_chat.submit(copy(self.engine), ident, sent))
+            self.store.read(ident)
+            # The same one-at-a-time slot as the page's own work: refused while anything runs.
+            item, _ = self.activity.begin(ident, 'desk-submit')
+            try:
+                shown = desk_chat.submit(copy(self.engine), ident, sent)
+            except BaseException as failure:
+                self.activity.end(ident, item, failure, problem=str(failure) if isinstance(failure, Invalid) else None)
+                raise
+            self.activity.end(ident, item)
+            return shared.as_json(200, shown)
         if path == '/api/action-control':
+            require(self.actions is not None, 'Finish shared setup before creating infographic work.')
             require(isinstance(sent, dict) and set(sent) == {'id', 'action'} and sent['action'] in ('stop', 'dismiss'),
                     'Choose Stop for the running work of one infographic.')
             self.store.read(sent['id'])
@@ -233,6 +251,7 @@ class Page(shared.Page):
                 if isinstance(verb, str) and verb in action_jobs.BACKGROUND:
                     # Answered at once: the work runs on, and the page follows it in Activity.
                     api.shape(sent)
+                    require(self.actions is not None, 'Finish shared setup before creating infographic work.')
                     make = (lambda: api.engine(self.store)) if configured else (lambda: copy(self.engine))
                     job = self.actions.start(sent, make, api.action)
                     return shared.as_json(HTTPStatus.ACCEPTED, {'job': job})

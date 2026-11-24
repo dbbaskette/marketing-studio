@@ -34,8 +34,8 @@ BLOG_REMOTE = frozenset(('/api/desk-google-send', '/api/editor-google-send', '/a
                          '/api/google-start', '/api/library-add', '/api/library-add-preview',
                          '/api/desk-google-plan', '/api/desk-google-compare',
                          '/api/desk-google-take'))
-# The bridge says, in a header of its own, that a request reached Marketing Studio over the
-# network. A network caller cannot send it: only the headers named in forward() pass.
+# The bridge says, in a header of its own, that a request reached Marketing Studio or a studio
+# over the network. A network caller cannot send it: only the headers named in forward() pass.
 VIA_HEADER = 'X-Marketing-Studio-Via'
 # The most bytes a POST may carry through the bridge, as each studio's own server allows it
 # (its `body_limit`, or Blog Studio's MAX_BODY). tests/test_network.py keeps them in step.
@@ -236,8 +236,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 headers[name] = values[0]
         if origins:
             headers['Origin'] = 'http://' + own.target
-        if own.identifier == 'marketing':
-            headers[VIA_HEADER] = 'network'
+        # Every studio is told the request came over the network, so a studio can refuse what
+        # only a person at the computer may do (reading a folder path there). A caller cannot
+        # forge or strip it: the headers above are the only ones passed on.
+        headers[VIA_HEADER] = 'network'
         connection = http.client.HTTPConnection(
             own.target, timeout=upstream_timeout(own.identifier, self.command, url.path))
         begun = False

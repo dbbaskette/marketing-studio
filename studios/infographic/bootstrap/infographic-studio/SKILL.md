@@ -25,13 +25,15 @@ for work you are already doing.
 
 Desk operations are the checked way to save that work. `desk show ID` reads the desk
 and lists the targets you may write (`facts`, `stories`, `story:<id>`,
-`art-direction`, `stale:<part>`). `desk context ID --target TARGET` gives the exact
+`art-direction`) and what is out of date. `desk context ID --target TARGET` gives the exact
 inputs, the native instructions and an `expected_basis`. Write the payload it names,
 then `desk submit ID --file JSON` with {"kind", "target", "expected_basis",
 "payload"}. A changed infographic refuses the save: read context again. Saving never
-approves, chooses a story, builds, delivers or starts a provider; `stale:<part>` (keep
-as it is) is only for when the person chose it. Long page actions (finding the story,
-building, artwork) run in the background; the page shows their progress, with Stop.
+approves, chooses a story, builds, delivers or starts a provider, and never keeps
+out-of-date work as it is: only the person does that, on the page. Long page actions
+(finding the story, building, artwork, approval, review, export, delivery) run in the
+background; the page shows their progress, with Stop where stopping leaves nothing
+half-done.
 
 1. Offer Paste, Upload files, Google Doc/public page, selected studio material, or
    documents the person chooses from the shared Document Library (`library-browse`,

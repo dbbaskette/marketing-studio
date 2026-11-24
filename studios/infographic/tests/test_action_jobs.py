@@ -1,5 +1,6 @@
 """Long actions run as background jobs: start, progress, Stop, restart and one at a time."""
 import json
+from pathlib import Path
 import os
 import sys
 import threading
@@ -196,3 +197,93 @@ class ActionJobTests(Isolated):
         actions.shutdown()
         self.assertEqual(actions.running(), [])
         self.assertEqual(actions.activity.snapshot(self.ident)['state'], 'stopped')
+
+    def test_a_stop_that_lands_before_a_save_saves_nothing_and_ends_stopped(self):
+        page = self.page(Engine(self.store))
+        before = self.store.read(self.ident)
+
+        def answered_then_saves(found, sent):
+            found.progress('Reading sources and finding the story')
+            # The assistant has answered; Stop lands before its work is saved.
+            page.actions.stop(self.ident)
+            current = self.store.read(self.ident)
+            self.store.update(self.ident, {'brief': {**current['brief'], 'audience': 'Late save'}},
+                              expected_revision=current['revision'])
+            return {'saved': True}
+        with mock.patch.object(api, 'action', side_effect=answered_then_saves):
+            page.write('/api/action', {'action': 'suggest', 'id': self.ident, 'expected_revision': self.revision})
+            shown = self.ended(page)
+        self.assertEqual(shown['state'], 'stopped')
+        self.assertEqual(self.store.read(self.ident), before, 'Nothing was saved after Stop.')
+
+    def test_a_page_drawn_anyway_does_not_swallow_stop(self):
+        from runner.contracts import Stopped
+        engine = Engine(self.store)
+        with mock.patch.object(engine, 'preview', side_effect=Stopped()), \
+                mock.patch.object(self.store, 'read', return_value={**self.store.read(self.ident), 'scene': {}}):
+            with self.assertRaises(Stopped):
+                engine._drawn_anyway(self.ident, {'state': 'failed'})
+
+    def test_approval_review_export_and_delivery_run_in_the_background_without_stop(self):
+        entered, release = threading.Event(), threading.Event()
+
+        def slow(found, sent):
+            found.progress('Approving this exact revision')
+            entered.set()
+            release.wait(5)
+            return {'approved': True}
+        page = self.page(Engine(self.store))
+        self.assertEqual(set(action_jobs.BACKGROUND) - set(action_jobs.STOPPABLE),
+                         {'approve', 'review', 'export', 'google-deliver'})
+        with mock.patch.object(api, 'action', side_effect=slow):
+            status, _, raw = page.write('/api/action', {'action': 'approve', 'id': self.ident,
+                                                       'expected_revision': self.revision, 'then_export': True})
+            self.assertEqual(status, 202)
+            self.assertTrue(entered.wait(3))
+            shown = page.doing(self.ident)
+            self.assertEqual((shown['state'], shown['stoppable'], shown['label']),
+                             ('running', False, 'Approving this exact revision'))
+            with self.assertRaisesRegex(Exception, 'finishes once started'):
+                page.write('/api/action-control', {'id': self.ident, 'action': 'stop'})
+            # The one slot holds: nothing else, the conversation included, saves meanwhile.
+            with self.assertRaisesRegex(Exception, 'still working'):
+                page.write('/api/desk-submit', {'id': self.ident, 'kind': 'facts', 'target': 'facts',
+                                                'expected_basis': 'x', 'payload': {'facts': []}})
+            release.set()
+            self.assertEqual(self.ended(page)['result'], {'approved': True})
+            # A delivery request names its own saved revision: it is not refused for being older.
+            release.clear()
+            status, _, _ = page.write('/api/action', {'action': 'google-deliver', 'id': self.ident,
+                                                     'expected_revision': 0, 'export_id': 'e_x', 'request_id': 'r1'})
+            self.assertEqual(status, 202)
+            release.set()
+            self.ended(page)
+
+    def test_home_lists_activity_without_results(self):
+        page = self.page(Engine(self.store))
+        with mock.patch.object(api, 'action', return_value={'large': 'x' * 1000}):
+            page.write('/api/action', {'action': 'suggest', 'id': self.ident, 'expected_revision': self.revision})
+            self.ended(page)
+        self.assertIn('result', page.doing(self.ident))
+        listed = json.loads(page.read('/api/projects', lambda name: None)[2])['projects']
+        self.assertEqual(listed[0]['activity']['state'], 'complete')
+        self.assertNotIn('result', listed[0]['activity'])
+        one = json.loads(page.read('/api/activity', lambda name: self.ident)[2])['activity']
+        self.assertEqual(one['result'], {'large': 'x' * 1000})
+
+    def test_without_setup_control_is_refused_in_words(self):
+        page = server.Page(8002, None)
+        with self.assertRaisesRegex(Exception, 'Finish shared setup'):
+            page.write('/api/action-control', {'id': self.ident, 'action': 'stop'})
+
+    def test_the_page_sizes_come_from_the_one_table_and_say_what_they_suit(self):
+        from runner.contracts import PRESETS
+        page = self.page(Engine(self.store))
+        sizes = json.loads(page.read('/api/status', lambda name: None)[2])['sizes']
+        self.assertEqual([s['id'] for s in sizes], list(PRESETS))
+        social = next(s for s in sizes if s['id'] == 'social')
+        self.assertEqual((social['label'], social['detail'], social['landscape']), ('Social landscape', '1200 × 628 px', True))
+        self.assertIn('one or two short blocks', social['suits'])
+        script = (Path(__file__).resolve().parents[1] / 'runner/web/app.js').read_text()
+        self.assertNotIn('1920 × 1080', script, 'The page names no size of its own.')
+        self.assertIn("request('/api/status')", script)

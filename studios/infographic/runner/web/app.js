@@ -79,9 +79,13 @@ const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
 // The open infographic's toolbar primary action: the page shows that control at most once more.
 let primary = '';
-// The page sizes, as contracts.PRESETS names them: three portrait, two landscape.
-const PAGE_SIZES=[['a4','A4 portrait','210 × 297 mm'],['letter','US Letter portrait','8.5 × 11 in'],['digital','Digital portrait','1080 × 1350 px'],
-  ['widescreen','Widescreen 16:9','1920 × 1080 px'],['social','Social landscape','1200 × 628 px']];
+// The page sizes, as the server's one table (contracts.PRESETS) names them: [id, label,
+// dimensions, what it suits]. Read once from /api/status before the New sheet draws them.
+let PAGE_SIZES=[];
+async function pageSizes(){
+  if(!PAGE_SIZES.length){const found=await request('/api/status');PAGE_SIZES=(found.sizes||[]).map(s=>[s.id,s.label,s.detail,s.suits||'']);}
+  return PAGE_SIZES;
+}
 const emptyIntake = () => ({research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'});
 const draft = emptyIntake();
 let intakeLoaded=false, missingCaptures=[];
@@ -277,7 +281,9 @@ function staleCard(p){
     const [label,run,help]=update[part];
     const keep=button('Keep as it is',()=>action('keep-stale',{part}));keep.setAttribute('aria-label','Keep '+STALE_WHAT[part].toLowerCase()+' as it is');
     const go=button(label,run);
-    return add(make('div','ig-stale-row stack'),stateLine('review',STALE_WHAT[part]+' was made before the '+held[part].because+' changed.'),make('p','quiet',help),add(make('div','bar'),go,keep));
+    // Facts whose source was replaced or removed could not be kept: each is named, with why.
+    const dropped=part==='facts'&&(held.facts.dropped||[]).length?add(make('div','stack'),make('p','',(held.facts.dropped.length===1?'One fact was dropped':held.facts.dropped.length+' facts were dropped')+': '+held.facts.dropped[0].why),list(held.facts.dropped.map(d=>d.statement))):null;
+    return add(make('div','ig-stale-row stack'),stateLine('review',STALE_WHAT[part]+' was made before the '+held[part].because+' changed.'),dropped,make('p','quiet',help),add(make('div','bar'),go,keep));
   });
   const node=card('Out of date after your change',make('p','','Your work is kept. Update each part, or keep it as it is. Approval, prepared files and delivery wait until nothing is out of date.'),...rows);
   node.id='ig-stale';node.classList.add('ig-stale');return node;
@@ -533,7 +539,7 @@ async function startFromLibrary(pick){
 }
 async function startNewIntake(control=null,place=null){if(!await privateIntake.startFresh(control,place))return;resetIntake();intakeLoaded=true;await newSheet();}
 async function newSheet() {
-  try{if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
+  try{await pageSizes();if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
   error('');
   // Two steps, each headed as a part of the sheet. The studio says what is missing beside the
   // field itself, rather than leaving it to the browser's own check.
@@ -620,6 +626,10 @@ async function newSheet() {
     for(const [key,label] of [['audience','Audience and prior knowledge'],['purpose','Desired takeaway or purpose'],['must','Must-show ideas — one per line']]) { const f=field(label,draft[key],key==='must'?'textarea':'input');retain(f.input,key);add(form,f.wrap); }
     const locked=field('Exact wording to preserve — one phrase per line',draft.locked,'textarea'), excluded=field('Leave out — one item per line',draft.exclusions,'textarea'); retain(locked.input,'locked');retain(excluded.input,'exclusions'); add(form,detail('Wording and exclusions',locked.wrap,excluded.wrap));
     const preset=field('Page size',draft.preset,'select');for(const [value,label,size] of PAGE_SIZES) { const option=make('option','',label+' — '+size);option.value=value;preset.input.append(option); }preset.input.value=draft.preset;retain(preset.input,'preset');add(form,preset.wrap);
+    // What the chosen size holds, said at the point of choosing it, so a refusal later is no surprise.
+    const suits=make('p','field-hint ig-size-suits');suits.id='ig-size-suits';suits.setAttribute('aria-live','polite');
+    const tell=()=>{const found=PAGE_SIZES.find(([value])=>value===preset.input.value);suits.textContent=found?.[3]||'';suits.hidden=!suits.textContent;};
+    preset.input.setAttribute('aria-describedby',suits.id);preset.input.addEventListener('change',tell);tell();form.append(suits);
     try { preferences=await request('/api/preferences'); const capability=await request('/api/computer'); add(form,make('p','',capability.disclosure),make('p','quiet','Brand: '+(preferences.brand.brand || 'Choose in shared settings before composing.')),make('p','quiet','Saving this brief starts no assistant, image generation or installation.')); } catch(failure) {problem.textContent=failure.message;}
   }
   const go=button(draft.step===1?'Save brief':'Continue',()=>{},true);go.type='submit';
@@ -1023,15 +1033,13 @@ async function draftLibrary(picks){
 const LIBRARY_CLEARS='Adding or updating a source keeps the facts, story, page and artwork built from the earlier sources and marks them out of date: you update each or keep it as it is. The approval is cleared. Earlier work stays in History, and nothing starts by itself.';
 // 'a', 'a and b', 'a, b and c'.
 function joined(words){return words.length<3?words.join(' and '):words.slice(0,-1).join(', ')+' and '+words.at(-1);}
-// What a source change clears: the approval, and, when it replaces a source the facts cite,
-// the facts and everything built on them (they cannot point at text that is gone).
-function libraryClears(replacing=''){
-  const p=held.project,cited=replacing&&p.facts.some(f=>(f.evidence||[]).some(e=>e.source_id===replacing));
-  return [cited&&p.facts.length?'facts':'',cited&&p.stories.length?'story':'',cited&&p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
-}
+// What a source change clears: the approval. Facts that quote a source being replaced cannot
+// point at text that is gone, so those facts alone are dropped (and named afterwards).
+function libraryClears(){return held.project.approval?['approval']:[];}
+function citing(replacing){return replacing?held.project.facts.filter(f=>(f.evidence||[]).some(e=>e.source_id===replacing)).length:0;}
 // What a source change keeps and marks out of date.
-function libraryMarks(replacing=''){
-  const p=held.project;if(libraryClears(replacing).includes('facts'))return [];
+function libraryMarks(){
+  const p=held.project;
   return [p.facts.length?'facts':'',p.stories.length?'story':'',p.scene?'page':''].filter(Boolean);
 }
 // What a brief change clears: the approval. Captured facts come from the sources, so they stay.
@@ -1072,7 +1080,7 @@ function libraryConfirm(title,label,rows,run,back='ig-library-add'){
 function sourceConfirm(name,replacing,run,back,cancel){
   const label=replacing?'Replace source':'Add as a source';
   clearsConfirm(replacing?'Replace '+(held.project.sources.find(s=>s.id===replacing)?.name||'this source'):'Add '+name,label,
-    {clears:libraryClears(replacing),marks:libraryMarks(replacing),back,cancel,run:async()=>{await run();refocus(back);}});
+    {clears:libraryClears(),marks:libraryMarks(),kept:citing(replacing)?(citing(replacing)===1?'One fact quotes this source; it is dropped and named.':citing(replacing)+' facts quote this source; they are dropped and named.'):'',back,cancel,run:async()=>{await run();refocus(back);}});
 }
 function libraryAddButton(){
   let rows=null;
@@ -1523,7 +1531,10 @@ async function researchSheet(){
   // Use research: its checked findings become a source and your assistant suggests a story
   // from them, in one action. Nothing is used until it is chosen.
   const useResearch=async()=>{
-    try{await request('/api/research-control',{id:ident,action:'use'});closeSheet();await openProject(ident);
+    try{const used=await request('/api/research-control',{id:ident,action:'use'});
+      // Gaps in its readable text are reviewed and acknowledged first, as for any source.
+      if(used.needs_acknowledgement){sourceImportSheet(used.preview);return;}
+      closeSheet();await openProject(ident);
       toast('Research added as a source. Your assistant is suggesting a story from it.');
       if(here(ident))await action('suggest',{fresh:true});}
     catch(f){problem.textContent=f.message;}

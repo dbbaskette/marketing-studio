@@ -9,7 +9,7 @@ from pathlib import Path
 import secrets
 
 from . import build_recovery, brand, checks, evidence, exports, history, image_brief, labels, planning_responses, progress, scene, sources, stories, visual_review
-from .contracts import Invalid, basis, canonical, digest
+from .contracts import Invalid, Stopped, basis, canonical, digest
 from .assistant_failure import AssistantFailure
 from .validation import REQUIRED_CHECKS, records, require, text
 from .workspace import _read, file_lock
@@ -232,6 +232,8 @@ class Engine:
             current = self.store.read(ident)
             if current['scene'] is not None:
                 return {**answer, 'preview': self.preview(ident, expected_revision=current['revision'])}
+        except Stopped:
+            raise
         except Exception:
             pass    # the image outcome stands; a failed preview keeps its own receipt
         return answer

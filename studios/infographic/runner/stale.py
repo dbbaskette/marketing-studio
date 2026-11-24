@@ -54,10 +54,8 @@ def refresh_page(engine, ident, *, expected_revision):
             'Choose a story and build its page first.')
     artwork = next((e['asset_id'] for e in project['scene']['elements'] if e['kind'] == 'artwork'), None)
     engine.progress('Laying out the page again')
+    # Laid out again (the same as before, or not), the page is current (scene.adopt_best).
     project = scene.adopt_best(store, ident, expected_revision=project['revision'])
-    if 'page' in stale_parts(project):
-        # Laid out the same as before: it is current all the same.
-        project = clear(store, ident, ['page'], expected_revision=project['revision'])
     if artwork and project['scene'].get('art_regions') \
             and not any(e['kind'] == 'artwork' for e in project['scene']['elements']):
         project = engine.compose_asset(ident, artwork, expected_revision=project['revision'])

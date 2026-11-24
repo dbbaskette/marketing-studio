@@ -74,6 +74,79 @@ class StaleWorkTests(Isolated):
         # A draft preview is still drawn: only approval, export and delivery wait.
         self.engine.preview(self.ident, expected_revision=self.current()['revision'])
 
+    def refused(self, *parts):
+        """Approve, prepare approved files and deliver each refuse, naming what is out of date."""
+        revision = self.current()['revision']
+        for doing, run in (('Approval', lambda: self.engine.approve(self.ident, expected_revision=revision)),
+                           ('Preparing the approved files', lambda: self.engine.preview(self.ident, expected_revision=revision, draft=False)),
+                           ('Delivery', lambda: google_delivery.execute(self.store, self.ident, expected_revision=revision,
+                                                                       export_id='e_synthetic', request_id='deliver-two', folder=None))):
+            with self.subTest(doing=doing), self.assertRaisesRegex(Invalid, doing + ' waits for out-of-date work') as caught:
+                run()
+            for part in parts:
+                self.assertIn(part, str(caught.exception))
+
+    def two_stories(self):
+        from copy import deepcopy
+        from runner import scene, stories
+        other = deepcopy(self.proposal)
+        other.update(id='story2', headline='Serve while one restarts')
+        other['blocks'][0].update(kind='process', title='Drain, restart, return')
+        project = stories.adopt(self.store, self.ident, [self.proposal, other], expected_revision=self.current()['revision'])
+        project = stories.select(self.store, self.ident, 'story1', expected_revision=project['revision'])
+        return scene.adopt(self.store, self.ident, expected_revision=project['revision'])
+
+    def test_choosing_another_story_after_a_brief_edit_leaves_the_story_out_of_date(self):
+        from runner import stories
+        self.two_stories()
+        self.edit(audience='Platform engineers')
+        chosen = stories.select(self.store, self.ident, 'story2', expected_revision=self.current()['revision'])
+        # Choosing is neither making the story again nor keeping it: the mark stays.
+        self.assertIn('stories', chosen['stale'])
+        self.refused('the story')
+        # Probe from the review, at the record itself.
+        p = synthetic()
+        edited = advance(p, {'brief': {**p['brief'], 'audience': 'Operators'}}, expected_revision=0, owner='owner1')
+        self.assertEqual(set(edited['stale']), {'stories', 'page', 'artwork'})
+        again = advance(edited, {'selected_story': None}, expected_revision=edited['revision'], owner='owner1')
+        self.assertIn('stories', again['stale'])
+
+    def test_editing_or_placing_on_the_page_after_keeping_the_story_leaves_the_page_out_of_date(self):
+        from copy import deepcopy
+        self.edit(audience='Platform engineers')
+        self.act('keep-stale', part='stories')
+        # One text element edited: the page is not laid out again.
+        element = next(e for e in self.current()['scene']['elements'] if e['kind'] == 'text' and e['id'].endswith('_heading'))
+        edited = self.engine.edit_text(self.ident, element['id'], 'One at a time', expected_revision=self.current()['revision'])
+        self.assertEqual(set(edited['stale']), {'page'})
+        self.refused('the page')
+        # Artwork placed on the page (any other change to the scene) is not laying it out again.
+        placed = deepcopy(self.current()['scene'])
+        placed['elements'][0]['bounds'] = list(placed['elements'][0]['bounds'])
+        placed['id'] = placed['id'] + 'x'
+        changed = self.store.update(self.ident, {'scene': placed}, expected_revision=self.current()['revision'])
+        self.assertEqual(set(changed['stale']), {'page'})
+        self.refused('the page')
+        # Laying the page out again (Update the page, layout, visual layout) makes it current.
+        self.act('layout', arrangement='stack')
+        self.assertNotIn('stale', self.current())
+
+    def test_a_replaced_source_drops_only_the_facts_that_quoted_it(self):
+        from runner import evidence
+        project = sources.capture(self.store, self.ident, b'Two instances serve while one restarts.', name='More notes',
+                                  expected_revision=self.current()['revision'])
+        first, second = project['sources']
+        quotes = {s['id']: sources.read(self.store, project, s) for s in (first, second)}
+        facts = [{'id': key, 'statement': quotes[s['id']], 'value': quotes[s['id']], 'unit': '', 'status': 'supplied',
+                  'evidence': [{'source_id': s['id'], 'start': 0, 'end': len(quotes[s['id']]), 'quote': quotes[s['id']]}]}
+                 for key, s in (('f1', first), ('f2', second))]
+        evidence.adopt(self.store, self.ident, facts, expected_revision=self.current()['revision'])
+        replaced = sources.capture(self.store, self.ident, b'Different replacement notes.', name='More notes',
+                                   replace_id=second['id'], expected_revision=self.current()['revision'])
+        self.assertEqual([f['id'] for f in replaced['facts']], ['f1'], 'The fact quoting an untouched source stays.')
+        self.assertEqual([d['id'] for d in replaced['stale']['facts']['dropped']], ['f2'])
+        self.assertIn('replaced or removed', replaced['stale']['facts']['dropped'][0]['why'])
+
     def test_keep_as_it_is_clears_one_mark_and_approval_follows_once_none_is_left(self):
         self.edit(audience='Platform engineers')
         kept = self.act('keep-stale', part='stories')

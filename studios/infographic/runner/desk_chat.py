@@ -8,9 +8,11 @@ instructions of one target (`context`, with an `expected_basis`), and saves what
 context named; anything changed since is refused, saying so. Nothing here approves, chooses a
 story, builds, renders, delivers, starts research or calls an assistant or image provider.
 
-Targets: 'facts', 'stories', 'story:<id>' (one story revised), 'art-direction', and
-'stale:<part>' (keep an out-of-date part as it is). Each submission is recorded beside the
-infographic (jobs/conversation_*/submission.json, immutable) and listed by `show`.
+Targets: 'facts', 'stories', 'story:<id>' (one story revised) and 'art-direction'. Work held
+out of date is shown (`stale`) but only the person keeps it as it is, on the page; the
+conversation can make a part again, never clear its mark. Each submission is recorded beside
+the infographic (jobs/conversation_*/submission.json, immutable) and the newest are listed by
+`show`.
 """
 from __future__ import annotations
 
@@ -21,12 +23,14 @@ import secrets
 
 from studio_core.activity_log import now
 
-from . import evidence, progress, sources, stale, stories
-from .contracts import STALE_PARTS, Invalid, basis, canonical, digest, stale_parts
+from . import evidence, progress, sources, stories
+from .contracts import Invalid, basis, canonical, digest, stale_parts
 from .validation import require
 from .workspace import _read
 
-KINDS = {'facts': 'facts', 'stories': 'stories', 'story': 'story', 'art-direction': 'art-direction', 'stale': 'keep'}
+KINDS = {'facts': 'facts', 'stories': 'stories', 'story': 'story', 'art-direction': 'art-direction'}
+SHOWN = 20          # conversation submissions `show` lists, newest first
+READ = 200          # folders read to find them, newest first
 CHANGED = 'The infographic or its inputs changed. Read desk context again before saving.'
 MAX_PAYLOAD = 2_000_000
 MAX_SOURCE_TEXT = 120_000
@@ -37,12 +41,10 @@ def _target(project, target):
     """The target's kind and its subject: a story ID or an out-of-date part."""
     require(isinstance(target, str) and 0 < len(target) <= 100, 'Name one desk target.')
     head, _, subject = target.partition(':')
-    require(head in KINDS and bool(subject) == (head in ('story', 'stale')),
-            'Choose facts, stories, story:<id>, art-direction or stale:<part>.')
+    require(head in KINDS and bool(subject) == (head == 'story'),
+            'Choose facts, stories, story:<id> or art-direction. Only the person keeps out-of-date work as it is, on the page.')
     if head == 'story':
         require(any(s['id'] == subject for s in project['stories']), 'Choose an existing story.')
-    if head == 'stale':
-        require(subject in STALE_PARTS and subject in stale_parts(project), 'That part is not out of date.')
     if head == 'art-direction':
         require(project['scene'] is not None and bool(project['scene'].get('art_regions')),
                 'Build a page that plans artwork before writing its art direction.')
@@ -57,12 +59,19 @@ def _basis(project, target):
 def _submissions(store, ident):
     root = store._project(ident) / 'jobs'
     found = []
-    for folder in sorted(root.glob('conversation_*')) if root.is_dir() and not root.is_symlink() else ():
+    folders = []
+    if root.is_dir() and not root.is_symlink():
+        for folder in root.glob('conversation_*'):
+            try:
+                folders.append((folder.stat().st_mtime, folder))
+            except OSError:
+                continue
+    for _, folder in sorted(folders, reverse=True)[:READ]:
         try:
             found.append(json.loads(_read(store.root, f'projects/{ident}/jobs/{folder.name}/submission.json', 20_000)))
         except (Invalid, ValueError):
             continue
-    return sorted(found, key=lambda one: one.get('at') or '', reverse=True)[:20]
+    return sorted(found, key=lambda one: one.get('at') or '', reverse=True)[:SHOWN]
 
 
 def show(store, ident):
@@ -91,7 +100,6 @@ def _targets(project):
     found += ['story:' + s['id'] for s in project['stories']]
     if project['scene'] is not None and project['scene'].get('art_regions'):
         found.append('art-direction')
-    found += ['stale:' + part for part in stale_parts(project)]
     return found
 
 
@@ -117,14 +125,11 @@ def context(store, ident, target):
             returns = 'payload {"story": {...}}: the whole revised story, with the same id.'
         else:
             returns = 'payload {"stories": [...]}: one to three distinct stories.'
-    elif head == 'art-direction':
+    else:
         story = next((s for s in project['stories'] if s['id'] == project['selected_story']), None)
         inputs.update(story=story, brand=project['brand'], scene=project['scene'], facts=project['facts'])
         instructions.append((PROMPTS / 'image-brief.md').read_text())
         returns = 'payload {"direction": {...}}: the art direction, as the image-brief instructions describe it.'
-    else:
-        inputs['stale'] = {subject: stale_parts(project)[subject]}
-        returns = 'payload {} to keep it as it is. Only the person chooses this; never decide it for them.'
     return {'id': ident, 'target': target, 'kind': KINDS[head], 'inputs': inputs,
             'instructions': '\n\n'.join(instructions), 'returns': returns,
             'expected_basis': _basis(project, target),
@@ -157,15 +162,15 @@ def submit(engine, ident, request):
             current = store.read(ident)
             store.expect(current, revision)
             proposals = [deepcopy(payload['story']) if s['id'] == subject else s for s in current['stories']]
-            saved = store.change_locked(current, {'stories': stories.verify(current, proposals),
-                                                  'selected_story': None})
-    elif head == 'art-direction':
+            verified = stories.verify(current, proposals)
+            # A revised story is chosen again by the person; the same story saved again changes
+            # nothing (and makes nothing current).
+            saved = current if verified == current['stories'] else store.change_locked(
+                current, {'stories': verified, 'selected_story': None})
+    else:
         require(set(payload) == {'direction'} and isinstance(payload['direction'], dict),
                 'Submit {"direction": {...}}.')
         saved = engine.image_direction(ident, payload['direction'], expected_revision=revision)
-    else:
-        require(payload == {}, 'Keep it as it is with an empty payload.')
-        saved = stale.keep(store, ident, subject, expected_revision=revision)
     record = {'schema': 1, 'kind': request['kind'], 'target': request['target'], 'by': 'conversation',
               'basis': request['expected_basis'], 'revision': saved['revision'], 'at': now()}
     with store.locked():

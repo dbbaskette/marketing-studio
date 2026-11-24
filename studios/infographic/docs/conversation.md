@@ -47,35 +47,46 @@ and artwork built from the earlier brief and marks each out of date in `stale`
 and clears the approval, so tell the person and ask before saving when they exist. Each
 out-of-date part is then updated (`suggest --fresh` for facts and stories,
 `refresh-page` lays the page out again locally, `art-direct` writes new art direction) or
-kept as it is (`keep-stale` with `{"part"}`, only when the person chooses it). Approve,
+kept as it is (`keep-stale` with `{"part"}`, only when the person chooses it). A part is
+current again only when its content is made again (new facts, new stories, new art
+direction), when the page is laid out again (`refresh-page`, `layout`, `visual-layout`), or
+when the person keeps it; choosing another story or editing the page is neither. Approve,
 export and Google delivery are refused, naming what is out of date, until no part is. A
-replaced source that the facts cite cannot keep them: those facts and what was built on
-them are cleared, as before. Earlier revisions remain.
+replaced or removed source drops only the facts that quote it, named with why under
+`stale.facts.dropped`, and the stories and page built on those facts; every other fact is
+kept and marked. Earlier revisions remain.
 
-Page sizes: `a4`, `letter` and `digital` (1080 × 1350) are portrait; `widescreen`
+Page sizes come from one table (`contracts.PRESETS`, served to the page by `/api/status`
+as `sizes`): `a4`, `letter` and `digital` (1080 × 1350) are portrait; `widescreen`
 (1920 × 1080, 16:9) and `social` (1200 × 628) are landscape and laid out across the page.
-A social card holds about two short blocks at the brand's smallest readable type.
+A social card suits one or two short blocks at the brand's smallest readable type; the page
+says so where the size is chosen, and a longer story is refused as too dense.
 
 ## Desk operations for this conversation
 
 The checked way to save work written here (`runner/desk_chat.py`), as Presentation Studio's
 desk works: `desk show ID` reads the desk and lists `targets` (`facts`, `stories`,
-`story:<id>`, `art-direction`, `stale:<part>`) and earlier conversation `submissions`.
+`story:<id>`, `art-direction`), what is `stale` and the newest conversation `submissions`.
 `desk context ID --target TARGET` answers the exact `inputs`, the native `instructions`,
 what to `return` and an `expected_basis`. `desk submit ID --file submit.json` takes
-`{"kind", "target", "expected_basis", "payload"}` (kinds `facts`, `stories`, `story`,
-`art-direction` and `keep`); payloads are `{"facts": [...]}`, `{"stories": [...]}`,
-`{"story": {...}}` keeping its id, `{"direction": {...}}`, or `{}`. The same native checks
+`{"kind", "target", "expected_basis", "payload"}` (kinds `facts`, `stories`, `story` and
+`art-direction`); payloads are `{"facts": [...]}`, `{"stories": [...]}`, `{"story": {...}}`
+keeping its id, or `{"direction": {...}}`. Only the person keeps out-of-date work as it is,
+on the page; the conversation never clears that mark. The same native checks
 as the actions below apply, and a save lands only on the inputs its context named: any
 change since is refused (read context again). Saving never approves, chooses a story,
 builds, renders, delivers or starts an assistant, research or image provider, and it is
-refused while the page's own work runs. The page answers the same at `GET /api/desk-show`,
+refused while the page's own work runs (it takes the same one-at-a-time slot). The page answers the same at `GET /api/desk-show`,
 `POST /api/desk-context` and `POST /api/desk-submit`.
 
 Long page actions (`suggest`, `build`, `art-direct`, `image-start`, `inspect-images`,
-`revise-story`, `revise-art`, `repair`) answer the page at once and run in the
-background, one at a time per infographic, with progress and Stop; a restart shows
-interrupted work and what to do next. The CLI runs them in its own process as before.
+`revise-story`, `revise-art`, `repair`, `refresh-page`, `approve`, `review`, `export`,
+`google-deliver`) answer the page at once and run in the background, one at a time per
+infographic, with progress; a restart shows interrupted work and what to do next. Stop is
+offered only where stopping leaves nothing half-done: approval with its files, a review with
+its checks, preparing approved files and a Google delivery finish once started (a delivery
+reports what was sent; reconcile checks it read-only). Once Stop is asked nothing more of
+that work is saved. The CLI runs them in its own process as before.
 
 ## Author directly in this conversation
 

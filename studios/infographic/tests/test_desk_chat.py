@@ -70,14 +70,32 @@ class DeskChatTests(Isolated):
             desk_chat.submit(self.engine, self.ident, {'kind': 'story', 'target': 'story:story1', 'payload': {}})
         self.assertEqual(self.current(), before)
 
-    def test_keeping_an_out_of_date_part_is_a_target_of_its_own(self):
+    def test_only_the_person_keeps_out_of_date_work_and_a_story_saved_again_stays_marked(self):
         project = self.current()
         self.store.edit_brief(self.ident, {**project['brief'], 'audience': 'Operators'}, expected_revision=project['revision'])
-        self.assertIn('stale:page', desk_chat.show(self.store, self.ident)['targets'])
-        context = desk_chat.context(self.store, self.ident, 'stale:page')
-        desk_chat.submit(self.engine, self.ident, {'kind': 'keep', 'target': 'stale:page',
-                                                   'expected_basis': context['expected_basis'], 'payload': {}})
-        self.assertEqual(set(self.current()['stale']), {'stories'})
+        shown = desk_chat.show(self.store, self.ident)
+        self.assertEqual(set(shown['stale']), {'stories', 'page'})
+        self.assertFalse(any(t.startswith('stale:') for t in shown['targets']))
+        with self.assertRaisesRegex(Invalid, 'Only the person keeps out-of-date work'):
+            desk_chat.context(self.store, self.ident, 'stale:page')
+        # Saving the same story again is not making it again: its mark stays.
+        context = desk_chat.context(self.store, self.ident, 'story:story1')
+        desk_chat.submit(self.engine, self.ident, {'kind': 'story', 'target': 'story:story1',
+                                                   'expected_basis': context['expected_basis'],
+                                                   'payload': {'story': context['inputs']['story']}})
+        self.assertEqual(set(self.current()['stale']), {'stories', 'page'})
+
+    def test_submissions_listed_are_bounded(self):
+        from runner.contracts import canonical
+        with self.store.locked():
+            for n in range(30):
+                self.store.write_blob(self.ident, f'jobs/conversation_{n:04d}/submission.json',
+                                      canonical({'schema': 1, 'kind': 'story', 'target': 'story:story1',
+                                                 'by': 'conversation', 'basis': 'b', 'revision': 1,
+                                                 'at': f'2026-11-24T00:{n:02d}:00Z'}))
+        shown = desk_chat.show(self.store, self.ident)['submissions']
+        self.assertEqual(len(shown), desk_chat.SHOWN)
+        self.assertEqual(shown[0]['at'], '2026-11-24T00:29:00Z')
 
     def test_page_endpoints_and_no_saving_while_work_runs(self):
         page = server.Page(8000, self.store, self.engine)

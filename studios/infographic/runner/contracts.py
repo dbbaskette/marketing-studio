@@ -28,8 +28,16 @@ PRESETS = {
     'widescreen': {'width': 1920, 'height': 1080, 'unit': 'px', 'width_px': 1920, 'height_px': 1080,
                    'width_pt': 1440, 'height_pt': 810, 'label': 'Widescreen 16:9', 'detail': '1920 × 1080 px'},
     'social': {'width': 1200, 'height': 628, 'unit': 'px', 'width_px': 1200, 'height_px': 628,
-               'width_pt': 900, 'height_pt': 471, 'label': 'Social landscape', 'detail': '1200 × 628 px'},
+               'width_pt': 900, 'height_pt': 471, 'label': 'Social landscape', 'detail': '1200 × 628 px',
+               'suits': ('Suits one or two short blocks. A longer story is refused as too dense, '
+                         'saying how much to shorten.')},
 }
+
+
+def sizes() -> list[dict]:
+    """The page sizes as the page offers them, from this one table."""
+    return [{'id': key, 'label': value['label'], 'detail': value['detail'], 'landscape': landscape(key),
+             'suits': value.get('suits', '')} for key, value in PRESETS.items()]
 
 
 def landscape(preset: str) -> bool:
@@ -54,13 +62,14 @@ INVALIDATES = {
 
 
 # Held work: what a brief or source edit keeps rather than clears (HOLDS), the parts of it the
-# page names (STALE_PARTS, with the fields whose change makes a part current again), and which
+# page names (STALE_PARTS, with the fields whose new content makes a part current again; the
+# page only by being laid out again, `advance(remade=('page',))`), and which
 # parts each edit marks out of date (STALE_BY). Checks are still cleared: they are run again.
 HOLDS = {
     'brief': ('stories', 'selected_story', 'scene', 'image_briefs', 'attempts'),
     'sources': ('facts', 'stories', 'selected_story', 'scene', 'image_briefs', 'attempts'),
 }
-STALE_PARTS = {'facts': ('facts',), 'stories': ('stories', 'selected_story'), 'page': ('scene',),
+STALE_PARTS = {'facts': ('facts',), 'stories': ('stories',), 'page': (),
                'artwork': ('image_briefs', 'assets')}
 STALE_BY = {'brief': ('stories', 'page', 'artwork'), 'sources': ('facts', 'stories', 'page', 'artwork')}
 STALE_WORDS = {'facts': 'the facts', 'stories': 'the story', 'page': 'the page', 'artwork': 'the artwork'}
@@ -68,6 +77,11 @@ STALE_WORDS = {'facts': 'the facts', 'stories': 'the story', 'page': 'the page',
 
 class Invalid(ValueError):
     """An invalid or incompatible Infographic Studio record."""
+
+
+class Stopped(Exception):
+    """The person asked the running operation to stop: it ends at its next step or save, and
+    nothing more of it is saved (workspace.STOPPING)."""
 
 
 class TooDense(Invalid):
@@ -107,7 +121,10 @@ def new_project(owner: str, title: str, *, ident: str | None = None,
     return project
 
 
-def advance(project: dict, changes: dict, *, expected_revision: int, owner: str) -> dict:
+def advance(project: dict, changes: dict, *, expected_revision: int, owner: str, remade=()) -> dict:
+    """The next revision with `changes`. `remade` names parts made again by an action that
+    lays them out afresh (the page, by layout, visual layout and Update the page), which makes
+    them current even when the result is the same as before."""
     from .validation import validate_project
     validate_project(project)
     if type(expected_revision) is not int or expected_revision != project['revision']:
@@ -117,7 +134,8 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str)
     if not isinstance(changes, dict) or not changes or set(changes) - set(EDITABLE):
         raise Invalid('Change only the supported infographic content fields.')
     changed = {key for key, value in changes.items() if value != project[key]}
-    if not changed:
+    stale = dict(project.get('stale') or {})
+    if not changed and not set(remade) & set(stale):
         return deepcopy(project)
     result = deepcopy(project)
     # A brief or source edit holds the work built from the earlier inputs rather than clearing
@@ -136,18 +154,28 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str)
     if 'attempts' in held:
         # An image request still running was made for the earlier inputs: it can never land.
         result['attempts'] = [a for a in result['attempts'] if a['state'] not in ('queued', 'running')]
-    stale = dict(project.get('stale') or {})
+    # Facts whose quoted text is gone (their source was replaced or removed) cannot be kept;
+    # every other fact is kept and marked. The dropped ones are named on the page.
+    dropped = []
+    if 'sources' in marking and 'facts' in held:
+        result['facts'], dropped = _cited(result)
     for part, fields in STALE_PARTS.items():
-        # A part made again is current; a part that no longer exists is not out of date.
-        if part in stale and (any(key in changed for key in fields) or not _holds(result, part)):
+        # A part is current again only when its content is made again (or laid out again, for
+        # the page), or the person keeps it; choosing another story or editing the page is
+        # neither. A part that no longer exists is not out of date.
+        if part in stale and (part in remade or any(key in changed for key in fields)
+                              or not _holds(result, part) and not stale[part].get('dropped')):
             del stale[part]
     because = ' and '.join(key for key in ('brief', 'sources') if key in marking)
     for key in marking:
         for part in STALE_BY[key]:
-            if _holds(result, part):
-                earlier = stale.get(part, {}).get('because', because)
-                both = earlier if earlier == because else 'brief and sources'
-                stale[part] = {'because': both, 'revision': result['revision']}
+            if _holds(result, part) or part == 'facts' and dropped:
+                earlier = stale.get(part, {})
+                both = earlier.get('because', because)
+                both = both if both == because else 'brief and sources'
+                stale[part] = {**earlier, 'because': both, 'revision': result['revision']}
+    if dropped:
+        stale['facts']['dropped'] = (stale['facts'].get('dropped', []) + dropped)[:100]
     _set_stale(result, stale)
     # Old exports are immutable references to older revisions, never current approval.
     try:
@@ -155,12 +183,28 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str)
     except Invalid:
         if not held:
             raise
-        # Held work that no longer fits the new inputs (a fact citing a replaced source) is
-        # cleared as before, from the page down, until the record is whole again.
-        for fields in (('scene', 'image_briefs', 'attempts'), ('stories', 'selected_story'), ('facts',)):
-            for field in set(fields) & held:
-                result[field] = [] if field in COLLECTIONS else None
-            _set_stale(result, {part: value for part, value in stale.items() if _holds(result, part)})
+        # Work built on dropped facts is cleared as little as can be: first the stories that
+        # cite them, then the page, then every story; never the facts that still stand.
+        gone = {fact['id'] for fact in dropped}
+
+        def citing():
+            keep = [s for s in result['stories'] if not any(set(b.get('fact_ids', [])) & gone for b in s['blocks'])]
+            result['stories'] = keep
+            if result['selected_story'] not in {s['id'] for s in keep}:
+                result.update(selected_story=None, scene=None, image_briefs=[])
+
+        def page():
+            result.update(scene=None, image_briefs=[])
+
+        def stories_too():
+            result.update(stories=[], selected_story=None, scene=None, image_briefs=[])
+
+        def facts_too():
+            result['facts'] = []
+        for step in (citing, page, stories_too, facts_too):
+            step()
+            _set_stale(result, {part: value for part, value in stale.items()
+                                if _holds(result, part) or value.get('dropped')})
             try:
                 validate_project(result)
                 break
@@ -169,6 +213,30 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str)
         else:
             raise
     return result
+
+
+def _cited(project: dict):
+    """The facts whose every location is in a captured source (and whose calculations rest on
+    such facts), and the ones dropped, each named with why."""
+    sizes = {s['id']: s['characters'] for s in project['sources']}
+    facts, kept = project['facts'], {}
+    for fact in facts:
+        points = fact.get('evidence') or []
+        if all(isinstance(p, dict) and p.get('source_id') in sizes
+               and type(p.get('end')) is int and p['end'] <= sizes[p['source_id']] for p in points):
+            kept[fact['id']] = fact
+    changed = True
+    while changed:
+        changed = False
+        for ident, fact in list(kept.items()):
+            operands = (fact.get('calculation') or {}).get('operands') or []
+            if any(o not in kept for o in operands):
+                del kept[ident]
+                changed = True
+    dropped = [{'id': f['id'], 'statement': str(f.get('statement', ''))[:300],
+                'why': 'Its source was replaced or removed, so the text it quoted is gone.'}
+               for f in facts if f['id'] not in kept]
+    return [f for f in facts if f['id'] in kept], dropped
 
 
 def _holds(project: dict, part: str) -> bool:

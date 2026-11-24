@@ -103,14 +103,19 @@ class FinishedWorkTests(LibraryCase):
         self.assertEqual(self.files(done['export']['id']), files)
 
     def test_a_source_change_names_what_it_cleared(self):
-        # A replaced source that the facts cite cannot keep them: they are cleared, as before.
+        # A replaced source that a fact quotes cannot keep that fact: it alone is dropped and
+        # named, and what was built on it goes with it.
         self.approved()
-        source = self.current()['sources'][0]
+        before = self.current()
+        source = before['sources'][0]
         self.act('source', data='VXBkYXRlZCBzdXBwbGllZCB0ZXh0Lg==', kind='text', name='Pasted notes',
                  replace_id=source['id'])
         self.assertEqual(history.entries(self.store, self.ident)[0]['summary'],
-                         'Added or updated sources; cleared the facts, story, page and approval')
-        self.assertNotIn('stale', self.current())
+                         'Added or updated sources; dropped 1 fact whose source was replaced or removed; '
+                         'cleared the story, page and approval')
+        dropped = self.current()['stale']['facts']['dropped']
+        self.assertEqual([d['id'] for d in dropped], [f['id'] for f in before['facts']])
+        self.assertIn('source was replaced or removed', dropped[0]['why'])
 
     def test_its_own_kept_export_is_refused_as_a_source(self):
         done = self.approved()

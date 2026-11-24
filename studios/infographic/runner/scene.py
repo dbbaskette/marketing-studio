@@ -137,7 +137,8 @@ def adopt(store, ident, *, expected_revision, arrangement='stack'):
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
-        return store.change_locked(project, {'scene': plan(project, arrangement=arrangement)})
+        # Laying the page out again makes an out-of-date page current (contracts.advance).
+        return store.change_locked(project, {'scene': plan(project, arrangement=arrangement)}, remade=('page',))
 
 
 def adopt_best(store, ident, *, expected_revision):
@@ -146,4 +147,4 @@ def adopt_best(store, ident, *, expected_revision):
         project = store.read(ident)
         store.expect(project, expected_revision)
         planned = plan(project, arrangement='infographic')
-        return store.change_locked(project, {'scene': planned})
+        return store.change_locked(project, {'scene': planned}, remade=('page',))

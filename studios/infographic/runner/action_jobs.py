@@ -32,7 +32,12 @@ from .workspace import _atomic
 
 # The actions that run in the background. Every other action still answers in its request.
 BACKGROUND = ('suggest', 'build', 'art-direct', 'image-start', 'inspect-images', 'revise-story',
-              'revise-art', 'repair')
+              'revise-art', 'repair', 'refresh-page', 'approve', 'review', 'export', 'google-deliver')
+# Stop is offered only where stopping leaves nothing half-done. Approval with its files, a review
+# with its checks, preparing approved files and a Google delivery each finish once started (a
+# delivery says exactly what was sent); their progress is shown all the same.
+STOPPABLE = ('suggest', 'build', 'art-direct', 'image-start', 'inspect-images', 'revise-story',
+             'revise-art', 'repair', 'refresh-page')
 FOLDER = '.action-runs'
 GENERIC = ('Infographic Studio could not complete this action. Saved sources, history and '
            'earlier deliveries are kept.')
@@ -52,6 +57,13 @@ NEXT = {
                    'Nothing was resent.'),
     'repair': ('Check Image work needs attention, then repair the findings again. '
                'Nothing was resent.'),
+    'refresh-page': 'Choose Update the page again when you are ready.',
+    'approve': ('Check whether this revision is approved and its files are ready under Deliver; '
+                'approve it again, or prepare the approved files, if not.'),
+    'review': 'Record your review again; nothing was approved.',
+    'export': 'Prepare the approved files again; nothing was sent anywhere.',
+    'google-deliver': ('Reconcile the Google delivery: it checks, read-only, what was sent, and '
+                       'never sends again.'),
 }
 
 
@@ -115,14 +127,14 @@ class Actions:
         ident, verb = sent.get('id'), sent['action']
         require(isinstance(ident, str), 'Every action needs an infographic ID and expected revision.')
         project = self.store.read(ident)
-        if verb != 'image-start':
-            # An image request already saved is looked up by its own identity (api.action).
+        if verb not in ('image-start', 'google-deliver'):
+            # A saved image request or delivery is looked up by its own identity (api.action).
             self.store.expect(project, sent.get('expected_revision'))
         stop = threading.Event()
         with self.lock:
             require(ident not in self.active,
                     'This infographic is still working. Check its progress before starting another operation.')
-            item, report = self.activity.begin(ident, verb, stop=stop)
+            item, report = self.activity.begin(ident, verb, stop=stop, stoppable=verb in STOPPABLE)
             record = {'schema': 1, 'owner': self.store.owner, 'project': ident, 'job': item['id'],
                       'action': verb, 'state': 'running', 'started_at': item['started_at'], 'ended_at': None}
             try:
@@ -139,6 +151,7 @@ class Actions:
     def _run(self, ident, sent, item, report, stop, record, make_engine, run):
         result, failure, shown = None, None, {}
         try:
+            # An unstoppable action still ends at shutdown; only Stop on the page is refused.
             with author.watching(report.said), author.stopping(stop):
                 found = make_engine()
                 found.progress = report
@@ -181,6 +194,8 @@ class Actions:
         with self.lock:
             running = self.active.get(ident)
             require(running is not None, 'Nothing is running for this infographic now.')
+            require(self.activity.snapshot(ident).get('stoppable'),
+                    'This work finishes once started, so it has no Stop. Its progress is shown.')
             job = running[0]
             try:
                 # Said first: the job's own ending, written under this lock, comes after.
@@ -221,7 +236,7 @@ class Actions:
         with self.lock:
             running = list(self.active.items())
         for ident, (_, stop, _) in running:
-            self.activity.stop(ident)
+            self.activity.stop(ident, force=True)
             stop.set()
         deadline = time.monotonic() + wait
         for _, (_, _, thread) in running:

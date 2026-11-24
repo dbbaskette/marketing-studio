@@ -36,7 +36,7 @@ def watching(activity):
 
 # The stop signal of this thread's background operation (action_jobs), or None: an assistant
 # call made while it is set ends its process group at once.
-_STOPPING = ContextVar('infographic_stopping', default=None)
+from .workspace import STOPPING as _STOPPING  # one signal: saves and assistant calls
 
 
 @contextmanager
