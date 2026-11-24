@@ -251,7 +251,120 @@ class StopTests(JobCase):
         orphan = {**running, 'id': 'd' * 32, 'route': 'google-preview', 'status': 'working'}
         tool_jobs.write(self.root, {**orphan, 'metadata': {'article': None}})
         tool_jobs.recover(self.root)
-        self.assertEqual(import_jobs.view(self.root, 'd' * 32)['status'], 'failed')
+        interrupted = import_jobs.view(self.root, 'd' * 32)
+        self.assertEqual(interrupted['status'], 'failed')
+        self.assertEqual(interrupted['error'], import_jobs.INTERRUPTED)
+        self.assertNotIn('inputs are kept', interrupted['error'], 'nothing of an import is kept')
         self.assertEqual(import_jobs.view(self.root, running['id'])['status'], 'working')
         release.set()
         self.assertEqual(self.follow(running)['status'], 'ready')
+
+    def test_a_stopped_preview_drops_what_it_staged_and_the_next_import_says_why_it_waits(self):
+        import google_drive as drive
+
+        release, staged = threading.Event(), {}
+
+        def preview(root, route, data):
+            token = 'a' * 32
+            folder = drive.staging_root(root, create=True) / ('desk-' + token)
+            folder.mkdir()
+            (folder / 'preview.json').write_text('{}')
+            staged['folder'] = folder
+            release.wait(10)
+            return {'status': 'preview', 'preview': token}
+
+        job = import_jobs.start(self.root, 'google-preview', {}, runner=preview)['job']
+        for _ in range(500):
+            if staged:
+                break
+            time.sleep(0.01)
+        self.assertEqual(import_jobs.stop(self.root, job['id'])['status'], 'cancelled')
+        after = import_jobs.start(self.root, 'library-add-preview', {}, runner=lambda *a: {'ok': 1})
+        for _ in range(500):
+            said = import_jobs.view(self.root, after['job']['id'])['progress']
+            if said.startswith('Waiting'):
+                break
+            time.sleep(0.01)
+        self.assertEqual(said, 'Waiting for a stopped read to end by itself (it changes nothing)…')
+        release.set()
+        self.assertEqual(self.follow(after['job'])['result'], {'ok': 1})
+        self.assertFalse(staged['folder'].exists(), 'the stopped preview is not left staged')
+        self.assertEqual(import_jobs.view(self.root, job['id'])['status'], 'cancelled')
+
+
+class LockTests(JobCase):
+    def test_a_page_save_while_an_import_holds_the_workspace_gets_the_busy_reply(self):
+        import desk
+
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'b' * 32, 'title': 'Synthetic', 'manuscript': '# T\n\n## One\n\nWords.\n'},
+        )
+        held, release = threading.Event(), threading.Event()
+
+        def send(root, route, data):  # A Google send holds the lock for its whole call.
+            with studio.locked(root):
+                held.set()
+                release.wait(10)
+            return {'status': 'verified-pending'}
+
+        job = import_jobs.start(self.root, 'desk-google-send', {'id': made['id']}, runner=send)
+        self.assertTrue(held.wait(5))
+        shown = desk.read(self.root, made['id'])
+        with patch.dict('os.environ', {'BLOG_STUDIO_LOCK_WAIT': '0.2'}):
+            status, reply = self.call(
+                '/api/desk-save',
+                {
+                    'id': made['id'],
+                    'seen': shown['revision'],
+                    'part': shown['sections'][0]['id'],
+                    'text': 'Typed meanwhile.',
+                    'session': 'a' * 16,
+                },
+            )
+        release.set()
+        self.assertEqual((status, reply.get('code')), (503, 'busy'), reply)
+        self.assertNotIn('.studio.lock', reply['error'])
+        self.assertEqual(self.follow(job['job'])['status'], 'ready')
+
+
+class KeepTests(JobCase):
+    def test_finished_jobs_are_deleted_a_while_after_they_end_and_working_ones_never(self):
+        release = threading.Event()
+        done = self.follow(
+            import_jobs.start(self.root, 'google-preview', {}, runner=lambda *a: {'text': 'Doc'})[
+                'job'
+            ]
+        )
+        working = import_jobs.start(
+            self.root, 'google-preview', {}, runner=lambda *a: release.wait(10) and {'x': 1}
+        )['job']
+        folder = self.root / '.blog-runs' / 'tools'
+        self.assertTrue((folder / (done['id'] + '.json')).exists(), 'kept for the page to read')
+        later = time.time() + import_jobs.KEEP + 1
+        with patch.object(import_jobs.time, 'time', lambda: later):
+            self.assertIsNotNone(import_jobs.view(self.root, working['id']))
+        self.assertFalse((folder / (done['id'] + '.json')).exists(), 'its answer is not kept')
+        self.assertTrue((folder / (working['id'] + '.json')).exists())
+        release.set()
+        self.follow(working)
+        later = time.time() + import_jobs.KEEP + 1
+        with patch.object(import_jobs.time, 'time', lambda: later):
+            tool_jobs.recover(self.root)  # Recovery lets old finished imports go too.
+        self.assertEqual([p for p in folder.glob('*.json')], [])
+
+    def test_a_job_is_followed_in_its_own_workspace_after_the_page_switches(self):
+        release = threading.Event()
+        job = import_jobs.start(
+            self.root, 'google-preview', {}, runner=lambda *a: release.wait(10) and {'x': 1}
+        )['job']
+        other = self.base / 'other-workspace'
+        studio.initialize(other)
+        self.assertEqual(import_jobs.view(other, job['id'])['status'], 'working')
+        release.set()
+        for _ in range(500):
+            if import_jobs.view(other, job['id'])['status'] != 'working':
+                break
+            time.sleep(0.01)
+        self.assertEqual(import_jobs.view(other, job['id'])['result'], {'x': 1})

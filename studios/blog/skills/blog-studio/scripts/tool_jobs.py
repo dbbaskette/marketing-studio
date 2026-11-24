@@ -219,9 +219,11 @@ def recover(root):
             if value.get('kind') == 'import':
                 import import_jobs
 
-                if import_jobs.running(value['id']):
-                    continue  # Still running on this page's own thread.
-            elif _conversation_start(root, value):
+                # Its own words (nothing of an import's request is kept), under its own lock,
+                # and never for one a thread here still runs.
+                import_jobs.interrupted(root, value['id'])
+                continue
+            if _conversation_start(root, value):
                 continue
             if value['status'] == 'working':
                 value.update(
@@ -235,6 +237,9 @@ def recover(root):
                     desk_jobs.interrupted(root, value)  # A check's next step still goes ahead.
         except (ValueError, OSError, KeyError):
             continue
+    import import_jobs
+
+    import_jobs.prune(root)  # Finished imports go KEEP seconds after they ended.
 
 
 def once(engine):

@@ -61,7 +61,7 @@ class FolderTests(IntakeCase):
         self.assertIn('Team', (directory / 'content.md').read_text())
 
     def test_a_folder_here_is_refused_from_afar_and_nothing_is_read(self):
-        with patch.object(source_intake.research_sources, 'Sources') as sources:
+        with patch.object(source_intake.research_sources.Sources, 'add_folder') as sources:
             with self.assertRaisesRegex(ValueError, 'only on this computer'):
                 self.intake(folder=str(self.folder), local=False)
         sources.assert_not_called()
@@ -143,6 +143,44 @@ class RemoteCallerTests(IntakeCase):
         taken = self.post(request, **{'X-Blog-Studio-Local': '1'})
         self.assertEqual(taken['status'], 'ready', taken)
         self.assertEqual(len(taken['result']['files']), 3)
+
+    def test_the_phone_links_via_header_alone_refuses_a_folder_here(self):
+        request = {'operation': OPERATION, 'folder': str(self.folder), 'role': 'material'}
+        refused = self.post(
+            request, **{'X-Blog-Studio-Local': '1', 'X-Marketing-Studio-Via': 'network'}
+        )
+        self.assertEqual((refused['status'], refused['error']), ('failed', source_intake.REMOTE))
+        self.assertTrue(management.remote_caller({'X-Marketing-Studio-Via': 'network'}))
+        self.assertTrue(
+            management.remote_caller(
+                {'X-Marketing-Studio-Via': 'network', 'X-Blog-Studio-Local': '1'}
+            )
+        )
+        self.assertFalse(management.remote_caller({'X-Blog-Studio-Local': '1'}))
+
+    def test_a_drive_folder_is_read_with_this_workspaces_google_account(self):
+        import google_drive
+
+        seen = []
+
+        def take(given, **options):
+            seen.append(options['store'].account())
+            return {'uploads': {}, 'documents': [], 'skipped': [], 'said': 'Nothing.',
+                    'next': None, 'report': {}}
+
+        with (
+            patch.object(source_intake, 'take', take),
+            patch.object(google_drive, 'account_for', lambda root=None: 'writer@example.test'),
+        ):
+            self.intake_direct('https://drive.google.com/drive/folders/abc123')
+        self.assertEqual(seen, ['writer@example.test'])
+
+    def intake_direct(self, folder):
+        return management.dispatch(
+            self.root,
+            'files-intake',
+            {'operation': OPERATION, 'role': 'material', 'folder': folder, 'local': False},
+        )
 
     def test_a_drive_folder_link_is_taken_from_afar(self):
         found = {'uploads': {'Plan.md': b'# Plan\n'}, 'documents': [], 'skipped': [],

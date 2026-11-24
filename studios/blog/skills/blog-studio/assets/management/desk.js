@@ -168,11 +168,15 @@ async function sDeskFromLibrary(pick){
       else found={id:pick.id,revision:pick.revision,title,role:'facts'};
     }catch(error){said='That item is not in the Document Library on this computer, so New blog opens without it. '+error.message;}
   }
-  await sDeskBegin({step:0,libraryStart:found,...(said?{libraryProblem:said}:{})});
+  // Only an item to start from replaces an unfinished form (after asking); one that cannot be
+  // used is said at the top of New blog, which opens as it would anyway.
+  if(found)return sDeskBegin({step:0,libraryStart:found});
+  studio.libraryProblem=said;
+  return sDeskBegin();
 }
+// What New blog says first about a Document Library item it was opened with and could not use.
+function sDeskLibraryProblem(){const words=studio.libraryProblem;if(!words)return null;studio.libraryProblem=null;const said=sNode('p','decision-notice',words);said.setAttribute('role','alert');return said;}
 function sDeskLibraryStartCard(held){
-  // An item that could not be used is said at the top, once, where the person looks first.
-  if(!held.libraryStart&&held.libraryProblem){const said=sNode('p','decision-notice',held.libraryProblem);said.setAttribute('role','alert');delete held.libraryProblem;return said;}
   const pick=held.libraryStart;if(!pick)return null;
   const said=sNode('p','','Starting from: '+pick.title+', from the Document Library');said.setAttribute('role','status');
   const roles=[['facts','Facts (may be quoted)'],['messaging','Approved messaging'],['example','Example of the kind of post']];
@@ -244,6 +248,7 @@ function sDeskHave(held){
   const parts=held.brief?[]:[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
   const content=held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)],research=sDeskResearchOptions(held);
   const start=sDeskLibraryStartCard(held);if(start)parts.unshift(start);
+  const problemFirst=sDeskLibraryProblem();if(problemFirst)parts.unshift(problemFirst);
   parts.push(content[0],sFilesCard(held,problem,()=>sDeskStartAgain(held),()=>{}),...content.slice(1),research);
   const go=sNode('button','button button-filled','Next');go.type='submit';go.disabled=!access.actions.edit;
   form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),sGeoInstead());
@@ -810,11 +815,12 @@ function sDeskGoogleActions(held,flat=false){
 function sDeskContinue(view){
   const kept=view.document_library;if(!kept||typeof StudioShell==='undefined'||typeof StudioShell.continueLink!=='function')return null;
   const href=StudioShell.continueLink({id:kept.id,revision:kept.revision});if(!href)return null;
-  const go=sNode('a','button','Continue in another studio');go.href=href;go.setAttribute('aria-label','Continue in another studio, from the Document Library copy, revision '+kept.revision);
+  // A copy older than the draft is named by its revision: that is what the other studio opens.
+  const go=sNode('a','button',kept.older?'Continue in another studio with revision '+kept.revision+' (older than the draft)':'Continue in another studio');go.href=href;go.setAttribute('aria-label','Continue in another studio, from the Document Library copy, revision '+kept.revision+(kept.older?', which is older than the draft':''));
   return go;
 }
 // Kept in the Document Library on this computer (marked ready, a brief made, or published).
-function sDeskKeptWords(view){const kept=view.document_library;return kept?'Kept in the Document Library · revision '+kept.revision:'';}
+function sDeskKeptWords(view){const kept=view.document_library;if(!kept)return '';return 'Kept in the Document Library · revision '+kept.revision+(kept.older?', older than the draft':'');}
 function sDeskDocWords(view){const g=view.google_state;if(!g)return '';const said=[];if(g.waiting)said.push('Doc: '+g.waiting+' waiting');if(g.last)said.push('last sent '+sDeskWhen(g.last.at));if(g.unsent)said.push('Unsent desk changes');return said.join(' · ');}
 function sDeskWhen(at){const when=new Date(at||'');if(isNaN(when.getTime()))return '';const time=when.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return when.toDateString()===new Date().toDateString()?time:when.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+time;}
 // A Google request that took too long to answer (the phone link's 504), said plainly.

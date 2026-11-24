@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import secrets
 import threading
+import time
 
 import studio
 import tool_jobs
@@ -52,13 +53,66 @@ ROUTES = {
 }
 TURNS = 40  # Calls one library add may make: 40 batches of links, as the page made before.
 STOPPED = 'Stopped. Nothing was changed.'
+INTERRUPTED = (
+    'This stopped when Blog Studio stopped. Nothing of the request was kept: run it again '
+    'from the page.'
+)
+# A finished job (its answer may hold a Doc's text) is deleted this long after it ended, by the
+# next start, poll or recovery: long enough for the page to read it, never kept for good.
+KEEP = 600
 _ONE = threading.Lock()  # One job runs at a time; the next waits its turn.
 _HELD = threading.Lock()  # Guards reading and writing a job's file between threads.
 _RUNNING = set()  # The ids of jobs with a thread in this process.
+_ROOTS = {}  # id -> the workspace it runs in, kept when the page switches to another one.
+_CURRENT = [None]  # The id of the job holding _ONE.
 
 
 def running(ident):
     return ident in _RUNNING
+
+
+def _where(root, ident):
+    return _ROOTS.get(ident, root)
+
+
+def _ended(job, **changes):
+    """A job's last state, stamped for pruning."""
+    job.update(changes, finished_at=studio.now(), ended=time.time(), progress='')
+    return job
+
+
+def prune(root, everything=False):
+    """Delete finished import jobs KEEP seconds after they ended (all of them with
+    `everything`). A job still working is never touched."""
+    folder = studio.inside(root, '.blog-runs', 'tools')
+    if not folder.is_dir():
+        return
+    now = time.time()
+    with _HELD:
+        for target in folder.glob('*.json'):
+            try:
+                job = tool_jobs.read(root, target.stem)
+            except (ValueError, OSError):
+                continue
+            if job.get('kind') != KIND or job.get('status') == 'working':
+                continue
+            if everything or now - float(job.get('ended') or 0) >= KEEP:
+                target.unlink(missing_ok=True)
+                _ROOTS.pop(job.get('id'), None)
+
+
+def interrupted(root, ident):
+    """Recovery after a restart: a job no thread here runs is said to have stopped."""
+    if running(ident):
+        return
+    with _HELD:
+        try:
+            job = tool_jobs.read(root, ident)
+        except (ValueError, OSError):
+            return
+        if job.get('kind') == KIND and job.get('status') == 'working':
+            tool_jobs.write(root, _ended(job, status='failed', error=INTERRUPTED,
+                                         error_status=503, error_reply={'error': INTERRUPTED}))
 
 
 def _save(root, job):
@@ -128,7 +182,16 @@ def start(root, route, data, runner=None):
         'attempts': 1,
         'metadata': {'article': article, 'import': route},
     }
-    _save(root, job)
+    # Running before it is saved, so a recovery at this moment never takes it for interrupted.
+    _RUNNING.add(job['id'])
+    _ROOTS[job['id']] = root
+    try:
+        prune(root)
+        _save(root, job)
+    except BaseException:
+        _RUNNING.discard(job['id'])
+        _ROOTS.pop(job['id'], None)
+        raise
     if runner is None:
         import management
 
@@ -137,18 +200,34 @@ def start(root, route, data, runner=None):
         target=_run, args=(root, job['id'], route, data, runner), daemon=True,
         name='blog-studio-import-' + job['id'][:8],
     )
-    _RUNNING.add(job['id'])
     thread.start()
     return {'job': public(job), 'background': True}
+
+
+def _waiting(root):
+    """What a job waiting its turn says: a stopped read still ends by itself first."""
+    holder = _CURRENT[0]
+    try:
+        stopped = bool(holder) and (
+            tool_jobs.read(_where(root, holder), holder)['status'] == 'cancelled'
+        )
+    except (ValueError, OSError, KeyError):
+        stopped = False
+    return (
+        'Waiting for a stopped read to end by itself (it changes nothing)…'
+        if stopped
+        else 'Waiting for the import before it to finish…'
+    )
 
 
 def _run(root, ident, route, data, runner):
     if not _ONE.acquire(blocking=False):
         try:
-            _update(root, ident, progress='Waiting for the import before it to finish…')
+            _update(root, ident, progress=_waiting(root))
         except (ValueError, OSError):
             pass  # Said again once it starts.
         _ONE.acquire()
+    _CURRENT[0] = ident
     try:
         job = _update(root, ident, started_at=studio.now(), progress=ROUTES[route][0] + '…')
         if job['status'] != 'working':
@@ -159,10 +238,11 @@ def _run(root, ident, route, data, runner):
             result = runner(root, route, data)
         with _HELD:
             job = tool_jobs.read(root, ident)
-            if job['status'] != 'working':
-                return  # Stopped: a check or a read that saves nothing is dropped.
-            job.update(status='ready', result=result, finished_at=studio.now(), progress='')
-            tool_jobs.write(root, job)
+            if job['status'] == 'working':
+                tool_jobs.write(root, _ended(job, status='ready', result=result))
+                return
+        # Stopped: a check or a read that saves nothing is dropped, with what it staged.
+        _discard(root, route, result)
     except Exception as exc:  # Kept in the job, said as the request would have said it.
         import management
 
@@ -175,18 +255,35 @@ def _run(root, ident, route, data, runner):
             except (ValueError, OSError):
                 return
             if job['status'] == 'working':
-                job.update(
+                failed = _ended(
+                    job,
                     status='failed',
                     error=reply.get('error') or 'The import could not be completed.',
                     error_status=status,
                     error_reply=reply,
-                    finished_at=studio.now(),
-                    progress='',
                 )
-                tool_jobs.write(root, job)
+                tool_jobs.write(root, failed)
     finally:
+        _CURRENT[0] = None
         _ONE.release()
         _RUNNING.discard(ident)
+
+
+def _discard(root, route, result):
+    """A Google Doc preview staged on this computer, dropped when its read was stopped."""
+    if route != 'google-preview' or not isinstance(result, dict):
+        return
+    token = result.get('preview')
+    if not isinstance(token, str) or not token.isalnum():
+        return
+    try:
+        import google_drive as drive
+
+        folder = studio.inside(drive.staging_root(root), 'desk-' + token)
+        if folder.is_dir():
+            drive.discard(root, folder)
+    except (ValueError, OSError):
+        pass  # Staged previews are let go with the rest of the staging area.
 
 
 def _added(result):
@@ -217,6 +314,7 @@ def stop(root, ident):
     """Stop a job where it is safe: at once for a check or a read that saves nothing (its
     answer is dropped when it comes), after the batch under way for adding links. Refused for
     a job that changes things as it goes."""
+    root = _where(root, ident)
     with _HELD:
         job = tool_jobs.read(root, ident)
         if job.get('kind') != KIND:
@@ -231,15 +329,19 @@ def stop(root, ident):
         if job['route'] == 'library-add':
             job.update(stopping=True, progress='Stopping after the links being fetched now…')
         else:
-            job.update(
-                status='cancelled', error=STOPPED, finished_at=studio.now(), progress=''
-            )
+            _ended(job, status='cancelled', error=STOPPED)
         tool_jobs.write(root, job)
         return public(job)
 
 
 def view(root, ident):
-    """The job as the page polls it, or None when it is not an import (another tool job)."""
+    """The job as the page polls it, or None when it is not an import (another tool job).
+    It is read in the workspace it runs in, even after the page switched to another."""
+    root = _where(root, ident)
+    try:
+        prune(root)
+    except OSError:
+        pass
     try:
         job = _read(root, ident)
     except (ValueError, OSError):

@@ -467,6 +467,7 @@ class RouteTests(BriefCase, RouteCase):
         self.assertIn('## The risks', kept['text'])
         self.assertEqual(library.download(rows[0]['id'], 1, 'pdf')[2], b'%PDF-1.4 pdf bytes')
         self.assertEqual(found['document_library']['id'], rows[0]['id'])
+        self.assertFalse(found['document_library']['older'], 'the brief kept is the draft now')
         # Not published, and no address was asked for.
         self.assertIsNone(found['publication'])
 

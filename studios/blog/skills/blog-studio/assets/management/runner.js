@@ -108,7 +108,11 @@ function sFocusAgain(held,root){if(!held||!root||typeof root.querySelectorAll!==
 function sPage(...nodes){const page=$('studio-page'),held=sFocusHeld(page);page.replaceChildren(...nodes.filter(Boolean));sFocusAgain(held,page);}
 function sToast(message){const toast=sNode('p','toast glass',message);$('toasts').append(toast);setTimeout(()=>toast.remove(),5000);}
 async function sRoute(screen,id=null,stage=null,replace=false){if(studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart){if(!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);}const query=new URLSearchParams({screen});if(id)query.set('id',id);if(stage)query.set('stage',stage);history[replace?'replaceState':'pushState'](null,'',location.pathname+'?'+query);return studioNavigate(screen,id,stage,true);}
+// A Document Library item kept for after setup (see the first navigation) opens New blog once
+// Home is reached with setup done.
+function sLibraryWaiting(){try{const held=JSON.parse(sessionStorage.getItem('blog-studio-library-start')||'null');sessionStorage.removeItem('blog-studio-library-start');return held&&typeof held==='object'?held:null;}catch(_){return null;}}
 async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
+  if(screen==='home'&&studio.settings?.configured){const waiting=sLibraryWaiting();if(waiting&&typeof sDeskFromLibrary==='function')return sDeskFromLibrary(waiting);}
   if(!intakeSaved&&studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart&&!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
   if(screen==='voices'&&studio.screen!=='voices')studio.kindsFrom=studio.screen;  // Kinds of post goes Back to where it was opened.
@@ -1232,6 +1236,28 @@ function sCheck(id,label,held,key,hint,changed){const box=sNode('div','field'),r
 // The page takes at most 15 MiB a request; files are sent base64-encoded (4/3 larger), so
 // they go up in groups under 14 MiB encoded, each group its own operation.
 function sUploadGroups(files,limit=14*1024*1024){const groups=[];let current=[],size=0;for(const file of files){const encoded=Math.ceil(file.size/3)*4+512;if(current.length&&size+encoded>limit){groups.push(current);current=[];size=0;}current.push(file);size+=encoded;}if(current.length)groups.push(current);return groups;}
+// The source picker's choices: a tablist (arrow keys, Home and End move and choose), each
+// panel labelled by its tab, drawn with the ui-kit's segmented look. Choosing shows its panel in
+// place, so the focus stays on the tab.
+function sSourceTabs(methods,draft,panels){
+  const label=sNode('p','field-label','Add a source');label.id='files-tabs-label';
+  const list=sNode('div','segmented source-tabs');list.setAttribute('role','tablist');list.setAttribute('aria-labelledby',label.id);list.dataset.count=String(methods.length);list.append(sNode('span','seg-thumb'));
+  const tabs=[];
+  const choose=(key,focus)=>{
+    draft.fileMethod=key;list.dataset.at=String(Math.max(0,methods.findIndex(([value])=>value===key)));
+    for(const tab of tabs){const on=tab.dataset.key===key;tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;if(on&&focus)tab.focus();}
+    for(const [name,panel]of Object.entries(panels))panel.hidden=name!==key;
+  };
+  methods.forEach(([key,text],at)=>{
+    const tab=sNode('button','seg-option',text);tab.type='button';tab.id='files-tab-'+key;tab.dataset.key=key;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','files-panel-'+key);
+    tab.addEventListener('click',()=>choose(key,false));
+    tab.addEventListener('keydown',event=>{const last=methods.length-1,next={ArrowRight:at===last?0:at+1,ArrowLeft:at===0?last:at-1,Home:0,End:last}[event.key];if(next===undefined)return;event.preventDefault();choose(methods[next][0],true);});
+    tabs.push(tab);list.append(tab);
+  });
+  for(const [key,panel]of Object.entries(panels)){panel.id='files-panel-'+key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby','files-tab-'+key);}
+  choose(draft.fileMethod,false);
+  return sAdd(sNode('div','field'),label,list);
+}
 // Your files, on the desk's start and its Add a source: every file goes up at once and is
 // listed with how much text it has and what it is for; a Google Doc or a public link can be
 // added beside them, and posts from the team library. They are saved with this blog only; one
@@ -1317,9 +1343,9 @@ function sFilesCard(draft,problem,again,lock,about={}){
   // Paste or link: notes typed or pasted here, a Google Doc, or a public page.
   const other=sAdd(sNode('div','stack source-tab'),sNode('p','quiet field-hint','Pasted notes, a Google Doc or a public page, saved with this blog.'),pasted,docField,linkField);
   const inputs={computer,team,files:upload,other};
-  for(const [key,input]of Object.entries(inputs))input.hidden=key!==draft.fileMethod;
+  const tabs=sSourceTabs(methods,draft,inputs);
   let preview=null;if(draft.sourcePreview){const shown=draft.sourcePreview;preview=sCard(shown.name,sNode('p','quiet',shown.note),sNode('pre','source-excerpt',shown.text),sButton('Close source preview',()=>{draft.sourcePreview=null;again();}));}
-  return sCard('Sources for this blog',sNode('p','quiet','Add each source once. Readable sources are used by the writing and, when requested, research. Examples guide style and are never factual evidence.'),draft.files.length||reviewed.length?list:sNode('p','quiet',about.empty||'No sources yet. You can write from your idea or outline alone.'),preview,sChoice('Add a source',methods,draft,'fileMethod',again),disclosure('Role and team library options for new sources',roleField,sNode('p','quiet',meaning),keep),...Object.values(inputs));
+  return sCard('Sources for this blog',sNode('p','quiet','Add each source once. Readable sources are used by the writing and, when requested, research. Examples guide style and are never factual evidence.'),draft.files.length||reviewed.length?list:sNode('p','quiet',about.empty||'No sources yet. You can write from your idea or outline alone.'),preview,tabs,disclosure('Role and team library options for new sources',roleField,sNode('p','quiet',meaning),keep),...Object.values(inputs));
 }
 
 // The shared Document Library (library.js): chosen revisions come back as files for this
@@ -1398,7 +1424,11 @@ document.addEventListener('visibilitychange',sVisibilityChanged);
 setInterval(sPoll,3000);
 (async()=>{await loadCapabilities();studio.settings=await api('run-settings');sVoiceSwitchShown();
   // Continue in another studio: a page opened with library= opens New blog with it (app.js read it).
-  if(typeof libraryStart!=='undefined'&&libraryStart&&studio.settings.configured){await sDeskFromLibrary(libraryStart);return;}
+  if(typeof libraryStart!=='undefined'&&libraryStart){
+    if(studio.settings.configured){await sDeskFromLibrary(libraryStart);return;}
+    try{sessionStorage.setItem('blog-studio-library-start',JSON.stringify(libraryStart));}catch(_){/* said below either way */}
+    notice('Finish setup first. Then New blog opens with the Document Library item you continued with.');
+  }
   const query=new URLSearchParams(location.search);await studioNavigate(query.get('screen')||(studio.settings.configured?'home':'setup'),query.get('id'),query.get('stage'));})().catch(error=>notice(error.message,true));
 
 

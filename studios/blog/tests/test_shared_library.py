@@ -120,7 +120,7 @@ class ReadyTests(SharedLibraryCase):
         shown = management.view(self.root, 'desk', {'id': [made['id']]})
         self.assertEqual(
             shown['document_library'],
-            {'id': rows[0]['id'], 'revision': 1, 'title': 'Desk post'},
+            {'id': rows[0]['id'], 'revision': 1, 'title': 'Desk post', 'older': False},
         )
         # Marked ready again with the same text: no new revision.
         again = self.ready(made['id'], confirm_stage=True)
@@ -128,8 +128,17 @@ class ReadyTests(SharedLibraryCase):
         # Changed after being kept: nothing is kept until it is marked ready again.
         self.revise(made['id'], 'Ready words, revised.')
         self.assertEqual(self.shared()[0]['revision'], 1)
+        # The desk says the kept copy is older than the draft until it is marked ready again.
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        self.assertEqual(
+            (shown['document_library']['revision'], shown['document_library']['older']), (1, True)
+        )
         again = self.ready(made['id'], confirm_stage=True)
         self.assertEqual((again['document_library']['revision'], len(self.shared())), (2, 1))
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        self.assertEqual(
+            (shown['document_library']['revision'], shown['document_library']['older']), (2, False)
+        )
         self.assertIn(
             'Ready words, revised.', library.snapshot(rows[0]['id'], 2)['text']
         )
@@ -150,6 +159,16 @@ class ReadyTests(SharedLibraryCase):
         self.assertEqual(
             shared_library.keep_blog(self.root, record, ' ')['state'], 'failed'
         )
+        self.assertEqual(self.shared(), [])
+
+    def test_a_draft_that_is_not_text_is_said_and_the_decision_stands(self):
+        made = self.desk()
+        directory = studio.inside(self.root, 'articles', made['id'])
+        _, record = studio.item(self.root, 'articles', made['id'])
+        (directory / 'DRAFT.md').write_bytes(b'# Title\n\n\xff\xfe not UTF-8\n')
+        found = shared_library.keep_ready(self.root, directory, record)
+        self.assertEqual(found['state'], 'failed')
+        self.assertIn('could not be read as text', found['reason'])
         self.assertEqual(self.shared(), [])
 
     def test_a_library_failure_never_stops_the_decision(self):
@@ -206,7 +225,7 @@ class ResearchTests(SharedLibraryCase):
         ]
         (directory / 'research' / 'output.json').write_text(json.dumps(manifest))
         _, record = studio.item(self.root, 'articles', made['id'])
-        found = shared_library.keep_research(self.root, directory, record)
+        found = shared_library.keep_research(self.root, directory, made['id'])
         self.assertEqual(found['state'], 'kept', found)
         library = document_library.opened()
         rows = library.catalog(kind='research')['items']
@@ -217,13 +236,18 @@ class ResearchTests(SharedLibraryCase):
         lines = blog_activity.entry(self.root, blog_activity.blog(made['id']), log['jobs'][0]['id'])
         self.assertIn('Research kept in the Document Library on this computer (revision 1)', json.dumps(lines))
 
+    def test_a_blog_that_cannot_be_read_never_raises(self):
+        made = self.desk()
+        directory = studio.inside(self.root, 'articles', made['id'])
+        self.assertIsNone(shared_library.keep_research(self.root, directory, 'no-such-blog'))
+
     def test_research_that_does_not_pass_is_not_kept_and_never_raises(self):
         made = self.desk()
         directory = studio.inside(self.root, 'articles', made['id'])
         (directory / 'research').mkdir()
         (directory / 'research' / 'report.md').write_text('# Not verified\n')
         _, record = studio.item(self.root, 'articles', made['id'])
-        found = shared_library.keep_research(self.root, directory, record)
+        found = shared_library.keep_research(self.root, directory, made['id'])
         self.assertIn(found['state'], ('refused', 'failed'))
         self.assertEqual(document_library.opened().catalog(kind='research')['items'] if document_library.opened() else [], [])
 

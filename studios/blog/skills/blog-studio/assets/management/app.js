@@ -245,9 +245,25 @@ function jobStrip(job) {
   const stop=button('Stop',async()=>{stop.disabled=true;stop.textContent='Stopping…';try{show(await api('import-stop',{job:job.id}));}catch(error){said.textContent=error.message;}});
   const tick=()=>{const seconds=Math.round((Date.now()-started)/1000);clock.textContent=seconds<60?seconds+' s':Math.floor(seconds/60)+' min '+String(seconds%60).padStart(2,'0')+' s';};
   const show=found=>{job=found||job;const words=job.progress||job.label+'…';if(said.textContent!==words)said.textContent=words;stop.hidden=!job.stoppable;if(job.stopping){stop.disabled=true;stop.textContent='Stopping…';}};
-  show(job);tick();strip.append(said,clock,stop);if(holder)holder.append(strip);
-  const timer=setInterval(tick,1000);
-  return {show,done(){clearInterval(timer);strip.remove();}};
+  show(job);tick();strip.append(said,clock,stop);if(holder)holder.append(strip);jobStrips.add(strip);jobLift();
+  const timer=setInterval(()=>{tick();jobLift();},1000);
+  return {show,done(){clearInterval(timer);strip.remove();jobStrips.delete(strip);jobLift();}};
+}
+// While an import's toast shows over an open sheet, the toasts rise above the sheet's actions at
+// its foot, through the ui-kit's own --foot-lift (the toasts' lift over a foot bar), so Stop and
+// the sheet's buttons never cover each other. With no toast or no sheet the lift goes.
+const jobStrips=new Set();
+function jobLift() {
+  const body=document.body,sheet=document.getElementById('sheet');if(!body?.style)return;
+  let lift=0;const tall=typeof window.innerHeight==='number'?window.innerHeight:0;
+  if(jobStrips.size&&sheet&&!sheet.hidden&&tall&&typeof sheet.querySelectorAll==='function'){
+    for(const node of sheet.querySelectorAll('button')){
+      if(typeof node.getBoundingClientRect!=='function')continue;
+      const box=node.getBoundingClientRect();
+      if(box.height&&box.bottom>tall-160&&box.top<tall)lift=Math.max(lift,tall-box.top+8);
+    }
+  }
+  if(lift)body.style.setProperty('--foot-lift',Math.round(lift)+'px');else body.style.removeProperty('--foot-lift');
 }
 function link(url, text) {if(!/^https:\/\//.test(url||''))return element('span',text);const a=element('a',text);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;}
 const BADGE_LABELS={'not-run':'Not run','not-checked-live':'Not checked live','local-saved-not-shared':'Saved locally','pending-review':'Awaiting review','queued-unavailable':'Waiting to sync','needs-local-check':'Needs local check'};
@@ -449,7 +465,8 @@ function editorialForm(item, result) {
     confirmRow.hidden=!needed;
     if(!needed)confirmBox.checked=false;
     // A desk blog marked ready is kept in the Document Library: said before it is recorded.
-    const kept=stage==='ready'&&result.view.on_desk?' It is kept in the Document Library on this computer, for any studio.':'';
+    const written=result.view.preview?.kind==='draft'&&String(result.view.preview?.text||'').trim();
+    const kept=stage==='ready'&&result.view.on_desk&&written?' It is kept in the Document Library on this computer, for any studio.':'';
     confirmText.textContent=(stage===saved.stage?'The draft changed after this decision. Record “'+stage+'” again for the current saved draft.':'Record “'+stage+'” for the current saved draft.')+kept;
     return needed;
   };

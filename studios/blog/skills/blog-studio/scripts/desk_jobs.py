@@ -1215,7 +1215,7 @@ def _land_research(root, ident, job, result):
             # Verified, so kept in the Document Library too; said in the Activity log.
             import shared_library
 
-            shared_library.keep_research(root, directory, studio.item(root, 'articles', ident)[1])
+            shared_library.keep_research(root, directory, ident)
         elif not contract:
             studio.atomic(
                 studio.inside(directory, blog_runner.STAGES['research'][1]),
@@ -2211,6 +2211,18 @@ def _doc_suggestions(root, ident, draft):
     }
 
 
+def _kept_text(directory, record, draft):
+    """The text the Document Library would keep of this blog now: a brief's draft as Make the
+    brief keeps it, a blog's saved DRAFT.md as marking it ready keeps it."""
+    if record.get('brief'):
+        return desk.join(draft, images=False)
+    try:
+        found = directory / 'DRAFT.md'
+        return found.read_text() if found.is_file() else ''
+    except (OSError, ValueError):
+        return None
+
+
 def view(root, ident):
     """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
     import article_tools
@@ -2281,7 +2293,7 @@ def view(root, ident):
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
         # What the Document Library on this computer keeps of it (marked ready, a brief made
         # or published): its document and revision, for the desk to say and to continue from.
-        'document_library': shared_library.kept(ident),
+        'document_library': shared_library.kept(ident, _kept_text(directory, record, draft)),
         'style_name': style_name,
         'source_names': names,
         # Sections taken out on the Outline tab, to bring back.

@@ -718,6 +718,13 @@ async function diffOnlyForms(){
     return {form,named,box,row:box.parent,submit:()=>form.listeners.submit({preventDefault(){}})};};
   let ui=await open();
   assert.equal(ui.named.stage.value,'ready');assert.equal(ui.row.hidden,false);assert.match(ui.row.children[1].textContent,/again for the current saved draft/);
+  assert.doesNotMatch(ui.row.children[1].textContent,/Document Library/,'a blog that is not on the desk is not kept');
+  // A desk blog with a written draft is said to be kept; an empty draft, never kept, is not.
+  saved=article({stage:'ready',owner:'Morgan'},{on_desk:true});ui=await open();
+  assert.match(ui.row.children[1].textContent,/It is kept in the Document Library on this computer, for any studio\.$/);
+  saved=article({stage:'ready',owner:'Morgan'},{on_desk:true,preview:{kind:'draft',text:'  ',truncated:false}});ui=await open();
+  assert.doesNotMatch(ui.row.children[1].textContent,/Document Library/,'an empty draft is not promised');
+  saved=article({stage:'ready',owner:'Morgan'});ui=await open();
   ui.named.owner.value='Jordan';await ui.submit();
   assert.deepEqual(writes.pop(),{id:'blog',expected:'guard',owner:'Jordan'});
   // Renewing the stale decision takes the explicit checkbox.
@@ -2090,6 +2097,18 @@ async function importJobs(){
   await step();
   assert.equal(toasts().find(e=>e.tagName==='button'&&e.textContent==='Stop').hidden,true,'no Stop for a send');
   await step();assert.equal((await sent).status,'verified-pending');
+  // Over an open sheet the toast rises above the sheet's actions at its foot (the ui-kit's
+  // --foot-lift), and the lift goes with the toast.
+  f.run("window.innerHeight=800;document.body={style:{props:{},setProperty(k,v){this.props[k]=v;},removeProperty(k){delete this.props[k];}}}");
+  const sheetNode=f.get('sheet');sheetNode.hidden=false;
+  const footButton=f.run("document.createElement('button')");footButton.getBoundingClientRect=()=>({top:740,bottom:784,height:44});sheetNode.replaceChildren(footButton);
+  answers=[job({}),job({status:'ready',result:{status:'preview'}})];
+  const lifted=f.run("api('google-preview',{url:'u'})");
+  await step();
+  assert.equal(f.run("document.body.style.props['--foot-lift']"),'68px','the toast sits above the sheet’s foot');
+  await step();await lifted;
+  assert.equal(f.run("document.body.style.props['--foot-lift']"),undefined,'and comes down when it goes');
+  sheetNode.hidden=true;sheetNode.replaceChildren();
   // Stop: the page asks the server, and the caller hears that it stopped.
   answers=[job({}),job({status:'cancelled',error:'Stopped. Nothing was changed.'})];
   const stopped=f.run("api('google-preview',{url:'u'}).then(()=>null,error=>({message:error.message,stopped:error.stopped}))");
@@ -2139,7 +2158,15 @@ async function documentLibraryHandoff(){
   await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
   assert.ok(texts().some(t=>/“Launch facts” was removed from the Document Library, so New blog opens without it\./.test(t)));
   assert.equal(nodes().find(n=>/removed from the Document Library/.test(n.textContent||'')&&n.tagName==='p').className,'decision-notice','said at the top, as a notice');
-  assert.equal(f.run('studio.deskStart.libraryStart'),null);
+  assert.ok(!f.run('studio.deskStart.libraryStart'));
+  // An item that cannot be used never asks to replace an unfinished form: it opens as it is.
+  await fresh();await f.run("sDeskBegin({step:0,title:'My unfinished post'})");
+  await f.run("Object.assign(studio.deskStart,{title:'My unfinished post'});sDeskKeep(studio.deskStart,false)");
+  f.run('studio.deskStart=null');
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(!texts().some(t=>/Replace the unfinished blog form/.test(t)),'no replace question for nothing to start from');
+  assert.equal(f.run('studio.deskStart.title'),'My unfinished post','the saved form is kept');
+  assert.ok(texts().some(t=>/was removed from the Document Library/.test(t)));
   await fresh();item={...item,hidden:false,state:'needs-text'};
   await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
   assert.ok(texts().some(t=>/cannot be read in the Document Library/.test(t)));
@@ -2158,6 +2185,10 @@ async function documentLibraryHandoff(){
   const link=f.run('sDeskShareActions({view:'+JSON.stringify(kept)+',id:"created"})').find(n=>n.textContent==='Continue in another studio');
   assert.equal(link.href,'http://127.0.0.1:9/#token=k&continue=blog-launch@3');
   assert.ok(f.run('sDeskShareActions({view:'+JSON.stringify({...kept,brief:true})+',id:"created"})').some(n=>n.textContent==='Continue in another studio'),'a kept brief too');
+  // Edited after being kept: the copy is said to be older, and Continue names the revision it opens.
+  const older=deskView({document_library:{id:'blog-launch',revision:3,title:'Launch post',older:true}});
+  assert.equal(f.run('sDeskKeptWords('+JSON.stringify(older)+')'),'Kept in the Document Library · revision 3, older than the draft');
+  assert.ok(actions(older).includes('Continue in another studio with revision 3 (older than the draft)'),actions(older).join('|'));
   f.set('StudioShell',{continueLink:()=>null});
   assert.ok(!actions(kept).includes('Continue in another studio'),'not when Blog Studio runs alone');
   assert.equal(f.run('sDeskKeptWords('+JSON.stringify(kept)+')'),'Kept in the Document Library · revision 3');
@@ -2171,6 +2202,23 @@ async function documentLibraryHandoff(){
   assert.deepEqual(JSON.parse(f.run('JSON.stringify(handoffDraft.files.map(file=>file.filename))')),['Plans - Launch.md']);
   assert.equal(f.run('handoffDraft.problem'),'2 documents were added from Launch.');
   assert.match(nodes().find(n=>n.id==='files-input').accept,/\.xlsx/,'a workbook can be chosen');
+  // The picker is a tablist: each tab controls its labelled panel, arrow keys, Home and End move.
+  const tablist=nodes().find(n=>n.attributes?.role==='tablist');
+  assert.equal(tablist.attributes['aria-labelledby'],'files-tabs-label');
+  const tabs=tablist.children.filter(n=>n.attributes?.role==='tab');
+  assert.deepEqual(tabs.map(t=>[t.textContent,t.attributes['aria-selected'],t.tabIndex]),[['This computer','false',-1],['Team library','false',-1],['Upload','true',0],['Paste or link','false',-1]]);
+  for(const tab of tabs){const panel=nodes().find(n=>n.id===tab.attributes['aria-controls']);assert.equal(panel.attributes.role,'tabpanel');assert.equal(panel.attributes['aria-labelledby'],tab.id);assert.equal(panel.hidden,tab.attributes['aria-selected']!=='true');}
+  const key=(tab,name)=>tab.listeners.keydown({key:name,preventDefault(){}});
+  key(tabs[2],'ArrowRight');assert.equal(tabs[3].attributes['aria-selected'],'true');assert.equal(tabs[3].focused,true,'focus moves with the choice');
+  assert.equal(nodes().find(n=>n.id==='files-panel-other').hidden,false);assert.equal(nodes().find(n=>n.id==='files-panel-files').hidden,true);
+  key(tabs[3],'ArrowRight');assert.equal(tabs[0].attributes['aria-selected'],'true','it wraps around');
+  key(tabs[0],'End');assert.equal(tabs[3].attributes['aria-selected'],'true');key(tabs[3],'Home');assert.equal(tabs[0].attributes['aria-selected'],'true');
+  key(tabs[0],'ArrowLeft');assert.equal(tabs[3].attributes['aria-selected'],'true');
+  assert.equal(f.run('handoffDraft.fileMethod'),'other','the choice is kept with the form');
+  // Before setup the item is kept for after it, and Home then opens New blog with it.
+  f.run("sessionStorage.setItem('blog-studio-library-start',JSON.stringify({id:'launch-facts',revision:2}))");
+  assert.deepEqual(JSON.parse(JSON.stringify(f.run('sLibraryWaiting()'))),{id:'launch-facts',revision:2});
+  assert.equal(f.run('sLibraryWaiting()'),null,'taken once');
   assert.equal(requests.filter(r=>r.url==='/api/upload').some(r=>r.headers['X-Blog-Studio-Local']),false,'only the folder intake carries it');
 }
 
@@ -2217,11 +2265,11 @@ async function libraryWordsAndBatches(){
   // The sources card: one library vocabulary, and one option marked as chosen.
   f.run("studio.team={joined:false};globalThis.sourcesDraft={files:[]};document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{},{empty:'No sources yet. Later rewrites will read what you add.'}))");
   const card=descendants(f.get('studio-page'));
-  const group=card.find(n=>n.attributes?.['aria-label']==='Add a source');
+  const group=card.find(n=>n.attributes?.role==='tablist');
   // One clear picker: This computer, Team library and Upload as tabs, then pasting, a Doc or a link.
-  assert.equal(group.dataset.count,'4');assert.equal(group.children.filter(n=>n.attributes?.['aria-pressed']==='true').length,1,'exactly one option is chosen');
+  assert.equal(group.dataset.count,'4');assert.equal(group.children.filter(n=>n.attributes?.['aria-selected']==='true').length,1,'exactly one option is chosen');
   assert.deepEqual(group.children.filter(n=>n.tagName==='button').map(n=>n.textContent),['This computer','Team library','Upload','Paste or link']);
-  assert.equal(group.children.find(n=>n.attributes?.['aria-pressed']==='true').textContent,'Upload','Upload stays the first choice shown');
+  assert.equal(group.children.find(n=>n.attributes?.['aria-selected']==='true').textContent,'Upload','Upload stays the first choice shown');
   assert.ok(!group.children.some(n=>n.textContent==='Library'),'no bare library');
   assert.ok(card.some(n=>n.textContent==='No sources yet. Later rewrites will read what you add.'),'the desk sheet says desk words');
   // Each tab says in one short line what is there; no long paragraph about both libraries.
@@ -2235,7 +2283,7 @@ async function libraryWordsAndBatches(){
   // An older choice (the libraries were one tab; paste, Doc and link three) opens its new tab.
   for(const [was,now] of [['library','This computer'],['paste','Paste or link'],['google','Paste or link'],['link','Paste or link']]){
     f.run("sourcesDraft.fileMethod='"+was+"';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");
-    const chosen=descendants(f.get('studio-page')).find(n=>n.attributes?.['aria-label']==='Add a source').children.find(n=>n.attributes?.['aria-pressed']==='true');
+    const chosen=descendants(f.get('studio-page')).find(n=>n.attributes?.role==='tablist').children.find(n=>n.attributes?.['aria-selected']==='true');
     assert.equal(chosen.textContent,now,was+' opens '+now);
   }
   f.run("sourcesDraft.fileMethod='computer';document.getElementById('studio-page').replaceChildren(sFilesCard(sourcesDraft,document.createElement('p'),()=>{},()=>{}))");

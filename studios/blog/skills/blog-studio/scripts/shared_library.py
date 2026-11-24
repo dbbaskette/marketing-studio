@@ -249,8 +249,11 @@ def keep_ready(root, directory, record):
     draft = directory / 'DRAFT.md'
     try:
         text = draft.read_text() if draft.is_file() else ''
-    except OSError:
-        text = ''
+    except (OSError, ValueError):  # unreadable, or not UTF-8 text: the decision stands
+        return {
+            'state': 'failed',
+            'reason': 'The saved draft could not be read as text, so it was not kept.',
+        }
     if not text.strip():
         return None
     return keep_blog(root, record, text)
@@ -273,13 +276,15 @@ def keep_brief(root, ident, made):
     return keep_blog(root, record, text, pdf=pdf)
 
 
-def keep_research(root, directory, record):
+def keep_research(root, directory, ident):
     """Harness Research that passed verification, published into a blog's `research/`, kept
     in the Document Library too (studio_core.document_library.research), and said as a line
     of the blog's own Activity log. Never raises and never delays the research: whatever
     stops it is said there instead. Returns what the library said, or None."""
     try:
         from studio_core.document_library import research
+
+        _, record = studio.item(root, 'articles', ident)
 
         found = research.keep_research(
             studio='blog',
@@ -317,9 +322,11 @@ def keep_research(root, directory, record):
     return found
 
 
-def kept(ident):
-    """What the Document Library holds of this blog: {'id', 'revision', 'title'}, or None
-    when it holds nothing (or cannot be read). Read only."""
+def kept(ident, text=None):
+    """What the Document Library holds of this blog: {'id', 'revision', 'title', 'older'}, or
+    None when it holds nothing (or cannot be read). `older` is True when `text`, the blog's
+    text now, is not the text kept: the draft changed after it was kept, and marking it ready
+    again (or making the brief again) keeps the new text. Read only."""
     try:
         library = document_library.opened()
         found = library.keyed(['blog:' + ident]).get('blog:' + ident) if library else None
@@ -327,7 +334,15 @@ def kept(ident):
         return None
     if not found or found.get('hidden') or not found.get('whole', True):
         return None
-    return {'id': found['id'], 'revision': found['revision'], 'title': found.get('title')}
+    older = isinstance(text, str) and found.get('markdown') != hashlib.sha256(
+        text.encode('utf-8')
+    ).hexdigest()
+    return {
+        'id': found['id'],
+        'revision': found['revision'],
+        'title': found.get('title'),
+        'older': bool(older),
+    }
 
 
 def describe(found):

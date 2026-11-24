@@ -2429,6 +2429,9 @@ VIA_HEADER = 'X-Marketing-Studio-Via'
 
 
 def remote_caller(headers):
+    """Marketing Studio's phone link says `X-Marketing-Studio-Via: network`: that alone makes
+    a request remote. Without the page's own header (which the link never forwards) a request
+    is taken to be remote too."""
     return headers.get(VIA_HEADER) == 'network' or headers.get(LOCAL_HEADER) != '1'
 
 
@@ -2481,14 +2484,23 @@ def files_intake(root, data):
         given = {'name': entry['name'], 'data': base64.b64decode(entry['content'], validate=True)}
     with studio.locked(root):
         authorize_write(root)  # Before anything is read from a folder or the network.
-    found = source_intake.take(
-        given,
-        local=data['local'],
-        accepts=FILES_INTAKE_ACCEPTS,
-        room=room,
-        spare=room * blog_library.MAX_BINARY,
-        taken=taken,
-    )
+    from studio_core.research_sources import Sources
+    import google_drive
+
+    # A Google Drive folder is read with the Google account chosen for this workspace, as
+    # every other Google read here is; the scratch store is removed with its folder.
+    with tempfile.TemporaryDirectory(prefix='blog-files-intake-') as scratch:
+        found = source_intake.take(
+            given,
+            local=data['local'],
+            accepts=FILES_INTAKE_ACCEPTS,
+            room=room,
+            spare=room * blog_library.MAX_BINARY,
+            taken=taken,
+            store=Sources(
+                Path(scratch) / 'sources', account=lambda: google_drive.account_for(root)
+            ),
+        )
     files, skipped = [], list(found['skipped'])
     for name, content in found['uploads'].items():
         if len(content) > blog_library.MAX_BINARY:
@@ -2765,7 +2777,9 @@ def failure(exc, writing=False):
     if isinstance(exc, CurationConflict):
         # A refused save is a conflict; a read of a reference that went away is an ordinary 400, as before.
         return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}
-    if isinstance(exc, Busy):
+    if isinstance(exc, (Busy, studio.WorkspaceBusy)):
+        # A background import (import_jobs) may hold the workspace lock for its Google or
+        # network call: a page request that waited its turn is answered as busy, as before.
         return 503, {
             'error': 'Another change on this page is still running. This request changed nothing; try again when it finishes.',
             'code': 'busy',
