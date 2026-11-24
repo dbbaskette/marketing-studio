@@ -12,8 +12,9 @@ What a caller needs to know
     report = brand.audit(deck, brand_id, variant)
     brand.ready()                             # what the skill's own readiness check says
 
-- A brand skill is a skill whose companion command lists its brands, exports a slides
-  contract, searches its icons and audits a deck. Nothing here names a particular brand:
+- A brand skill is a skill whose companion command lists its brands, exports a brand
+  contract (Blog Studio asks for one for a blog), searches its icons and audits a deck.
+  Nothing here names a particular brand:
   the skill is found by looking in the usual install locations for a companion command
   that answers. BRAND_SKILL_RUNTIME names one outright; `found()` lists every one that
   was found, for the set-up screen.
@@ -247,8 +248,8 @@ class Brand:
                 )
             if self.runtime is None:
                 raise WorkspaceError(
-                    'No brand skill was found on this computer, so a deck '
-                    'cannot be made. Install one, or name its folder in '
+                    'No brand skill was found on this computer, so a blog '
+                    'cannot use a brand. Install one, or name its folder in '
                     f'{VARIABLE}, then try again.'
                 )
             return
@@ -343,7 +344,7 @@ class Brand:
         return self._answer('contract', 'check', '--file', str(contract))
 
     def contracts(self) -> bool:
-        """Whether the skill has the two commands a deck is made with: `contract export` and
+        """Whether the skill has the two commands a brand contract is made with: `contract export` and
         `contract check`. Asked with `contract` alone, which a skill that has them answers by
         naming them and which writes nothing."""
         _, out, err = self.run([self.node, str(self.script), 'contract'])
