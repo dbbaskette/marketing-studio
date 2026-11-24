@@ -270,7 +270,19 @@ class Server(ThreadingHTTPServer):
         # waits up to SLOT_WAIT seconds for one, and is otherwise answered 503 with
         # Retry-After: never closed without an answer. Each slot is let go exactly once.
         self.slots = threading.BoundedSemaphore(SLOTS)
+        self.holding = set()    # the requests that hold a slot now
         super().__init__(*args, **kwargs)
+
+    def let_go(self, request) -> None:
+        """Free this request's slot, once. Its thread frees it when it has answered, and an
+        accept that was interrupted frees it too: a stop signal can land after that thread
+        has already finished. A second release would raise in place of the interrupt, and
+        the server would go on serving instead of stopping."""
+        try:
+            self.holding.remove(request)
+        except KeyError:
+            return
+        self.slots.release()
 
     def busy(self, request) -> None:
         """Answer a request no slot came free for: 503, then close."""
@@ -290,17 +302,18 @@ class Server(ThreadingHTTPServer):
         if not self.slots.acquire(timeout=SLOT_WAIT):
             self.busy(request)
             return
+        self.holding.add(request)
         try:
             super().process_request(request, client_address)
         except BaseException:
-            self.slots.release()
+            self.let_go(request)
             raise
 
     def process_request_thread(self, request, client_address):
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self.slots.release()
+            self.let_go(request)
 
     def handle_error(self, request, client_address):
         """A reader that hangs up early gets no traceback: the command's output stays one line."""
