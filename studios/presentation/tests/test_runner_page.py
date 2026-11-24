@@ -185,7 +185,7 @@ class IntakeDraftTests(PageCase):
 
 class PrivateSlideTextDraftTests(PageCase):
     def test_private_corrections_are_revision_checked_and_never_advance_a_gate(self):
-        root=self.saved_started();before=self.engine._load(Path(root));jobs=len(self.workers.jobs)
+        root=self.started();before=self.engine._load(Path(root));jobs=len(self.workers.jobs)
         held=self.get('slide-text-draft',path=root)
         sent={'path':root,'action':'save','expected':held['revision'],
             'patch':{'basis':'outline-version','edits':[{'id':'slide-1','title':'Private correction'}],'note':'Saved feedback','selected':0}}
@@ -218,7 +218,7 @@ class RuleTests(PageCase):
 
     def setUp(self):
         super().setUp()
-        self.path = self.saved_started()
+        self.path = self.started()
         self.bodies = {target: {} for target in POSTS}
         self.bodies.update({
             '/api/research-note':{'path': self.path,'id':'section','action':'read'},
@@ -475,13 +475,11 @@ class RunTests(PageCase):
         self.assertEqual(self.get('decks')['finished'][0]['id'], 'rolling-restarts')
 
     def test_a_slides_picture_is_only_what_the_engine_gives(self):
-        path = self.saved_started()
-        self.decided(path, 'gate:outline')
+        path = self.started()
         status, kind, data, _ = self.raw('GET', '/api/slide?' + urlencode(
             {'path': path, 'kind': 'look', 'name': 'sample'}))
         self.assertEqual((status, kind), (200, 'image/png'), data[:200])
         self.assertTrue(data.startswith(b'\x89PNG'))
-        self.decided(path, 'gate:look')
         for query in ({'kind': 'build', 'number': '2'},
                       {'kind': 'build', 'name': 'contact-sheet'}):
             status, kind, data, _ = self.raw('GET', '/api/slide?' + urlencode(
@@ -506,9 +504,8 @@ class RunTests(PageCase):
             self.assertEqual((status, reply['error']), (404, page.NO_DECK))
 
     def test_powerpoint_by_choice_can_be_sent_to_google(self):
-        path = self.saved_started(output='pptx')
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            self.decided(path, gate)
+        path = self.started(output='pptx')
+        self.deliver_desk(Path(path))
         self.assertTrue(self.run_of(path)['deliver']['to_google'])
         shown = self.post('deliver', {'path': path})
         self.assertEqual(shown['deliver']['revision'], 2)
@@ -516,10 +513,9 @@ class RunTests(PageCase):
         self.assertEqual(self.engine._load(Path(path))['form']['output'], 'pptx')
 
     def test_a_deck_made_as_powerpoint_without_google_is_delivered_to_it_later(self):
-        path = self.saved_started()
+        path = self.started()
         self.slides.run.drive = False
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            self.decided(path, gate)
+        self.deliver_desk(Path(path))
         first = self.run_of(path)['deliver']
         self.assertEqual((first['output'], first['notice'], first['to_google']),
                          ('pptx', deliver.NOT_CONNECTED, True))
@@ -543,10 +539,9 @@ class RunTests(PageCase):
         self.assertIn('already', self.post('deliver', {'path': path}, 409)['error'])
 
     def test_a_second_press_while_the_deck_is_on_its_way_to_google_is_refused(self):
-        path = self.saved_started()
+        path = self.started()
         self.slides.run.drive = False
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            self.decided(path, gate)
+        self.deliver_desk(Path(path))
         self.slides.run.drive = True
         upload, said = deliver.upload, []
 
@@ -565,16 +560,19 @@ class RunTests(PageCase):
                               if one.get('url')]), 1)
 
     def test_a_deck_not_delivered_is_not_sent_to_google(self):
-        path = self.saved_started()
+        path = self.started()
         self.assertIn('not been delivered', self.post('deliver', {'path': path}, 409)['error'])
 
     def test_a_deck_not_delivered_has_nothing_to_download(self):
-        path = self.saved_started()
+        # A desk deck that stopped before its deck was drawn: nothing is rendered yet.
+        self.workers.then('outline', asks('Who presents it?'))
+        path = self.started()
+        self.assertIsNone(self.run_of(path)['deliver'])
         status, reply, _ = self.answer('GET', '/api/download?' + urlencode({'path': path}))
         self.assertEqual(status, 409, reply)
 
     def test_a_shared_file_is_read_by_name_and_nothing_else(self):
-        path = self.saved_started()
+        path = self.started()
         shown = self.get('file', path=path, name='outline.md')
         self.assertEqual((shown['name'], shown['truncated']), ('outline.md', False))
         self.assertIn('Rolling restarts', shown['text'])
@@ -586,6 +584,7 @@ class RunTests(PageCase):
             with self.subTest(name):
                 self.assertIn('A file is one of', self.get('file', 400, path=path,
                                                            name=name)['error'])
+        (Path(path) / 'look.md').unlink(missing_ok=True)   # a desk deck wrote its own
         (Path(path) / 'look.md').symlink_to(self.base / 'gitconfig')
         self.assertIn('leads outside the deck folder',
                       self.get('file', 403, path=path, name='look.md')['error'])
@@ -641,7 +640,7 @@ class RunTests(PageCase):
                       self.workers.of('outline')[-1].task)
 
     def test_a_run_can_be_paused_resumed_stopped_and_undone(self):
-        path = self.saved_started()
+        path = self.started()
         self.assertIn('Only a deck that is working can be paused',
                       self.post('run', {'path': path, 'action': 'pause'}, 409)['error'])
         self.assertEqual(self.post('run', {'path': path, 'action': 'stop'})['state'], 'stopped')
@@ -656,7 +655,7 @@ class RunTests(PageCase):
 
     def test_a_workers_question_is_answered_on_the_page(self):
         self.workers.then('outline', asks('Which audience matters more?'))
-        path = self.saved_started()
+        path = self.started()
         asked = self.run_of(path)['question']
         self.assertEqual(asked['text'], 'Which audience matters more?')
         self.assertEqual(self.post('answer', {'path': path, 'id': asked['id'],
@@ -665,7 +664,7 @@ class RunTests(PageCase):
         shown = self.post('answer', {'path': path, 'id': asked['id'],
                                      'answer': 'The operators.'})
         self.assertIsNone(shown['question'])
-        self.assertEqual(shown['gate']['name'], 'gate:outline')
+        self.assertEqual(shown['gate']['name'], 'gate:build')
         self.assertIn('The operators.', self.workers.of('outline')[-1].task)
         self.assertEqual(self.post('answer', {'path': path, 'id': asked['id'],
                                               'answer': 'Again.'}, 409)['error'],
@@ -689,7 +688,7 @@ class RunTests(PageCase):
                          'Lead with the risks.')
 
     def test_reading_never_starts_or_wakes_a_run(self):
-        path = self.saved_started()
+        path = self.started()
         jobs, log = len(self.workers.jobs), self.log()
         with mock.patch.object(self.engine, 'wake', never):
             for _ in range(3):
@@ -705,7 +704,7 @@ class RunTests(PageCase):
         self.assertTrue(self.engine.page_open())
 
     def test_the_status_screen_and_a_deletion(self):
-        path = self.saved_started()
+        path = self.started()
         status = self.get('status')
         self.assertEqual([run['id'] for run in status['runs']], ['rolling-restarts'])
         leaving = self.get('delete', path=path)
@@ -719,7 +718,7 @@ class RunTests(PageCase):
     def test_sharing_and_fetching_in_a_workspace_on_this_computer(self):
         self.assertEqual(self.post('fetch', {}), {'reached': None, 'received': 0,
                                                   'notice': None})
-        self.assertEqual(self.post('drive', {'path': self.saved_started(), 'action': 'take'},
+        self.assertEqual(self.post('drive', {'path': self.started(), 'action': 'take'},
                                    409)['error'], engines.NO_DRIVERS)
 
 
@@ -863,17 +862,16 @@ class BuildFeedbackTests(PageCase):
             # The older worker then fails without a valid hand-in. It must not halt the newer direction.
             home.write_json(tools.folder / 'accepted/artifacts.json', {})
         self.workers.then('section', section)
-        path = self.saved_started(output='pptx')
-        for _ in range(8):
-            gate = self.run_of(path).get('gate')
-            if not gate or gate['name'] == 'gate:build': break
-            self.decided(path)
+        path = self.started(output='pptx')
         shown = self.run_of(path)
         self.assertEqual(shown['gate']['name'], 'gate:build')
-        self.assertEqual(len(shown['build_feedback']), 1)
+        # Drawn with its section, the note is put aside when the deck reaches the desk.
+        self.assertEqual(shown['build_feedback'], [])
+        self.assertEqual(len(decks.read_run(Path(path))['build_feedback_done']), 1)
         self.assertIn('first_section_ready_at', shown['build_timing'])
         self.assertIn('first_section_visible_at', shown['build_timing'])
-        self.assertIn('final_review_ready_at', shown['build_timing'])
+        # A desk deck is built as a first draft: its time ready at the desk is said so.
+        self.assertIn('first_draft_ready_at', shown['build_timing'])
         self.assertIn('Move the label', self.workers.of('section')[-1].task)
         record = decks.read_run(Path(path))
         self.assertTrue(any(attempt['outcome'] == 'superseded' for step in record['steps'].values()
@@ -974,7 +972,7 @@ class StoryboardTests(PageCase):
 
 class BringTests(PageCase):
     def test_remembered_decks_list_omits_current_workspace(self):
-        path = Path(self.saved_started())
+        path = Path(self.started())
         self.assertEqual(self.get('known-decks'), {'decks': []})
         outside = self.base / 'conversation' / 'restarts'
         shutil.copytree(path, outside, ignore=shutil.ignore_patterns('work', 'sources'))
@@ -982,7 +980,7 @@ class BringTests(PageCase):
         self.assertEqual([d['path'] for d in self.get('known-decks')['decks']], [str(outside)])
 
     def test_only_a_deck_this_computer_knows_is_brought_in(self):
-        path = Path(self.saved_started())
+        path = Path(self.started())
         outside = self.base / 'outside' / 'restarts'
         shutil.copytree(path, outside, ignore=shutil.ignore_patterns('work', 'sources'))
         said = self.post('bring', {'path': str(outside)}, 403)
@@ -990,7 +988,7 @@ class BringTests(PageCase):
         home.remember(outside, 'Rolling restarts')
         made = self.post('bring', {'path': str(outside)})
         self.assertEqual(made['id'], 'rolling-restarts-2')
-        self.assertEqual(self.run_of(made['path'])['gate']['name'], 'gate:outline')
+        self.assertEqual(self.run_of(made['path'])['gate']['name'], 'gate:build')
         self.assertTrue((outside / 'run.json').is_file(), 'the folder it came from is only read')
 
 
@@ -1063,7 +1061,7 @@ class UpkeepTests(PageCase):
             self.workers.outline(tools, job)
 
         self.workers.then('outline', looks)
-        self.saved_started()
+        self.started()
         self.assertEqual(keeper.asked, [
             ('update', False), ('upgrade', False, '99.0.0'), ('restart', False),
             ('dismiss', 'x 99.0.0'), ('update', False), ('update', True), ('restart', True)])
@@ -1113,7 +1111,7 @@ class UpkeepTests(PageCase):
             self.workers.outline(tools, job)
 
         self.workers.then('outline', looks)
-        self.saved_started()
+        self.started()
         self.assertEqual(keeper.asked, [('install_brand', False, 'abcdef012345'),
                                         ('install_brand', False, 'abcdef012345'),
                                         ('install_brand', True, 'abcdef012345')],
@@ -1164,7 +1162,7 @@ class TeamPageTests(Asking, TeamCase):
 
     def shared_deck(self) -> str:
         with self.be(self.alex):
-            path = self.saved_started()
+            path = self.started()
         self.as_blake('POST', '/api/fetch', {})
         return path
 
@@ -1176,8 +1174,7 @@ class TeamPageTests(Asking, TeamCase):
         status, run = self.as_blake('GET', '/api/run?' + urlencode({'path': theirs}))
         self.assertEqual((status, run['mine'], run['driver']['name']), (200, False, 'Alex'))
         for target, sent in (
-                ('/api/decide', {'path': theirs, 'gate': 'gate:outline',
-                                 'decision': 'approve'}),
+                ('/api/desk-stop', {'path': theirs}),
                 ('/api/run', {'path': theirs, 'action': 'stop'}),
                 ('/api/answer', {'path': theirs, 'id': 'x', 'answer': 'Yes.'}),
                 ('/api/publish', {'path': theirs})):
@@ -1186,7 +1183,7 @@ class TeamPageTests(Asking, TeamCase):
                 self.assertEqual(status, 409, said)
                 self.assertIn('Alex has been running this deck from another computer', said['error'])
         with self.be(self.alex):
-            self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
+            self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
 
     def test_a_deck_is_taken_over_and_handed_over_on_the_page(self):
         path = self.shared_deck()
@@ -1202,7 +1199,7 @@ class TeamPageTests(Asking, TeamCase):
 
     def test_a_deck_is_published_and_its_revisions_listed_on_the_page(self):
         with self.be(self.alex):
-            path = self.saved_started()
+            path = self.started()
             made = self.post('publish', {'path': path})
             self.assertEqual((made['revision'], made['ready'], made['shared']), (1, False, True))
             listed = self.get('published')['published']
@@ -1212,7 +1209,7 @@ class TeamPageTests(Asking, TeamCase):
 
     def test_a_deck_is_deleted_on_the_page_and_the_deletion_shared(self):
         with self.be(self.alex):
-            path = self.saved_started()
+            path = self.started()
             gone = self.post('delete', {'path': path, 'title': 'Rolling restarts'})
         self.assertEqual((gone['deleted'], gone['shared']), (True, True))
         self.assertIn('Rolling restarts: Alex deletes this deck', self.shared()[0])
@@ -1226,12 +1223,12 @@ class TeamPageTests(Asking, TeamCase):
         status, made = self.as_blake('POST', '/api/bring', {'path': str(outside)})
         self.assertEqual((status, made['id']), (200, 'rolling-restarts-2'))
         status, run = self.as_blake('GET', '/api/run?' + urlencode({'path': made['path']}))
-        self.assertEqual((run['driver']['name'], run['gate']['name']), ('Blake', 'gate:outline'))
+        self.assertEqual((run['driver']['name'], run['gate']['name']), ('Blake', 'gate:build'))
 
     def test_nothing_is_told_through_the_computer_while_a_page_is_open(self):
         with self.be(self.alex):
             settings.save(replace(settings.load(), notify=True))
-            self.saved_started()
+            self.started()
             self.get('decks')
             self.assertEqual(self.engine.tell(), [])
             with mock.patch.object(engines, 'PAGE_OPEN', 0):
@@ -1296,20 +1293,21 @@ class WireTests(WireCase):
         self.assertTrue(self.server.url.endswith(f'#token={self.server.token}'))
 
     def test_a_deck_is_started_decided_pictured_and_downloaded_over_the_wire(self):
-        path = str(self.saved_start())
+        status, _, body = self.ask('/api/decks', {'form': {**FORM, 'flow': 'desk'}})
+        self.assertEqual(status, 200, body)
+        path = json.loads(body)['path']
         query = urlencode({'path': path})
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            run = json.loads(self.ask(f'/api/run?{query}')[2])
-            self.assertEqual(run['gate']['name'], gate)
-            if gate == 'gate:build':
-                status, headers, picture = self.ask('/api/slide?' + urlencode(
-                    {'path': path, 'kind': 'build', 'number': 1}))
-                self.assertEqual((status, headers.get_content_type()), (200, 'image/png'))
-                self.assertTrue(picture.startswith(b'\x89PNG'))
-                self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
-            status, _, body = self.ask('/api/decide', {'path': path, 'gate': gate,
-                                                       'decision': 'approve'})
-            self.assertEqual(status, 200, body)
+        run = json.loads(self.ask(f'/api/run?{query}')[2])
+        self.assertEqual(run['gate']['name'], 'gate:build')
+        status, headers, picture = self.ask('/api/slide?' + urlencode(
+            {'path': path, 'kind': 'build', 'number': 1}))
+        self.assertEqual((status, headers.get_content_type()), (200, 'image/png'))
+        self.assertTrue(picture.startswith(b'\x89PNG'))
+        self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
+        status, _, body = self.ask('/api/desk-deliver', {
+            'path': path, 'expected': run['desk']['expected'],
+            'blockers_seen': run['desk']['blockers_seen']})
+        self.assertEqual(status, 200, body)
         status, headers, deck = self.ask(f'/api/download?{query}')
         self.assertEqual((status, headers.get_content_type()), (200, page.PPTX))
         self.assertEqual(headers['Content-Disposition'],
@@ -1319,7 +1317,7 @@ class WireTests(WireCase):
         self.assertTrue(deck.startswith(b'PK\x03\x04'))
 
     def test_something_that_cannot_be_done_is_answered_with_a_sentence_and_409(self):
-        path = str(self.saved_start())
+        path = str(self.start())
         status, _, body = self.ask('/api/run', {'path': path, 'action': 'retry'})
         self.assertEqual((status, json.loads(body)), (409, {
             'error': 'Nothing here failed, so there is nothing to try again.'}))
@@ -1380,13 +1378,16 @@ class LiveWireTests(WireCase):
         self.fail(f'It did not happen in time: {run}')
 
     def test_a_deck_goes_from_the_form_to_finished_on_the_page(self):
-        path = str(self.saved_start())
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            run = self.until(path, lambda run: run['state'] == 'waiting'
-                             and (run['gate'] or {}).get('name') == gate)
-            status, _, body = self.ask('/api/decide', {'path': path, 'gate': gate,
-                                                       'decision': 'approve'})
-            self.assertEqual(status, 200, body)
+        status, _, body = self.ask('/api/decks', {'form': {**FORM, 'flow': 'desk'}})
+        self.assertEqual(status, 200, body)
+        path = json.loads(body)['path']
+        run = self.until(path, lambda run: run['state'] == 'waiting'
+                         and (run['gate'] or {}).get('name') == 'gate:build'
+                         and run['desk']['arrived'])
+        status, _, body = self.ask('/api/desk-deliver', {
+            'path': path, 'expected': run['desk']['expected'],
+            'blockers_seen': run['desk']['blockers_seen']})
+        self.assertEqual(status, 200, body)
         done = self.until(path, lambda run: run['state'] == 'finished')
         self.assertTrue(done['deliver']['url'].startswith('https://'))
         self.until(path, lambda run: self.git('status', '--porcelain') == '')
@@ -1438,9 +1439,11 @@ if __name__ == '__main__':
 
 class ResearchPriceTests(PageCase):
     def test_the_research_gate_prices_a_change(self):
-        path = Path(self.saved_started(research=True))
-        self.decided(str(path), 'gate:research-plan')
+        path = Path(self.started(research=True))
         record = self.engine._load(path)
+        # The research has run; nothing after it is made yet, as at the research's own stop.
+        record['steps'] = {name: entry for name, entry in record['steps'].items()
+                           if name in ('intake-source', 'research-plan')}
         record['research_contract'] = {'schema': 2}
         for name, seconds, dollars in [('research:author-1', 1800, 6), ('research:review-1', 1080, 3.8)]:
             record['steps'][name] = {'tries': [dict(started_at='2026-10-22T10:00:00Z', seconds=seconds, dollars=dollars)]}
