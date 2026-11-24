@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import blog_runner as runner
 import desk_chat
+import desk_migration
 import studio
 from test_blog_runner import FilesCase
 
@@ -23,6 +24,8 @@ MANUSCRIPT = (
 )
 REVIEW = '# Review\n\n- Tighten the opening.\n'
 HANDOFF = '# Handoff\n\nTitle: Synthetic draft\n'
+# Stopped before an outline or draft: read-only, and new work can start from its start form.
+EARLY = ('read-only', 'stopped before an outline or draft was saved', 'copy')
 IDEAS = '# Ideas\n\nThree ways in.\n\n## One way\n\nReaders · A point\n\n## Another way\n\nReaders · Another point\n'
 
 
@@ -102,11 +105,28 @@ class SavedStateCase(FilesCase):
             )
         return runner.survey(self.root, found['id'])
 
-    def refused(self, ident, words, errors=ValueError):
-        """Not eligible, with the saved flow named; applying changes nothing."""
+    def outcome(self, shown, outcome, reason, next_action=None):
+        """The one classification of this saved blog, the same in the preview and classify,
+        decided without changing anything."""
+        self.assertEqual((shown['outcome'], shown['next']), (outcome, next_action), shown['reason'])
+        self.assertRegex(shown['reason'], reason)
+        before = self.tree()
+        with self.nothing_starts():
+            said = desk_migration.classify(self.root, shown['id'])
+        self.assertEqual(self.tree(), before)
+        self.assertEqual(said, {key: shown[key] for key in ('outcome', 'reason', 'next', 'start')})
+        if next_action == 'copy':
+            self.assertTrue(shown['start']['title'])
+        else:
+            self.assertIsNone(shown['start'])
+
+    def refused(self, ident, words, outcome, errors=ValueError):
+        """Not eligible, with the saved flow named; applying changes nothing. `outcome` is
+        (outcome, reason pattern, next action) as classify gives it."""
         directory = studio.inside(self.root, 'articles', ident)
         shown = self.preview(ident)
         self.assertFalse(shown['eligible'], shown)
+        self.outcome(shown, *outcome)
         self.assertRegex(' '.join(shown['blockers']), words)
         self.assertIn('saved flow', shown['notice'])
         before = self.tree()
@@ -121,6 +141,7 @@ class SavedStateCase(FilesCase):
         directory = studio.inside(self.root, 'articles', ident)
         shown = self.preview(ident)
         self.assertTrue(shown['eligible'], shown['blockers'])
+        self.outcome(shown, 'migrates', 'can be opened on the writing desk')
         before = {
             name: raw
             for name, raw in self.tree().items()
@@ -153,14 +174,14 @@ class EarlyStopTests(SavedStateCase):
 
     def test_angles_not_yet_written_keep_their_saved_flow(self):
         found = self.from_files()
-        self.refused(found['id'], 'no usable manuscript or supported outline')
+        self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.assertEqual(runner.survey(self.root, found['id'])['next'], 'angles')
         found = self.submit(runner.survey(self.root, found['id']), self.ANGLES, page=True)
         self.assertEqual(found['awaits'], 'decision')
 
     def test_angles_waiting_for_a_choice_keep_their_saved_flow(self):
         found = self.submit(self.from_files(), self.ANGLES, page=True)
-        self.refused(found['id'], 'no usable manuscript or supported outline')
+        self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
             runner.dispatch(
                 self.root,
@@ -179,7 +200,7 @@ class EarlyStopTests(SavedStateCase):
             page=True,
         )
         self.assertEqual((found['next'], found['awaits']), ('research-plan', 'decision'))
-        self.refused(found['id'], 'no usable manuscript or supported outline')
+        self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         found = self.approve(runner.survey(self.root, found['id']), page=True)
         self.assertEqual(found['next'], 'research')
 
@@ -187,7 +208,7 @@ class EarlyStopTests(SavedStateCase):
         found = self.create(page=True, research='web-allowed', sources=[self.source()['id']])
         found = self.written(found, 'research', '# Findings\n\nSynthetic evidence.', page=True)
         self.assertEqual((found['next'], found['awaits']), ('research', 'decision'))
-        self.refused(found['id'], 'no usable manuscript or supported outline')
+        self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.assertEqual(
             self.approve(runner.survey(self.root, found['id']), page=True)['next'], 'outline'
         )
@@ -197,13 +218,13 @@ class EarlyStopTests(SavedStateCase):
         self.assertEqual(found['next'], 'claims-map')
         found = self.submit(found)
         self.assertEqual(found['awaits'], 'decision')
-        self.refused(found['id'], 'no usable manuscript or supported outline')
+        self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.assertEqual(self.approve(runner.survey(self.root, found['id']))['next'], 'outline')
 
     def test_brief_only_start_keeps_its_saved_flow(self):
         found = self.create()
         self.assertEqual((found['next'], found['awaits']), ('outline', 'submission'))
-        self.refused(found['id'], 'no usable manuscript or supported outline')
+        self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.assertEqual(self.submit(runner.survey(self.root, found['id']))['awaits'], 'decision')
 
 
@@ -406,7 +427,7 @@ class KeptStopTests(SavedStateCase):
         found = self.written(self.approve(found), 'package', HANDOFF)
         found = self.approve(found)
         self.assertTrue(found['complete'])
-        self.refused(found['id'], 'already finished')
+        self.refused(found['id'], 'already finished', ('finished', 'already finished'))
         self.assertTrue(runner.engine(self.root).describe(found['id'])['desk_open'])
 
     def test_working_or_queued_page_run_waits_for_its_step(self):
@@ -417,7 +438,7 @@ class KeptStopTests(SavedStateCase):
             with self.subTest(status=state['status']):
                 found = self.written(self.create(page=True), 'draft', MANUSCRIPT, page=True)
                 runner.engine(self.root).keep_local(found['id'], state)
-                self.refused(found['id'], 'under way')
+                self.refused(found['id'], 'under way', ('wait', 'under way'))
 
     def test_unreadable_run_or_session_record_keeps_every_file(self):
         for name in (runner.STATE, 'session.json'):
@@ -427,7 +448,11 @@ class KeptStopTests(SavedStateCase):
                 (directory / name).write_text('{not json')
                 # The preview says the record cannot be read (today in the JSON reader's
                 # own words) and offers no token; nothing can drive or move it until restored.
-                shown = self.refused(found['id'], 'line 1')
+                said = {
+                    runner.STATE: ('read-only', 'run record cannot be read', 'copy'),
+                    'session.json': ('read-only', 'blog record cannot be read', 'new'),
+                }[name]
+                shown = self.refused(found['id'], 'line 1', said)
                 self.assertEqual(shown['expected'], '')
                 self.assertEqual((directory / 'DRAFT.md').read_text(), MANUSCRIPT)
                 self.assertEqual((directory / name).read_text(), '{not json')
@@ -438,12 +463,18 @@ class KeptStopTests(SavedStateCase):
         run = studio.read_json(directory / runner.STATE)
         run['schema'] = 99
         studio.write_json(directory / runner.STATE, run)
-        self.refused(found['id'], 'supported saved Blog Studio run')
+        self.refused(
+            found['id'],
+            'supported saved Blog Studio run',
+            ('read-only', 'newer Blog Studio runtime', 'copy'),
+        )
 
     def test_registered_manuscript_without_a_run_keeps_the_editor_exception(self):
         ident = self.article(MANUSCRIPT)
         self.assertFalse((studio.inside(self.root, 'articles', ident) / runner.STATE).exists())
         # The preview and applying it give the same refusal sentence, and write nothing.
-        shown = self.refused(ident, 'no saved step-by-step run')
+        shown = self.refused(
+            ident, 'no saved step-by-step run', ('current', 'no saved step-by-step run')
+        )
         with self.assertRaisesRegex(ValueError, 'no saved step-by-step run'):
             desk_chat.migrate(self.root, ident, shown['expected'] or 'bm1.' + 'x' * 43)

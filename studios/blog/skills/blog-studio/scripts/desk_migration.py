@@ -713,9 +713,138 @@ def migration_preview(root, ident):
         shown['held'] = (
             'Unfinished checks remain incomplete. No approval, research, writing job or delivery is started.'
         )
+        failure = None
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         shown['blockers'] = [str(error) or 'Restore the missing saved records first.']
+        failure = error
+    shown.update(_verdict(root, ident, shown, failure))
     return shown
+
+
+# What becomes of a saved blog, decided once for the preview and the page (classify).
+OUTCOMES = ('migrates', 'finished', 'read-only', 'wait', 'current', 'desk')
+MIGRATES = 'Its saved outline or draft can be opened on the writing desk.'
+ON_DESK = 'This blog is on the writing desk.'
+EDITOR = 'The manuscript editor made this run, and continues it in Edit manuscript.'
+EARLY = (
+    'Its earlier step-by-step flow stopped before an outline or draft was saved, so there is '
+    'nothing to open on the writing desk.'
+)
+UNREAD_SESSION = 'Its saved blog record cannot be read.'
+UNKNOWN_SESSION = 'Its saved blog record is in a format this Blog Studio does not support.'
+UNREAD_RUN = 'Its saved run record cannot be read.'
+UNKNOWN_RUN = 'Its saved run record is in a format this Blog Studio does not support.'
+
+
+def _small_json(path):
+    """A saved record's value, or raise: missing, linked, oversized or not JSON."""
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('missing or linked record')
+    with path.open('rb') as handle:
+        raw = handle.read(1_000_001)
+    if len(raw) > 1_000_000:
+        raise ValueError('oversized record')
+    return json.loads(raw)
+
+
+def _start_from(session, run):
+    """The start form a read-only record can begin new work from: its title, and the point
+    and audience its run was given. Nothing it researched or made is carried."""
+    if not isinstance(session, dict):
+        return None
+    title = session.get('title')
+    if not isinstance(title, str) or not title.strip():
+        return None
+    brief = run.get('brief') if isinstance(run, dict) else None
+    brief = brief if isinstance(brief, dict) else {}
+    start = {'title': title.strip()[:500]}
+    for key, said in (('point', 'goal'), ('audience', 'audience')):
+        if isinstance(brief.get(said), str) and brief[said].strip():
+            start[key] = brief[said].strip()[: 2000 if key == 'point' else 500]
+    return start
+
+
+def _verdict(root, ident, shown, failure):
+    """Migrates, finished, read-only, wait, current or desk, with its reason sentence; for a
+    read-only record also its next action (`copy` starts new work from its start form,
+    `new` an empty one) and that start form. Only reads, as the preview it serves does."""
+    import blog_runner
+
+    def said(outcome, reason, session=None, run=None):
+        start = _start_from(session, run) if outcome == 'read-only' else None
+        return {
+            'outcome': outcome,
+            'reason': reason,
+            'next': ('copy' if start else 'new') if outcome == 'read-only' else None,
+            'start': start,
+        }
+
+    try:
+        directory = studio.inside(root, 'articles', studio.identifier(ident))
+        if not directory.is_dir() or directory.is_symlink():
+            raise ValueError('not a saved blog')
+    except (OSError, ValueError):
+        return {**said(None, ' '.join(shown['blockers'])), 'next': None}  # No saved blog.
+    if pending(root, ident):
+        return said('wait', PENDING)
+    try:
+        session = _small_json(directory / 'session.json')
+        if not isinstance(session, dict):
+            raise ValueError('not a record')
+    except (OSError, ValueError, UnicodeError):
+        return said('read-only', UNREAD_SESSION)  # Missing counts: which flow made it is unknown.
+    if session.get('flow') == 'desk':
+        return said('desk', ON_DESK)
+    run = None
+    try:
+        if metadata(directory) is not None:
+            return said('desk', ON_DESK)
+    except ValueError as error:
+        return said('read-only', str(error), session)
+    if (directory / 'desk' / 'draft.json').is_file():
+        return said('desk', ON_DESK)  # A finished blog opened on the desk.
+    if not os.path.lexists(directory / blog_runner.STATE):
+        if session_supported(session, directory.name):
+            return said('current', NO_RUN)  # A registered manuscript: the editor's.
+        return said('read-only', UNKNOWN_SESSION, session)
+    try:
+        run = _small_json(directory / blog_runner.STATE)
+    except (OSError, ValueError, UnicodeError):
+        return said('read-only', UNREAD_RUN, session)
+    if not session_supported(session, directory.name):
+        return said('read-only', UNKNOWN_SESSION, session, run)
+    try:
+        blog_runner.load(root, ident)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return said('read-only', str(error) or UNKNOWN_RUN, session, run)
+    if not run_supported(run):
+        return said('read-only', UNKNOWN_RUN, session, run)
+    if isinstance(failure, Wait):
+        return said('wait', str(failure))
+    if shown['eligible']:
+        return said('migrates', MIGRATES)
+    blocker = ' '.join(shown['blockers'])
+    if blocker == FINISHED:
+        return said('finished', FINISHED)
+    if isinstance(run.get('editor_check'), str):
+        return said('current', EDITOR)  # The editor's own run is current work.
+    if blocker == NOTHING_MADE:
+        return said('read-only', EARLY, session, run)
+    return said('read-only', blocker or UNKNOWN_RUN, session, run)
+
+
+def classify(root, ident):
+    """What becomes of one saved blog, as its migration preview decides it: `outcome`
+    (OUTCOMES, or None when there is no saved blog by that name), `reason` (one sentence),
+    and for a read-only record `next` and `start`.
+
+    migrates: the explicit migration opens it on the desk. finished: a finished blog with a
+    draft, which its own Open on the desk takes there. read-only: nothing was made yet, or a
+    record or dependency cannot be read or understood. wait: a refusal that ends by itself or
+    by Stop or Take (a step or job under way, another computer driving, an interrupted
+    opening's recovery). current: the manuscript editor's own work. desk: desk work already."""
+    shown = migration_preview(root, ident)
+    return {key: shown[key] for key in ('outcome', 'reason', 'next', 'start')}
 
 
 def _rollback(directory, journal):
