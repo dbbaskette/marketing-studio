@@ -278,6 +278,12 @@ def lock_held():
     return _HELD.get()
 
 
+class WorkspaceBusy(ValueError):
+    """The workspace lock stayed busy for the bounded wait. A command says the sentence; the
+    page answers it as its own busy reply (management.failure), since a background import may
+    hold the lock while the page's other requests come in."""
+
+
 @contextmanager
 def _locked(root):
     """Serialize commands that change the workspace.
@@ -291,7 +297,7 @@ def _locked(root):
 
     fd = acquire_lock(inside(root, '.studio.lock'))
     if fd is None:
-        raise ValueError(
+        raise WorkspaceBusy(
             'Workspace is busy: another Blog Studio command is still running after a short wait. '
             'Retry shortly; the lock clears by itself when that command ends, so do not delete '
             '.studio.lock.'

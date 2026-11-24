@@ -85,7 +85,7 @@ for bar in layout.get('sidebars') or []:
     bars.append({'page_of': at, 'page': page})
 pages = [bar['page'] for bar in bars]
 (run / 'out.docx').write_bytes(b'word bytes')
-(run / 'out.pdf').write_bytes(b'pdf bytes')
+(run / 'out.pdf').write_bytes(b'%PDF-1.4 pdf bytes')
 before = (layout.get('icon_row') or {}).get('before')
 result = {
     'status': 'branded',
@@ -439,12 +439,48 @@ class MakeTests(BriefCase):
 
 
 class RouteTests(BriefCase, RouteCase):
+    def setUp(self):
+        super().setUp()
+        library = patch.dict(os.environ, {'STUDIOS_LIBRARY': str(self.base / 'shared-library')})
+        library.start()
+        self.addCleanup(library.stop)
+
     def test_the_page_makes_the_brief_through_its_desk_route(self):
         ident = self.written()
         self.harness()
         found = self.post('desk-brief', {'id': ident})
         self.assertEqual(found['brief_made']['pages'], 5)
         self.assertTrue(found['brief'])
+
+    def test_a_brief_made_is_kept_in_the_document_library_with_its_pdf(self):
+        from studio_core import document_library
+
+        ident = self.written()
+        self.harness()
+        self.assertIsNone(self.get('desk', id=ident)['document_library'])
+        found = self.post('desk-brief', {'id': ident})
+        self.assertEqual(found['library_copy']['state'], 'kept')
+        library = document_library.opened()
+        rows = library.catalog(kind='blog')['items']
+        self.assertEqual(len(rows), 1)
+        kept = library.snapshot(rows[0]['id'], 1)
+        self.assertIn('## The risks', kept['text'])
+        self.assertEqual(library.download(rows[0]['id'], 1, 'pdf')[2], b'%PDF-1.4 pdf bytes')
+        self.assertEqual(found['document_library']['id'], rows[0]['id'])
+        self.assertFalse(found['document_library']['older'], 'the brief kept is the draft now')
+        # Not published, and no address was asked for.
+        self.assertIsNone(found['publication'])
+
+    def test_a_brief_that_is_not_made_is_not_kept(self):
+        from studio_core import document_library
+
+        ident = self.written()
+        self.harness()
+        with patch.dict(os.environ, {'FAKE_BRAND_REFUSES': 'No layout.'}):
+            with self.assertRaisesRegex(ValueError, 'No layout'):
+                self.post('desk-brief', {'id': ident})
+        library = document_library.opened()
+        self.assertEqual(library.catalog(kind='blog')['items'] if library else [], [])
 
 
 if __name__ == '__main__':
