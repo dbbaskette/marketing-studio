@@ -6118,6 +6118,10 @@ async function unfinishedMigration(){
   t.f.run('sRunOnDesk(migrated)');
   assert.ok(t.nodes().some(n=>n.textContent.includes('Unfinished steps remain incomplete')));
   assert.ok(!t.nodes().some(n=>n.textContent.includes('It was finished here')));
+  assert.ok(!t.nodes().some(n=>n.textContent.includes('its last step stopped')),'a run that never stopped says nothing about a stop');
+  t.f.set('migrated',{...found,on_desk:true,unfinished_migration:true,next:null,error:'Synthetic failure.'});
+  t.f.run('sRunOnDesk(migrated)');
+  assert.ok(t.nodes().some(n=>n.textContent==='Before it was opened on the desk, its last step stopped: Synthetic failure.'),'a saved failure stays in the run’s history');
 }
 
 async function blogReadingAndUnifiedSources(){

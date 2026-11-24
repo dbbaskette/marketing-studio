@@ -76,6 +76,32 @@ class SavedStateCase(FilesCase):
             found = self.approve(self.submit(found, page=page), page=page)
         return self.submit(found, content, page=page, **extra)
 
+    def research_execution_run(self):
+        """A page run saved with a research execution record (schema 4), research skipped."""
+        from studio_core import research_contract, research_session
+
+        contract = {'schema': 2, 'name': 'synthetic'}
+        protocol = research_session.PROTOCOL
+        execution = {
+            'schema': 1,
+            'protocol': protocol,
+            'workers': 1,
+            'capability': {'protocol': protocol},
+        }
+        with (
+            patch.object(research_contract, 'snapshot', return_value=contract),
+            patch.object(research_contract, 'runtime_for', return_value=self.base),
+            patch.object(research_session, 'execution', return_value=execution),
+        ):
+            found = self.create(page=True, research='web-allowed', sources=[self.source()['id']])
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(run['schema'], 4)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            runner.dispatch(
+                self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
+            )
+        return runner.survey(self.root, found['id'])
+
     def refused(self, ident, words, errors=ValueError):
         """Not eligible, with the saved flow named; applying changes nothing."""
         directory = studio.inside(self.root, 'articles', ident)
@@ -180,12 +206,6 @@ class EarlyStopTests(SavedStateCase):
         self.refused(found['id'], 'no usable manuscript or supported outline')
         self.assertEqual(self.submit(runner.survey(self.root, found['id']))['awaits'], 'decision')
 
-    def test_unstructured_outline_keeps_its_saved_flow(self):
-        found = self.submit(self.create(), 'Unstructured notes only, no headings.')
-        self.assertEqual((found['next'], found['awaits']), ('outline', 'decision'))
-        self.refused(found['id'], 'cannot yet be moved losslessly')
-        self.assertEqual(self.approve(runner.survey(self.root, found['id']))['next'], 'draft')
-
 
 class MaterialStopTests(SavedStateCase):
     """Stops with a usable manuscript or heading outline migrate losslessly."""
@@ -243,6 +263,69 @@ class MaterialStopTests(SavedStateCase):
         described = runner.engine(self.root).describe(found['id'])
         row = next(row for row in described['stages'] if row['stage'] == 'draft')
         self.assertTrue(row['auto_accepted'])
+
+    def test_unstructured_outline_migrates_as_outline_notes_with_its_step_still_to_do(self):
+        notes = 'Unstructured notes only, no headings.'
+        found = self.submit(self.create(), notes)
+        self.assertEqual((found['next'], found['awaits']), ('outline', 'decision'))
+        result, meta, draft = self.migrates(found['id'])
+        self.assertEqual((meta['material'], result['scope']), ('outline', 'draft'))
+        # Every word is kept as the start's notes; no brief or prose is invented from them.
+        self.assertEqual(
+            (draft['opening'], draft['opening_brief'], draft['sections']), ('', '', [])
+        )
+        self.assertEqual(result['start']['notes'], notes)
+        self.assertEqual(
+            (result['start']['step'], result['start']['steps']), ('outline', ['outline', 'draft'])
+        )
+        self.assertEqual(meta['historical_stages']['outline']['status'], 'draft')
+
+    def test_failed_drafting_after_an_approved_outline_migrates_with_the_failure_kept(self):
+        found = self.approve(self.submit(self.create(page=True), OUTLINE, page=True), page=True)
+        self.assertEqual((found['next'], found['awaits']), ('draft', 'submission'))
+        engine = runner.engine(self.root)
+        engine.keep_local(
+            found['id'],
+            {'enabled': False, 'status': 'failed', 'error': 'Synthetic failure.', 'reason': 'cli'},
+        )
+        local = self.root / '.blog-runs' / (found['id'] + '.json')
+        kept = local.read_bytes()
+        result, meta, _ = self.migrates(found['id'])
+        # The failure stays in the run's history; the step stays unfinished; nothing retries it.
+        self.assertEqual(local.read_bytes(), kept)
+        self.assertNotIn('draft', meta['historical_stages'])
+        self.assertEqual(result['start']['step'], 'draft')
+        self.assertIsNone(result['start']['job'])
+        described = runner.engine(self.root).describe(found['id'])
+        self.assertEqual(described['error'], 'Synthetic failure.')
+
+    def test_research_execution_run_migrates_with_its_record_kept(self):
+        """A run saved with a research execution record (schema 4): its drafting reached a
+        usable manuscript, and the record is kept with the run's bytes, uninterpreted."""
+        found = self.research_execution_run()
+        found = self.written(found, 'draft', MANUSCRIPT, page=True)
+        _, meta, _ = self.migrates(found['id'])
+        self.assertEqual(meta['material'], 'draft')
+        # The repository replay guard reads the moved blog as the domain reader does.
+        from studio_core.sync_guard import worker_in_progress
+
+        self.assertFalse(worker_in_progress(self.root))
+
+    def test_finished_ideas_or_outline_migrate_with_outline_scope_only(self):
+        for mode, text in (('ideas', IDEAS), ('outline', OUTLINE)):
+            with self.subTest(mode=mode):
+                found = self.approve(
+                    self.submit(self.create(page=True, mode=mode, stop='outline'), text, page=True),
+                    page=True,
+                )
+                self.assertTrue(found['complete'])
+                # No DRAFT.md: there is no finished Open on the desk for it.
+                self.assertFalse(runner.engine(self.root).describe(found['id'])['desk_open'])
+                result, meta, draft = self.migrates(found['id'])
+                self.assertEqual((meta['material'], result['scope']), ('outline', 'outline'))
+                self.assertIsNone(result['start'])
+                self.assertTrue(draft['sections'])
+                self.assertTrue(all(not s['text'] for s in draft['sections']))
 
     def test_ideas_waiting_at_their_gate_migrate_with_outline_scope_only(self):
         found = self.submit(self.create(mode='ideas', stop='outline'), IDEAS)
@@ -326,23 +409,6 @@ class KeptStopTests(SavedStateCase):
         self.refused(found['id'], 'already finished')
         self.assertTrue(runner.engine(self.root).describe(found['id'])['desk_open'])
 
-    def test_finished_ideas_keep_developing_in_their_saved_flow(self):
-        found = self.approve(
-            self.submit(self.create(page=True, mode='ideas', stop='outline'), IDEAS, page=True),
-            page=True,
-        )
-        self.assertTrue(found['complete'])
-        self.refused(found['id'], 'already finished')
-        # No DRAFT.md: the finished Open on the desk is not offered; Develop continues it.
-        self.assertFalse(runner.engine(self.root).describe(found['id'])['desk_open'])
-        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
-            runner.dispatch(
-                self.root,
-                'develop',
-                {'id': found['id'], 'expected': found['expected'], 'request': 'One way'},
-            )
-        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
-
     def test_working_or_queued_page_run_waits_for_its_step(self):
         for state in (
             {'enabled': True, 'status': 'queued'},
@@ -352,35 +418,6 @@ class KeptStopTests(SavedStateCase):
                 found = self.written(self.create(page=True), 'draft', MANUSCRIPT, page=True)
                 runner.engine(self.root).keep_local(found['id'], state)
                 self.refused(found['id'], 'under way')
-
-    def test_research_execution_run_keeps_its_saved_flow(self):
-        """A run saved with a research execution record (schema 4) is outside the fixed
-        migration format today, though its drafting reached a usable manuscript."""
-        from studio_core import research_contract, research_session
-
-        contract = {'schema': 2, 'name': 'synthetic'}
-        protocol = research_session.PROTOCOL
-        execution = {
-            'schema': 1,
-            'protocol': protocol,
-            'workers': 1,
-            'capability': {'protocol': protocol},
-        }
-        with (
-            patch.object(research_contract, 'snapshot', return_value=contract),
-            patch.object(research_contract, 'runtime_for', return_value=self.base),
-            patch.object(research_session, 'execution', return_value=execution),
-        ):
-            found = self.create(page=True, research='web-allowed', sources=[self.source()['id']])
-        _, _, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['schema'], 4)
-        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
-            runner.dispatch(
-                self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
-            )
-        found = self.written(runner.survey(self.root, found['id']), 'draft', MANUSCRIPT, page=True)
-        self.refused(found['id'], 'supported saved Blog Studio run')
-        self.assertEqual(self.approve(found, page=True)['next'], 'review')
 
     def test_unreadable_run_or_session_record_keeps_every_file(self):
         for name in (runner.STATE, 'session.json'):
@@ -406,6 +443,7 @@ class KeptStopTests(SavedStateCase):
     def test_registered_manuscript_without_a_run_keeps_the_editor_exception(self):
         ident = self.article(MANUSCRIPT)
         self.assertFalse((studio.inside(self.root, 'articles', ident) / runner.STATE).exists())
-        # The preview names the missing run record; applying it today fails on that same
-        # missing record (a KeyError, not a refusal sentence) and writes nothing.
-        self.refused(ident, 'derived/blog-run.json', (ValueError, KeyError))
+        # The preview and applying it give the same refusal sentence, and write nothing.
+        shown = self.refused(ident, 'no saved step-by-step run')
+        with self.assertRaisesRegex(ValueError, 'no saved step-by-step run'):
+            desk_chat.migrate(self.root, ident, shown['expected'] or 'bm1.' + 'x' * 43)

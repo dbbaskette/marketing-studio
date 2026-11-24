@@ -28,6 +28,19 @@ MAX_BYTES = 32 * 1024 * 1024
 CHANGED = 'This blog or its inputs changed. Preview Open on the desk again before applying.'
 REFUSAL = 'Your saved flow remains available. No writing or approval has changed.'
 PENDING = 'Opening this blog on the desk was interrupted. Repeat desk migrate with its preview token to recover before continuing or sharing.'
+NOTHING_MADE = 'There is no usable manuscript or supported outline yet. Continue the saved flow until one is saved.'
+FINISHED = 'This blog already finished. Use its existing finished-blog Open on the desk action.'
+NO_RUN = (
+    'This blog has no saved step-by-step run to move. Use Open on the desk in Edit manuscript '
+    'to bring its saved draft to the desk.'
+)
+OUTLINE_LOSS = 'This outline cannot yet be moved losslessly. Keep using the saved flow or supply a supported manuscript.'
+
+
+class Wait(ValueError):
+    """A refusal that ends without restoring anything: a step or job under way, another
+    computer driving the blog, or this blog's own interrupted opening, which its recovery
+    finishes. Its words are the same as any other refusal's."""
 
 
 def _json(value):
@@ -120,10 +133,13 @@ def prepare_migration(record, saved_inputs):
                 'Restore a supported saved Blog Studio run, including its review level and research contract, before opening on the desk.'
             )
         pipeline, stages = run['pipeline'], run['stages']
-        if all(stages.get(stage, {}).get('status') == 'approved' for stage in pipeline):
-            raise ValueError(
-                'This blog already finished. Use its existing finished-blog Open on the desk action.'
-            )
+        if (
+            all(stages.get(stage, {}).get('status') == 'approved' for stage in pipeline)
+            and files.get('DRAFT.md', b'').strip()
+        ):
+            # A finished blog with a draft has its own Open on the desk. Finished ideas or an
+            # outline-only run have no draft, so they move as their waiting outline does.
+            raise ValueError(FINISHED)
         for stage, value in stages.items():
             if value.get('hash') and blog_runner.STAGES[stage][1] not in files:
                 raise ValueError(
@@ -140,9 +156,7 @@ def prepare_migration(record, saved_inputs):
             None,
         )
         if material is None:
-            raise ValueError(
-                'There is no usable manuscript or supported outline yet. Continue the saved flow until one is saved.'
-            )
+            raise ValueError(NOTHING_MADE)
         text = files[material].decode('utf-8')
         parsed = desk_images.fitted(desk.split(text, title=record['title']))
         if (
@@ -195,19 +209,15 @@ def prepare_migration(record, saved_inputs):
                 raise ValueError(
                     'This saved work has more publishing notes than the desk supports. Keep using its saved flow.'
                 )
-        if kind == 'outline':
+        if kind == 'outline' and (
             # The fixed Markdown outline format must round-trip before interpreting its
-            # complete text as briefs. Lists, shortened headings and images are refused.
-            if (
-                len(parsed['sections']) < 2
-                or parsed.get('images')
-                or desk.join(parsed).strip() != text.replace('\r\n', '\n').strip()
-                or len(parsed['opening']) > desk.BRIEF
-                or any(len(s['text']) > desk.BRIEF for s in parsed['sections'])
-            ):
-                raise ValueError(
-                    'This outline cannot yet be moved losslessly. Keep using the saved flow or supply a supported manuscript.'
-                )
+            # complete text as briefs. Lists, shortened headings and images do not.
+            len(parsed['sections']) >= 2
+            and not parsed.get('images')
+            and desk.join(parsed).strip() == text.replace('\r\n', '\n').strip()
+            and len(parsed['opening']) <= desk.BRIEF
+            and all(len(s['text']) <= desk.BRIEF for s in parsed['sections'])
+        ):
             draft.update(opening='', opening_brief=parsed['opening'])
             draft['sections'] = [{**s, 'brief': s['text'], 'text': ''} for s in parsed['sections']]
             writes['desk/start.json'] = {
@@ -226,6 +236,28 @@ def prepare_migration(record, saved_inputs):
             if scope != 'draft':
                 # An outline-only or review request grants no later drafting plan.
                 writes.pop('desk/start.json')
+        elif kind == 'outline':
+            # Outline notes the desk cannot read as briefs move as the desk's own outline
+            # start keeps notes it cannot parse: every word kept as the start's notes, no
+            # briefs or prose invented, and the outline step still to do. Notes holding
+            # image data, or a review request that has no outline step, are not moved.
+            if scope == 'part' or desk_images.holds(text) or len(text) > desk.LIMIT:
+                raise ValueError(OUTLINE_LOSS)
+            draft.update(opening='', opening_brief='', sections=[])
+            steps = ['outline', 'draft'] if scope == 'draft' else ['outline']
+            writes['desk/start.json'] = {
+                'schema': 1,
+                'way': 'outline' if scope == 'draft' else 'shape',
+                'steps': steps,
+                'step': 'outline',
+                'job': None,
+                'execution': 'conversation',
+                'started_at': at,
+                'ended_at': None,
+                'open': 'draft' if scope == 'draft' else 'outline',
+                'notes': text,
+                'research_from': None,
+            }
         session = copy.deepcopy(record)
         session.update(flow='desk', execution='conversation', conversation_scope=scope)
         writes['desk/migration.json'] = {
@@ -481,11 +513,15 @@ def _snapshot(root, ident):
     directory = studio.inside(root, 'articles', ident)
     files, budget = {}, [0, 0]
     if pending(root, ident):
-        raise ValueError(PENDING)
+        raise Wait(PENDING)
     if not directory.is_dir():
         raise ValueError('Choose a saved Blog Studio blog.')
     _read_tree(directory, files, 'article/', budget)
     original = {name.removeprefix('article/'): raw for name, raw in files.items()}
+    if 'session.json' not in original:
+        raise ValueError('Choose a saved Blog Studio blog.')
+    if blog_runner.STATE not in original:
+        raise ValueError(NO_RUN)
     if any(len(original[name]) > 1_000_000 for name in ('session.json', blog_runner.STATE)):
         raise ValueError(
             'The original records exceed the supported migration size. Keep using the saved flow.'
@@ -582,7 +618,7 @@ def _snapshot(root, ident):
             )
         if hub.get('repository'):
             if not driver.get('computer') or driver.get('computer') != (identity or {}).get('id'):
-                raise ValueError(
+                raise Wait(
                     'Another computer drives this blog, or it has no driver. Take it before opening on the desk.'
                 )
     local = root / '.blog-runs' / (ident + '.json')
@@ -610,7 +646,7 @@ def _snapshot(root, ident):
         if article == ident:
             files['worker/tools/' + name] = raw
             if unsettled or current and current.current == 'tool:' + job['id']:
-                raise ValueError(
+                raise Wait(
                     'A saved job is under way or waiting to land. Stop or finish it before opening on the desk.'
                 )
     index = root / '.blog-runs/desk-jobs' / (ident + '.json')
@@ -642,7 +678,7 @@ def _snapshot(root, ident):
             )
     active = bool(current and current.current == ident)
     if busy or active:
-        raise ValueError('A step of this blog is under way. Stop it before opening on the desk.')
+        raise Wait('A step of this blog is under way. Stop it before opening on the desk.')
     files['worker/acquired'] = str(active).encode()
     basis = {name: _hash(raw) for name, raw in sorted(files.items())}
     token = 'bm1.' + base64.urlsafe_b64encode(

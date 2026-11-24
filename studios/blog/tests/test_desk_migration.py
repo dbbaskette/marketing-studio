@@ -573,9 +573,13 @@ class MigrationTests(RunnerCase):
                 if change == 'missing':
                     (directory / 'DRAFT.md').unlink()
                 if change == 'outline':
+                    # Unstructured outline notes move as notes (test_saved_states); notes
+                    # holding image data cannot be kept as a start's notes, so they refuse.
                     (directory / 'DRAFT.md').unlink()
                     run['stages'].pop('draft')
-                    (directory / 'OUTLINE.md').write_text('Unstructured notes only.')
+                    (directory / 'OUTLINE.md').write_text(
+                        'Unstructured notes only.\n\n![a](data:image/png;base64,iVBORw0KGgo=)\n'
+                    )
                 if change == 'link':
                     (directory / 'linked').symlink_to(self.base)
                 studio.write_json(directory / runner.STATE, run)
