@@ -564,11 +564,14 @@ class TurnTests(StudioCase):
 
         self.workers.cost = 0.25
         self.workers.then('research-plan', held)
-        first = self.saved_start()
+        # Each training is held after its research plan, where a saved run waited.
+        self.pause_after('research-plan', title='health-checks', later=True)
+        self.pause_after('research-plan', title='blue-green', later=True)
+        first = self.start()
         self.assertTrue(entered.wait(30))
-        second = self.saved_start(title='Health checks')
+        second = self.start(title='Health checks')
         self.until(lambda: self.view(second)['queue'])
-        third = self.saved_start(title='Blue green')
+        third = self.start(title='Blue green')
         self.until(lambda: self.view(third)['queue'])
         self.assertEqual((self.view(first)['queue'], self.view(second)['queue'],
                           self.view(third)['queue']), (None, {'ahead': 0}, {'ahead': 1}))
@@ -590,8 +593,10 @@ class TurnTests(StudioCase):
                           runs['blue-green']['path'], runs['blue-green']['driver']),
                          ('Blue green', 'working', str(third), None))
         self.assertIn('Drafting the research plan', runs['rolling-restarts']['sentence'])
+        self.engine.act(first, 'pause')
         go.set()
-        self.until(lambda: all(self.state(root) == 'waiting' for root in (first, second, third)))
+        self.until(lambda: all(self.state(root) == 'paused' and self.engine._run(root).thread is None
+                               for root in (first, second, third)))
         runs = {run['id']: run for run in self.engine.standing()['runs']}
         self.assertEqual([runs[ident]['spent']['dollars'] for ident in sorted(runs)],
                          [0.25, 0.25, 0.25])
