@@ -217,10 +217,11 @@ class PresentationBundleTests(unittest.TestCase):
             link.type = tarfile.SYMTYPE
             link.linkname = 'missing'
             output.addfile(link)
+        # The Google Cloud CLI payload (scripts/local_bundle/tool_payload.py) unpacks this way.
         with self.assertRaisesRegex(ValueError, 'Broken'):
-            builder.unpack_tar(archive, self.root / 'refused')
+            builder.distribution.unpack(archive, self.root / 'refused')
         target = self.root / 'sdk'
-        builder.unpack_tar(archive, target, exclude=['tests/missing-cert'])
+        builder.distribution.unpack(archive, target, exclude=['tests/missing-cert'])
         self.assertEqual((target / 'bin/gcloud').read_bytes(), b'cli')
         self.assertEqual((target / 'LICENSE').read_bytes(), b'license')
         self.assertFalse((target / 'tests/missing-cert').exists())

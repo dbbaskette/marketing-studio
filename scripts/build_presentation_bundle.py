@@ -108,12 +108,6 @@ def run(command, env, cwd=None):
     return result.stdout
 
 
-def unpack_tar(archive, destination, exclude=()):
-    """Strip the single archive root using the release builder's validated link handling."""
-    # distribution.unpack handles gzip; micromamba's bzip2 archive is handled separately.
-    distribution.unpack(archive, destination, exclude=exclude)
-
-
 def unpack_zip(archive, destination):
     with zipfile.ZipFile(archive) as source:
         seen = set()
