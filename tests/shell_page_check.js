@@ -236,7 +236,7 @@ async function check() {
     ['done', 'draft', 'working', 'count']);
   const toggle = nav.querySelector('.parts-toggle');
   assert.equal(toggle.type, 'button');
-  assert.equal(named(toggle), 'ShowingGuide, Draft', 'narrower, one control names the part shown and its state');
+  assert.equal(named(toggle), 'Showing Guide, Draft', 'narrower, one control names the part shown and its state');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');
   assert.equal(toggle.getAttribute('aria-controls'), nav.querySelector('.parts-list').id);
   const keyOn = (node, name) => nav.querySelector('.parts-list').dispatch('keydown', { key: name, target: node, preventDefault() {} });

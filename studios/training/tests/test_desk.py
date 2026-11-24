@@ -8001,15 +8001,21 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
 
     def test_the_desk_opens_with_progress_and_cards(self):
         result = self.open_desk(self.on_desk(a_desk()), [
-            {'snapshot': 'desk'}, {'click': '201'}, {'snapshot': 'other'}])
+            {'snapshot': 'desk'}, {'click': 'Plan, Draft', 'index': 1}, {'snapshot': 'other'}])
         shot = result['snapshots']['desk']
         self.assertEqual(shot['ledes'], [DESK_LEDE])
         self.assertIn(NOTHING_NEEDED.format(n=12), shot['text'])
         self.assertIn('Researching', shot['text'])
-        self.assertEqual(shot['pressed'], ['101'])
-        self.assertIn('201', shot['buttons'])
+        # The parts down the left: each level a group, every material with its state, the one
+        # shown marked; the level switch they replace is gone.
+        self.assertEqual(shot['pressed'], [])
+        self.assertEqual(shot['partsList'], [
+            ['Level 101', ['> Plan, Draft', 'Guide, Draft', 'Brief, Draft', 'Deck, Draft', 'Practice, Draft']],
+            ['Level 201', ['Plan, Draft', 'Guide, Draft', 'Brief, Draft', 'Deck, Draft', 'Practice, Draft']],
+            ['Behind it', ['Research & sources']]])
+        self.assertEqual(shot['partsControl'], [['Showing Plan, Draft', 'false']])
         self.assertEqual(shot['parts'][:2], ['Researching', 'Plan'])
-        self.assertIn('Guide · Draft', shot['buttons'])
+        self.assertIn('Guide, Draft', shot['buttons'])
         self.assertNotIn('Guide', shot['parts'])
         self.assertIn('10 of 10 drafts available.', shot['text'])
         self.assertNotIn('in about 12 minutes', shot['text'])
@@ -8023,7 +8029,11 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             self.assertNotIn(seen_of(name), shot['text'])
         self.assertIn(A_DRAFT, shot['text'])
         self.assertIn('Checked for you: 2 checks passed.', shot['text'])
-        self.assertEqual(result['snapshots']['other']['pressed'], ['201'])
+        # Choosing a part of another level shows it, marked there.
+        other = result['snapshots']['other']
+        self.assertEqual([group[1] for group in other['partsList'] if group[0] == 'Level 201'],
+                         [['> Plan, Draft', 'Guide, Draft', 'Brief, Draft', 'Deck, Draft', 'Practice, Draft']])
+        self.assertIn('Plan, Draft', other['current'])
         # Each card is marked ready on its own, with the version shown on it.
         self.assertEqual(shot['buttons'].count('Mark ready'), 1)
 
@@ -8081,12 +8091,12 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Still to write', status_text)
         self.assertIn('It needs you.', status_text)
         desk_shot = shots['desk']
-        self.assertIn('Deck · Needs attention', desk_shot['buttons'])
+        self.assertIn('Deck, Needs you', desk_shot['buttons'])
         self.assertIn('5 of 5 ready to read · 0 of 5 marked ready · 4 drafts awaiting your '
                       'review · 1 needs attention.', desk_shot['text'])
         self.assertNotIn('What is left', desk_shot['text'])   # every draft is written
         self.assertIn(reviewing, desk_shot['text'])
-        self.assertEqual(desk_shot['pressed'], ['101'])
+        self.assertEqual(desk_shot['partsList'][0][0], 'Level 101')
         # Opening a screen asked for nothing to be made.
         self.assertEqual(self.posts(result), [])
 
@@ -8126,10 +8136,10 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                                       {'title': 'Why restarts roll', 'points': ['Capacity']}]}
         result = self.open_desk(self.on_desk(a_desk(plan, guide, deck, levels=('101',),
                                                     running=False), run), [
-            {'click': 'Deck · Needs your text approval'}, {'snapshot': 'deck'},
+            {'click': 'Deck, Needs you'}, {'snapshot': 'deck'},
             {'click': 'Review slide text'}, {'snapshot': 'review'}])
         shot = result['snapshots']['deck']
-        self.assertIn('Guide · Queued', shot['buttons'])
+        self.assertIn('Guide, Queued', shot['buttons'])
         self.assertNotIn('Writing', ' '.join(shot['buttons']))
         self.assertIn('Review slide text', shot['buttons'])
         self.assertNotIn('Mark this level ready', shot['buttons'])
@@ -8208,7 +8218,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             {'snapshot': 'read'}, {'click': 'Edit Guide'}, {'snapshot': 'edit'},
             {'fill': 'Text of When capacity holds', 'value': 'Typed, not saved yet.',
              'stay': True},
-            {'click': 'Brief · Draft'}, {'click': 'Guide · Draft'}, {'snapshot': 'back'}])
+            {'click': 'Brief, Draft'}, {'click': 'Guide, Draft'}, {'snapshot': 'back'}])
         read = result['snapshots']['read']
         # Learners' text, rendered on the reading surface: no raw Markdown, no edit box.
         self.assertIn('Some bold text.', read['text'])
@@ -8242,7 +8252,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(answers, [
             {'click': 'Finishing'}, {'click': 'Finishing: choose another material'},
             {'snapshot': 'choices'}, {'click': 'Brief'}, {'snapshot': 'brief'},
-            {'click': 'Guide · Draft'}, {'snapshot': 'back'}])
+            {'click': 'Guide, Draft'}, {'snapshot': 'back'}])
         self.assertIn('Brief', result['snapshots']['choices']['buttons'])
         self.assertIn('A brief.', result['snapshots']['brief']['text'])
         self.assertIn('Some bold text.', result['snapshots']['back']['text'])
@@ -8271,7 +8281,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         result = self.open_desk(self.on_desk(desk, **{
             'GET ' + card.replace('%7B%7D', 'document%40101'): [ok(guide_view)],
             'GET ' + card.replace('%7B%7D', 'brief%40101'): [ok(brief_view)]}), [
-            {'click': 'Brief · Draft'}, {'click': 'Guide · Draft'}, {'click': 'Finishing'},
+            {'click': 'Brief, Draft'}, {'click': 'Guide, Draft'}, {'click': 'Finishing'},
             {'snapshot': 'finishing'}, {'click': 'Finishing: choose another material'},
             {'snapshot': 'all'}])
         shot = result['snapshots']['finishing']
@@ -8482,7 +8492,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         # The whole level waits for its drafts; the finished one does not.
         self.assertNotIn('Mark this level ready', shot['buttons'])
         self.assertEqual(shot['buttons'].count('Mark ready'), 1)
-        self.assertIn('Guide · Writing', shot['buttons'])
+        self.assertIn('Guide, Writing', shot['buttons'])
         self.assertEqual(self.posts(result), [('/api/drafts/ready', {
             'path': str(self.root), 'name': 'blueprint@101', 'seen': seen_of('blueprint@101')})])
 
@@ -8500,7 +8510,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         for text in ('Writing the level 101 learner guide.', '1 of 3 drafts available.',
                      'Up next: the level 101 reference brief.'):
             self.assertIn(text, shot['text'])
-        self.assertIn('Brief · Queued', shot['buttons'])
+        self.assertIn('Brief, Queued', shot['buttons'])
         self.assertNotIn('Continue when ready to create materials.', shot['text'])
         self.assertEqual(self.posts(result), [])
 
@@ -8918,7 +8928,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         said = 'Being worked on in conversation. Incomplete materials remain incomplete.'
         result = self.open_desk(self.on_desk(desk, a_desk_run('waiting', said), **{
             'GET /api/drafts/card': [ok(plan_view), ok(guide_view)]}), [
-            {'snapshot': 'plan'}, {'click': 'Guide · Draft'}, {'snapshot': 'guide'}])
+            {'snapshot': 'plan'}, {'click': 'Guide, Draft'}, {'snapshot': 'guide'}])
         for shot in result['snapshots'].values():
             for runner_only in ('Mark this level ready', 'Mark every material ready',
                                 'Google Doc', 'Finishing', 'Stop training', 'Pause training',
@@ -9183,7 +9193,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         answered = a_desk(marked=[], left=[{'name': 'deck@101', 'why': 'refused', 'said': said}])
         result = self.open_desk(self.on_desk(a_desk(), **{
             'POST /api/drafts/reviewed-ready': [answered]}),
-            [{'click': 'Deck · Draft'}, {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
+            [{'click': 'Deck, Draft'}, {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
              {'click': 'Mark 1 material ready'}, {'snapshot': 'stopped'}])
         sheet = result['snapshots']['sheet']
         # The deck was opened here; nothing else of the level was, so nothing else is sent.
@@ -9239,7 +9249,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'GET /api/drafts': [before, before, before, after],
             'GET /api/drafts/card': [ok(plan_view), ok(guide_view)],
             'POST /api/drafts/reviewed-ready': [answered]}), [
-            {'click': 'Guide · Draft'}, {'click': 'Plan · Draft'},
+            {'click': 'Guide, Draft'}, {'click': 'Plan, Draft'},
             {'poll': True}, {'poll': True}, {'poll': True},
             {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
             {'tick': 'Also mark the one I have not opened'},
@@ -9257,7 +9267,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         answered = a_desk(*cards, levels=('101',), marked=[], left=[])
         result = self.open_desk(self.on_desk(a_desk(*cards, levels=('101',)), **{
             'POST /api/drafts/reviewed-ready': [answered]}),
-            [{'click': 'Deck · Draft'}, {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
+            [{'click': 'Deck, Draft'}, {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
              {'tick': 'Also mark the 2 I have not opened'}, {'snapshot': 'ticked'},
              {'click': 'Mark 3 materials ready'}])
         sheet = result['snapshots']['sheet']
@@ -9282,7 +9292,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         answered = a_desk(marked=['deck@101', 'deck@201'], left=[])
         result = self.open_desk(self.on_desk(a_desk(), **{
             'POST /api/drafts/reviewed-ready': [answered]}),
-            [{'click': 'Deck · Draft'}, {'click': '201'}, {'click': 'Deck · Draft'},
+            [{'click': 'Deck, Draft'}, {'click': 'Deck, Draft', 'index': 1},
              {'click': 'Mark this level ready'}, {'snapshot': 'level'},
              {'click': 'Every level'}, {'snapshot': 'every'},
              {'click': 'Mark 2 materials ready'}])
@@ -9367,11 +9377,80 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Research & sources', cards['buttons'])
         self.assertEqual(cards['parts'][:2], ['Researching', 'Plan'])
         self.assertNotIn('Sources', cards['parts'])
-        self.assertEqual(sources['pressed'], ['101'])
+        self.assertEqual(sources['partsList'][-1], ['Behind it', ['> Research & sources']])
+        # On a phone the list is one control above the work, naming the part shown.
+        self.assertEqual(sources['partsControl'], [['Showing Research & sources', 'false']])
         self.assertIn('Sources', sources['parts'])
         self.assertNotIn('Plan', sources['parts'])
         # Every control is the browser's own: the harness refuses a click on anything else.
         self.assertEqual(result['strayListeners'], [])
+
+    def test_the_parts_list_says_each_state_in_the_shared_words(self):
+        # Each material's state in the words every studio shares; several scenarios of a level
+        # are one part, saying the most pressing of their states; the research counts its
+        # sources. Only a material being written moves.
+        second = {**a_card('scenario:main@101', 'held', 'Needs updating.'),
+                  'name': 'scenario:second@101', 'seen': seen_of('scenario:second@101')}
+        found = a_desk(a_card('blueprint@101', 'ready', 'Ready.'),
+                       a_card('document@101', 'writing', 'Being written.', (), seen=None),
+                       a_card('brief@101', 'queued', 'Queued after the guide.', (), seen=None),
+                       a_card('deck@101', 'decide', 'Needs your text approval.'),
+                       a_card('scenario:main@101'), second, levels=('101',))
+        found['body']['sources']['account'] = {'sources': {'yours': 1, 'public': 2}, 'findings': [],
+                                               'check': {'said': 'Checked.'}, 'read': '', 'gaps': []}
+        result = self.open_desk(self.on_desk(found), [{'snapshot': 'desk'}])
+        shot = result['snapshots']['desk']
+        self.assertEqual(shot['partsList'], [
+            # The deck that waits on the person is the part the desk opens on.
+            ['Level 101', ['Plan, Ready', 'Guide, Writing', 'Brief, Queued', '> Deck, Needs you',
+                           'Practice · 2, Out of date']],
+            ['Behind it', ['Research & sources, 3 sources']]])
+        self.assertNotIn('Needs your text approval', ' '.join(shot['buttons']),
+                         'the longer sentence stays on the material itself')
+
+    def test_a_part_chosen_is_kept_in_the_history_and_back_returns_to_the_one_before(self):
+        result = self.open_desk(self.on_desk(a_desk()), [
+            {'snapshot': 'opened'}, {'click': 'Guide, Draft'}, {'snapshot': 'guide'},
+            {'click': 'Research & sources'}, {'snapshot': 'sources'}, {'poll': True},
+            {'snapshot': 'polled'}, {'back': True}, {'snapshot': 'back'}, {'back': True},
+            {'snapshot': 'first'}])
+        shots = result['snapshots']
+        part = lambda name: shots[name]['history']['state'].get('deskPart')
+        # Opening the desk says what it shows without adding an entry.
+        self.assertEqual(part('opened'), {'level': '101', 'sources': False, 'material': 'blueprint@101'})
+        self.assertEqual(shots['opened']['history']['behind'], 0)
+        # Each part chosen is an entry of its own, the screen's own kept under it.
+        self.assertEqual(part('guide'), {'level': '101', 'sources': False, 'material': 'document@101'})
+        self.assertEqual(part('sources'), {'level': '101', 'sources': True, 'material': None})
+        self.assertEqual(shots['sources']['history']['state']['deskStep'], 2)
+        self.assertEqual(shots['sources']['focus'], 'Research & sources', 'the focus stays on the part chosen')
+        # A refresh never moves the person, nor adds an entry.
+        self.assertEqual(shots['polled']['partsList'][-1], ['Behind it', ['> Research & sources']])
+        self.assertEqual(shots['polled']['history']['behind'], 2)
+        # Back returns to the part before, on the same screen, without opening it again.
+        self.assertIn('> Guide, Draft', shots['back']['partsList'][0][1])
+        self.assertIn('Guide', shots['back']['parts'], 'the guide is shown again')
+        self.assertIn('> Plan, Draft', shots['first']['partsList'][0][1])
+        self.assertEqual(shots['first']['heading'], 'Rolling restarts')
+
+    def test_a_reload_opens_the_part_it_showed_and_back_leaves_past_the_parts(self):
+        kept = {'screen': 'run', 'path': str(self.root), 'artifact': None, 'deskStep': 1,
+                'deskPart': {'level': '201', 'sources': False, 'material': 'brief@201'}}
+        answers = self.on_desk(a_desk(), **{'GET /api/trainings': [self.listed('working', 'Researching.')]})
+        result = self.run_page(answers, [{'snapshot': 'reloaded'}, {'back': True},
+                                         {'snapshot': 'before'}, {'click': 'Back'},
+                                         {'snapshot': 'left'}], state=kept,
+                               earlier=[{'screen': 'trainings', 'path': None, 'artifact': None},
+                                        {**kept, 'deskStep': 0, 'deskPart': {'level': '101',
+                                         'sources': False, 'material': 'blueprint@101'}}])
+        shots = result['snapshots']
+        self.assertEqual([group[1] for group in shots['reloaded']['partsList'] if group[0] == 'Level 201'],
+                         [['Plan, Draft', 'Guide, Draft', '> Brief, Draft', 'Deck, Draft', 'Practice, Draft']])
+        self.assertIn('Brief', shots['reloaded']['parts'])
+        # The browser's Back returns to the part shown before it, on the same screen.
+        self.assertIn('> Plan, Draft', shots['before']['partsList'][0][1])
+        # The toolbar's Back leaves the screen.
+        self.assertEqual(shots['left']['heading'], 'Trainings')
 
 
 @unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
@@ -11809,8 +11888,8 @@ class LibraryScreenTests(ScriptedPage, PageCase):
             'POST /api/drafts/library-keep': [a_desk(guide, brief, levels=('101',), running=False,
                                                      library=kept)]})
         result = self.open_desk(answers, [
-            {'click': 'Guide · '}, {'snapshot': 'guide'},
-            {'click': 'Brief · '}, {'snapshot': 'brief'},
+            {'click': 'Guide, '}, {'snapshot': 'guide'},
+            {'click': 'Brief, '}, {'snapshot': 'brief'},
             {'click': 'Keep in library again'}, {'snapshot': 'kept'}])
         self.assertIn('Kept in the Document Library as Markdown, revision 2.',
                       result['snapshots']['guide']['text'])
@@ -11827,7 +11906,7 @@ class LibraryScreenTests(ScriptedPage, PageCase):
         kept = {'document@101': {'state': 'kept', 'revision': 2, 'document': 'restart-guide'}}
         answers = self.on_desk(a_desk(guide, levels=('101',), running=False, library=kept),
                                run=a_desk_run('done', 'Ready.'))
-        steps = [{'click': 'Guide · '}, {'snapshot': 'guide'}]
+        steps = [{'click': 'Guide, '}, {'snapshot': 'guide'}]
         home = 'http://127.0.0.1:8900'
         opened = self.open_desk(answers, steps, shell=True, continueHome=home)
         shot = opened['snapshots']['guide']
@@ -11844,7 +11923,7 @@ class LibraryScreenTests(ScriptedPage, PageCase):
     def test_the_kept_state_is_read_only_for_a_teammate(self):
         brief = a_card('brief@101', 'ready', 'Ready.', actions=('download',))
         failed = {'brief@101': {'state': 'failed', 'problem': 'The library is busy.'}}
-        steps = [{'click': 'Brief · '}, {'snapshot': 'brief'}]
+        steps = [{'click': 'Brief, '}, {'snapshot': 'brief'}]
         theirs = self.open_desk(self.on_desk(a_desk(brief, levels=('101',), running=False, ours=False,
                                                     library=failed), run=a_desk_run('done', 'Ready.')), steps)
         shot = theirs['snapshots']['brief']
@@ -11854,7 +11933,7 @@ class LibraryScreenTests(ScriptedPage, PageCase):
     def test_the_kept_state_is_offered_again_in_a_conversation(self):
         brief = a_card('brief@101', 'ready', 'Ready.', actions=('download',))
         failed = {'brief@101': {'state': 'failed', 'problem': 'The library is busy.'}}
-        steps = [{'click': 'Brief · '}, {'snapshot': 'brief'}]
+        steps = [{'click': 'Brief, '}, {'snapshot': 'brief'}]
         talking = self.open_desk(self.on_desk(a_desk(brief, levels=('101',), running=False,
                                                      library=failed, execution='conversation'),
                                               run=a_desk_run('done', 'Ready.')), steps)

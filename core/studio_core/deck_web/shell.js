@@ -513,7 +513,8 @@ const StudioShell = (() => {
     const toggle = make('button', 'parts-toggle'); toggle.type = 'button';
     toggle.dataset.key = named + ' toggle';
     toggle.setAttribute('aria-controls', listId);
-    toggle.append(make('span', 'parts-toggle-label', current ? 'Showing' : 'Parts'));
+    // Said before the part: "Showing Guide, Draft".
+    toggle.append(make('span', 'parts-toggle-label', current ? 'Showing ' : 'Parts'));
     if (current) partWords(toggle, current);
     const mark = make('span', 'parts-toggle-mark'); mark.setAttribute('aria-hidden', 'true');
     toggle.append(mark);

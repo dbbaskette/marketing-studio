@@ -65,6 +65,124 @@ function deskHeld(path) {
   return DESK.held[path];
 }
 
+// --- the training's parts -----------------------------------------------------------------
+// Down the left of the desk, the shared list of a project's parts (StudioShell.parts): one
+// group per level with its materials, then Behind it: Research & sources. Several scenarios
+// or Yoodli layouts of one level are one part, chosen between inside it as before. Each
+// material's state is said in the shared words (docs/design/ui-kit.md); its own sentence
+// stays on its card.
+const PART_WORDS = { writing: 'Writing', queued: 'Queued', decide: 'Needs you', needs: 'Needs you',
+  held: 'Out of date', ready: 'Ready', draft: 'Draft', 'left-out': 'Left out' };
+// A part that holds several materials says the most pressing of their states.
+const PART_ORDER = ['writing', 'decide', 'needs', 'held', 'queued', 'draft', 'ready'];
+
+// A level's parts: its materials in order, several scenarios or Yoodli layouts as one.
+function levelParts(found, level) {
+  const available = list(found.cards).filter(one => (one.level || '') === level && one.state !== 'left-out');
+  const groups = {};
+  for (const kind of ['scenario', 'yoodli']) {
+    const items = available.filter(one => one.kind === kind);
+    if (items.length > 1) groups[kind] = items;
+  }
+  const groupId = one => groups[one.kind] ? 'group:' + one.kind : one.name;
+  const options = [];
+  for (const one of available) {
+    const id = groupId(one);
+    if (options.some(option => option.id === id)) continue;
+    const items = groups[one.kind];
+    const state = items ? PART_ORDER.find(word => items.some(item => item.state === word)) : one.state;
+    options.push({ id, items: items || [one], state: PART_WORDS[state] || 'Draft',
+      name: items ? DESK_WORDS.kinds[one.kind] + ' · ' + items.length : cardTitle(one) });
+  }
+  return { available, groups, groupId, options };
+}
+
+function deskParts(found, held, shownId) {
+  if (typeof StudioShell === 'undefined' || !StudioShell.parts) return null;
+  const named = list(found.levels).filter(Boolean);
+  const groups = (named.length ? named : ['']).map(level => ({
+    title: level ? 'Level ' + level : 'Materials',
+    parts: levelParts(found, level).options.map(option => ({ id: JSON.stringify([level, option.id]),
+      name: option.name, state: option.state })) }));
+  const counted = found.sources?.account?.sources;
+  const sources = counted ? (Number(counted.yours) || 0) + (Number(counted.public) || 0) : 0;
+  groups.push({ title: 'Behind it', parts: [{ id: 'sources', name: 'Research & sources',
+    count: sources ? sources + (sources === 1 ? ' source' : ' sources') : '' }] });
+  return StudioShell.parts({ label: 'Parts of this training', key: 'desk-parts', groups,
+    chosen: held.sources ? 'sources' : JSON.stringify([held.level || '', shownId]),
+    choose: id => {
+      if (id === 'sources') return deskChoosePart(held, { sources: true });
+      const [level, option] = JSON.parse(id);
+      const items = levelParts(found, level).groups[String(option).replace('group:', '')];
+      const kept = held.material[level];
+      deskChoosePart(held, { level, material: !items ? option : (items.find(one => one.name === kept)
+        || items.find(one => ['needs', 'held', 'decide'].includes(one.state)) || items[0]).name });
+    } });
+}
+
+// The part shown is kept with the screen in the browser's history (`deskPart`): choosing one
+// adds an entry, so Back returns to the part before, and a reload opens the same part. A
+// refresh only says again what is shown; it never moves the person.
+function deskPartShown(held) {
+  return { level: held.level || '', sources: Boolean(held.sources),
+    material: held.sources ? null : held.material[held.level || ''] || null };
+}
+
+function deskAddress(held, push) {
+  const now = window.history && window.history.state;
+  if (!now || now.screen !== 'run' || now.path !== view.path) return;
+  const part = deskPartShown(held), was = now.deskPart;
+  if (was && was.level === part.level && was.sources === part.sources && was.material === part.material) return;
+  try {
+    if (push && was) window.history.pushState({ ...now, deskPart: part, deskStep: (now.deskStep || 0) + 1 }, '');
+    else window.history.replaceState({ ...now, deskPart: part }, '');
+  } catch (failure) { /* a browser that keeps nothing with the screen keeps the part for this page */ }
+}
+
+// The part an entry of the history names, set as the part shown.
+function deskFromAddress(held, state) {
+  const part = state && state.deskPart;
+  if (!part || typeof part !== 'object') return false;
+  held.level = typeof part.level === 'string' ? part.level : held.level;
+  held.sources = Boolean(part.sources);
+  if (!held.sources && typeof part.material === 'string') held.material[held.level || ''] = part.material;
+  return true;
+}
+
+// The browser's Back or Forward between two parts of the desk on screen: shown at once,
+// without opening the screen again. Anything else is a screen change, for open().
+function deskReturnTo(state) {
+  if (!state || state.screen !== 'run' || view.screen !== 'run' || state.path !== view.path
+      || !state.deskPart || !DESK.held[view.path]?.view) return false;
+  deskFromAddress(DESK.held[view.path], state);
+  paintDesk(false);
+  return true;
+}
+
+// A part chosen by the person: from the list, the needs line or a sheet's Open.
+function deskChoosePart(held, { level = held.level, material = null, sources = false }) {
+  held.sources = sources;
+  held.level = level || '';
+  if (material) held.material[held.level] = material;
+  deskAddress(held, true);
+  paintDesk(false);
+  revealPart();
+}
+
+// After a part is chosen, what it shows starts in view: on a wide screen the work's top, and
+// narrower the control above it, just under the toolbar.
+function revealPart() {
+  const nav = main().querySelector('.parts');
+  if (!nav || typeof nav.getBoundingClientRect !== 'function') return;
+  const toggle = nav.querySelector('.parts-toggle');
+  const column = !toggle || (typeof toggle.getClientRects === 'function' && !toggle.getClientRects().length);
+  const target = column ? main().querySelector('[data-zone="work"]') : nav;
+  if (!target) return;
+  const toolbar = byId('toolbar').getBoundingClientRect();
+  const top = target.getBoundingClientRect().top;
+  if (top < toolbar.bottom || top > window.innerHeight * 0.6) window.scrollBy(0, top - toolbar.bottom - 8);
+}
+
 // The version of each material the person opened on this desk, kept for the browser tab so
 // that a reload still knows what was reviewed. Mark reviewed materials ready sends only these.
 const OPENED_KEY = 'training-studio-opened:';
@@ -1678,6 +1796,8 @@ async function drawDesk(fresh) {
   const turn = view.turn;
   const path = view.path;
   const held = deskHeld(path);
+  // Opened from the history (a reload, Back or Forward): at the part it was showing.
+  if (fresh) deskFromAddress(held, window.history && window.history.state?.path === path ? window.history.state : null);
   try {
     const found = await ask('drafts', { path });
     if (turn !== view.turn) return;
@@ -1843,20 +1963,9 @@ function readyExplanation() {
     + 'Edit, check or download each material on its own. Google Docs and delivery remain separate choices.'));
 }
 
-function deskTabs(found, held) {
-  const named = list(found.levels).filter(Boolean);
-  if (!named.includes(held.level)) held.level = named[0] || '';
-  if (named.length < 2) return null;
-  return segmented('Level', named, Math.max(0, named.indexOf(held.level)), (index) => {
-    held.sources = false;
-    held.level = named[index];
-    paintDesk(false);
-    focusKey('desk-level ' + index);
-  }, 'desk-level');
-}
-
-// One material at a time. Reading navigation never approves or starts work. On a phone the
-// tabs are one row that scrolls sideways, and choosing one brings what it shows into view.
+// The tabs inside one material: its sections, a slide's tasks. Reading navigation never
+// approves or starts work. On a phone the tabs are one row that scrolls sideways, and
+// choosing one brings what it shows into view.
 function workspaceTabs(label, options, selected, choose, key) {
   const bar = make('div', 'desk-workspace-tabs');
   bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', label);
@@ -3131,6 +3240,7 @@ function needsPart(found, held, run) {
         held.sources = false;
         held.material[held.level || ''] = one.name;
         deskGoTo(held, found.standing, one.name);
+        deskAddress(held, true);
         paintDesk(false);
         const heading = byId(headingId(one.name));
         if (heading) heading.focus();
@@ -3233,9 +3343,9 @@ function progressMap(found, held, canOpenMaterials, hasPlanReview) {
       const panel = byId('desk-plan-review'); if (panel) { panel.focus(); panel.scrollIntoView({block:'start'}); }
     }, 'desk-flow-review-plan'));
     if (selected.id === 'research' && canOpenMaterials) details.append(capsule('Open research & sources', 'quiet', () => {
-      held.sources = true; paintDesk(false);
-      const tab = main().querySelector('[aria-controls="desk-material-panel"][aria-selected="true"]');
-      if (tab) { tab.focus({preventScroll:true}); revealTabs(tab); }
+      deskChoosePart(held, { sources: true });
+      const part = main().querySelector('.parts-item[aria-current="true"]');
+      if (part) part.focus({preventScroll:true});
     }, 'desk-flow-research'));
   }
   expanded.append(details); box.append(Drafting.cultExpandable(expanded));
@@ -3806,7 +3916,7 @@ function workbenchPhase(found, run, { preparingPlan, waitingPlan }) {
 // numbered marks, the wash as far as the work has come, and a light that travels the line
 // while the assistant works. Its note says whose turn the phase in hand is.
 function workbenchArc(found, run, flags) {
-  if (typeof StudioShell === 'undefined') return null;
+  if (typeof StudioShell === 'undefined' || !StudioShell.arc) return null;
   const { at, yours, finished } = workbenchPhase(found, run, flags);
   const notes = ['', yours && at === 1 ? 'yours to approve' : '', yours && at === 2 ? 'yours to review' : '',
     'ready to send'];
@@ -3820,7 +3930,7 @@ function workbenchArc(found, run, flags) {
 // A line of light across the top of the desk: moving in the studio's colour while the
 // assistant works, amber while something waits for the person, still otherwise.
 function workbenchPulse(found, run) {
-  if (typeof StudioShell === 'undefined') return null;
+  if (typeof StudioShell === 'undefined' || !StudioShell.pulse) return null;
   return StudioShell.pulse(found.standing?.state === 'needs-you' ? 'yours'
     : found.progress?.running ? 'working' : 'still');
 }
@@ -3829,7 +3939,7 @@ function workbenchPulse(found, run) {
 // it, so their keys keep the focus where it was. Without the shell kit the same card is
 // drawn plainly.
 function moveCard({ title, text = '', calm = false }) {
-  if (typeof StudioShell !== 'undefined') return StudioShell.move({ title, text, calm });
+  if (typeof StudioShell !== 'undefined' && StudioShell.move) return StudioShell.move({ title, text, calm });
   const card = add(make('section', 'move-card' + (calm ? ' move-card-calm' : '')),
     calm ? null : make('p', 'move-label', 'Your move'), make('h2', 'move-title', title),
     text ? make('p', calm ? 'quiet' : '', text) : null);
@@ -3898,7 +4008,6 @@ function paintDesk(fresh, fromPoll = false) {
   // The level is settled first: what leads depends on what of it waits for Mark ready.
   if(!fresh&&held.slideTextBasis===run.outline?.sha256&&run.outline?.content_first&&run.outline.waiting&&document.activeElement?.closest?.('#slide-text-review'))return;
   held.slideTextBasis=run.outline?.sha256;
-  const tabs = deskTabs(found, held);
   const selectedMaterial = selectedDeskCard(found, held);
   ensureDeskMaterial(held, selectedMaterial);
   const lead = deskLead(run, held, ours);
@@ -3970,30 +4079,13 @@ function paintDesk(fresh, fromPoll = false) {
       keepOpened(view.path, held.opened);
     }
   }
-  const groups = {};
-  for (const kind of ['scenario', 'yoodli']) {
-    const items = available.filter(one => one.kind === kind);
-    if (items.length > 1) groups[kind] = items;
-  }
-  const groupId = one => groups[one.kind] ? 'group:' + one.kind : one.name;
-  const options = [];
-  for (const one of available) {
-    const id = groupId(one);
-    if (options.some(option => option.id === id)) continue;
-    options.push({id, label: groups[one.kind] ? DESK_WORDS.kinds[one.kind] + ' · ' + groups[one.kind].length
-      : cardTitle(one) + ' · ' + (DESK_WORDS.tabs[one.state] || 'Draft')});
-  }
-  options.push({id: 'sources', label: 'Research & sources'});
+  // The level's parts, as the list down the left names them (deskParts).
+  const { groups, groupId, options } = levelParts(found, level);
   const selectedCard = available.find(one => one.name === selected);
   const selectedTab = selectedCard ? groupId(selectedCard) : selected;
-  const materials = workspaceTabs('Training material', options, selectedTab, id => {
-    held.sources = id === 'sources';
-    const items = groups[id.replace('group:', '')];
-    if (!held.sources) held.material[level] = items
-      ? (items.find(one => one.name === held.material[level])
-        || items.find(one => ['needs', 'held', 'decide'].includes(one.state)) || items[0]).name : id;
-    paintDesk(true);
-  }, 'desk-material');
+  // The part shown is the one the address keeps (deskAddress).
+  deskAddress(held, false);
+  const partsList = preparingPlan || waitingPlan ? null : deskParts(found, held, selectedTab);
   // Runtime timing and sibling jobs must not tear down an unchanged reading surface.
   // Explicit navigation/editing always draws; a changed document or permissions does too.
   const materialView = held.materials[selectedCard?.name]?.view;
@@ -4048,8 +4140,11 @@ function paintDesk(fresh, fromPoll = false) {
       : narrow() ? add(make('div', 'stack'), finishing.scope, finishing.panel, column)
         : add(make('div', 'stack'), finishing.scope, add(make('div', 'desk-layout desk-finishing'),
           column, finishing.panel));
-    layout = workspacePanel('desk-material', options.findIndex(one => one.id === selectedTab),
-      held.sources ? sourcesPart(found) : reading);
+    // The part shown, in the middle, named as the list down the left names it.
+    layout = add(make('section', 'stack'), held.sources ? sourcesPart(found) : reading);
+    layout.id = 'desk-material-panel';
+    layout.setAttribute('aria-label', held.sources ? 'Research & sources'
+      : options.find(one => one.id === selectedTab)?.name || 'The material');
   }
   held.reader = {stamp: readerStamp, node: layout};
   const planReview = waitingPlan ? trainingPlanReview(run.training_plan, held) : null;
@@ -4081,8 +4176,7 @@ function paintDesk(fresh, fromPoll = false) {
       preparingPlan || waitingPlan ? null : levelStanding(found, level),
       finished ? publishCard(run, published) : null,
     ]),
-    gathered('parts', [preparingPlan || waitingPlan ? null : tabs,
-      preparingPlan || waitingPlan ? null : materials]),
+    partsList,
     zoned('work', planReview),
     zoned('work', preparingPlan || waitingPlan ? null : layout),
     // Under the work: the steps behind the four phases, what Ready means, and what the
@@ -4246,10 +4340,7 @@ function confirmLevel(level, kind, every = false, also = false) {
   const open = (one) => {
     const control = capsule('Open ' + cardTitle(one), 'quiet', () => {
       closeSheet();
-      held.sources = false;
-      held.level = one.level || '';
-      held.material[held.level] = one.name;
-      paintDesk(true);
+      deskChoosePart(deskHeld(view.path), { level: one.level || '', material: one.name });
       const heading = byId(headingId(one.name));
       if (heading) heading.focus();
     }, 'desk-level-open ' + one.name);
