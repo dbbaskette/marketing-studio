@@ -23,7 +23,7 @@ from .network import VIA_HEADER
 
 # The Brands section's routes, each /api/brand-<name>.
 BRAND_ROUTES = ('list', 'start', 'work', 'source', 'keep', 'extract', 'interpret', 'stop', 'part',
-                'save', 'push', 'discard', 'file')
+                'save', 'push', 'discard', 'file', 'documents', 'document')
 REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, where the sources, '
                  'your assistant and Git are. Open Marketing Studio there.')
 CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
@@ -274,6 +274,11 @@ class Home(server.Page):
             raise
         if name == 'list':
             return server.as_json(200, brand_store.listing(found, place))
+        if name == 'documents':
+            return server.as_json(200, brand_store.documents(found, place, sent.get('id')))
+        if name == 'document':
+            _, media, data = brand_store.document_file(found, place, sent.get('id'), sent.get('template'))
+            return 200, media, data
         if name == 'start':
             work = brand_store.start(place, sent.get('kind'), sent.get('id'), sent.get('name'),
                                      sent.get('libraryKind'), sent.get('update') is True)

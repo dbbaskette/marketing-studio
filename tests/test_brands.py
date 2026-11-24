@@ -598,6 +598,92 @@ class PdfBrandBooks(BrandsCase):
         self.assertEqual(read.call_count, 1)
 
 
+BRIEF = {'id': 'solution-brief', 'name': 'Solution brief', 'useWhen': 'A two-page overview of one solution.',
+         'page': 'US Letter', 'notes': 'Needs the brand fonts installed. The cover photo is a placeholder; not an official template.',
+         'file': 'templates/documents/solution-brief.dotx'}
+
+
+def brand_pack(brands: Path, ident, documents=()):
+    """A finished, made-up brand pack written straight into a brands folder."""
+    pack = brands / ident / 'pack'
+    (pack / 'assets').mkdir(parents=True)
+    (pack / 'assets/logo.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    (pack / 'guide.md').write_text('## Brand rules\n\nTitles are sentence case.\n')
+    brand = {'schema': 1, 'id': ident, 'name': f'{ident.title()} Co', 'aliases': [ident], 'defaultVariant': 'light',
+             'variants': {'light': {'theme': 'light', 'colors': {}}},
+             'logos': {'onLight': 'assets/logo.svg', 'onDark': 'assets/logo.svg'}, 'documents': list(documents)}
+    (pack / 'brand.json').write_text(json.dumps(brand))
+    for entry in documents:
+        (pack / entry['file']).parent.mkdir(parents=True, exist_ok=True)
+        (pack / entry['file']).write_bytes(b'PK made-up Word template ' + entry['id'].encode())
+    return pack
+
+
+class DocumentTemplates(BrandsCase):
+    def setUp(self):
+        super().setUp()
+        self.pack = brand_pack(self.brands, 'example', [BRIEF])
+        brand_pack(self.brands, 'plain')
+        brand_store._DOCUMENTS.clear()
+
+    def asked(self):
+        lines = self.calls.read_text().splitlines() if self.calls.exists() else []
+        return [json.loads(line) for line in lines if json.loads(line)[:1] == ['documents']]
+
+    def refused(self, **sent):
+        with self.assertRaises(WorkspaceError) as caught:
+            self.page.write('/api/brand-document', sent)
+        return str(caught.exception)
+
+    def test_a_brands_templates_are_listed_with_what_each_is_for_and_kept_briefly(self):
+        listed = self.call('documents', id='example')
+        self.assertEqual(listed, {'brand': 'example', 'documents': [{
+            'id': 'solution-brief', 'name': 'Solution brief', 'useWhen': 'A two-page overview of one solution.',
+            'page': 'US Letter', 'notes': BRIEF['notes'], 'file': 'solution-brief.dotx'}]})
+        self.assertEqual(self.asked(), [['documents', '--brand', 'example', '--json']])
+        self.call('documents', id='example')
+        self.assertEqual(len(self.asked()), 1, 'asked again within the moment it is kept')
+        brand = self.pack / 'brand.json'
+        os.utime(brand, ns=(brand.stat().st_atime_ns, brand.stat().st_mtime_ns + 1_000_000))
+        self.call('documents', id='example')
+        self.assertEqual(len(self.asked()), 2, 'a changed brand.json is asked again')
+
+    def test_a_brand_with_no_templates_says_so_and_the_list_is_asked_only_when_opened(self):
+        self.call('list')
+        self.assertEqual(self.asked(), [])
+        self.assertEqual(self.call('documents', id='plain'), {'brand': 'plain', 'documents': []})
+        script = (ROOT / 'marketing_studio/web/brands.js').read_text()
+        self.assertIn('has no document templates.', script)
+        self.assertIn("more.addEventListener('toggle'", script)
+
+    def test_a_listed_template_downloads_from_the_page_server(self):
+        kind, data = self.call('document', id='example', template='solution-brief')
+        self.assertEqual(kind, 'application/vnd.openxmlformats-officedocument.wordprocessingml.template')
+        self.assertEqual(data, b'PK made-up Word template solution-brief')
+
+    def test_only_the_files_the_skill_listed_for_that_brand_are_served(self):
+        # A template the listing does not name, another brand's, or a path the page sends.
+        self.assertIn('not a document template', self.refused(id='example', template='white-paper'))
+        self.assertIn('not a document template', self.refused(id='plain', template='solution-brief'))
+        self.assertIn('not a document template', self.refused(id='example', template='../brand.json',
+                                                              path=str(self.pack / 'brand.json')))
+        self.assertIn('Choose a brand', self.refused(id='../example', template='solution-brief'))
+        # A listing that names a file outside the brand's pack folder is not served.
+        outside = self.root / 'outside.dotx'
+        outside.write_bytes(b'PK private')
+        for listed in (outside, self.brands / 'plain' / 'pack' / 'guide.md', self.pack / 'brand.json'):
+            brand_store._DOCUMENTS.clear()
+            with mock.patch.dict(os.environ, {'STAND_IN_DOCUMENT_PATH': str(listed)}):
+                with self.subTest(listed=listed.name):
+                    self.assertIn('not offered', self.refused(id='example', template='solution-brief'))
+        # Nor one that reaches outside through a link.
+        brand_store._DOCUMENTS.clear()
+        template = self.pack / BRIEF['file']
+        template.unlink()
+        template.symlink_to(outside)
+        self.assertIn('symbolic links', self.refused(id='example', template='solution-brief'))
+
+
 class Save(BrandsCase):
     def test_save_waits_for_every_part_and_is_refused_until_pack_check_passes(self):
         key = self.new_brand()

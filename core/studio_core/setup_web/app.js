@@ -1406,9 +1406,11 @@ function brandsKit() {
     document.head.append(script);
   });
 }
-async function brandFile(body) {
-  const response = await fetch('/api/brand-file', {method: 'POST', headers: {[tokenHeader]: token, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-  if (!response.ok) throw new Error((await response.json()).error || 'The picture could not be shown.');
+// A file the Brands screen shows or downloads: a picture (brand-file) or a brand's document
+// template (brand-document), as a URL for this page.
+async function brandFile(body, route = 'brand-file') {
+  const response = await fetch(`/api/${route}`, {method: 'POST', headers: {[tokenHeader]: token, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!response.ok) throw new Error((await response.json()).error || (route === 'brand-file' ? 'The picture could not be shown.' : 'The file could not be downloaded.'));
   return URL.createObjectURL(await response.blob());
 }
 async function openBrands() {

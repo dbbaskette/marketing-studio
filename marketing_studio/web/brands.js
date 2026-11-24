@@ -112,12 +112,56 @@
     return table('Brand packs', ['Brand', 'Variants', 'Slides', 'Check', 'Action'], packs.map(pack => {
       const row = el('tr');
       const name = el('th', '', '', {scope: 'row'});
-      name.append(el('span', pack.name, 'row-title'), el('span', ` ${pack.id}`, 'quiet'));
+      name.append(el('span', pack.name, 'row-title'), el('span', ` ${pack.id}`, 'quiet'), templates(pack));
       const action = el('td');
       action.append(button('Update', '', () => start({kind: 'brand', id: pack.id, update: true})));
       row.append(name, el('td', pack.variants.join(', ') || 'None'), el('td', pack.slides ? 'Yes' : 'Writing only'), checkCell(pack.check), action);
       return row;
     }), 'No brand packs yet. New brand makes one from its sources.');
+  }
+  // A brand's Word document templates, under its name: Harness Brand is asked only when the
+  // person opens them, and each one downloads from the page server, which offers exactly the
+  // files Harness Brand listed for that brand.
+  function templates(pack) {
+    const more = el('details', '', 'brand-lines brand-documents');
+    const summary = el('summary', 'Document templates');
+    const holder = el('div', '', 'brand-document-list', {'aria-live': 'polite'});
+    more.append(summary, holder);
+    let asked = false;
+    more.addEventListener('toggle', async () => {
+      if (!more.open || asked) return;
+      asked = true;
+      holder.replaceChildren(el('p', 'Asking Harness Brand for the templates…', 'field-hint quiet'));
+      try {
+        const found = await ctx.api('brand-documents', {id: pack.id});
+        if (!found.documents.length) { holder.replaceChildren(el('p', `${pack.name} has no document templates.`, 'field-hint quiet')); return; }
+        const list = el('ul', '', 'brand-document-rows');
+        for (const template of found.documents) list.append(templateRow(pack, template));
+        holder.replaceChildren(list);
+      } catch (error) {
+        asked = false;
+        holder.replaceChildren(el('p', `${error.message} Close and open this again to retry.`, 'field-hint'));
+      }
+    });
+    return more;
+  }
+  function templateRow(pack, template) {
+    const item = el('li', '', 'brand-document');
+    const text = el('div', '', 'brand-row-text');
+    text.append(el('span', `${template.name}${template.page ? `, ${template.page}` : ''}`, 'row-title'));
+    if (template.useWhen) text.append(el('span', template.useWhen, 'quiet'));
+    if (template.notes) text.append(el('span', template.notes, 'field-hint quiet'));
+    text.append(el('span', template.file, 'field-hint quiet'));
+    const get = button('Download', '', async () => {
+      const url = await ctx.file({id: pack.id, template: template.id}, 'brand-document');
+      const link = el('a', '', '', {href: url, download: template.file});
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      ctx.inform(`Downloaded ${template.file}.`);
+    });
+    get.setAttribute('aria-label', `Download ${template.name}`);
+    item.append(text, bar(get));
+    return item;
   }
   function libraryTable(libraries) {
     return table('Icon libraries', ['Library', 'Kind', 'Icons', 'Used by', 'Check', 'Action'], libraries.map(library => {

@@ -151,11 +151,6 @@
   margin-top: 0.6rem;
 }
 
-.brand-choice {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-}
-
 .form-actions {
   justify-content: flex-end;
 }
@@ -311,6 +306,12 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
 .brand-code { margin: 0.4rem 0 0; padding: 0.75rem; max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--hair); border-radius: 8px; background: var(--well); font-size: 0.82rem; }
 .brand-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.5; min-height: 10rem; }
 .brand-part > * + *, .brand-task > * + * { margin-top: 0.6rem; }
+
+/* A brand's document templates, opened under its name in the brand packs table. */
+.brand-documents { margin-top: 0.2rem; font-weight: 400; min-width: 14rem; }
+.brand-lines .brand-document-rows { display: grid; gap: 0.6rem; margin: 0.4rem 0 0; padding: 0; list-style: none; }
+.brand-document { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding-top: 0.6rem; border-top: 1px solid var(--hair); }
+.brand-document:first-child { padding-top: 0; border-top: 0; }
 
 .brand-table { max-width: 100%; overflow-x: auto; border-radius: 8px; }
 .brand-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
