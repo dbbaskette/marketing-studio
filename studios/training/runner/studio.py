@@ -29,9 +29,7 @@ if sys.version_info < (3, 11):
 import argparse
 import json
 import os
-import re
 import signal
-from contextlib import contextmanager
 from pathlib import Path
 
 if not __package__:  # started by its path
@@ -48,48 +46,14 @@ from workspace import WorkspaceError  # noqa: E402
 from runner import engine as engines  # noqa: E402
 from runner import gitstate, page, setup, upkeep as upkeeping  # noqa: E402
 
+# ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
+# test_shared_runner_use checks the bound parts, and the suites call the rest.
+from studio_core import modules  # noqa: E402
+from studio_core.shared_runner import studio as _shared  # noqa: E402
+
 RESTART = 'TRAINING_STUDIO_RESTART'   # the key, from a runner opening a newer version
-KEY = re.compile(r'[A-Za-z0-9_-]{32,128}')
-
-
-@contextmanager
-def only_runner():
-    """Be the one runner serving on this computer, or refuse. A runner that ended without
-    saying so is not counted."""
-    path = home.data_root() / 'runner.pid'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for _ in range(2):
-        try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            kept = path.read_text(encoding='utf-8').strip() if path.is_file() else ''
-            if kept.isdigit() and int(kept) != os.getpid() and home.alive(int(kept)):
-                raise WorkspaceError(
-                    f'A runner is already serving on this computer (process {kept}). Use '
-                    'its page, or stop it before starting another. If none is running, '
-                    f'remove {path} and try again.')
-            path.unlink(missing_ok=True)
-            continue
-        os.write(handle, f'{os.getpid()}\n'.encode())
-        os.close(handle)
-        break
-    else:
-        raise WorkspaceError(f'Could not write {path}, which says a runner is serving.')
-    try:
-        yield
-    finally:
-        path.unlink(missing_ok=True)
-
-
-def handed_over() -> str | None:
-    """The key a runner that stopped to open a newer version handed to this one, taken out
-    of the environment at once so nothing this runner starts is given it."""
-    kept = os.environ.pop(RESTART, None)
-    try:
-        token = json.loads(kept)['token'] if kept else None
-    except (ValueError, KeyError, TypeError):
-        return None
-    return token if isinstance(token, str) and KEY.fullmatch(token) else None
+# KEY, only_runner, handed_over, status and saved_work are Presentation Studio's too.
+modules.bind(globals(), _shared, _shared.NAMES)
 
 
 def serve(args, make=engines.Engine, out=None, opener=cmd_desk.show, keeper=None,
@@ -153,26 +117,6 @@ def serve(args, make=engines.Engine, out=None, opener=cmd_desk.show, keeper=None
         print(json.dumps({'error': f'Training Studio could not open again by itself '
                                    f'({failure}). Open it again.'}), file=out, flush=True)
         return 2
-    return 0
-
-
-def status(args, make=engines.Engine, out=None, keeper=None) -> int:
-    """What is set up on this computer and where every run is. Starts nothing, changes
-    nothing, and asks nothing online: the skills are looked at as they are."""
-    engine = make()
-    engine.upkeep = (keeper or upkeeping.Upkeep)()
-    engine.upkeep.check(repair=False)
-    report = {'version': gitstate.installed(), **setup.describe(engine), **engine.status()}
-    print(json.dumps(report, indent=2, sort_keys=True), file=out or sys.stdout)
-    return 0
-
-
-def saved_work(args, make=engines.Engine, out=None) -> int:
-    """Which saved trainings still need each older path. Starts nothing, changes nothing,
-    and asks nothing online."""
-    # This command inventories declared local roots without runner upkeep.
-    report = make().saved_work(tuple(args.folder or ()))
-    print(json.dumps(report, indent=2, sort_keys=True), file=out or sys.stdout)
     return 0
 
 
