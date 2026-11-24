@@ -478,3 +478,94 @@ class KeptStopTests(SavedStateCase):
         )
         with self.assertRaisesRegex(ValueError, 'no saved step-by-step run'):
             desk_chat.migrate(self.root, ident, shown['expected'] or 'bm1.' + 'x' * 43)
+
+
+class ReadOnlyRecordTests(SavedStateCase):
+    """The page's read-only record: today only for saved blogs its run screen refuses."""
+
+    def run_view(self, ident):
+        import management
+
+        before = self.tree()
+        with self.nothing_starts():
+            shown = management.view(self.root, 'run', {'id': [ident]})
+        self.assertEqual(self.tree(), before)
+        return shown
+
+    def test_a_record_the_run_screen_refuses_opens_read_only_with_its_files(self):
+        import management
+
+        for name, sentence, start in (
+            (runner.STATE, desk_migration.SAVED_RECORD, 'copy'),
+            ('session.json', desk_migration.UNREAD_RECORD, 'new'),
+        ):
+            with self.subTest(record=name):
+                found = self.written(self.create(title='Unreadable ' + name), 'draft', MANUSCRIPT)
+                directory = studio.inside(self.root, 'articles', found['id'])
+                (directory / name).write_text('{not json')
+                shown = self.run_view(found['id'])
+                self.assertEqual((shown['status'], shown['sentence']), ('read-only', sentence))
+                saved = shown['saved_record']
+                self.assertEqual(saved['files'], ['DRAFT.md', 'OUTLINE.md'])
+                self.assertEqual(saved['next'], start)
+                self.assertIn('cannot be read', saved['why'])
+                if start == 'copy':
+                    # The run cannot be read, so only the blog's own title starts new work.
+                    self.assertEqual(shown['title'], 'Unreadable ' + name)
+                    self.assertEqual(saved['start'], {'title': 'Unreadable ' + name})
+                read = management.view(
+                    self.root, 'saved-file', {'id': [found['id']], 'name': ['DRAFT.md']}
+                )
+                self.assertEqual((read['text'], read['truncated']), (MANUSCRIPT, False))
+
+    def test_saved_files_are_read_only_in_place_and_never_through_a_link(self):
+        import management
+
+        found = self.written(self.create(), 'draft', MANUSCRIPT)
+        directory = studio.inside(self.root, 'articles', found['id'])
+        (directory / runner.STATE).write_text('{not json')
+        outside = self.base / 'outside.md'
+        outside.write_text('Not this blog’s file.')
+        (directory / 'OUTLINE.md').unlink()
+        (directory / 'OUTLINE.md').symlink_to(outside)
+        self.assertEqual(self.run_view(found['id'])['saved_record']['files'], ['DRAFT.md'])
+        for name in ('OUTLINE.md', 'session.json', '../../hub.json', 'derived/blog-run.json'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'saved file'):
+                management.view(self.root, 'saved-file', {'id': [found['id']], 'name': [name]})
+
+    def test_an_unsupported_run_is_read_only_and_says_why(self):
+        found = self.written(self.create(), 'draft', MANUSCRIPT)
+        directory = studio.inside(self.root, 'articles', found['id'])
+        run = studio.read_json(directory / runner.STATE)
+        run['schema'] = 99
+        studio.write_json(directory / runner.STATE, run)
+        shown = self.run_view(found['id'])
+        self.assertIn('newer Blog Studio runtime', shown['saved_record']['why'])
+        # Its start form reads: new work starts from its title, point and audience.
+        self.assertEqual(
+            shown['saved_record']['start'],
+            {
+                'title': 'Synthetic gateway guide',
+                'point': 'Explain a fictional gateway',
+                'audience': 'New authors',
+            },
+        )
+
+    def test_records_the_run_screen_reads_keep_their_screen_until_the_flow_is_retired(self):
+        # A brief-only start will be a read-only record once the saved flow is retired; until
+        # then its run screen, and its Continue, stay.
+        found = self.create()
+        self.assertEqual(desk_migration.classify(self.root, found['id'])['outcome'], 'read-only')
+        shown = self.run_view(found['id'])
+        self.assertNotIn('saved_record', shown)
+        self.assertEqual(shown['next'], 'outline')
+
+    def test_a_transient_refusal_is_said_as_before(self):
+        import management
+
+        found = self.written(self.create(), 'draft', MANUSCRIPT)
+        directory = studio.inside(self.root, 'articles', found['id'])
+        (directory / 'desk').mkdir()
+        studio.write_json(directory / 'desk' / desk_migration.JOURNAL, {'schema': 1})
+        with self.assertRaisesRegex(ValueError, 'interrupted'):
+            management.view(self.root, 'run', {'id': [found['id']]})

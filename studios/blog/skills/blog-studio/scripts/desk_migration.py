@@ -833,6 +833,93 @@ def _verdict(root, ident, shown, failure):
     return said('read-only', blocker or UNKNOWN_RUN, session, run)
 
 
+# The files a read-only record lists and serves: only these names, only inside its folder.
+SAVED_FILES = (
+    'DRAFT.md',
+    'ORIGINAL.md',
+    'OUTLINE.md',
+    'derived/blog-angles.md',
+    'derived/blog-research-plan.md',
+    'derived/blog-research.md',
+    'derived/blog-claims-map.md',
+    'derived/blog-review.md',
+    'derived/blog-package.md',
+)
+SAVED_TEXT = 200_000
+SAVED_RECORD = (
+    'This blog was saved by the earlier step-by-step flow, and it can be neither continued '
+    'nor opened on the desk. Its saved files are kept as they are.'
+)
+UNREAD_RECORD = (
+    'This blog’s saved record cannot be read, so it can be neither continued nor opened on '
+    'the desk. Its saved files are kept as they are.'
+)
+
+
+def _saved_files(directory):
+    """Each listed name that is an ordinary file inside the blog's folder, never a link."""
+    inside, found = directory.resolve(), []
+    for name in SAVED_FILES:
+        path = directory / name
+        try:
+            real = path.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if (
+            not path.is_symlink()
+            and not path.parent.is_symlink()
+            and inside in real.parents
+            and real.is_file()
+        ):
+            found.append(name)
+    return found
+
+
+def saved_record(root, ident, refusal):
+    """What the page shows for a saved blog its run screen refuses to read, when that blog is
+    a read-only record (classify): what it is, why, the saved files it holds and one next
+    action. None for any other blog, whose refusal the page says as before. Only reads."""
+    said = classify(root, ident)
+    if said['outcome'] != 'read-only':
+        return None
+    directory = studio.inside(root, 'articles', studio.identifier(ident))
+    try:
+        session = _small_json(directory / 'session.json')
+    except (OSError, ValueError, UnicodeError):
+        session = None
+    title = session.get('title') if isinstance(session, dict) else None
+    title = title.strip() if isinstance(title, str) and title.strip() else directory.name
+    return {
+        'id': directory.name,
+        'title': title,
+        'status': 'read-only',
+        'sentence': SAVED_RECORD if isinstance(session, dict) else UNREAD_RECORD,
+        'saved_record': {
+            'why': said['reason'],
+            'files': _saved_files(directory),
+            'next': said['next'],
+            'start': said['start'],
+        },
+    }
+
+
+def saved_file(root, ident, name):
+    """One saved file of a blog, read in place: a name SAVED_FILES lists, an ordinary file
+    inside the blog's folder, its text shortened past SAVED_TEXT characters. Only reads."""
+    directory = studio.inside(root, 'articles', studio.identifier(ident))
+    if name not in SAVED_FILES or name not in _saved_files(directory):
+        raise ValueError('Choose a saved file this blog holds.')
+    with (directory / name).open('rb') as handle:
+        raw = handle.read(SAVED_TEXT * 4 + 1)
+    text = raw.decode('utf-8', errors='replace')
+    return {
+        'id': directory.name,
+        'name': name,
+        'text': text[:SAVED_TEXT],
+        'truncated': len(text) > SAVED_TEXT or len(raw) > SAVED_TEXT * 4,
+    }
+
+
 def classify(root, ident):
     """What becomes of one saved blog, as its migration preview decides it: `outcome`
     (OUTCOMES, or None when there is no saved blog by that name), `reason` (one sentence),
