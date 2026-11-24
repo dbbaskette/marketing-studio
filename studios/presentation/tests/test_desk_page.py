@@ -2109,6 +2109,99 @@ class ExistingDeskTests(DeskPageCase):
                 self.assertNotIn(view['desk']['expected'], said)
 
 
+class UpgradePageTests(DeskPageCase):
+    """Issue #538: a Selected changes deck offers Upgrade to Redesign, keep content in its
+    head, saying what is locked and why, and where its speaker notes would be; it is asked in
+    place, spends nothing, and the deck then waits for Start on a step that states the cost.
+    No other level offers it."""
+
+    UPGRADE = 'Upgrade to Redesign, keep content'
+    existing = ExistingDeskTests.existing
+
+    def test_selected_changes_offers_the_upgrade_in_its_head_and_where_notes_are_locked(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        offer = view['desk']['upgrade']
+        result = self.open_deck(path, view, [
+            {'snapshot': 'head'}, to(2), {'snapshot': 'card'}, {'click': self.UPGRADE},
+            {'snapshot': 'asked'}, {'click': 'Upgrade'}, {'snapshot': 'after'}],
+            **{'POST /api/desk-upgrade': [ok(view)]})
+        shots = result['snapshots']
+        self.assertIn(desks.UPGRADE_LOCKED, shots['head']['text'])
+        self.assertIn(desks.OWN_NOTES, shots['card']['text'])
+        # Once in the head and once where the speaker notes are locked; never filled, so
+        # Deliver stays the one filled action.
+        self.assertEqual(shots['card']['buttons'].count(self.UPGRADE), 2)
+        self.assertNotIn(self.UPGRADE, shots['card']['filled'])
+        self.assertEqual(shots['card']['off'], [name for name in shots['card']['off']
+                                                if name != self.UPGRADE])
+        # Asked in place, saying what happens; nothing is sent until it is answered.
+        asked = shots['asked']
+        self.assertIn(offer['confirm'], asked['text'])
+        self.assertIn('This cannot be undone.', asked['text'])
+        self.assertIn('Keep Selected changes', asked['buttons'])
+        self.assertEqual(asked['dialogs'], [])
+        self.assertIn('Upgraded to Redesign, keep content. Nothing is spent until you press '
+                      'Start.', shots['after']['toasts'])
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body), ('/api/desk-upgrade', {
+            'path': path, 'expected': view['desk']['expected']}))
+        # What the page sends is what the server takes: the deck waits on its priced step.
+        upgraded = self.post('desk-upgrade', body)
+        self.assertEqual(upgraded['gate']['name'], 'gate:redesign')
+
+    def test_keeping_selected_changes_sends_nothing(self):
+        path, view = self.existing('selected')
+        result = self.open_deck(path, view, [{'click': self.UPGRADE},
+                                             {'click': 'Keep Selected changes'},
+                                             {'snapshot': 'kept'}])
+        self.assertEqual(self.posts(result), [])
+        self.assertNotIn('Keep Selected changes', result['snapshots']['kept']['buttons'])
+        self.assertIn(self.UPGRADE, result['snapshots']['kept']['buttons'])
+
+    def test_a_refused_upgrade_says_why_beside_it(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        view = copy.deepcopy(view)
+        view['desk']['upgrade']['refused'] = desks.UPGRADE_BUSY
+        result = self.open_deck(path, view, [{'snapshot': 'desk'}])
+        shot = result['snapshots']['desk']
+        self.assertIn(desks.UPGRADE_BUSY, shot['text'])
+        self.assertIn(self.UPGRADE, shot['off'])
+
+    def test_no_other_level_offers_the_upgrade(self):
+        from runner import desk as desks
+        for level in ('polish', 'redesign'):
+            path, view = self.existing(level)
+            self.assertIsNone(view['desk']['upgrade'])
+            result = self.open_deck(path, view, [to(2), {'snapshot': 'desk'}])
+            with self.subTest(level):
+                self.assertNotIn(self.UPGRADE, result['snapshots']['desk']['buttons'])
+                self.assertNotIn(desks.UPGRADE_LOCKED, result['snapshots']['desk']['text'])
+
+    def test_the_priced_step_states_the_cost_and_start_begins_the_redesign(self):
+        path, view = self.existing('selected')
+        upgraded = self.post('desk-upgrade', {'path': path, 'expected': view['desk']['expected']})
+        gate = upgraded['gate']
+        result = self.open_deck(path, upgraded, [
+            {'snapshot': 'step'}, {'click': 'Start the redesign'}],
+            **{'POST /api/desk-redesign-start': [ok(upgraded)]})
+        shot = result['snapshots']['step']
+        self.assertIn(gate['price']['says'], shot['text'])
+        self.assertIn('Nothing has been spent', shot['text'])
+        self.assertIn(gate['upgraded']['says'], shot['text'])
+        # Start is the screen's one filled action.
+        self.assertEqual(shot['filled'], ['Start the redesign'])
+        self.assertNotIn(self.UPGRADE, shot['buttons'])
+        self.assertIsNone(FORBIDDEN_WORDS.search(shot['text']))
+        self.assertEqual(self.posts(result), [('/api/desk-redesign-start', {'path': path})])
+        # The server takes it: the deck is read as it is now and redrawn, in the brand's
+        # default look as its start chose, back to the desk.
+        started = self.post('desk-redesign-start', {'path': path})
+        self.assertEqual(started['gate']['name'], 'gate:build', started['sentence'])
+        self.assertEqual(started['desk']['level'], 'redesign')
+
+
 BLOCKED = {'status': 'BLOCKED', 'warnings': [],
            'blockers': [{'slide': 3, 'says': 'Text runs off the slide.', 'code': 'OUT_OF_BOUNDS'}]}
 

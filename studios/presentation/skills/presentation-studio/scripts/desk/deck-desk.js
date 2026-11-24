@@ -554,6 +554,7 @@
     deliver: ['Review the slides, then deliver', 'Nothing is delivered until you press Deliver.'],
     ready: ['Mark the deck ready', 'Your approval is recorded; nothing is delivered.'],
     resume: ['It is paused', 'Resume it when you want it to go on.'],
+    start: ['Start the redesign', 'Nothing is spent until you press Start.'],
   };
   // The move card's own button: the action its title names, or the way to where it is done.
   function moveAction(run, move) {
@@ -569,6 +570,7 @@
     if (move === 'answer') return to('#answer-run', 'Answer it');
     if (move === 'problem') return to('[data-key="problem-action"]', 'See what happened');
     if (move === 'look') return to('.card-needs', 'Pick the look');
+    if (move === 'start') return to('#redesign-start', 'See what it costs');
     if (move === 'text') return to('.slide-text-review', 'Read the slide text');
     if (move === 'story') return to('.slide-text-review', 'Read the slide story');
     if (move === 'deliver') {
@@ -594,7 +596,7 @@
       || Boolean(found.working);
     const at = found.delivered || (found.arrived && !found.working) ? 3 : making ? 2 : 1;
     const move = read ? '' : lead === 'answer' || lead === 'problem' || lead === 'look'
-      || lead === 'deliver' || lead === 'ready' || lead === 'resume' ? lead
+      || lead === 'deliver' || lead === 'ready' || lead === 'resume' || lead === 'start' ? lead
       : text ? 'text' : story ? 'story' : '';
     return { at, move, finished: Boolean(found.delivered),
       working: run.state === 'working' || Boolean(found.working) };
@@ -667,6 +669,7 @@
     if (gate?.name === 'gate:story') return 'Slide story';
     if (gate && gate.content_first && gate.name === 'gate:outline') return 'Slide text';
     if (pausedAtLook(run) || (gate && gate.name === 'gate:look')) return 'Look';
+    if (redesignWaits(run)) return 'Waiting to start';
     if (found.arrived) return 'On the desk';
     return found.content_pending ? 'Slide text' : 'Being made';
   }
@@ -697,12 +700,19 @@
       && !gate.offered.chosen);
   }
 
+  // A deck upgraded from Selected changes waits for Start on its own priced step.
+  function redesignWaits(run) {
+    const gate = run.gate;
+    return Boolean(gate && gate.name === 'gate:redesign');
+  }
+
   function progress(run, fresh) {
     const read = h.theirs(run);
     const gate = run.gate;
     const pause = pausedAtLook(run);
+    const start = redesignWaits(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
-      : run.problem && run.problem.action ? 'problem' : pause ? 'look'
+      : run.problem && run.problem.action ? 'problem' : pause ? 'look' : start ? 'start'
         : ['paused', 'stopped'].includes(run.state) ? 'resume' : '';
     h.view.lead = lead;
     const title = run.title || 'Untitled';
@@ -721,6 +731,8 @@
       zoned('work', !text && gate?.name === 'gate:story' ? ['slide-story', [gate, read], () => storyReview(run, read)] : null),
       pause ? zoned(text || gate?.name === 'gate:story' ? 'rail' : 'work',
         ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')])
+        : start ? zoned('work', ['redesign-start', [gate, lead, read],
+          () => redesignStart(run, lead === 'start')])
         : zoned('rail', ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)]),
       zoned(text || pause || gate?.name === 'gate:story' ? 'rail' : 'work', previews ? ['previews', [run.build_progress, read, run.mine],
@@ -958,6 +970,34 @@
     return h.add(node, problem, bar(go));
   }
 
+  // The priced step of a deck upgraded from Selected changes: what the redesign does and what
+  // it costs, said before anything is spent, and Start, the screen's one filled action.
+  function redesignStart(run, lead) {
+    const gate = run.gate;
+    const path = h.view.path;
+    const read = h.theirs(run);
+    const node = h.card('Start the redesign', 'card-needs desk-redesign-start');
+    node.id = 'redesign-start';
+    const heading = node.querySelector('.card-title');
+    if (heading) {
+      heading.id = 'redesign-start-title';
+      heading.tabIndex = -1;
+    }
+    const price = gate.price || {};
+    const upgraded = gate.upgraded || {};
+    h.add(node, make('p', '', 'This deck is now at Redesign, keep content. Nothing has been '
+      + 'spent: the redesign starts when you press Start.'),
+    make('p', '', price.says || ''),
+    upgraded.says ? make('p', 'quiet', upgraded.says) : null);
+    if (read) return h.add(node, make('p', 'quiet', 'It waits to be started on its owner’s '
+      + 'computer.'));
+    const problem = h.alertLine('redesign-start-problem');
+    const go = h.capsule('Start the redesign', lead ? 'filled' : '', () => act(
+      'desk-redesign-start', { path }, go, 'The redesign has started. Your deck is read as it is '
+        + 'now, then drawn again.', problem), 'redesign-start');
+    return h.add(node, problem, bar(go));
+  }
+
   // The slides as they are drawn, each with one box for a note to its section.
   function previewsCard(run) {
     const found = run.build_progress;
@@ -1087,6 +1127,10 @@
         : null,
       ['head', [tab, own, run.execution, outlineEditable], () => headPart(tab, own,
         run.execution === 'conversation', outlineEditable)],
+      own && found.upgrade && !read && run.execution !== 'conversation'
+        ? ['upgrade', [found.upgrade, found.expected], () => upgradePart(run)] : null,
+      found.upgraded ? ['upgraded', [found.upgraded], () => upgradedPart(found.upgraded)]
+        : null,
       can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
         () => selectionBar()] : null,
       layoutPart(run, tab, own, can, working, finish, fresh),
@@ -1353,6 +1397,45 @@
     return [h.add(make('div', 'sheet-heading'), h.sheetTitle('Send to Google Slides')), form];
   }
 
+  // Selected changes, once in the deck's head: what it locks and why, and the one way to all
+  // of it, Upgrade to Redesign, keep content, confirmed in place. Refused, it says why.
+  function upgradePart(run) {
+    const offer = run.desk.upgrade;
+    const go = upgradeButton(run, 'desk-upgrade');
+    const why = offer.refused ? make('p', 'quiet', offer.refused) : null;
+    if (why) {
+      why.id = 'desk-upgrade-why';
+      go.setAttribute('aria-describedby', why.id);
+    }
+    return h.callout('', make('p', '', offer.locked), bar(go), why,
+      h.alertLine('desk-upgrade-problem'));
+  }
+
+  // The upgrade's button, wherever the deck says something is locked. Its question is asked
+  // beside it; once it is answered yes the deck is upgraded and nothing is spent.
+  function upgradeButton(run, key) {
+    const offer = run.desk.upgrade;
+    const go = h.capsule(offer.action, '', async () => {
+      const asked = await Drafting.confirmInPlace(go, { message: offer.confirm,
+        action: 'Upgrade', keep: 'Keep Selected changes' });
+      if (!asked) return;
+      const done = await act('desk-upgrade', { path: h.view.path, expected: run.desk.expected },
+        go, 'Upgraded to Redesign, keep content. Nothing is spent until you press Start.',
+        h.byId('desk-upgrade-problem'));
+      const heading = done && h.byId('redesign-start-title');
+      if (heading) heading.focus();
+    }, key);
+    go.disabled = Boolean(offer.refused) || typeof Drafting === 'undefined';
+    return go;
+  }
+
+  // How an upgraded deck came to be at Redesign, keep content: kept with its receipts.
+  function upgradedPart(upgraded) {
+    const when = deliveredAt(upgraded.at);
+    return make('p', 'quiet desk-upgraded', upgraded.says + (when ? ' Upgraded on ' + when
+      + '.' : ''));
+  }
+
   // The one sentence of the desk, and its two tabs. Your own deck at Selected changes has no
   // outline: its slides are the deck's.
   function headPart(tab, own, conversation, editable) {
@@ -1613,7 +1696,7 @@
           ['navigator', [marks, active.one.id, found.expected],
             () => navigatorPart(run, cards, active)],
           ['slide', [active.one, active.part.slides.map((one) => one.number), found.expected,
-            can, working, found.words_locked, found.notes_locked, proposals,
+            can, working, found.words_locked, found.notes_locked, found.upgrade, proposals,
             held.confirm[path] || '', h.theirs(run), pendingTitle(run, active.one)],
           () => slideCard(run, active.one, active.part, can)],
         ], false)] : null,
@@ -1861,7 +1944,7 @@
         : editing && !locked ? wordBoxes(one)
           : wordsPart(one.lead ? words : { ...words, caveat: null, source: null }),
       locked ? make('p', 'quiet', found.words_locked) : null,
-      own ? make('p', 'quiet', found.notes_locked || '')
+      own ? notesLocked(run, editing)
         : editing ? notesBox(one)
           : one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '),
             one.notes) : null,
@@ -1869,6 +1952,17 @@
     if (!one.lead && can) h.add(node, ...noteBox(run, one));
     return h.add(node, own || one.lead ? null : advancedPart(one, editing && !locked),
       history ? bar(history) : null);
+  }
+
+  // Your own deck's speaker notes are kept as they are, said where the box would be, with the
+  // way to have them: the upgrade, refused with its reason while it cannot be done.
+  function notesLocked(run, editing) {
+    const found = run.desk;
+    const said = make('p', 'quiet', found.notes_locked || '');
+    if (!editing || !found.upgrade || run.execution === 'conversation') return said;
+    const go = upgradeButton(run, 'desk-upgrade-notes');
+    if (found.upgrade.refused) go.title = found.upgrade.refused;
+    return h.add(make('div', 'desk-notes-locked'), said, bar(go));
   }
 
   // What the brand check and the review found on the slide, in their words, blockers first,

@@ -198,7 +198,8 @@ UNREAD_RECORD = ('This deck’s saved record cannot be read, so it can be neithe
 # opened the same way.
 RUN = {
     'intake-source': '_intake_source', 'classify': '_classify', 'inventory': '_inventory',
-    'gate:classify': '_gate', 'scan': '_scan', 'gate:story': '_gate', 'research-plan': '_research_plan',
+    'gate:classify': '_gate', 'gate:redesign': '_gate', 'reinventory': '_reinventory',
+    'scan': '_scan', 'gate:story': '_gate', 'research-plan': '_research_plan',
     'gate:research-plan': '_gate', 'research': '_research',
     'research-report': '_research_report', 'gate:research': '_gate', 'extract': '_extract',
     'outline': '_outline', 'outline-check': '_outline_check', 'gate:outline': '_gate',
@@ -211,11 +212,12 @@ RUN = {
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:story': 'slide story', 'gate:classify': 'classification', 'gate:research-plan': 'research plan',
          'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
-         'gate:build': 'deck'}
+         'gate:build': 'deck', 'gate:redesign': 'redesign'}
 # What a desk deck waits for, in the words of the screen and the button that answer it:
 # Review slide text and Approve text & design deck, Pick the look, and Deliver.
 DESK_WAITING = {'gate:story': 'Waiting for you to approve the slide story before research.', 'slide-text': 'Waiting for you to approve the slide text.',
                 'gate:look': 'Waiting for you to pick the look.',
+                'gate:redesign': 'Waiting for you to start the redesign.',
                 'gate:build': 'Ready to deliver.'}
 # The build's steps, whose work is kept under work/build/ on the computer that did it.
 BUILT = ('build-start', 'build-sections', 'build-whole', 'build-review', 'build-repair',
@@ -1335,13 +1337,15 @@ class Engine(Jobs, Researching, DeskActions):
             if decks.in_conversation(record) or record.get('route') != 'existing' \
                     or gate_state(record, 'gate:classify') != 'approved' \
                     or decks.delivered(root) is not None \
-                    or not (root / existing.SOURCE).is_file() \
+                    or not existing.given_deck(root, record).is_file() \
                     or self._shots(root / existing.ORIGINAL_SHOTS):
                 return
             self._step_marker(root, 'recover-original')
         try:
+            # An upgraded deck's Before is its deck as it was when it was upgraded.
             existing.draw_original(root, record, self.slides(),
-                                   self._renderer(root, stages.BY_NAME['inventory']))
+                                   self._renderer(root, stages.BY_NAME['inventory']),
+                                   existing.given_deck(root, record))
         finally:
             self._step_marker(root)
 
@@ -1769,6 +1773,30 @@ class Engine(Jobs, Researching, DeskActions):
         with self.files:
             record = existing.keep_inventory(root, self._load(root), shared)
             self._done(root, step, clock, 'list every slide of your deck', record)
+
+    def _reinventory(self, root: Path, run: _Run, step: stages.Step) -> None:
+        """A deck upgraded from Selected changes, once Start was pressed: its inventory and
+        its Before pictures are taken again from the deck as it was when it was upgraded
+        (existing.UPGRADED), so the outline is read from every change made so far. Nothing
+        waits for the person: the inventory was confirmed when the deck was started."""
+        deck = root / existing.UPGRADED
+        if not deck.is_file():
+            self._problem(root, step.name, 'stopped', desk.REDESIGN_ELSEWHERE, KEPT_SO_FAR,
+                          action=None)
+            raise _Halted()
+        how = self._renderer(root, step)
+        clock, slides = time.monotonic(), self.slides()
+        shared = existing.read_deck(root, slides, deck)
+        existing.draw_original(root, self._load(root), slides, how, deck)
+        with self.files:
+            existing.write_inventory(root, shared)
+            self._done(root, step, clock, 'list every slide of your deck as it is now')
+
+    def _show_redesign(self, root: Path, record: dict) -> dict:
+        """What the priced step of an upgraded deck shows before Start: what the redesign does
+        and what it costs, and how the deck was upgraded."""
+        slides = len((outlines.inventory_of(root) or {}).get('slides') or ())
+        return {'price': desk.redesign_price(record, slides), 'upgraded': desk.upgraded(record)}
 
     def _brand_step(self, root: Path, run: _Run, step: stages.Step) -> None:
         clock = time.monotonic()
@@ -2758,6 +2786,8 @@ class Engine(Jobs, Researching, DeskActions):
             if action == 'undo':
                 if run.busy or run.workers or state == 'working':
                     raise WorkspaceError('Pause it first: a step is in hand.')
+                if self._just_upgraded(record):
+                    raise WorkspaceError(desk.UPGRADE_FINAL)   # one way only
                 if not gitstate.undo(self.space(), root):
                     raise WorkspaceError(UNDO_NOT)
             else:
@@ -3687,7 +3717,15 @@ class Engine(Jobs, Researching, DeskActions):
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file(),
             'desk': self._desk_view(root, record) if decks.on_desk(record) else None,
-            'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
+            'undo': bool(mine and state != 'working' and not run.busy
+                         and not self._just_upgraded(record) and self._can_undo(root))}
+
+    @staticmethod
+    def _just_upgraded(record: dict) -> bool:
+        """Whether the deck was upgraded to Redesign, keep content and waits for Start: its
+        last step is the upgrade, which is never undone."""
+        return isinstance(record.get('upgraded'), dict) \
+            and gate_state(record, 'gate:redesign') == 'waiting'
 
     def _can_undo(self, root: Path) -> bool:
         """Whether Undo the last step would be done, not refused: the last step is this

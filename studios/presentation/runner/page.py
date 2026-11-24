@@ -91,6 +91,9 @@ What a caller needs to know
     `/api/desk-stop` {"path"} stops that redraw and keeps what was redrawn;
     `/api/desk-deliver` {"path", "expected", "blockers_seen"?} delivers the deck on screen;
     `/api/desk-draw-here` {"path"} draws a deck this computer has no drawing of;
+    `/api/desk-upgrade` {"path", "expected"} upgrades a Selected changes deck to Redesign,
+    keep content, one way, starting nothing, and `/api/desk-redesign-start` {"path"} starts
+    its redesign from the priced step it then waits at;
     `/api/desk-open` {"path"} opens a deck delivered the gated way on the desk, still
     delivered, from this computer's drawing of it;
     `/api/desk-outline` {"path", "slides", "expected"} saves the Outline tab;
@@ -171,6 +174,8 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-stop': ('desk_stop', ()),
         '/api/desk-deliver': ('desk_deliver', ('expected', 'blockers_seen?')),
         '/api/desk-draw-here': ('desk_draw_here', ()),
+        '/api/desk-upgrade': ('desk_upgrade', ('expected',)),
+        '/api/desk-redesign-start': ('desk_redesign_start', ()),
         '/api/desk-outline': ('desk_outline', ('slides', 'expected')),
         '/api/desk-reread': ('desk_reread', ('kind',)),
         '/api/desk-look': ('desk_look', ('look', 'note?')),

@@ -34,6 +34,15 @@ def main():
             if '--desk' in sys.argv:
                 root = case.start_desk(look='default')
                 case.waiting(root)
+            if '--selected' in sys.argv:
+                # A deck started at Selected changes, on the desk with slide 2 changed: it offers
+                # Upgrade to Redesign, keep content. Upgrading it, then Start on its priced step,
+                # runs the redesign with the stand-in assistant jobs.
+                from test_desk_words import planned
+                case.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+                root = case.existing_deck('automatic', 'selected', flow='desk',
+                                          selected='Shorten the words on slide 2')
+                case.on_desk(root)
             if '--saved' in sys.argv:
                 # A deck the earlier gated flow saved, waiting at its deck: it opens on the desk.
                 root = case.gated(title='Saved gated deck')
