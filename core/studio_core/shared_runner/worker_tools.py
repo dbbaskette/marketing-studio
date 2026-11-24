@@ -857,7 +857,7 @@ NAMES = ('SCHEMA', 'PART', 'WINDOW', 'MAX_BYTES', 'MAX_SOURCES', 'MAX_HOPS', 'TI
          '_draft', 'DRAWN', 'EXTENSIONS', 'picture', 'one_at_a_time', 'turn_file', 'slots',
          'pictures', 'the_slides', 'the_brand', '_write', '_offered', '_job', 'tool', '_described',
          'TEXT', 'NUMBER', 'FLAG', 'EMPTY', 'shown', 'answer', 'serve', 'main', 'check_plan')
-METHODS = {'_NoRedirect': ('redirect_request',),'WorkerTools': ('__init__', 'slides', 'brand', '_state',
+METHODS = {'_NoRedirect': ('redirect_request',), 'WorkerTools': ('__init__', 'slides', 'brand', '_state',
            '_count', '_allowed', '_log', '_index', '_source', '_original_path', '_original',
            '_file_text', '_refused', 'call', '_original_named', '_input', '_hand_in', '_spec',
            '_tried', '_digest', '_review', '_shown', '_ask', '_keep', '_pdf', '_passages',

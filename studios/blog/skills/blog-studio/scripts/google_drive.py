@@ -19,7 +19,7 @@ import zipfile
 
 from studio_core import google_api
 
-DRIVE ='https://www.googleapis.com/drive/v3/'
+DRIVE = 'https://www.googleapis.com/drive/v3/'
 DOCS = 'https://docs.googleapis.com/v1/documents/'
 UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files'
 DOC_MIME = 'application/vnd.google-apps.document'
