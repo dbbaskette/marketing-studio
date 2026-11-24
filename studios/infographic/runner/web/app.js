@@ -1087,11 +1087,9 @@ async function compose(){
     if(!capability.renderer_available){rendererSheet();return;}
     sheet('Build this page',make('p','',capability.disclosure),make('p','','The selected story is composed with your pinned brand. If artwork helps explain the story, your assistant writes detailed art direction and the selected image provider generates it. Fonts and layout are checked first. Nothing is approved or published.'),add(make('div','bar'),button('Build page',async()=>{
       if(!held.project.brand){try{await request('/api/brand-current',{id:held.project.id,expected_revision:held.project.revision});await openProject(held.project.id);}catch(f){error(f.message);return;}}
-      const before=held.project.revision,building=held.project.id;
+      // A build draws its page itself (once, after any artwork is placed) and shows it: there
+      // is no second preview to ask for.
       await action('build',{request_id:requestId()});
-      // A built page is drawn straight away: the preview is local and starts no assistant or
-      // image request, so there is nothing to ask before showing what was made.
-      if(here(building)&&held.project.scene&&held.project.revision!==before)await action('preview');
     },true),button('Cancel',closeSheet)));
   }catch(f){error(f.message);}
 }

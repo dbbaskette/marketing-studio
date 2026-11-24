@@ -139,6 +139,25 @@ def build(store, ident, *, expected_revision, executable, draft=False, renderer=
         return manifest
 
 
+def measure(store, ident, *, expected_revision, executable, renderer=None):
+    """Check the saved page's fonts, images and fit before image-provider usage is spent,
+    drawing and keeping no files (one renderer launch). An injected renderer (a test double)
+    draws into a temporary folder and its measurements are read instead."""
+    project = store.read(ident)
+    store.expect(project, expected_revision)
+    composed = svg.compose(store, project, draft=True)
+    fonts = [project['brand']['font']]
+    if renderer is None or renderer is render.render:
+        return render.measure(composed, preset=project['brief']['preset'], fonts=fonts, executable=executable)
+    with tempfile.TemporaryDirectory(prefix='infographic-measure-') as temp:
+        output = Path(temp) / 'page'
+        renderer(composed, preset=project['brief']['preset'], fonts=fonts, executable=executable, destination=output)
+        metrics = json.loads((output / 'measurements.json').read_bytes()[:100_000])
+    require(metrics.get('complete') is True and not any(metrics.get(k) for k in
+            ('missing_fonts', 'invalid_assets', 'overflow')), 'Resolve actual renderer findings before delivery.')
+    return metrics
+
+
 def read(store, ident, export_id, kind):
     require(identifier(export_id) and kind in FORMATS, 'Choose a listed local export and format.')
     store.read(ident)

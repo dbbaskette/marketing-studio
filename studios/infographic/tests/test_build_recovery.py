@@ -15,12 +15,14 @@ class BuildRecoveryTests(Isolated):
         self.provider = mock.Mock()
         self.engine.adapters = {'synthetic': self.provider}
 
-    def test_font_preview_failure_keeps_scene_and_retry_only_renders(self):
+    def test_failed_page_render_keeps_scene_and_retry_only_renders(self):
         before = self.store.read(self.ident)
         self.renderer.side_effect = RuntimeError('private prompt /machine/path credential-value')
         with self.assertRaises(RuntimeError): self.engine.build(self.ident, expected_revision=6, request_id='build1')
+        # A page that needs no artwork is drawn once; its failure is the preview step's.
+        self.assertEqual(self.renderer.call_count, 1)
         record = build_recovery.read(self.store, self.ident)
-        self.assertEqual(record['step'], 'font-check')
+        self.assertEqual(record['step'], 'preview')
         self.assertEqual(record['completed'], ['Page composition'])
         self.assertEqual(record['next_action'], 'preview')
         self.assertTrue(record['current'])
@@ -32,11 +34,12 @@ class BuildRecoveryTests(Isolated):
         self.assertEqual(self.engine.assistant.mock_calls, []);self.assertEqual(self.provider.mock_calls, [])
 
     def test_final_preview_failure_offers_only_local_preview_and_survives_reopen(self):
-        with mock.patch.object(self.engine, 'preview', side_effect=[{}, RuntimeError('synthetic final preview')]):
+        with mock.patch.object(self.engine, 'preview', side_effect=[RuntimeError('synthetic final preview')]) as preview:
             with self.assertRaises(RuntimeError): self.engine.build(self.ident, expected_revision=6, request_id='build2')
+        self.assertEqual(preview.call_count, 1)
         record = build_recovery.read(self.store, self.ident)
         self.assertEqual(record['step'], 'preview')
-        self.assertIn('Font and layout preflight', record['completed'])
+        self.assertEqual(record['completed'], ['Page composition'])
         reopened = fixtures.Engine(self.store, renderer=self.renderer)
         self.assertEqual(reopened.inspect(self.ident)['workflow_recovery']['diagnostic'], record['diagnostic'])
         reopened.preview(self.ident, expected_revision=6)

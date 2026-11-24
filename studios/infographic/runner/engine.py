@@ -181,13 +181,12 @@ class Engine:
         if project['scene'] is None:
             project = scene.adopt_best(self.store, ident, expected_revision=project['revision'])
         checkpoint['completed'] = ['Page composition']
-        checkpoint['step'] = 'font-check'
         checkpoint['revision'] = project['revision']
-        # Establish actual font/layout capability before spending image-provider usage.
-        self.preview(ident, expected_revision=project['revision'])
-        checkpoint['completed'].append('Font and layout preflight')
-        checkpoint['step'] = 'artwork'
+        # One full render per build: the page is drawn once, after any artwork is placed. Only
+        # when an image request is about to be made are fonts and fit measured first (one
+        # renderer launch), so provider usage is never spent on a page that cannot be drawn.
         if project['scene'].get('art_regions') and not any(e['kind'] == 'artwork' for e in project['scene']['elements']):
+            checkpoint['step'] = 'artwork'
             active = Jobs(self.store, self.adapters).recovery(ident)
             require(not active, 'An earlier image request is pending or uncertain. Recover it explicitly; this build did not resubmit it.')
             completed = next((a for a in reversed(project['attempts']) if a['state'] == 'complete' and a['asset_ids']
@@ -199,6 +198,10 @@ class Engine:
                 require(selected in self.adapters, 'Configure the selected image adapter and model before building artwork.')
                 preflight = getattr(self.adapters[selected], 'preflight', None)
                 if preflight: preflight()
+                checkpoint['step'] = 'font-check'
+                self.measure(ident, expected_revision=project['revision'])
+                checkpoint['completed'].append('Font and layout preflight')
+                checkpoint['step'] = 'artwork'
                 if not project['image_briefs'] or project['image_briefs'][-1]['basis'] != basis(project):
                     project = self.prepare_art(ident, expected_revision=project['revision'])
                 jobs = Jobs(self.store, self.adapters)
@@ -207,7 +210,9 @@ class Engine:
                 self.progress('Generating the explanatory artwork')
                 answer = jobs.execute(ident, request_id)
                 if answer['state'] != 'complete' or not answer['adopted']:
-                    return answer
+                    # The page is still drawn as it stands, so the person sees it without
+                    # asking for a preview; the image outcome is what this build says.
+                    return self._drawn_anyway(ident, answer)
                 project = self.store.read(ident)
                 asset_id = next(a for a in project['attempts'] if a['id'] == request_id)['asset_ids'][0]
             checkpoint['step'] = 'place-artwork'
@@ -221,6 +226,24 @@ class Engine:
             return self.preview(ident, expected_revision=project['revision'])
         checkpoint['step'] = 'preview'
         return self.preview(ident, expected_revision=project['revision'])
+
+    def _drawn_anyway(self, ident, answer):
+        try:
+            current = self.store.read(ident)
+            if current['scene'] is not None:
+                return {**answer, 'preview': self.preview(ident, expected_revision=current['revision'])}
+        except Exception:
+            pass    # the image outcome stands; a failed preview keeps its own receipt
+        return answer
+
+    def measure(self, ident, *, expected_revision):
+        """Fonts, images and fit of the saved page, measured without drawing files."""
+        self.progress('Checking fonts and layout')
+        if self.executable is None and self.renderer is None:
+            from .render import RenderError
+            raise RenderError('renderer-unusable')
+        return exports.measure(self.store, ident, expected_revision=expected_revision,
+                               executable=self.executable, renderer=self.renderer)
 
     def image_direction(self, ident, direction, *, expected_revision, edit=None):
         with self.store.locked():
