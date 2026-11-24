@@ -1216,7 +1216,7 @@ $('#problem-newer').addEventListener('click', () => void loadNewer());
 // The Brand card in one pass: the installed brands are looked up when the card is shown and
 // after a save, and offered in the Default brand and variant fields; the saved brands folder
 // says what it holds. Only a Git address waits for Get brands, the one action that fetches.
-let brandLook = 0, brandFound = null, brandStore = null;
+let brandLook = 0, brandFound = null, brandStore = null, brandReplaced = '';
 const brandCount = names => `${names.length} brand${names.length === 1 ? '' : 's'}${names.length ? ` (${names.join(', ')})` : ''}`;
 function installedBrands() {
   return (brandFound?.skills || []).flatMap(skill => (skill.brands || []).map(brand => ({skill, brand})));
@@ -1306,12 +1306,14 @@ function renderBrandStore() {
     status.textContent = `${brandCount(store.brands)} copied from ${store.address} to ${store.folder}.${store.read ? '' : ' Harness Brand reads another folder until you get them again.'}`;
     offer(store.read ? 'Update brands' : 'Get brands');
   }
+  // Which folder Harness Brand read before this page moved it, said once beside the folder.
+  if (brandReplaced && store.read) status.textContent += ` Until now Harness Brand read ${brandReplaced}.`;
 }
 // A brands folder on this computer saved just now: Harness Brand reads it from now on.
 function brandsSaved(done) {
   if (!done) return;
   if (done.problem) inform(`Your settings were saved, but Harness Brand was not told to read the brands folder: ${done.problem}`, true);
-  else inform(`Harness Brand reads ${brandCount(done.brands)} from ${done.folder} from now on.${done.replaced ? ` Until now it read ${done.replaced}.` : ''}`);
+  else { brandReplaced = done.replaced || ''; inform(`Harness Brand reads ${brandCount(done.brands)} from this folder from now on.`); }
 }
 $('#get-brands').addEventListener('click', async () => {
   const button = $('#get-brands'), status = $('#brand-brands-status');
@@ -1322,7 +1324,8 @@ $('#get-brands').addEventListener('click', async () => {
   try {
     const got = await api('brands-repository', {});
     const how = {cloned: 'Copied', updated: 'Updated', used: 'Using'}[got.action] || 'Using';
-    inform(`${how} ${brandCount(got.brands)}. Harness Brand reads them from ${got.folder}.${got.replaced ? ` Until now it read ${got.replaced}.` : ''}`);
+    brandReplaced = got.replaced || '';
+    inform(`${how} ${brandCount(got.brands)}. Harness Brand reads them from this folder from now on.`);
     done(); await lookUpBrands();
   } catch (error) { done(); status.textContent = `${error.message} Your form is kept.`; $('#get-brands-bar').hidden = false; }
 });

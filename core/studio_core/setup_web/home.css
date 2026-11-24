@@ -313,6 +313,12 @@ body:has(#settings:not([hidden]) .save-bar) .toasts { bottom: calc(5.5rem + env(
 .brand-document { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding-top: 0.6rem; border-top: 1px solid var(--hair); }
 .brand-document:first-child { padding-top: 0; border-top: 0; }
 
+/* Rebrand a Google file: the form, what will happen before it runs, the job and its result. */
+.brand-rebrand > * + *, .brand-rebrand-said > * + * { margin-top: 0.6rem; }
+.brand-rebrand-said:empty { display: none; }
+.brand-rebrand-points { margin: 0.4rem 0 0.6rem; padding-left: 1.2rem; }
+.brand-rebrand-points > li + li { margin-top: 0.25rem; }
+
 .brand-table { max-width: 100%; overflow-x: auto; border-radius: 8px; }
 .brand-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width:52rem) {

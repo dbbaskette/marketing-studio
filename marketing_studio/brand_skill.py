@@ -19,7 +19,8 @@ What a caller needs to know
   installed or changed.
 - `run` runs a command once, in a process group of its own that is ended when it finishes,
   when its time runs out or when `stop` is set (then Stopped is raised). `each` is given
-  each line it prints as text.
+  each line it prints as text, and `each_error` each line of its standard error (where
+  `rebrand run` reports its progress).
 """
 from __future__ import annotations
 
@@ -80,7 +81,7 @@ class Found:
 # --- running a command -----------------------------------------------------------------
 
 def run(command, cwd=None, env=None, seconds=120, stop=None, stdin='', each=None,
-        said='Harness Brand'):
+        said='Harness Brand', each_error=None):
     """Run once: (exit code, standard output, standard error). Ends everything it started."""
     try:
         process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE,
@@ -119,7 +120,7 @@ def run(command, cwd=None, env=None, seconds=120, stop=None, stdin='', each=None
 
     threads = [threading.Thread(target=feed, daemon=True),
                threading.Thread(target=read, args=(process.stdout, printed, each), daemon=True),
-               threading.Thread(target=read, args=(process.stderr, complained, None), daemon=True)]
+               threading.Thread(target=read, args=(process.stderr, complained, each_error), daemon=True)]
     for thread in threads:
         thread.start()
     limit, late = time.monotonic() + seconds, False

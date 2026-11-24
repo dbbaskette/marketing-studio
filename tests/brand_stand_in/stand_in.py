@@ -299,6 +299,8 @@ def rebrand_run(args):
     for number, stage in enumerate(stages):
         event = ({'status': 'copy_created', 'file_id': 'stand-in-copy-1234567890', 'url': url} if stage == 'copy_created'
                  else {'status': 'progress', 'stage': stage, 'elapsed_seconds': number * pause})
+        if stage == 'copy_created':   # as Harness Brand keeps it, should the run end early
+            (run_dir / 'checkpoint.json').write_text(json.dumps(event))
         print(json.dumps(event), file=sys.stderr, flush=True)
         time.sleep(pause)
     failure = os.environ.get('STAND_IN_REBRAND_FAIL')

@@ -15,7 +15,7 @@ from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
 from studio_core.document_library import context as library_context
 
-from . import brand_job, brand_skill, brand_store, catalog, server, shared, state, validation, workspaces, work_overview
+from . import brand_job, brand_rebrand, brand_skill, brand_store, catalog, server, shared, state, validation, workspaces, work_overview
 from .errors import WorkspaceError
 from .launcher import library_item, with_library
 from .network import VIA_HEADER
@@ -23,7 +23,8 @@ from .network import VIA_HEADER
 
 # The Brands section's routes, each /api/brand-<name>.
 BRAND_ROUTES = ('list', 'start', 'work', 'source', 'keep', 'extract', 'interpret', 'stop', 'part',
-                'save', 'push', 'discard', 'file', 'documents', 'document')
+                'save', 'push', 'discard', 'file', 'documents', 'document', 'rebrand', 'rebrand-check',
+                'rebrand-start', 'rebrand-stop', 'rebrand-clear')
 REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, where the sources, '
                  'your assistant and Git are. Open Marketing Studio there.')
 CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
@@ -251,6 +252,13 @@ class Home(server.Page):
             else:
                 raise WorkspaceError('Accept the part, or save your edit of it.')
             return server.as_json(200, brand_store.view(key))
+        # Rebrand a Google file: one job at a time, read again by a reloaded page.
+        if name == 'rebrand-stop':
+            brand_rebrand.stop()
+            return server.as_json(200, brand_rebrand.view())
+        if name == 'rebrand-clear':
+            brand_rebrand.clear()
+            return server.as_json(200, brand_rebrand.view())
         values, problem = shared.read()
         if problem:
             raise WorkspaceError(problem)
@@ -260,6 +268,8 @@ class Home(server.Page):
             if name == 'list':
                 return server.as_json(200, {'unavailable': str(failure), 'where': 'Shared settings, Brand'})
             raise
+        if name == 'rebrand':
+            return server.as_json(200, brand_rebrand.view(place))
         if name == 'push':
             if sent.get('confirm') is not True:
                 raise WorkspaceError('Say yes to the push first.')
@@ -273,7 +283,14 @@ class Home(server.Page):
                 return server.as_json(200, {'unavailable': str(failure), 'where': place.where})
             raise
         if name == 'list':
-            return server.as_json(200, brand_store.listing(found, place))
+            return server.as_json(200, {**brand_store.listing(found, place), 'rebrand': brand_rebrand.view(place)})
+        if name == 'rebrand-check':
+            return server.as_json(200, brand_rebrand.check(found, place, sent.get('source'), sent.get('brand')))
+        if name == 'rebrand-start':
+            if sent.get('confirm') is not True:
+                raise WorkspaceError('Say yes to making the copy first.')
+            return server.as_json(200, brand_rebrand.start(found, place, sent.get('source'), sent.get('brand'),
+                                                           sent.get('review') is True, brand_job.choice(values)[0]))
         if name == 'documents':
             return server.as_json(200, brand_store.documents(found, place, sent.get('id')))
         if name == 'document':

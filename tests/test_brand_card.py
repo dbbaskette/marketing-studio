@@ -99,7 +99,7 @@ class BrandCardTests(unittest.TestCase):
         self.assertEqual(done['read']['#brand-brands-status']['text'], '1 brand (example) copied from '
                          'https://example.com/org/brands.git to /data/brands/brands-1.')
         self.assertEqual(done['read']['#get-brands']['text'], 'Update brands')
-        self.assertIn('Copied 1 brand (example). Harness Brand reads them from /data/brands/brands-1.', done['toasts'])
+        self.assertIn('Copied 1 brand (example). Harness Brand reads them from this folder from now on.', done['toasts'])
 
     def test_a_folder_on_this_computer_is_read_as_part_of_save(self):
         folder = '/work/brands'
@@ -123,7 +123,7 @@ class BrandCardTests(unittest.TestCase):
                          {'brand': {'brands': folder}})
         self.assertEqual(result['read']['#brand-brands-status']['text'], 'Harness Brand reads 1 brand (example) from /work/brands.')
         self.assertTrue(result['read']['#get-brands-bar']['hidden'])
-        self.assertIn('Harness Brand reads 1 brand (example) from /work/brands from now on.', result['toasts'])
+        self.assertIn('Harness Brand reads 1 brand (example) from this folder from now on.', result['toasts'])
         # After the save the installed brands are looked up again.
         urls = [request['url'].split('/api/')[1] for request in result['requests']]
         self.assertGreaterEqual(urls[urls.index('shared'):].count('brands'), 1)
