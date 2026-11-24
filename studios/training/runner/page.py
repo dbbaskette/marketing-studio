@@ -376,16 +376,16 @@ def activity_asked(one) -> dict:
 
 
 class RunnerPage(desk.Page):
+    """What the page may ask the runner, on top of what it may ask the desk."""
+    reads = (*desk.READS, *READS)
+    writes = (*desk.WRITES, *WRITES)
+    framed = ('/api/deck-draft',)   # a deck's wireframe draft, opened by its frame
+
     # Each request is answered knowing whether the network bridge carried it
     # (`studio_core.shared_runner.caller`): a phone may not read this computer's folders.
     def answer(self, target, headers, method='GET', body=None):
         with caller.answering(headers):
             return super().answer(target, headers, method, body)
-
-    """What the page may ask the runner, on top of what it may ask the desk."""
-    reads = (*desk.READS, *READS)
-    writes = (*desk.WRITES, *WRITES)
-    framed = ('/api/deck-draft',)   # a deck's wireframe draft, opened by its frame
 
     # --- reads ---------------------------------------------------------------------------
 

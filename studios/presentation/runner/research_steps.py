@@ -76,8 +76,16 @@ class Researching:
                 record['research'] = {**(record.get('research') or {}),
                                       'contract': 2, 'digest': manifest['digest']}
                 self._done(root, step, clock, 'keep the reviewed research bundle', record)
-            # Research that passed verification is kept in the Document Library too.
-            self._keep_research(root)
+            # Research that passed verification is kept in the Document Library too. The
+            # step is kept and committed already: nothing here may fail it.
+            try:
+                self._keep_research(root)
+            except Exception:   # noqa: BLE001  the research stands whatever happens here
+                from studio_core.document_library import research as library_research
+
+                from runner import library_keep
+                library_keep.note_research(root, {'state': 'failed',
+                                                  'problem': library_research.NOT_KEPT})
             return
         with self.files:
             self.research().status(root)

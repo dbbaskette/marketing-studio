@@ -120,6 +120,25 @@ class ResearchKeptTests(DeskCase):
         self.assertEqual(self.kept_rows(), before)
         self.assertEqual(library_keep.research_noted(root)['state'], 'refused')
 
+    def test_a_failure_while_keeping_never_fails_the_research_step(self):
+        root = self.deck()
+        record = self.record(root)
+        record['research_contract'] = {'schema': 2}
+        tool = mock.Mock(_json=mock.Mock(return_value={'status': 'complete'}))
+        from studio_core import research_contract
+        step = next(one for one in engines.stages.PIPELINE if one.name == 'research-report')
+        with mock.patch.object(engines.Engine, '_load', return_value=record), \
+                mock.patch.object(self.engine, 'research', return_value=tool), \
+                mock.patch.object(research_contract, 'matching', return_value=tool), \
+                mock.patch.object(research_contract, 'publish',
+                                  return_value=({}, {'digest': 'd'})), \
+                mock.patch.object(engines.Engine, '_done'), \
+                mock.patch.object(library_keep, '_key', side_effect=RuntimeError('broken')):
+            self.engine._research_report(root, None, step)
+        noted = library_keep.research_noted(root)
+        self.assertEqual(noted['state'], 'failed')
+        self.assertIn('could not keep this research', noted['problem'])
+
     def test_the_report_step_keeps_research_once_it_was_verified(self):
         root = self.deck()
         record = self.record(root)
@@ -234,11 +253,12 @@ class RemoteCallerTests(test_desk_page.DeskPageCase):
         # More than one is refused, naming them; a phone may not read a folder here.
         status, refused = self.send('document-intake', {'location': self.folder('a.md', 'b.md')})
         self.assertEqual(status, 409)
-        self.assertIn('This folder holds 2 documents: a.md, b.md.', refused['error'])
+        self.assertIn('This folder holds more than one document, among them a.md and b.md.',
+                      refused['error'])
         from studio_core import source_intake
         status, refused = self.send('document-intake', {'location': self.folder('talk.md')},
                                     remote=True)
-        self.assertEqual((status, refused['error']), (409, source_intake.REMOTE))
+        self.assertEqual((status, refused['error']), (403, source_intake.REMOTE))
         status, refused = self.send('document-intake', {'location': 1})
         self.assertEqual(status, 400)
 
@@ -296,3 +316,26 @@ class DocumentFolderPageTests(test_desk_page.DeskPageCase):
         self.assertIn('This folder holds 2 documents: a.md, b.md.',
                       result['snapshots']['refused']['sheet'])
         self.assertNotIn('Chosen:', result['snapshots']['refused']['sheet'])
+
+
+class DocumentIntakeBoundTests(test_desk_page.DeskPageCase):
+    """#514 review: a folder is read only as far as telling one document from more than one."""
+
+    def test_at_most_two_documents_are_read_from_a_folder(self):
+        import tempfile
+        from pathlib import Path
+        from studio_core import source_intake
+        place = Path(tempfile.mkdtemp(prefix='deck-folder-'))
+        self.addCleanup(shutil.rmtree, place, True)
+        for name in ('a.md', 'b.md', 'c.md', 'd.md'):
+            (place / name).write_text(f'# {name}\n')
+        real, asked = source_intake.take, []
+
+        def counted(*given, **named):
+            asked.append(named)
+            return real(*given, **named)
+
+        with mock.patch.object(source_intake, 'take', counted):
+            refused = self.post('document-intake', {'location': str(place)}, expect=409)
+        self.assertEqual((asked[0]['room'], asked[0]['spare']), (2, 16_000_000))
+        self.assertIn('This folder holds more than one document, among them', refused['error'])

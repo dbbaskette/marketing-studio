@@ -216,9 +216,10 @@ WRITES = (*WRITES, DOCUMENT_INTAKE)
 DOCUMENT_ENDINGS = ('.txt', '.md', '.html', '.htm', '.docx', '.pdf')   # the page's DOCUMENT_TYPES
 DOCUMENT_MOST = 8_000_000    # bytes: the largest document the runner reads
 INTAKE_LIMIT = 12_000_000    # bytes: a spreadsheet sent to be read, in base64
-ONE_DOCUMENT = ('This folder holds {count} documents: {names}. A deck from a document is made '
-                'from one. Choose one of them as a file, or start from an idea with research '
-                'and add the folder to its sources.')
+# Two are read at most: enough to tell one document from more than one, and no more.
+ONE_DOCUMENT = ('This folder holds more than one document, among them {names}. A deck from a '
+                'document is made from one. Choose one of them as a file, or start from an idea '
+                'with research and add the folder to its sources.')
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -725,10 +726,13 @@ class RunnerPage(server.Page):
                                      'whole. Choose the file again.') from None
         elif not isinstance(given, str):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give the folder as text.')
+        # The same refusal, in the same status, as the source editor's folder add.
+        if caller.remote() and caller.on_this_computer(given):
+            raise server.Refusal(HTTPStatus.FORBIDDEN, source_intake.REMOTE)
         try:
             found = source_intake.take(given, local=not caller.remote(),
-                                       accepts=DOCUMENT_ENDINGS, room=40,
-                                       spare=40 * DOCUMENT_MOST)
+                                       accepts=DOCUMENT_ENDINGS, room=2,
+                                       spare=2 * DOCUMENT_MOST)
         except ValueError as refusal:
             raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
         documents = list(found['uploads'].items())
@@ -738,8 +742,7 @@ class RunnerPage(server.Page):
         if len(documents) > 1:
             names = [name for name, _ in documents]
             raise server.Refusal(HTTPStatus.CONFLICT, ONE_DOCUMENT.format(
-                count=len(names), names=', '.join(names[:5]) + (' and more' if len(names) > 5
-                                                                  else '')))
+                names=' and '.join(names)))
         name, data = documents[0]
         if len(data) > DOCUMENT_MOST:
             raise server.Refusal(HTTPStatus.CONFLICT, f'{name} is larger than a document can '

@@ -119,6 +119,15 @@ class ResearchKeptTests(DeckCase):
         self.assertEqual(self.kept_rows(), before)
         self.assertEqual(library.research_noted(root)['state'], 'refused')
 
+    def test_a_failure_while_keeping_never_fails_the_research_step(self):
+        root = self.training()
+        with mock.patch.object(engines.Engine, '_report_kept', return_value=True), \
+                mock.patch.object(library, '_key', side_effect=RuntimeError('broken')):
+            self.engine._report(root, None)
+        noted = library.research_noted(root)
+        self.assertEqual(noted['state'], 'failed')
+        self.assertIn('could not keep this research', noted['problem'])
+
     def test_the_report_step_keeps_research_only_once_it_was_verified(self):
         root = self.training()
         step = None
@@ -153,6 +162,10 @@ class RemoteCallerTests(PageCase):
         except desk.Refusal as refusal:
             return int(refusal.status), {'error': str(refusal)}
         return int(status), json.loads(data)
+
+    def test_the_page_class_keeps_its_description(self):
+        from runner import page
+        self.assertTrue(page.RunnerPage.__doc__.startswith('What the page may ask the runner'))
 
     def test_a_folder_here_is_refused_to_a_phone_and_read_for_this_computer(self):
         import tempfile

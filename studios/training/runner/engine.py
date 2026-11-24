@@ -4873,7 +4873,13 @@ class Engine(Reviewing):
         the core for gate 2. Research that answered nothing stops the training instead.
         Research that passed verification is kept in the Document Library too."""
         if self._report_kept(root, step):
-            self._keep_research(root)
+            # The step is kept and committed already: nothing here may fail it.
+            try:
+                self._keep_research(root)
+            except Exception:   # noqa: BLE001  the research stands whatever happens here
+                from studio_core.document_library import research as library_research
+                library.note_research(root, {'state': 'failed',
+                                             'problem': library_research.NOT_KEPT})
 
     def _keep_research(self, root: Path) -> dict:
         """Keep the training's verified research in the Document Library, under the
