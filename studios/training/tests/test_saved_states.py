@@ -12,7 +12,7 @@ import helpers
 from runner_support import StudioCase, asks, fails
 import home
 import workspace
-from runner import desk_chat, gitstate, page
+from runner import desk_chat, desk_migration, gitstate, page
 
 SESSION = '.training-studio/session.json'
 RUN = '.training-studio/run.json'
@@ -115,12 +115,39 @@ class MaterialStopTests(SavedStopTests):
         self.assert_migrates(self.stopped_at('scenario:main', materials=EVERY),
                              ['blueprint', 'document', 'brief', 'scenario:main'])
 
-    def test_failure_after_the_plan_keeps_its_saved_flow(self):
+    def test_failure_after_the_plan_migrates_and_keeps_the_failure_in_history(self):
         self.workers.then('document', fails(), fails(), fails())
         root = self.stopped_at('blueprint', materials=EVERY)
         self.decide(root, 'blueprint')
         self.assertEqual(self.view(root)['state'], 'failed')
-        self.assert_refused(root, FAILED)
+        before = self.record(root)
+        shown = self.assert_migrates(root, ['blueprint'])
+        self.assertIn(desk_migration.KEPT_FAILURE, shown['retained'])
+        self.assert_kept_in_history(root, before, 'problem', 'document')
+
+    def test_worker_question_after_the_plan_migrates_and_keeps_the_question_in_history(self):
+        self.workers.then('document', asks('Which platform is this about?'))
+        root = self.stopped_at('blueprint', materials=EVERY)
+        self.decide(root, 'blueprint')
+        self.assertTrue(self.view(root)['question'])
+        before = self.record(root)
+        shown = self.assert_migrates(root, ['blueprint'])
+        self.assertIn(desk_migration.KEPT_QUESTION, shown['retained'])
+        self.assert_kept_in_history(root, before, 'question', 'document')
+
+    def assert_kept_in_history(self, root, before, key, step):
+        """The failure or question is History: the original run record keeps it, the desk
+        carries it only as saved status, its step stays unfinished, and nothing is retried."""
+        self.assertEqual(json.loads((root / RUN).read_bytes())[key], before[key])
+        effective = self.engine._load(root)
+        self.assertIsNone(effective[key])
+        self.assertEqual(effective['migration_saved_status'][key], before[key])
+        self.assertEqual(effective['steps'], before['steps'])
+        self.assertFalse((effective['steps'].get(step) or {}).get('done'))
+        self.assertNotIn('document', workspace.load(root)['artifacts'])
+        shown = self.engine.view(root)
+        self.assertIsNone(shown['problem'])
+        self.assertIsNone(shown['question'])
 
     def test_paused_after_the_plan_migrates_and_keeps_the_pause_in_history(self):
         root = self.stopped_at('blueprint', materials=EVERY)

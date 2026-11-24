@@ -30,6 +30,14 @@ CONSEQUENCES = ('Open only the listed existing material parts for editing in con
     'This workspace requires Training Studio 4.7.0 or newer. Close older running instances first; '
     'already configured older runners may ignore the requirement. Nothing is installed or updated.')
 CHANGED = 'The training or its saved inputs changed. Preview Open on the desk again.'
+EARLY = 'No usable teaching plan or supported deck outline is saved yet. Continue with the saved flow first.'
+FAILED = 'Resolve the saved failure or question in its saved flow before opening it on the desk.'
+FINISHED = 'Use the existing finished Open on the desk action.'
+# What the preview says it keeps of a saved failure or worker question, once a plan exists.
+KEPT_FAILURE = ('The earlier failure stays in History. Its step stays unfinished and is not '
+                'tried again.')
+KEPT_QUESTION = ('The worker’s unanswered question stays in History. Its step stays '
+                 'unfinished.')
 
 
 def _json(files, name):
@@ -77,7 +85,7 @@ def materials(session, record, files):
                 raise ValueError('The saved deck outline needs attention: ' + ' '.join(problems))
             required.append(outline)
     if not retained:
-        raise ValueError('No usable teaching plan or supported deck outline is saved yet. Continue with the saved flow first.')
+        raise ValueError(EARLY)
     for name, file in names.items():
         base = workspace.split(name)[0].partition(':')[0]
         if base in ('document', 'brief', 'scenario', 'yoodli', 'deck') and file in files:
@@ -136,13 +144,23 @@ def prepare_migration(record, saved_inputs):
         if any(name in saved_inputs for name in (*format.WRITES, format.PENDING)) or drafts.on_desk(record):
             raise ValueError('Use this training’s existing desk or explicit migration recovery.')
         if session['stage'] == 'done':
-            raise ValueError('Use the existing finished Open on the desk action.')
-        if record.get('problem') or record.get('question'):
-            raise ValueError('Resolve the saved failure or question in its saved flow before opening it on the desk.')
-        targets, required = materials(session, record, saved_inputs)
+            raise ValueError(FINISHED)
+        try:
+            targets, required = materials(session, record, saved_inputs)
+        except ValueError as error:
+            # A failure or question before any plan was made: nothing to open yet.
+            if str(error) == EARLY and (record.get('problem') or record.get('question')):
+                raise ValueError(FAILED) from error
+            raise
         retained = [workspace.label(name) for name in targets]
         if record.get('halt'):
             retained.append('The earlier ' + record['halt'] + ' runner status stays in History; conversation editing does not resume it.')
+        # A failure or worker question after the plan is kept as History: the step it
+        # stopped stays unfinished, and nothing is tried again or answered.
+        if record.get('problem'):
+            retained.append(KEPT_FAILURE)
+        if record.get('question'):
+            retained.append(KEPT_QUESTION)
     except (ValueError, KeyError, TypeError, UnicodeError) as error:
         blockers.append(str(error))
     return {'blockers': blockers, 'retained': retained + ['Original files, History, source and guidance pins, Google baselines and real decisions'],
@@ -391,9 +409,19 @@ def migrate(engine, path, expected):
         session['flow'] = 'desk'
         effective.update(flow='desk', execution='conversation', conversation_scope=['part'],
                          migration_targets=prepared['targets'], unfinished_migration=True)
+        saved_status = {}
         if effective.get('halt'):
-            effective['migration_saved_status'] = {'halt': effective['halt'], 'halt_after': effective.get('halt_after')}
+            saved_status.update(halt=effective['halt'], halt_after=effective.get('halt_after'))
             effective['halt'] = None
+        # The effective record carries no live failure or question: neither is retried or
+        # answered on the desk. Both stay, as they were, in the original run record and in
+        # the History the desk shows.
+        for key in ('problem', 'question'):
+            if effective.get(key):
+                saved_status[key] = copy.deepcopy(effective[key])
+                effective[key] = None
+        if saved_status:
+            effective['migration_saved_status'] = saved_status
         origin = format.receipt(files[format.SESSION], files[format.RUN], session['id'], expected, prepared['required'], prepared['targets'],
                                 sources='sources/supplied/index.json' in files)
         a, b = {'origin': origin, 'record': session}, {'origin': origin, 'record': effective}

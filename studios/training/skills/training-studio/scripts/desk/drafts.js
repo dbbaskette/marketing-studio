@@ -3991,6 +3991,23 @@ function workbenchMove(found, held, run) {
   return card;
 }
 
+// What the earlier runner left when saved work was opened on the desk: a pause or stop, a
+// failure, a worker's question. Each is History: nothing is resumed, tried again or answered.
+function savedHistory(saved) {
+  const said = [];
+  if (saved.halt) said.push('The earlier runner was ' + saved.halt + '.');
+  if (saved.problem && saved.problem.what) {
+    said.push('The earlier runner stopped on a failure: ' + saved.problem.what
+      + ' That step stays unfinished and is not tried again.');
+  }
+  if (saved.question && saved.question.text) {
+    said.push('A worker asked: “' + saved.question.text + '” It was not answered, and that '
+      + 'step stays unfinished.');
+  }
+  return add(card('Saved runner history'), ...said.map((text) => make('p', '', text)),
+    make('p', 'quiet', 'This remains in the original saved records; no work was resumed.'));
+}
+
 function paintDesk(fresh, fromPoll = false) {
   const active = document.activeElement;
   const editing = !fresh && active && ['TEXTAREA', 'INPUT'].includes(active.tagName)
@@ -4163,7 +4180,7 @@ function paintDesk(fresh, fromPoll = false) {
       waitingPlan || found.progress?.map ? null : pageHead(preparingPlan ? (run.outline_first ? 'One Quick scan prepares an editable outline. Detailed research waits for your approval.' : 'I’ll prepare the topics and teaching plan for you to check, then build the training.') : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
       notice,
       conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
-      found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
+      found.saved_status ? savedHistory(found.saved_status) : null,
       !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null,
       ours && run.notice ? noticePart(run) : null,
       ours ? needsPart(found, held, run) : null,
