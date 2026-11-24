@@ -28,17 +28,35 @@ setup snapshot offers this choice as `assistant_default`; finishing setup saves 
 `marketing-studio doctor` reports a problem when neither assistant is installed or
 when the saved or default assistant is missing.
 
-Default brand chooses a brand offered by the installed brand skill; default variant
-chooses one of that brand's variants. For example, `tanzu` and `light` offer Tanzu
-light branding when starting new work in each studio. These are starting choices,
-not a requirement for every project. Existing blogs, presentations and trainings
-keep their saved brand. The brand skill repository supplies the runtime; a separate
-brands repository can supply its brand packs. Saving an address does not install or
-update the skill. Installation remains an
-explicit action in a studio's settings. **Where is your brand skill?** offers
-**Git repository** and **Installed skill folder** as separate, optional inputs.
-A repository address does not require an installed folder. Leave the folder
-blank for automatic discovery, or use it to select an existing installation.
+The **Brand** card is filled in one pass. **Brands folder or repository** comes first:
+a folder on this computer, a Git address, or empty for the folder Harness Brand already
+reads. The installed brands are looked up when the card is shown and again after each
+save, with no separate find step; **Default brand** and **Default variant** offer them
+as you type, and still accept an ID typed by hand. Default brand chooses a brand offered
+by the installed brand skill; default variant chooses one of that brand's variants
+(blank is the brand's first). These are starting choices for Blog Studio, Presentation
+Studio, Training Studio and Infographic Studio, not a requirement for every project.
+Existing work keeps its saved brand. Save is the card's one action:
+
+- A brands folder on this computer that holds brands is read by Harness Brand from that
+  save on (recorded as `harness-brand data --set` would). A folder with no brands yet is
+  saved as it is, and Brands can make the first brand in it.
+- A Git address is saved, and nothing is fetched. The card then says the brands have not
+  been fetched yet and offers **Get brands**, which copies them to this computer and shows
+  its progress; once copied it offers **Update brands**.
+
+The brand skill repository supplies the runtime; saving its address does not install or
+update the skill. Installation remains an explicit action in a studio's settings.
+**Brand skill overrides**, a disclosure that stays closed unless one is set, holds
+**Brand skill Git repository** and **Installed skill folder**, separate and optional.
+A repository address does not require an installed folder. Leave the folder blank for
+automatic discovery, or use it to select an existing installation. Choosing a default
+brand keeps the folder in agreement with it: empty when the skill the studios find by
+themselves offers the brand, else the folder of the skill that does; when two installed
+skills offer the same brand, **From brand skill** asks which. When the lookup cannot be
+made, the card says why, a brand ID can still be typed, and a saved Git address still
+offers **Get brands**. Through the network bridge the card is told how many brands there
+are, not this computer's folders.
 The brand skill is installed and updated from its repository's `main`, so there is no
 release to choose and Shared settings has no release field. A `brand.release` an older
 version saved is not read or shown, is left in the file as it is, and one sent by a form
@@ -61,11 +79,13 @@ use [Harness Brand](https://github.com/dbbaskette/harness-brand-skill) as the br
 skill and [broadcom-brands](https://github.com/dbbaskette/broadcom-brands) as the
 **Brands repository**.
 
-In **Shared settings → Brand**, select the installed Harness Brand folder and set
-its **Git repository** to `https://github.com/dbbaskette/harness-brand-skill`.
-Set **Brands repository** to `https://github.com/dbbaskette/broadcom-brands`, save,
-then choose **Get brands** and **Find installed brands**. Installing or updating
-the runtime remains a separate explicit action if it is not already available.
+In **Shared settings → Brand**, set **Brands folder or repository** to
+`https://github.com/dbbaskette/broadcom-brands` and save, then choose **Get brands**;
+the installed brands are offered in Default brand once they are copied. Under **Brand
+skill overrides**, the Harness Brand folder and its **Brand skill Git repository**
+(`https://github.com/dbbaskette/harness-brand-skill`) are needed only when the studios do
+not find it by themselves. Installing or updating the runtime remains a separate
+explicit action if it is not already available.
 
 | Brand | ID | Variants |
 | --- | --- | --- |
@@ -554,15 +574,21 @@ nothing rewrites a file to remove them.
 
 ## Brands
 
-Marketing Studio's **Brands** screen uses only **Brand → Brands repository**. A local
-folder is used where configured; a remote address uses the copy obtained by **Get
-brands**. Opening Brands never clones, pulls, installs a skill or starts an assistant.
+Marketing Studio's **Brands** screen uses only **Brand → Brands folder or repository**.
+A local folder is used where configured; a remote address uses the copy obtained by
+**Get brands**. Opening Brands never clones, pulls, installs a skill or starts an assistant.
 The team workspace repository is independent. Brands authoring runs on the computer;
 phone access does not expose its files or write actions.
 
 **New brand** or **Update** opens a local working copy. Add source files, up to 40 MB
 each, then **Extract** to read design tokens, measure PowerPoint templates and draw
-available previews. Libraries accept SVG, JSON or ZIP sources and show a contact
+available previews. A PDF brand book, alone or inside a ZIP archive, is given to the
+assistant as text (read with pdftotext, within the same limits as other sources); one
+that cannot be read, because pdftotext is not installed or the PDF has no text layer,
+is named to the assistant with that reason. At most 30 PDFs, for at most five minutes in
+all, are read for one request, and Stop ends the reading before the next file. A PDF whose
+text is more than the shared extraction keeps (8 MB) is named as too long to read whole, an
+encrypted or unreadable member of a ZIP archive is named with why, and the rest is read. Libraries accept SVG, JSON or ZIP sources and show a contact
 sheet. Extraction uses Harness Brand. **Ask your assistant** is a separate explicit
 request to propose judgement files using the shared Writing model. Review each part,
 accept it or save your own edit; unchanged parts on an update remain visible. Pending
@@ -580,6 +606,33 @@ repository, branch and brand names. A changed commit, branch or destination requ
 a fresh preview and yes. Commits containing unrelated files or mixing brands are
 refused for review with Git. Push never forces. A non-fast-forward refusal preserves
 the local commit. Local-folder repositories have no automatic push action.
+
+**Document templates**, under a brand's name in the list, shows the brand's Word
+document templates as Harness Brand's `documents --brand B --json` lists them: what each
+is for, its paper size and its notes (fonts it needs, what is placeholder, whether it is
+official). Harness Brand is asked only when the person opens them, and the answer is kept
+for 15 seconds while the brand's `brand.json` is unchanged. **Download** is served by the
+page server for exactly the files Harness Brand listed for that brand, and only from
+inside that brand's pack folder. A brand with none says so in one line; a template
+Harness Brand lists without describing it is left out on its own, and the row says so.
+
+**Rebrand a Google file** makes a branded copy of an existing Google Slides deck or
+Google Doc with Harness Brand's `rebrand run`. Paste the file's link (only a
+`docs.google.com/presentation/d/` or `docs.google.com/document/d/` address is taken, and
+it reaches Harness Brand as one argument, rebuilt from the file's id) and choose a brand.
+**Check and rebrand** asks `rebrand status` first: a brand that is not set up for
+rebranding is refused in Harness Brand's words, with what to do. Before anything runs the
+screen says that a new copy is made in your Google Drive, the original is not changed,
+this computer's Google sign-in is used, and, only when **Ask your assistant to review the
+pages** is ticked (it is off unless ticked), the pages and their text are sent to the
+assistant's provider. **Make the copy** starts a background job, one at a time, with its
+progress and **Stop**; it survives a page reload. The result gives the copy's link,
+Harness Brand's report and its verdict in its own words. Without the review the copy is
+awaiting your visual check, never accepted. Closing Marketing Studio ends a running
+rebrand; a run an abruptly ended Marketing Studio left going is ended when Brands is next
+opened (only when its process still names this run's folder), and a run that finished by
+itself meanwhile is read for its result. The job's record and run folder are kept in
+Marketing Studio's data folder under `brand-rebrand/`.
 
 Home refreshes saved-work summaries on its normal status poll and when you return to
 the tab. Unchanged resume controls retain focus. A connection failure keeps the last
