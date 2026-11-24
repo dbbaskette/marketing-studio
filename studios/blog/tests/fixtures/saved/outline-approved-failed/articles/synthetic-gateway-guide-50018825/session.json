@@ -1,0 +1,40 @@
+{
+  "id": "synthetic-gateway-guide-50018825",
+  "title": "Synthetic gateway guide",
+  "mode": "first-draft",
+  "stage": "outline",
+  "author": "",
+  "stop_point": "review",
+  "research_policy": "supplied-only",
+  "voice": {
+    "mode": "tone",
+    "tone": ""
+  },
+  "sources": [],
+  "reviews": {},
+  "artifact_hashes": {
+    "outline": "4c7b68e265b568752f1b3aaae50ad5cbd065e6c84a80516087d3caf5a8733828"
+  },
+  "next_step": "Continue the guided blog on the page.",
+  "pending_question": null,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "guidance": {
+    "revision": "4.19.0",
+    "source": "installed"
+  },
+  "writing_preferences": {
+    "audience": "New authors"
+  },
+  "research_from": null,
+  "material": [],
+  "updated_at": "2026-01-05T09:30:00+00:00",
+  "artifact_events": [
+    {
+      "kind": "outline",
+      "before": null,
+      "after_sha256": "4c7b68e265b568752f1b3aaae50ad5cbd065e6c84a80516087d3caf5a8733828",
+      "label": "guided run",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ]
+}

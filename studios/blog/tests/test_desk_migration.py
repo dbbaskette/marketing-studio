@@ -14,6 +14,7 @@ import blog_runner as runner
 import desk
 import desk_chat
 import management
+import saved_fixtures
 import studio
 from test_blog_runner import RunnerCase
 
@@ -23,9 +24,10 @@ MANUSCRIPT = '# Synthetic draft\n\nAn opening.\n\n## First\n\nSaved words.\n'
 
 class MigrationTests(RunnerCase):
     def eligible(self, material='draft'):
-        # A saved-format fixture, not a public new-work command or a worker.
-        found = self.create(page=True)
-        directory, _, run = runner.load(self.root, found['id'])
+        # A page run just created by the saved flow, in its original format (a static
+        # fixture), with its material written here: not a new-work command or a worker.
+        ident = saved_fixtures.load(self.root, 'page-created')
+        directory, _, run = runner.load(self.root, ident)
         if material == 'draft':
             (directory / 'DRAFT.md').write_text(MANUSCRIPT)
             (directory / 'OUTLINE.md').write_text(OUTLINE)
@@ -43,7 +45,7 @@ class MigrationTests(RunnerCase):
         elif material == 'outline':
             (directory / 'OUTLINE.md').write_text(OUTLINE)
         studio.write_json(directory / runner.STATE, run)
-        return found['id'], directory
+        return ident, directory
 
     def snapshot(self, directory=None):
         directory = directory or self.root
@@ -188,7 +190,7 @@ class MigrationTests(RunnerCase):
 
         first, directory = self.eligible()
         self.apply(first)
-        second = self.create(page=True)['id']
+        second = saved_fixtures.load(self.root, 'outline-gate')  # Another saved page run.
         for ident in (first, second):
             folder, record = studio.item(self.root, 'articles', ident)
             record['google'] = {'baselines': {'draft': {'document': {'document_id': 'shared-doc'}}}}

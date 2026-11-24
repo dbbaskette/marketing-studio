@@ -1,0 +1,41 @@
+{
+  "id": "synthetic-gateway-guide-ea70def3",
+  "title": "Synthetic gateway guide",
+  "mode": "first-draft",
+  "stage": "intake",
+  "author": "",
+  "stop_point": "review",
+  "research_policy": "supplied-only",
+  "voice": {
+    "mode": "tone",
+    "tone": ""
+  },
+  "sources": [
+    {
+      "source_id": "specification-3040ea89",
+      "revision": 1,
+      "purposes": [
+        "reference"
+      ]
+    }
+  ],
+  "reviews": {},
+  "artifact_hashes": {},
+  "next_step": "Continue the guided blog in chat.",
+  "pending_question": null,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "guidance": {
+    "revision": "4.19.0",
+    "source": "installed"
+  },
+  "writing_preferences": {
+    "audience": "New authors"
+  },
+  "research_from": {
+    "documents": true,
+    "sites": [],
+    "web": false
+  },
+  "material": [],
+  "updated_at": "2026-01-05T09:30:00+00:00"
+}

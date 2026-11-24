@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "approval": "conversation",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "claims-map",
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "claims-map": {
+      "status": "draft",
+      "hash": "c9a6a773fb57a65b757550a7a484e9b4dd39ec8daf47a53ce2ab6344b5d281c0",
+      "basis": "1c1cf5321f611b5eb5fca1321807528d17ab05da28afd41afb006f1f140ada43",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "claims-map"
+    }
+  },
+  "length": "style",
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from conversation",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted claims-map",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ]
+}

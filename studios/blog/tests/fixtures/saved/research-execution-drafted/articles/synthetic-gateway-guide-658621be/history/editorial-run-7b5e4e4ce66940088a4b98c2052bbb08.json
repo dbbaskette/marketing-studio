@@ -1,0 +1,101 @@
+{
+  "schema": 4,
+  "approval": "page",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "outline": {
+      "status": "draft",
+      "hash": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+      "basis": "ebd51cc0e1f7fbb4f9ecc77bd0fd4ae3c95829e52b3ae21212bffca89c9e7c08",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "outline"
+    }
+  },
+  "length": "style",
+  "research_contract": {
+    "schema": 2,
+    "name": "synthetic"
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "research_execution": {
+    "schema": 1,
+    "protocol": "harness-collection-v1",
+    "workers": 1,
+    "capability": {
+      "protocol": "harness-collection-v1"
+    }
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from page",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Continued without research",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "research_skipped": {
+    "from": "research-plan",
+    "at": "2026-01-05T09:30:00+00:00"
+  }
+}

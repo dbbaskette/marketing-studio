@@ -1,4 +1,6 @@
-"""A finished step-by-step blog opens on the writing desk; its run stays as it was."""
+"""A finished step-by-step blog opens on the writing desk; its run stays as it was.
+
+The saved runs are static fixtures captured from the saved flow (saved_fixtures.py)."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import unittest
@@ -6,22 +8,16 @@ import unittest
 import blog_runner as runner
 import desk
 import management
+import saved_fixtures
 import studio
 from test_blog_runner import RunnerCase
 
 
 class OpenOnTheDeskTests(RunnerCase):
-    def finished(self, **extra):
-        found = self.create(page=True, **extra)
-        for _ in range(8):
-            if found['complete']:
-                return found
-            content = None
-            if found['next'] == 'draft':
-                content = '# Synthetic gateway guide\n\nOpening.\n\n## Why\n\nBecause.\n'
-            self.submit(runner.survey(self.root, found['id']), content, page=True)
-            found = self.approve(runner.survey(self.root, found['id']), page=True)
-        self.fail('The run did not finish.')
+    def finished(self, tone=None):
+        """A page run the saved flow finished (a static fixture in its original format)."""
+        state = 'finished-page-warm' if tone == 'Warm' else 'finished-page'
+        return runner.survey(self.root, saved_fixtures.load(self.root, state))
 
     def state(self, ident):
         directory, _, _ = runner.load(self.root, ident)
@@ -149,7 +145,7 @@ class OpenOnTheDeskTests(RunnerCase):
         self.assertEqual(after, before)
 
     def test_an_unfinished_run_is_refused(self):
-        found = self.create(page=True)
+        found = runner.survey(self.root, saved_fixtures.load(self.root, 'page-created'))
         self.assertFalse(runner.engine(self.root).describe(found['id'])['desk_open'])
         with self.assertRaisesRegex(ValueError, 'Finish this blog, then open it on the desk'):
             with studio.locked(self.root):
@@ -189,7 +185,7 @@ class OpenOnTheDeskTests(RunnerCase):
 
 class SavedBlogVoiceTests(RunnerCase):
     def test_a_saved_blog_brought_to_the_desk_keeps_its_pinned_voice(self):
-        found = self.create(page=True)
+        found = runner.survey(self.root, saved_fixtures.load(self.root, 'page-created'))
         directory, record, _ = runner.load(self.root, found['id'])
         (directory / runner.STATE).unlink()  # A saved blog with no run: brought by `article`.
         record['voice'] = {'mode': 'profile', 'profile_id': 'someone', 'revision': 2, 'tone': ''}

@@ -1,0 +1,51 @@
+{
+  "id": "from-my-files-4cf87388",
+  "title": "From my files",
+  "mode": "from-files",
+  "stage": "intake",
+  "author": "",
+  "stop_point": "package",
+  "research_policy": "supplied-only",
+  "voice": {
+    "mode": "tone",
+    "tone": ""
+  },
+  "sources": [
+    {
+      "source_id": "material-7ee72bd8a52b4943",
+      "revision": 1,
+      "purposes": [
+        "material"
+      ]
+    },
+    {
+      "source_id": "material-5f7702df702d4258",
+      "revision": 1,
+      "purposes": [
+        "material"
+      ]
+    }
+  ],
+  "reviews": {},
+  "artifact_hashes": {},
+  "next_step": "Continue the guided blog on the page.",
+  "pending_question": null,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "guidance": {
+    "revision": "4.19.0",
+    "source": "installed"
+  },
+  "writing_preferences": {
+    "audience": "To be chosen with the angle."
+  },
+  "research_from": {
+    "documents": true,
+    "sites": [],
+    "web": false
+  },
+  "material": [
+    "material-7ee72bd8a52b4943",
+    "material-5f7702df702d4258"
+  ],
+  "updated_at": "2026-01-05T09:30:00+00:00"
+}

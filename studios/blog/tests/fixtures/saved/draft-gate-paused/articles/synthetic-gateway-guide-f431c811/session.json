@@ -1,0 +1,48 @@
+{
+  "id": "synthetic-gateway-guide-f431c811",
+  "title": "Synthetic gateway guide",
+  "mode": "first-draft",
+  "stage": "draft",
+  "author": "",
+  "stop_point": "review",
+  "research_policy": "supplied-only",
+  "voice": {
+    "mode": "tone",
+    "tone": ""
+  },
+  "sources": [],
+  "reviews": {},
+  "artifact_hashes": {
+    "outline": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+    "draft": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a"
+  },
+  "next_step": "Continue the guided blog on the page.",
+  "pending_question": null,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "guidance": {
+    "revision": "4.19.0",
+    "source": "installed"
+  },
+  "writing_preferences": {
+    "audience": "New authors"
+  },
+  "research_from": null,
+  "material": [],
+  "updated_at": "2026-01-05T09:30:00+00:00",
+  "artifact_events": [
+    {
+      "kind": "outline",
+      "before": null,
+      "after_sha256": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+      "label": "guided run",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "kind": "draft",
+      "before": null,
+      "after_sha256": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+      "label": "guided run",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ]
+}
