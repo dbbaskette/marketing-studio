@@ -227,7 +227,8 @@ class RuleTests(PageCase):
 
     def setUp(self):
         super().setUp()
-        self.path = self.saved_started()
+        self.pause_after('research-plan')
+        self.path = self.started()
         self.bodies = {'/api/research-decision':{'path': self.path, 'action':'read'}, '/api/research-note':{'path': self.path,'id':'section','action':'read'}, '/api/slide-text-draft': {'path': self.path, 'action':'read'}, '/api/outline-flow': {'path': 'nowhere', 'expected': 'old'}, '/api/intake-draft': {'action': 'read'}, '/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
@@ -1287,16 +1288,17 @@ class StartTests(PageCase):
     def test_the_form_says_where_research_may_look(self):
         for scope, title in (('supplied-only', 'From documents'), ('both', 'From both')):
             with self.subTest(scope):
-                path = self.saved_started(source_scope=scope, title=title)
+                path = self.started(source_scope=scope, title=title)
                 run = self.get('run', path=path)
                 self.assertEqual((run['state'], run['documents']['waiting']),
                                  ('waiting', True))
-        self.assertIsNone(self.get('run', path=self.saved_started())['documents'])
+        self.pause_after('research-plan')
+        self.assertIsNone(self.get('run', path=self.started())['documents'])
         self.assertEqual(len(self.workers.jobs), 1, 'only the last has started drafting')
 
     def test_a_form_with_no_deck_leaves_the_deck_out(self):
-        without = Path(self.saved_started(deck_target=None))
-        wanted = Path(self.saved_started(deck_target='pptx', title='Health checks'))
+        without = Path(self.started(deck_target=None))
+        wanted = Path(self.started(deck_target='pptx', title='Health checks'))
         self.assertEqual(('deck' in workspace.status(without)['settings']['stages'],
                           'deck' in workspace.status(wanted)['settings']['stages']),
                          (False, True))
@@ -1339,17 +1341,17 @@ class StartTests(PageCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', looks)
-        path = self.saved_started()
+        path = self.started()
         self.assertEqual(seen[0]['error'], 'Trainings are working in the workspace this '
                          'computer uses now. Pause or stop them before moving to another.')
         self.assertEqual((seen[1]['limits']['parallel'], seen[1]['workspace']['path']),
                          (3, str(self.space.repo)))
         self.assertFalse((self.base / 'elsewhere').exists())
-        self.assertEqual((self.get('run', path=path)['state'], len(self.workers.jobs)),
-                         ('waiting', 1))
+        self.assertEqual((self.get('run', path=path)['state'],
+                          len(self.workers.of('research-plan'))), ('done', 1))
 
     def test_a_second_training_with_the_same_title_is_refused(self):
-        self.saved_started()
+        self.started()
         said = self.post('trainings', {**FORM, 'flow': 'desk'}, 409)
         self.assertIn('already has a training in trainings/rolling-restarts', said['error'])
 
@@ -1437,7 +1439,7 @@ class UpkeepTests(PageCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', looks)
-        self.saved_started()
+        self.started()
         self.assertEqual(keeper.asked, [('update', False), ('update', False),
                                         ('update', True)],
                          'a training working in the background is said to be working')
@@ -1465,7 +1467,7 @@ class UpkeepTests(PageCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', looks)
-        self.saved_started()
+        self.started()
         self.assertEqual(keeper.asked, [
             ('upgrade', False, '99.0.0'), ('restart', False),
             ('dismiss', 'training-studio 99.0.0'), ('upgrade', False, '99.0.0'),
@@ -1521,7 +1523,7 @@ class UpkeepTests(PageCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', looks)
-        self.saved_started()
+        self.started()
         self.assertEqual(keeper.asked, [('install_brand', False, 'abcdef012345'),
                                         ('install_brand', False, 'abcdef012345'),
                                         ('install_brand', True, 'abcdef012345')],
@@ -1675,11 +1677,12 @@ class CombinedReviewTests(PageCase):
 class RunTests(PageCase):
     def test_a_run_is_described_field_for_field(self):
         self.workers.cost = 0.5
-        run = self.get('run', path=self.saved_started())
+        self.pause_after('research-plan')
+        run = self.get('run', path=self.started())
         self.assertEqual(sorted(run), RUN_KEYS)
         self.assertEqual((run['state'], run['agent'], run['model'], run['effort'],
                           run['workers'], run['question'], run['problem']),
-                         ('waiting', 'claude', None, None, [], None, None))
+                         ('paused', 'claude', None, None, [], None, None))
         self.assertEqual(run['spent'], {'dollars': 0.5, 'tokens': 1200})
         self.assertIsInstance(run['sentence'], str)
         for step in run['steps']:
@@ -1693,10 +1696,10 @@ class RunTests(PageCase):
 
     def test_a_question_and_a_problem_are_described_field_for_field(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
-        asking = self.get('run', path=self.saved_started())
+        asking = self.get('run', path=self.started())
         self.assertEqual(sorted(asking['question']), ['from', 'id', 'text'])
         self.workers.then('research-plan', fails(), fails(), fails())
-        failing = self.get('run', path=self.saved_started(title='Health checks'))
+        failing = self.get('run', path=self.started(title='Health checks'))
         self.assertEqual(sorted(failing['problem']), ['action', 'kept', 'label', 'what'])
         self.assertEqual((failing['state'], failing['problem']['action'],
                           failing['problem']['label']), ('failed', 'retry', 'Try again'))
@@ -1726,24 +1729,26 @@ class RunTests(PageCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', pauses)
-        self.assertEqual(self.saved_started(), path)
+        self.assertEqual(self.started(), path)
         self.assertEqual((sorted(paused[0]), paused[0]['state'], paused[0]['workers'][0]['id']),
                          (RUN_KEYS, 'paused', 'research-plan'))
         self.assertEqual(self.get('run', path=path)['state'], 'paused')
+        self.pause_after('blueprint')
         self.assertEqual(self.post('run', {'path': path, 'action': 'resume'})['state'],
-                         'waiting')
+                         'paused')
         self.assertEqual(self.post('run', {'path': path, 'action': 'stop'})['state'],
                          'stopped')
         self.assertEqual(self.post('run', {'path': path, 'action': 'resume'})['state'],
-                         'waiting')
+                         'done')
         self.workers.then('research-plan', fails(), fails(), fails())
-        failed = self.saved_started(title='Health checks')
+        failed = self.started(title='Health checks')
         self.assertEqual(self.get('run', path=failed)['state'], 'failed')
         again = self.post('run', {'path': failed, 'action': 'retry'})
-        self.assertEqual((again['state'], again['problem']), ('waiting', None))
+        self.assertEqual((again['state'], again['problem']), ('done', None))
 
     def test_what_a_run_cannot_be_asked_is_refused_in_a_sentence(self):
-        path = self.saved_started()
+        self.workers.then('research-plan', asks('Which platform is this about?'))
+        path = self.started()
         for sent, expect, said in (
                 ({'path': path, 'action': 'restart'}, 400,
                  'A run can be asked to: pause, resume, stop, retry, finish-level, more-time, '
@@ -1764,7 +1769,8 @@ class RunTests(PageCase):
 
     def test_a_workers_question_is_answered_on_the_page(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
-        path = self.saved_started()
+        self.pause_after('research-plan', later=True)
+        path = self.started()
         asked = self.get('run', path=path)['question']
         for sent, expect, said in (
                 ({'path': path, 'id': asked['id'], 'answer': ''}, 400, 'Give answer as text.'),
@@ -1779,11 +1785,12 @@ class RunTests(PageCase):
         after = self.post('answer', {'path': path, 'id': asked['id'],
                                      'answer': 'The public one.'})
         self.assertEqual((sorted(after), after['state'], after['question']),
-                         (RUN_KEYS, 'waiting', None))
+                         (RUN_KEYS, 'paused', None))
         self.assertIn('Answer: The public one.', self.workers.jobs[-1][1].task)
 
     def test_a_note_for_the_next_step_is_sent_on_the_page(self):
-        path = self.saved_started()
+        self.pause_after('research-plan')
+        path = self.started()
         self.assertEqual(self.get('run', path=path)['note'],
                          {'pending': None, 'used': [], 'expected': '0'})
         self.assertEqual(self.post('note', {'path': path, 'text': 'Keep it short.'}, 400)['error'],
@@ -1853,11 +1860,12 @@ class ListTests(PageCase):
 
     def test_a_run_with_a_question_counts_as_needing_the_person(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
-        path = self.saved_started()
+        path = self.started()
         found = self.get('trainings')
         item = found['trainings'][0]
         self.assertEqual((found['needs'], item['state'], item['sentence']), (
-            1, 'needs-you', 'A question is waiting for you: Which platform is this about?'))
+            1, 'needs-you', 'A question is waiting for you: Which platform is this about? '
+            'Still to do: 3 drafts still to write.'))
         self.assertEqual(item['waiting'], {'artifact': None, 'label': None, 'recorded': False,
                                            'question': 'Which platform is this about?'})
         self.assertEqual(item['run']['state'], 'waiting')
@@ -1869,7 +1877,7 @@ class ListTests(PageCase):
 
     def test_a_run_with_a_problem_counts_as_needing_the_person(self):
         self.workers.then('research-plan', fails(), fails(), fails())
-        self.saved_started()
+        self.started()
         found = self.get('trainings')
         item = found['trainings'][0]
         self.assertEqual((found['needs'], item['state'], item['run']['state']),
@@ -1889,8 +1897,8 @@ class ListTests(PageCase):
 
     def test_reading_never_starts_or_wakes_a_run(self):
         self.workers.then('research-plan', fails(), fails(), fails(), asks('Which platform?'))
-        failed = self.saved_started()
-        asking = self.saved_started(title='Health checks')
+        failed = self.started()
+        asking = self.started(title='Health checks')
         chat = self.chat()
         before, jobs = self.on_disk(), len(self.workers.jobs)
         for _ in range(3):
@@ -2015,7 +2023,7 @@ class LaterTests(PageCase):
         return base64.b64encode(text.encode('utf-8')).decode('ascii')
 
     def test_documents_are_added_removed_and_settled_on_the_page(self):
-        path = self.saved_started(source_scope='supplied-only')
+        path = self.started(source_scope='supplied-only')
         run = self.post('documents', {'path': path, 'action': 'add', 'name': 'handbook.txt',
                                       'content': self.sent()})
         self.assertEqual(sorted(run), RUN_KEYS)
@@ -2035,6 +2043,7 @@ class LaterTests(PageCase):
                          ('needs-you', 'waiting', 1),
                          'a run that waits for documents needs its person')
         self.assertEqual(self.workers.jobs, [])
+        self.pause_after('research-result')
         run = self.post('documents', {'path': path, 'action': 'done'})
         self.assertEqual((run['documents']['waiting'], run['documents']['added'][0]['name'],
                           len(self.workers.jobs)), (False, 'handbook.txt', 1))
@@ -2042,8 +2051,8 @@ class LaterTests(PageCase):
                          'the documents stay shown once they are settled')
 
     def test_what_makes_no_sense_about_a_document_is_refused_in_a_sentence(self):
-        path = self.saved_started(source_scope='both')
-        web = self.saved_started(title='Health checks')
+        path = self.started(source_scope='both')
+        web = self.started(title='Health checks')
         add = {'path': path, 'action': 'add', 'name': 'handbook.txt', 'content': self.sent()}
         for sent, expect, said in (
                 ({**add, 'action': 'replace'}, 400,
@@ -2107,7 +2116,7 @@ class LaterTests(PageCase):
                          'with its length stated.'))
 
     def test_a_document_of_the_largest_size_is_taken(self):
-        path = self.saved_started(source_scope='both')
+        path = self.started(source_scope='both')
         large = 'A line of a long handbook.\n' * 280_000
         self.assertGreater(len(large), 7_500_000)
         run = self.post('documents', {'path': path, 'action': 'add', 'name': 'handbook.txt',
@@ -2129,8 +2138,8 @@ class LaterTests(PageCase):
 
     def test_the_copies_are_made_again_on_the_page(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'
-        path = self.saved_started(copies=['google'])
-        self.to_gate(Path(path), 'brief')
+        path = self.started(copies=['google'])
+        self.engine.mark_ready(Path(path), 'document', hashed(Path(path), 'document'))
         shown = self.get('run', path=path)['copies']
         self.assertEqual(shown[0], {
             'artifact': 'document', 'label': 'the learner guide', 'kind': 'google',
@@ -2141,8 +2150,9 @@ class LaterTests(PageCase):
         self.assertEqual(sorted(run), RUN_KEYS)
         self.assertEqual([(entry['artifact'], entry['state'], entry['link'], entry['problem'])
                           for entry in run['copies']], [
-            ('document', 'made', 'https://docs.example.com/d/doc1/edit', None)],
-            'the brief is not approved yet, so there is no copy of it to show')
+            ('document', 'made', 'https://docs.example.com/d/doc1/edit', None),
+            ('brief', 'not-made', None, None)],
+            'the brief is not marked ready yet, so no copy of it is made')
         self.assertEqual(self.post('copies', {}, 400)['error'], 'Give path as text.')
 
     def test_a_scenarios_gate_says_whose_file_it_is(self):
@@ -2178,10 +2188,11 @@ class LaterTests(PageCase):
         self.assertIn('Which goal carries each success criterion', shown['review'])
 
     def test_the_index_is_read_as_a_file_once_it_is_written(self):
-        path = self.saved_started()
+        path = self.started()
         said = self.get('file', 404, path=path, artifact='README.md')
         self.assertEqual(said['error'], 'The index has not been written yet.')
         self.to_end(Path(path))
+        self.all_ready(Path(path))
         run = self.get('run', path=path)
         shown = self.get('file', path=path, artifact=run['finished']['index'])
         self.assertEqual(sorted(shown), ['artifact', 'binary', 'file', 'size', 'text',
@@ -2284,7 +2295,8 @@ class WireTests(WireCase):
         self.assertEqual((len(self.engine.trainings()), self.workers.jobs), (before, []))
 
     def test_something_that_cannot_be_done_is_answered_with_a_sentence_and_409(self):
-        path = str(self.saved_start())
+        self.pause_after('research-plan')
+        path = str(self.start())
         status, _, body = self.ask('/api/run', {'path': path, 'action': 'retry'})
         self.assertEqual((status, json.loads(body)), (409, {
             'error': 'Nothing here failed, so there is nothing to try again.'}))
@@ -2616,7 +2628,8 @@ class DownloadTests(PageCase):
 
     def setUp(self):
         super().setUp()
-        self.path = self.saved_started(levels=['101'], stages=['document', 'brief', 'deck'], copies=['word'])
+        self.pause_after('research-plan')
+        self.path = self.started(levels=['101'], stages=['document', 'brief', 'deck'], copies=['word'])
         self.root = Path(self.path)
         (self.root / '101').mkdir(exist_ok=True)
 
@@ -2673,23 +2686,20 @@ class DownloadTests(PageCase):
 class PullCopyTests(PageCase):
     def test_the_page_brings_in_a_doc_and_reopens_its_review(self):
         import gdocs
-        path = self.saved_started(levels=['101'], copies=['google'])
+        path = self.started(levels=['101'], copies=['google'])
         root = Path(path)
-        self.to_gate(root, 'document@101')
-        self.decide(root, 'document@101')
+        self.engine.mark_ready(root, 'document@101', hashed(root, 'document@101'))
         ident = gdocs.read_links(root)['docs']['document@101']['file_id']
         self.copies.drive.docs[ident] += '\nFrom a teammate.\n'
         run = self.post('copies', {'path': path, 'pull': 'document@101'})
         self.assertIn('From a teammate.', (root / '101/document.md').read_text())
         self.assertIn("The Doc's changes are in.", run['said'])
-        self.assertEqual(workspace.status(root)['gate'], 'document@101')
 
     def test_the_page_looks_for_doc_changes_when_asked(self):
         import gdocs
-        path = self.saved_started(levels=['101'], copies=['google'])
+        path = self.started(levels=['101'], copies=['google'])
         root = Path(path)
-        self.to_gate(root, 'document@101')
-        self.decide(root, 'document@101')
+        self.engine.mark_ready(root, 'document@101', hashed(root, 'document@101'))
         before = list(self.copies.drive.calls)
         shown = self.get('run', path=path)
         self.assertEqual(self.copies.drive.calls, before, 'reading the page asks Google nothing')
@@ -2709,10 +2719,9 @@ class PullCopyTests(PageCase):
 
     def test_a_doc_check_that_cannot_reach_google_says_so(self):
         import gdocs
-        path = self.saved_started(levels=['101'], copies=['google'])
+        path = self.started(levels=['101'], copies=['google'])
         root = Path(path)
-        self.to_gate(root, 'document@101')
-        self.decide(root, 'document@101')
+        self.engine.mark_ready(root, 'document@101', hashed(root, 'document@101'))
         ident = gdocs.read_links(root)['docs']['document@101']['file_id']
 
         def refused(file_id):
@@ -2725,16 +2734,14 @@ class PullCopyTests(PageCase):
 
     def test_pulling_is_refused_while_a_dependent_worker_builds(self):
         refused = []
-        path = self.saved_started(levels=['101'], copies=['google'])
-        root = Path(path)
-        self.to_gate(root, 'blueprint@101')
 
         def building(tools, job):
+            path = str(self.space.training('rolling-restarts'))
             refused.append(self.post('copies', {'path': path, 'pull': 'document@101'}, 409))
             self.workers.document(tools, job)
 
         self.workers.then('document', building)
-        self.decide(root, 'blueprint@101')
+        self.started(levels=['101'], copies=['google'])
         self.assertEqual(refused, [{'error': 'It is being worked on. Bring the Doc\'s changes in once it stops.'}])
 
 
