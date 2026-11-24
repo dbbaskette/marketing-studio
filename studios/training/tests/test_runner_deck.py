@@ -1351,6 +1351,12 @@ class DeckCase(StudioCase):
     def gate(self, root: Path, name: str = 'deck') -> dict:
         return page.RunnerPage(8765, self.engine).gate(str(root), name)
 
+    def deck_shown(self, root: Path, name: str = 'deck') -> dict:
+        """What the desk reads of a drawn deck: its slides whose pictures are here, what its
+        review still finds, the brand's audit and the coverage (`Engine.deck_gate`, which the
+        desk's review notes read too). The gate screen's own read is `gate`."""
+        return self.engine.deck_gate(root, name)
+
     def built(self, root: Path, level: str | None = None) -> dict:
         return pipeline.read_built(root, level)
 
@@ -1450,8 +1456,7 @@ class ChangePriceTests(DeckCase):
     """Change prices follow material dependencies through the real deck pipeline."""
 
     def test_deck_jobs_are_included_for_the_outline_and_its_upstream_materials(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         expected = {'blueprint': 7, 'document': 5, 'brief': 1, 'deck': 4, 'outline:': 4}
         for target, count in expected.items():
             with self.subTest(target=target):
@@ -1463,8 +1468,7 @@ class ChangePriceTests(DeckCase):
         self.assertEqual(self.engine.redo(root, 'brief')['names'], ['the brief'])
 
     def test_all_deck_jobs_use_their_last_reported_attempt_including_section_workers(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         record = self.engine._load(root)
         jobs = ('deck-outline', 'deck-sections:1', 'deck-sections:2',
                 'deck-review', 'deck-repair:1')
@@ -1508,8 +1512,7 @@ class ChangePriceTests(DeckCase):
                 self.assertTrue(all(level in name for name in redo['names']), redo)
 
     def test_one_levels_changes_do_not_price_the_other_levels_deck(self):
-        root = self.saved_begin(levels=['101', '201'])
-        self.drawn(root, '101')
+        root = self.begin(levels=['101', '201'])
         for level in ('101', '201'):
             for target, count in ((f'blueprint@{level}', 7), (f'document@{level}', 5),
                                   (f'deck@{level}', 4), (f'outline:{level}', 4)):
@@ -1522,8 +1525,7 @@ class ChangePriceTests(DeckCase):
 
 class FlowTests(DeckCase):
     def test_a_started_deck_has_the_fallback_when_its_brand_gives_no_direction(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         given = json.loads((start / 'given' / 'outline.json').read_text())
         self.assertEqual(given['direction'], deck.DIRECTION)
@@ -1533,9 +1535,7 @@ class FlowTests(DeckCase):
         made = json.loads(json.dumps(OUTLINE))
         made['slides'][1]['points'][0]['parts'] = ['Batch one', 'Batch two']
         self.workers.outline_said = made
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        root = self.begin()
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         given = json.loads((start / 'given' / 'outline.json').read_text())
         self.assertEqual(given['slides'][1]['points'][0]['parts'], ['Batch one', 'Batch two'])
@@ -1570,8 +1570,7 @@ class FlowTests(DeckCase):
 
     def test_a_tool_that_finds_split_points_compiles_against_the_approved_outline(self):
         self.slides.listed = {*self.slides.listed, 'compose-split-point'}
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         self.assertTrue((start / pipeline.TOOL_OUTLINE).is_file())
         compiled = [call for call in self.slides.calls if call[0] == 'compile']
@@ -1579,12 +1578,19 @@ class FlowTests(DeckCase):
         self.assertTrue(all('outline=tool-outline.json' in call for call in compiled), compiled)
 
     def test_a_closing_slide_names_practice_scenarios_by_title(self):
-        root = self.saved_begin()
-        self.drawn(root)
-        session = workspace.load(root)
-        names = pipeline.practice_names(root, session, None)
+        # Read as the deck's handoff is written: before any practice scenario is drafted.
+        seen = []
+
+        def outline(tools, job):
+            training = self.space.training('rolling-restarts')
+            session = workspace.load(training)
+            names = pipeline.practice_names(training, session, None)
+            seen.append((names, names and pipeline.scenario_title(training, session, names[0])))
+            return self.workers.outline(tools, job)
+        self.workers.then('outline', outline)
+        root = self.begin()
+        [(names, title)] = seen
         self.assertTrue(names)
-        title = pipeline.scenario_title(root, session, names[0])
         self.assertNotIn('-', title.split(' ')[0].lower() if ':' not in title else '')
         self.assertIn(title, (root / 'deck-handoff.md').read_text())
 
@@ -1595,18 +1601,16 @@ class FlowTests(DeckCase):
         own = {'focal': 'accentAqua', 'neutral': 'canvasSecondary',
                'meanings': {'headingPrimary': 'Tanzu'}, 'motif': 'A shared base.'}
         self.brand.beside = {deck_direction.FILE: json.dumps(own)}
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         start = root / pipeline.WORK / self.built(root)['start']['folder']
         given = json.loads((start / 'given' / 'outline.json').read_text())
         self.assertEqual(given['direction'], own)
         self.assertIn('## Colour', (start / 'given' / 'section-1.md').read_text())
 
     def test_a_deck_only_bundle_uses_the_blueprint_without_other_material_writers(self):
-        root = self.saved_begin(materials=[])
-        self.to_outline(root)
-        self.engine.outline(root, None, 'approve')
-        self.assertEqual(self.to_end(root), ['deck'])
+        root = self.begin(materials=[])
+        self.assertEqual(self.to_end(root), [])
+        self.all_ready(root)
         self.assertTrue(self.view(root)['finished']['ready'])
         self.assertEqual(workspace.load(root)['settings']['stages'], ['deck'])
         self.assertTrue((root / 'deck.pptx').is_file())
@@ -1658,17 +1662,20 @@ class FlowTests(DeckCase):
 
     def test_every_step_of_a_deck_is_a_commit_and_nothing_built_is_shared(self):
         self.engine = self.make(at_once=1)
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual([line.partition(': ')[2] for line in self.log()][-13:], [
+        root = self.begin()
+        said = [line.partition(': ')[2] for line in self.log()]
+        first = said.index('write the handoff for the slide deck')
+        self.assertEqual(said[first:first + 14], [
             'write the handoff for the slide deck', 'export the brand for the slide deck',
-            'keep what the slide deck says', 'ask for a review of what the slide deck says',
-            'What the slide deck says was approved on the page.',
+            'keep what the slide deck says',
+            'keep what the slide deck says, checked and corrected',
+            'ask for a review of what the slide deck says',
+            'continue what the slide deck says on the desk',
             'note that the brand offers no looks for the slide deck',
             'split the slide deck into 2 sections', 'keep section 1 of the slide deck',
             'keep section 2 of the slide deck', 'put the slide deck together: 6 slides',
             'keep the review of the slide deck', 'keep the slide deck',
-            'ask for a review of the slide deck'])
+            'continue the slide deck on the desk'])
         tracked = self.git('ls-files', 'trainings/rolling-restarts').splitlines()
         self.assertEqual([name for name in tracked if 'work/' in name], [])
         for kept in ('deck.pptx', 'deck-handoff.md', 'deck/outline.json', 'deck/review.json',
@@ -1681,8 +1688,7 @@ class FlowTests(DeckCase):
         self.assertEqual(len(list(work.glob('start-*/whole-*'))), 1)
 
     def test_a_deck_for_google_slides_is_the_previewed_deck_imported(self):
-        root = self.saved_begin(deck_target='google')
-        self.drawn(root)
+        root = self.begin(deck_target='google')
         last = self.built(root)['rounds'][-1]
         self.assertEqual(self.slides.imported,
                          [(root / 'work' / 'deck' / last['file']).read_bytes()])
@@ -1692,25 +1698,19 @@ class FlowTests(DeckCase):
                          'Rolling restarts\n- ID: slides-1\n- Made from the rendered deck '
                          f"with the SHA-256 {last['deck']}\n")
         self.assertFalse((root / 'deck.pptx').exists())
-        self.assertEqual(len(self.gate(root)['slides']), 6)
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
+        self.assertEqual(len(self.deck_shown(root)['slides']), 6)
+        self.assertEqual(self.to_end(root), [])
 
     def test_with_levels_each_deck_is_made_in_its_own_place(self):
-        root = self.saved_begin(levels=['101', '201'])
-        self.to_outline(root, '101')
+        root = self.begin(levels=['101', '201'])
         self.assertEqual([step for step in self.steps(root) if 'deck' in step][:3],
                          ['deck-handoff@101', 'deck-brand@101', 'deck-outline@101'])
-        view = self.engine.outline(root, '101', 'approve')
-        self.assertEqual((workspace.status(root)['gate'], view['deck']['level']),
-                         ('deck@101', '101'))
         self.assertTrue((root / '101' / 'deck.pptx').is_file())
         self.assertTrue((root / '101' / 'work' / 'deck' / 'preview' / '1.png').is_file())
-        with self.assertRaisesRegex(WorkspaceError, 'is not waiting for a decision'):
-            self.engine.outline(root, '201', 'approve')
-        self.decide(root, 'deck@101')
-        self.drawn(root, '201')
-        self.assertEqual(workspace.status(root)['gate'], 'deck@201')
-        self.assertIn('deck@201', self.to_end(root))
+        self.assertTrue((root / '201' / 'deck.pptx').is_file())
+        self.assertTrue((root / '201' / 'work' / 'deck' / 'preview' / '1.png').is_file())
+        self.assertEqual(self.to_end(root), [])
+        self.all_ready(root)
         self.assertEqual(self.view(root)['finished']['ready'], True)
         self.assertEqual(len(self.slides.files), 2, 'each deck keeps one preview file')
 
@@ -1751,8 +1751,7 @@ class FlowTests(DeckCase):
         self.assertEqual(workspace.status(root)['gate'], 'deck')
 
     def test_the_writers_are_given_the_brands_naming_rules(self):
-        root = self.saved_begin()
-        self.to_outline(root)
+        root = self.begin()
         for kind in ('document', 'brief', 'outline'):
             job, spec = [(job, spec) for seen, job, spec in self.workers.jobs
                          if seen == kind][-1]
@@ -1762,17 +1761,13 @@ class FlowTests(DeckCase):
         self.assertIn('take no tone', self.workers.of('brief')[-1].guidance)
         blueprint = [spec for seen, _, spec in self.workers.jobs if seen == 'blueprint'][-1]
         self.assertNotIn('naming rules', [entry['name'] for entry in blueprint['inputs']])
-        self.engine.outline(root, None, 'approve')
-        self.to_gate(root, 'scenario:main')
         self.assertIn('## Names', self.workers.of('scenario')[-1].guidance)
-        plain = self.saved_start(title='Health checks')
-        self.to_gate(plain, 'document')
+        self.start(title='Health checks')
         self.assertNotIn('## Names', self.workers.of('document')[-1].guidance)
 
     def test_each_job_of_a_deck_is_told_what_it_needs_and_given_only_its_tools(self):
         self.engine = self.make(at_once=1)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
         job, spec = jobs['outline']
         self.assertEqual([entry['name'] for entry in spec['inputs']], [
@@ -1804,8 +1799,7 @@ class FlowTests(DeckCase):
         self.slides.READING = {**Slides.READING, 'example parallel': '{}\n',
                                'example quantity': '{}\n'}
         self.engine = self.make(at_once=1)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         first, second = [[entry['name'] for entry in spec['inputs']]
                          for kind, _, spec in self.workers.jobs if kind == 'section']
         self.assertEqual(first[3:], ['design guidance', 'composition guidance', 'gallery',
@@ -1819,8 +1813,7 @@ class FlowTests(DeckCase):
 
     def test_guidance_the_installed_tool_does_not_have_is_left_out(self):
         self.slides.READING = {'design guidance': 'Design from the claim.\n'}
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         jobs = {kind: spec for kind, _, spec in self.workers.jobs}
         self.assertEqual([entry['name'] for entry in jobs['section']['inputs']],
                          ['brief', 'composition contract', 'brand design',
@@ -1836,8 +1829,7 @@ class BrandEntryTests(DeckCase):
     def test_the_decks_slide_task_starts_through_the_brand_and_its_guidance_reaches_workers(self):
         self.brand.entry = 'brand'
         self.slides.design = True
-        root = self.saved_begin(walkthrough=True)
-        self.drawn(root)
+        root = self.begin(walkthrough=True)
         self.assertEqual(self.brand.guided[0][:1], ('start',))
         guided = self.built(root)['brand']['guidance']
         self.assertEqual((guided['task'], guided['brand'], guided['revision']),
@@ -1870,8 +1862,7 @@ class BrandEntryTests(DeckCase):
 
     def test_the_outline_writer_gets_the_brands_worker_guidance_without_a_walkthrough(self):
         self.brand.entry = 'brand'
-        root = self.saved_begin()
-        self.to_outline(root)
+        root = self.begin()
         spec = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
         names = [entry['name'] for entry in spec['inputs']]
         self.assertIn(pipeline.BRAND_WORKER, names)
@@ -1880,8 +1871,7 @@ class BrandEntryTests(DeckCase):
     def test_reviewer_reads_the_review_guidance(self):
         self.brand.entry = 'brand'
         self.workers.found = [[]]
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
         inputs = work.prepared['inputs']
@@ -1892,15 +1882,13 @@ class BrandEntryTests(DeckCase):
 
     def test_without_them_the_reviewer_has_only_the_review(self):
         self.workers.found = [[]]
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
         self.assertEqual(list(work.prepared['inputs']), ['Assessment map', 'Reader view of the export', 'the review'])
 
     def test_a_brand_without_the_entry_keeps_the_installed_tools_guidance(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.assertEqual(self.built(root)['brand']['guidance'], {'problem': pipeline.NO_ENTRY})
         self.assertEqual(self.brand.guided, [])
 
@@ -1911,8 +1899,7 @@ class DraftPageTests(DeckCase):
 
     def test_the_draft_is_drawn_once_for_each_outline_and_framed_safely(self):
         from email.message import Message
-        root = self.saved_begin()
-        self.to_outline(root)
+        root = self.begin()
         made = self.engine.deck_draft(root, None)
         self.assertEqual(made.parent, root / pipeline.WORK / pipeline.DRAFTS)
         self.assertIn('A rolling restart replaces instances', made.read_text())
@@ -1945,7 +1932,7 @@ class DraftPageTests(DeckCase):
                 self.engine.draft_page(root, wrong)
 
     def test_no_draft_before_what_the_deck_says_is_written(self):
-        root = self.saved_begin(deck_target=None, brand=None)
+        root = self.begin(deck_target=None, brand=None)
         with self.assertRaisesRegex(WorkspaceError, 'not written yet'):
             self.engine.deck_draft(root, None)
 
@@ -2093,8 +2080,7 @@ class LookTests(DeckCase):
         # Refused in the same words with and without a renderer: its slides would be too.
         self.brand.cannot_draw = ('executive: the sample slide does not fit: look_sample/title: '
                                   'needs 53.2pt of height but has 34.92pt; shorten the title')
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
         problem = self.record(root)['problem']
         self.assertEqual((problem['step'], problem['action']), ('deck-look', 'retry'))
         self.assertIn('could not draw a sample slide', problem['what'])
@@ -2106,7 +2092,9 @@ class LookTests(DeckCase):
         self.brand.cannot_draw = None
         view = self.engine.act(root, 'retry')
         self.assertIsNone(view['problem'], view)
-        self.assertTrue(view['look']['waiting'])
+        chosen = self.record(root)['deck']['']['look']['chosen']
+        self.assertEqual((chosen['id'], chosen['by']), ('example-contrast', 'desk'))
+        self.assertIn('section', self.kinds())
 
     def test_the_brand_refuses_a_pick_for_samples_of_an_older_outline(self):
         root = self.saved_begin()
@@ -2121,10 +2109,9 @@ class LookTests(DeckCase):
 
     def test_an_older_brand_offers_no_looks_and_the_deck_carries_on(self):
         self.brand.offers_looks = False
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         self.assertIsNone(view['look'])
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
         self.assertEqual(self.built(root)['look']['unavailable'], pipeline.OLDER_BRAND)
         self.assertEqual(self.steps(root)['gate:deck-look']['status'], 'done')
 
@@ -2137,8 +2124,7 @@ class RepairTests(DeckCase):
                 'main': {'selection': 'explicit', 'model': 'main-model', 'effort': 'medium'},
                 'complex': {'selection': 'explicit', 'model': 'complex-model', 'effort': 'high'}}}})
         self.workers.found = [[MAJOR]]
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         sections = [job for kind, job, _ in self.workers.jobs if kind == 'section']
         self.assertEqual((sections[-1].model, sections[-1].effort), ('complex-model', 'high'))
         reviews = [job for kind, job, _ in self.workers.jobs if kind == 'review']
@@ -2206,8 +2192,7 @@ class RepairTests(DeckCase):
 
     def test_brand_warnings_reach_the_reviewer(self):
         self.workers.found = [[]]
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
         asked = work.prepared['inputs']['the review']
@@ -2217,8 +2202,7 @@ class RepairTests(DeckCase):
     def test_an_audit_that_cannot_run_changes_nothing(self):
         self.workers.found = [[]]
         self.brand.refuse['audit'] = ['The deck could not be opened.']
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         rounds = self.built(root)['rounds']
         self.assertEqual(len(rounds), 1, 'no repair round is spent on it')
         self.assertTrue(rounds[0]['auditNote'].startswith(
@@ -2230,9 +2214,8 @@ class RepairTests(DeckCase):
         three = ('Is the point plain at a glance?', 'Is the space balanced?',
                  'Is there exactly one emphasis?')
         self.workers.found = [[]]
-        root = self.saved_begin()
         with mock.patch.object(Slides, 'QUESTIONS', three):
-            self.drawn(root)
+            root = self.begin()
         rounds = self.built(root)['rounds']
         self.assertEqual(rounds[-1]['questions'], list(three))
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
@@ -2260,8 +2243,7 @@ class RepairTests(DeckCase):
 
     def test_a_later_review_is_told_what_was_found_before(self):
         self.workers.found = [[MAJOR], []]
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.assertEqual(self.kinds().count('review'), 2)
         work = pipeline.review_work(root, self.engine._survey(root, self.record(root)),
                                     pipeline.gate_for('deck'), None)
@@ -2329,8 +2311,7 @@ class RepairTests(DeckCase):
             # Its preview is refused, so it ends with nothing handed in.
             tools._blocked([said])
         self.workers.then('section', *[blocked] * 6)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         problem = self.record(root)['problem']
         self.assertIn('failed twice for the same reason, so it was not tried again: Draw '
                       'section', problem['what'])
@@ -2341,8 +2322,8 @@ class RepairTests(DeckCase):
 
     def test_a_section_that_fails_three_times_stops_the_training(self):
         self.workers.then('section', fails(), fails(), fails(), fails(), fails(), fails())
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertIn('This step did not work in 3 tries: Draw section', view['problem']['what'])
         self.assertIn('failed', [section['state'] for section in view['deck']['sections']])
@@ -2350,7 +2331,7 @@ class RepairTests(DeckCase):
         # failures before the training stopped. Whatever is left must not fail the retry.
         self.workers.queued.pop('section', None)
         view = self.engine.act(root, 'retry')
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'))
+        self.assertEqual((view['state'], view['problem']), ('done', None))
 
     def test_a_blueprint_changed_and_approved_again_has_the_deck_made_again(self):
         root = self.saved_begin()
@@ -2375,8 +2356,7 @@ class WalkthroughTests(DeckCase):
         self.slides.design = True   # a slides tool that keeps a design session
 
     def test_new_deck_is_built_without_a_design_session(self):
-        root = self.saved_begin()
-        self.to_outline(root)
+        root = self.begin()
         job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
                      if kind == 'outline'][-1]
         self.assertFalse(spec['artifacts']['outline']['design'])
@@ -2384,9 +2364,8 @@ class WalkthroughTests(DeckCase):
         self.assertNotIn('design_propose', [call[0] for call in self.slides.calls])
 
     def test_walkthrough_runs_the_design_session(self):
-        root = self.saved_begin(walkthrough=True)
+        root = self.begin(walkthrough=True)
         self.assertIs(workspace.load(root)['settings']['walkthrough'], True)
-        self.to_outline(root)
         job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
                      if kind == 'outline'][-1]
         self.assertTrue(spec['artifacts']['outline']['design'])
@@ -2418,9 +2397,8 @@ class DesignTests(DeckCase):
         return json.loads((root / pipeline.DESIGN).read_text())
 
     def test_the_outline_job_hands_in_a_design_and_the_runner_makes_the_proposal(self):
-        root = self.saved_begin()
-        view = self.to_outline(root)
-        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs if kind == 'outline'][-1]
+        root = self.begin()
+        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs if kind == 'outline'][0]
         self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True, icons=True))
         self.assertIn('design guidance', [entry['name'] for entry in spec['inputs']])
         self.assertIn('Hand the outline in with its design, together', job.task)
@@ -2443,7 +2421,6 @@ class DesignTests(DeckCase):
         self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text()), OUTLINE)
         drafted = self.record(root)['deck']['']['outline']
         self.assertEqual(drafted['design'], workspace.sha256_file(root / pipeline.DESIGN))
-        self.assertIn(pipeline.DESIGN_CHECKED, view['outline']['checked'])
 
     def test_visual_01_approval_binds_copy_and_design(self):
         root = self.saved_begin()
@@ -2485,8 +2462,7 @@ class DesignTests(DeckCase):
                 if call[0] in ('compile', 'preview_design') and call[-1].startswith('section=')]
 
     def test_sections_are_drawn_from_the_approved_design_and_built_against_it(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         plan = self.slides.design_check(root / pipeline.DESIGNS)['plan']
         start = next((root / 'work' / 'deck').glob('start-*'))
         kept = json.loads((start / pipeline.APPROVED_DESIGN).read_text())
@@ -2521,8 +2497,8 @@ class DesignTests(DeckCase):
                                       ('preview_design', 'section=False')])
         self.assertEqual({call for call in built[:-2]},
                          {('compile', 'section=True'), ('preview_design', 'section=True')})
-        self.assertEqual((len(self.slides.replies), workspace.status(root)['gate']),
-                         (1, 'deck'), 'one decision, and nothing asked of the person since')
+        self.assertEqual(len(self.slides.replies), 1,
+                         'one decision, and nothing asked of the person since')
 
     def test_visual_04_fit_repair_preserves_design(self):
         self.workers.found = [[MAJOR]]
@@ -2576,8 +2552,8 @@ class DesignTests(DeckCase):
 
     def test_a_start_that_did_not_keep_the_approved_design_is_made_again(self):
         self.workers.then('section', *[fails()] * 6)
-        root = self.saved_begin()
-        self.assertEqual(self.drawn(root)['state'], 'failed')
+        root = self.begin()
+        self.assertEqual(self.view(root)['state'], 'failed')
         found = self.engine._survey(root, self.record(root)).decks[None]
         self.assertIn('deck-start', found.done)
         start = next((root / 'work' / 'deck').glob('start-*'))
@@ -2736,9 +2712,7 @@ class JudgedTests(DeckCase):
         return root / pipeline.WORK / made['preview']
 
     def test_a_deck_drawn_from_its_design_is_reviewed_against_it_and_that_deck_is_kept(self):
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        root = self.begin()
         start = self.built(root)['start']
         self.assertEqual(start['review'], pipeline.JUDGED)
         [made] = self.built(root)['rounds']
@@ -2767,7 +2741,7 @@ class JudgedTests(DeckCase):
         kept = root / workspace.artifact(root, workspace.load(root), 'deck')['file']
         self.assertEqual(kept.read_bytes(), (review / 'deck.pptx').read_bytes())
         self.assertEqual(made['deck'], workspace.sha256_file(review / 'deck.pptx'))
-        shown = self.gate(root)
+        shown = self.deck_shown(root)
         self.assertEqual(shown['review']['findings'], [])
         self.assertEqual([entry['slide'] for entry in shown['review']['direct']],
                          ['cover-restarts', 'closing-practice'])
@@ -2931,13 +2905,11 @@ class JudgedTests(DeckCase):
             picture = next(Path(tools.job['review']['judged']['output']).glob('slide-002-*'))
             picture.write_bytes(png(99))
         self.workers.then('review', tampered)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         rounds = self.built(root)['rounds']
         self.assertEqual((len(rounds), self.kinds().count('review'),
                           len(self.called('review_prepare'))), (1, 2, 2))
         self.assertNotIn('stale', self.built(root)['rounds'][0], 'built again in its place')
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
         review = self.review_folder(root)
         kept = root / workspace.artifact(root, workspace.load(root), 'deck')['file']
         self.assertEqual(kept.read_bytes(), (review / 'deck.pptx').read_bytes())
@@ -2948,16 +2920,13 @@ class JudgedTests(DeckCase):
             deck_file = Path(tools.job['review']['judged']['output']) / 'deck.pptx'
             deck_file.write_bytes(deck_file.read_bytes() + b' ')
         self.workers.then('review', tampered)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.assertEqual((len(self.built(root)['rounds']), self.kinds().count('review')),
                          (1, 2))
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
 
     def test_a_deck_started_for_this_review_stops_where_the_tool_can_no_longer_review(self):
         self.workers.then('section', *[fails()] * 6)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.slides.judges = False
         # The sections are drawn side by side, so the other one may not have used all its
         # failures before the training stopped. Whatever is left must not fail the retry.
@@ -2968,14 +2937,13 @@ class JudgedTests(DeckCase):
 
     def test_a_tool_that_cannot_review_against_the_design_reviews_as_before(self):
         self.slides.judges = False
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.assertNotIn('review', self.built(root)['start'])
         self.assertEqual(self.called('review_prepare'), [])
         self.assertEqual(len(self.called('critique')), 1)
         job = [job for kind, job, _ in self.workers.jobs if kind == 'review'][0]
         self.assertEqual(job.guidance, briefs.guidance('deck-review'))
-        self.assertNotIn('direct', self.gate(root)['review'])
+        self.assertNotIn('direct', self.deck_shown(root)['review'])
 
 
 class AssetTests(DeckCase):
@@ -2997,9 +2965,14 @@ class AssetTests(DeckCase):
     def listed(self, view: dict) -> dict:
         return {entry['asset']: entry['state'] for entry in view['deck']['assets']}
 
+    @staticmethod
+    def assets(root: Path) -> dict:
+        """The deck's assets as the run shows them while it is drawn (`pipeline.assets_view`),
+        read once a desk run has drawn it and gone on, when the run shows no deck."""
+        return {'deck': {'assets': pipeline.assets_view(root, None)}}
+
     def test_icons_are_found_and_recorded_before_any_section_is_drawn(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.supply(root)
         recorded = pipeline.recorded(root, None)
         self.assertEqual((recorded['icon_instance']['kind'], recorded['icon_instance']['ref']),
@@ -3032,12 +3005,12 @@ class AssetTests(DeckCase):
             'ref': 'Bar chart: 12 instances before, 9 after', 'concept': 'Capacity kept',
             'status': 'pending'})
         self.workers.design_said = design
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         self.assertNotEqual((view.get('problem') or {}).get('action'), 'asset',
                             (view.get('problem') or {}).get('what'))
-        self.assertEqual(self.listed(view)['benefit_chart'], 'drawn')
-        shown = next(one for one in view['deck']['assets'] if one['asset'] == 'benefit_chart')
+        self.assertEqual(self.listed(self.assets(root))['benefit_chart'], 'drawn')
+        shown = next(one for one in self.assets(root)['deck']['assets'] if one['asset'] == 'benefit_chart')
         self.assertFalse(shown['supply'])
         # Its section's composer is told to draw it as a chart, from the deck's numbers.
         start = next((root / 'work' / 'deck').glob('start-*'))
@@ -3047,13 +3020,13 @@ class AssetTests(DeckCase):
 
     def test_a_deck_carries_on_without_a_picture_the_person_leaves_out(self):
         self.workers.design_said = with_assets(runner_support.designed(OUTLINE))
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         self.assertEqual((view['state'], view['problem']['action']), ('waiting', 'asset'))
         view = self.engine.act(root, 'without')
         self.assertNotEqual((view.get('problem') or {}).get('action'), 'asset',
                             (view.get('problem') or {}).get('what'))
-        self.assertEqual(self.listed(self.view(root))['console_view'], 'left')
+        self.assertEqual(self.listed(self.assets(root))['console_view'], 'left')
         self.assertEqual(pipeline.without(root, None),
                          {'console_view': 'The restart in the console'})
         # Its section's composer is told to draw the slide without the picture.
@@ -3071,19 +3044,19 @@ class AssetTests(DeckCase):
             'assetId': 'brand-cover', 'kind': 'supplied', 'ref': 'The brand cover template',
             'concept': 'Brand identity', 'status': 'resolved'}]}
         self.workers.design_said = design
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         self.assertNotEqual((view.get('problem') or {}).get('action'), 'asset',
                             (view.get('problem') or {}).get('what'))
-        shown = next(one for one in view['deck']['assets'] if one['asset'] == 'brand-cover')
+        shown = next(one for one in self.assets(root)['deck']['assets'] if one['asset'] == 'brand-cover')
         self.assertEqual((shown['state'], shown['supply']), ('brand', False))
 
     def test_visual_05_missing_asset_waits(self):
         self.workers.design_said = with_assets(runner_support.designed(OUTLINE), generated=True)
         self.workers.placing = {'what-it-does': [
             {'type': 'image', 'id': 's1_console', 'asset': 'console_view'}]}
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         approved = self.record(root)['deck']['']['approved']
         self.assertEqual((view['state'], view['problem']['action'], view['problem']['label']),
                          ('waiting', 'asset', 'Add the picture'))
@@ -3110,7 +3083,6 @@ class AssetTests(DeckCase):
         # A file gone from under a deck already drawn waits too, before anything is drawn.
         self.slides.env = {'GEMINI_API_KEY': 'set'}
         self.supply(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
         sections = self.kinds().count('section')
         (root / 'deck' / 'assets' / 'supplied' / 'console_view.png').unlink()
         self.engine.wake(root)
@@ -3123,13 +3095,13 @@ class AssetTests(DeckCase):
         self.assertEqual(self.listed(view)['console_view'], 'missing')
 
     def test_visual_06_asset_resolution_resumes(self):
-        root = self.saved_begin()
-        waiting = self.drawn(root)
+        root = self.begin()
+        waiting = self.view(root)
         self.assertEqual(waiting['state'], 'waiting')
         approved = self.record(root)['deck']['']['approved']
         view = self.supply(root)
         self.assertIsNone(view['problem'])
-        self.assertEqual((workspace.status(root)['gate'], len(self.slides.replies)), ('deck', 1),
+        self.assertEqual((view['state'], len(self.slides.replies)), ('done', 1),
                          'drawn to its gate with the one decision already made')
         self.assertEqual(self.record(root)['deck']['']['approved'], approved)
         recorded = pipeline.recorded(root, None)['console_view']
@@ -3149,8 +3121,7 @@ class AssetTests(DeckCase):
     def test_visual_07_asset_change_invalidates_build(self):
         shot = {'type': 'image', 'id': 's1_console', 'asset': 'console_view'}
         self.workers.placing = {'what-it-does': [shot]}
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.supply(root, shade=40)
         built = self.built(root)
         first = built['sections']['section-1']
@@ -3170,8 +3141,7 @@ class AssetTests(DeckCase):
         self.assertNotEqual(built['rounds'][-1]['assets'], first['assets'])
         self.assertEqual(built['sections']['section-1']['assets'], built['rounds'][-1]['assets'])
         self.assertNotEqual(self.record(root)['deck']['']['saved'], saved)
-        self.assertEqual((view['problem'], workspace.status(root)['gate'],
-                          len(self.slides.replies)), (None, 'deck', 1))
+        self.assertEqual((view['problem'], len(self.slides.replies)), (None, 1))
         # A file changed underneath, with no new picture given, is stale as well.
         (root / 'deck' / 'assets' / 'supplied' / 'console_view.png').write_bytes(png(7))
         found = self.engine._survey(root, self.record(root)).decks[None]
@@ -3180,9 +3150,7 @@ class AssetTests(DeckCase):
 
     def test_a_tool_without_the_manifest_draws_as_before(self):
         self.slides.keeps = False
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        root = self.begin()
         self.assertNotIn('assets', self.built(root)['start'])
         self.assertFalse((root / pipeline.ASSETS).exists())
         job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
@@ -3212,8 +3180,8 @@ class AdoptionTests(DeckCase):
 
     def test_what_an_approved_design_still_wants_is_said_by_the_tool_that_reads_it(self):
         self.workers.design_said = with_assets(runner_support.designed(OUTLINE))
-        root = self.saved_begin()
-        view = self.drawn(root)
+        root = self.begin()
+        view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
         project = str(root / pipeline.DESIGNS)
         checks = [call for call in self.called('asset_check') if call[1] == project]
@@ -3230,8 +3198,7 @@ class AdoptionTests(DeckCase):
         searched = []
         found = self.brand.icons
         self.brand.icons = lambda words, limit=5: searched.append(words) or found(words, limit)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
                      if kind == 'outline'][-1]
         self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True, icons=True))
@@ -3245,8 +3212,7 @@ class AdoptionTests(DeckCase):
     def test_a_recorded_icon_is_placed_by_its_asset_id_where_the_tool_can(self):
         self.workers.placing = {'what-it-does': [
             {'type': 'icon', 'id': 's1_instance', 'asset': 'icon_instance'}]}
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         start = self.built(root)['start']
         self.assertEqual(start['icons'], 'asset')
         brief = (root / 'work' / 'deck' / start['folder'] / 'given' / 'section-1.md').read_text()
@@ -3265,8 +3231,7 @@ class AdoptionTests(DeckCase):
         # The tool before it places an icon only by its library ID.
         self.without('compose-icon-assets')
         self.workers.placing = None
-        root = self.saved_begin(title='Rolling restarts again')
-        self.drawn(root)
+        root = self.begin(title='Rolling restarts again')
         start = self.built(root)['start']
         self.assertNotIn('icons', start)
         brief = (root / 'work' / 'deck' / start['folder'] / 'given' / 'section-1.md').read_text()
@@ -3275,9 +3240,7 @@ class AdoptionTests(DeckCase):
 
     def test_every_slides_packet_comes_in_one_call_where_the_tool_gives_them(self):
         self.slides.calls.clear()
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        root = self.begin()
         made = self.built(root)['rounds'][-1]
         folder = root / 'work' / 'deck' / made['folder']
         packets = json.loads((folder / 'packets.json').read_text())
@@ -3292,9 +3255,9 @@ class AdoptionTests(DeckCase):
 
     def test_a_review_is_rendered_through_drive_where_previews_go_and_the_tool_can(self):
         self.slides.have['local'] = False   # no LibreOffice: previews go through Drive
-        root = self.saved_begin()
-        view = self.drawn(root)
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
+        root = self.begin()
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']), ('done', None),
                          view.get('problem'))
         [prepared] = [call for call in self.called('review_prepare')
                       if 'renderer=google' in call]
@@ -3303,8 +3266,7 @@ class AdoptionTests(DeckCase):
         self.assertEqual(self.slides.reviewed, [self.slides.files[-1]])
 
     def test_an_assessment_leaves_its_sources_to_the_slide_where_the_tool_takes_them(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.assertEqual({'sources' in check for slide in self.slides.assessed[-1]['slides']
                           for check in slide['checks']}, {False})
         record = json.loads((root / 'work' / 'deck' / self.built(root)['rounds'][-1]['preview']
@@ -3361,9 +3323,7 @@ class AdoptionTests(DeckCase):
             assert tools.submit_section(made, 'Nothing.', 'The second slide.')[0]
 
         self.workers.section = section
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        root = self.begin()
         kept = json.loads((root / 'work' / 'deck' / self.built(root)['sections'][
             'section-1']['file']).read_text())
         approved = approved_plan()['slides'][1]['intent']
@@ -3442,9 +3402,7 @@ class CompatibleTests(DeckCase):
                           or (call[0] == 'compile' and len(call) != 4)], [])
 
     def test_a_deck_without_a_design_is_drawn_as_it_always_was(self):
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
+        root = self.begin()
         self.assert_drawn_as_before(root)
 
     def test_a_deck_written_with_a_design_stops_where_the_tool_cannot_keep_one(self):
@@ -3463,8 +3421,8 @@ class CompatibleTests(DeckCase):
 
     def test_visual_10_upgrade_preserves_existing_work(self):
         self.workers.then('section', *[fails()] * 6)
-        root = self.saved_begin()
-        self.assertEqual(self.drawn(root)['state'], 'failed', 'approved, and still drawing')
+        root = self.begin()
+        self.assertEqual(self.view(root)['state'], 'failed', 'approved, and still drawing')
         workspace.pin(root, 'harness-slides', 'deck', '0.13.1')
         pins, kept = workspace.load(root)['pins'], self.record(root)['deck']['']
         start = self.built(root)['start']
@@ -3479,8 +3437,7 @@ class CompatibleTests(DeckCase):
         self.engine.look_again()
         self.assertEqual(self.record(root)['deck'][''], kept, 'nothing changes by itself')
         view = self.engine.act(root, 'retry')
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
+        self.assertEqual((view['state'], view['problem']), ('done', None), view.get('problem'))
         self.assertEqual({key: self.record(root)['deck'][''].get(key)
                           for key in ('outline', 'approved')},
                          {key: kept.get(key) for key in ('outline', 'approved')})
@@ -3492,7 +3449,7 @@ class CompatibleTests(DeckCase):
         self.assertEqual(view['redesign'], [{'level': None, 'artifact': 'deck',
                                              'label': workspace.label('deck'), 'may': True,
                                              'why': None}], 'offered, and never done for them')
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
+        self.assertEqual(self.to_end(root), [])
         self.assertEqual(workspace.status(root)['artifacts']['deck'], 'approved')
         self.assertEqual(workspace.load(root)['pins'], pins, 'its pins are its own')
         self.assertEqual(self.record(root)['deck']['']['approved'], kept['approved'])
@@ -3566,7 +3523,7 @@ class CompatibleTests(DeckCase):
                          ('problem', needs['update'], True,
                           {'label': 'What a new deck needs', 'state': 'problem',
                            'detail': 'missing ' + ', '.join(plain)}))
-        root = self.saved_begin()
+        root = self.begin()
         self.to_end(root)
         view = self.view(root)
         self.assertEqual(view['deck_left']['says'],
@@ -3576,9 +3533,9 @@ class CompatibleTests(DeckCase):
         self.slides.lacking, self.slides.design = [], True
         self.engine.look_again()
         view = self.view(root)
-        self.assertEqual((view['deck_left'], view['outline']['waiting'],
-                          bool(view['outline']['design'])), (None, True, True),
-                         'the deck waiting on it is begun, with its design')
+        self.assertEqual((view['deck_left'], (root / pipeline.OUTLINE).is_file(),
+                          bool(self.record(root)['deck']['']['outline'].get('design'))),
+                         (None, True, True), 'the deck waiting on it is begun, with its design')
         [item] = [item for item in self.engine.deck_needs()['items']
                   if item['id'] == 'deck-slides']
         self.assertEqual((item['state'], item['versions']), ('ok', False))
@@ -3595,8 +3552,7 @@ class TroubleTests(DeckCase):
     def test_previews_are_taken_one_at_a_time_whatever_is_drawn_side_by_side(self):
         self.slides.took = 0.04
         self.engine = self.make(at_once=3)
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         self.assertEqual(self.kinds().count('section'), 2)
         self.assertEqual((self.slides.most, self.slides.files), (1, ['file-1']))
         self.assertEqual(self.engine.previews_left(), [{
@@ -3604,9 +3560,6 @@ class TroubleTests(DeckCase):
             'url': 'https://docs.example.com/presentation/d/file-1/edit'}])
 
     def test_a_render_that_fails_leaves_nothing_behind(self):
-        root = self.saved_begin()
-        self.to_outline(root)
-
         def broken(compiled, folder, renderer, file_id=None, slide=None, own=False):
             Path(folder).mkdir(parents=True)
             (Path(folder) / 'deck.pptx').write_bytes(b'PK\x03\x04 cut short')
@@ -3616,7 +3569,8 @@ class TroubleTests(DeckCase):
         whole = self.slides.preview
         self.workers.then('section', *[self.keeping(whole)] * 2)
         with mock.patch.object(self.slides, 'preview', broken):
-            view = self.engine.outline(root, None, 'approve')
+            root = self.begin()
+        view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertEqual(view['problem']['what'], 'The slides could not be put together and '
                          'rendered. The slides tool refused: unbound prefix: line 1, column '
@@ -3628,7 +3582,7 @@ class TroubleTests(DeckCase):
         self.assertEqual(self.built(root)['rounds'], [])
         self.assertEqual(self.git('status', '--porcelain'), '')
         view = self.engine.act(root, 'retry')
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'))
+        self.assertEqual((view['state'], view['problem']), ('done', None))
 
     def keeping(self, preview):
         """A composer whose own previews still work while the whole deck's does not."""
@@ -3638,10 +3592,14 @@ class TroubleTests(DeckCase):
         return act
 
     def test_a_brand_that_changed_underneath_stops_the_deck_and_says_so(self):
-        root = self.saved_begin()
-        self.to_outline(root)
-        self.brand.revision = 2
-        view = self.engine.outline(root, None, 'approve')
+        def outline(tools, job):
+            # What the deck says is written; the brand changes before its slides are drawn.
+            returned = self.workers.outline(tools, job)
+            self.brand.revision = 2
+            return returned
+        self.workers.then('outline', outline)
+        root = self.begin()
+        view = self.view(root)
         self.assertEqual((view['state'], view['problem']['action']), ('stopped', 'retry'))
         self.assertEqual(view['problem']['what'], 'The brand changed underneath this deck '
                          "after it was exported. The brand skill refused: The brand's own "
@@ -3650,9 +3608,9 @@ class TroubleTests(DeckCase):
                          'deck should say.')
         self.assertEqual(self.kinds().count('section'), 0)
         view = self.engine.act(root, 'retry')
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'))
-        self.assertEqual(len(self.brand.exports), 4, 'two writers, the deck, and the deck '
-                         'again')
+        self.assertEqual((view['state'], view['problem']), ('done', None))
+        self.assertEqual(len(self.brand.exports), 5, 'two writers, the slide text and its '
+                         'check, and the deck again')
         self.assertEqual(len(list((root / 'work' / 'deck').glob('brand-*'))), 1)
 
     def acme_brand(self, brings: str) -> None:
@@ -3665,14 +3623,21 @@ class TroubleTests(DeckCase):
         self.brand.runtime, self.brand.name = folder, 'Acme Brand'
 
     def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
-        root = self.saved_begin()
-        self.to_outline(root)
-        self.brand.version = '0.13.2'
-        self.engine.look_again()
-        self.assertEqual(self.engine.deck_needs(fresh=True)['missing'], [],
+        looked = []
+
+        def outline(tools, job):
+            # The deck is begun, and an old brand skill is found before its slides are drawn.
+            returned = self.workers.outline(tools, job)
+            self.brand.version = '0.13.2'
+            looked.append(self.engine.deck_needs(fresh=True))
+            return returned
+        self.workers.then('outline', outline)
+        root = self.begin()
+        [needs] = looked
+        self.assertEqual(needs['missing'], [],
                          'an old brand skill holds up only a deck not begun')
-        self.assertIn(brand_skill.too_old('0.13.2'), self.engine.deck_needs()['old_brand'])
-        view = self.engine.outline(root, None, 'approve')
+        self.assertIn(brand_skill.too_old('0.13.2'), needs['old_brand'])
+        view = self.view(root)
         self.assertNotEqual(view['state'], 'failed', view.get('problem'))
         self.assertIsNone(view['deck_left'])
 
@@ -3698,14 +3663,26 @@ class TroubleTests(DeckCase):
                       missing)
 
     def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
-        root = self.saved_begin()
-        self.to_outline(root)
-        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
-        with mock.patch.object(self.engine, 'slides',
-                               mock.Mock(side_effect=slides_tool.TooOld('0.15.1'))):
-            self.engine.look_again()
-            self.to_end(root)
-            view = self.view(root)
+        seen = []
+        older = mock.patch.object(self.engine, 'slides',
+                                  mock.Mock(side_effect=slides_tool.TooOld('0.15.1')))
+        self.addCleanup(older.stop)
+
+        def outline(tools, job):
+            # The deck is begun; the slides tool on this computer is then an older one.
+            returned = self.workers.outline(tools, job)
+            training = self.space.training('rolling-restarts')
+            seen.append(sorted(str(path.relative_to(training))
+                               for path in training.rglob('*')
+                               if path != training / self.engines.IN_HAND))
+            older.start()
+            self.engine.deck_needs(fresh=True)
+            return returned
+        self.workers.then('outline', outline)
+        root = self.begin()
+        [before] = seen
+        self.to_end(root)
+        view = self.view(root)
         self.assertEqual(view['state'], 'done')
         self.assertEqual(view['deck_left']['says'], left(
             pipeline.DECK_LEFT, 'harness-slides 0.15.1 is installed, and a deck needs 0.19.0 '
@@ -3723,9 +3700,8 @@ class TroubleTests(DeckCase):
             asked.append(named.get('delivery'))
             return samples(*given, **named)
         self.brand.look_samples = look_samples
-        root = self.saved_begin(delivery='live')
+        root = self.begin(delivery='live')
         self.assertEqual(workspace.load(root)['settings']['delivery'], 'live')
-        self.drawn(root)
         mine = self.engine._survey(root, self.record(root)).decks[None]
         contract = json.loads(pipeline.contract(root, mine).read_text())
         self.assertEqual(contract['delivery'], 'live')
@@ -3750,7 +3726,7 @@ class TroubleTests(DeckCase):
         said = brand_skill.too_old('1.3.0')
         self.brand.version = '1.3.0'
         self.assertEqual(self.engine.deck_needs(fresh=True)['old_brand'], said)
-        root = self.saved_begin()
+        root = self.begin()
         self.to_end(root)
         self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_LEFT, said))
         self.brand.version = '1.4.0'
@@ -3774,9 +3750,8 @@ class TroubleTests(DeckCase):
 
     def test_a_computer_with_nothing_for_a_deck_says_what_is_missing(self):
         self.slides = self.brand = None
-        root = self.saved_begin(brand=None)
-        self.assertEqual(self.to_end(root), ['research-plan', 'research', 'blueprint',
-                                             'document', 'brief', 'scenario:main'])
+        root = self.begin(brand=None)
+        self.assertEqual(self.to_end(root), [])
         view = self.view(root)
         says = left(pipeline.DECK_LEFT, NO_SLIDES, NO_BRAND_SKILL)
         self.assertEqual((view['state'], view['sentence'], view['outline'], view['deck']),
@@ -3815,7 +3790,7 @@ class TroubleTests(DeckCase):
 
     def test_a_computer_with_no_renderer_takes_the_training_through_everything_else(self):
         self.slides.have['drive'] = False
-        root = self.saved_begin()
+        root = self.begin()
         self.to_end(root)
         view = self.view(root)
         self.assertEqual(view['deck_left']['says'], left(pipeline.DECK_LEFT, engine_no_drive()))
@@ -3823,14 +3798,19 @@ class TroubleTests(DeckCase):
         self.slides.have['drive'] = True
         self.engine.look_again()
         view = self.view(root)
-        self.assertEqual((view['deck_left'], view['outline']['waiting']), (None, True),
+        self.assertEqual((view['deck_left'], (root / pipeline.OUTLINE).is_file()), (None, True),
                          'put right, a new look lets the deck be made')
 
     def test_a_training_with_no_brand_chosen_cannot_have_a_deck_made(self):
-        root = self.saved_begin()
+        def pauses(tools, job):
+            self.engine.act(self.space.training('rolling-restarts'), 'pause')
+            return self.workers.research_plan(tools, job)
+        self.workers.then('research-plan', pauses)
+        root = self.begin()
         session = workspace.load(root)
         session['settings']['brand'] = 'Our usual look'    # as a conversation once wrote it
         workspace.store(root, session)
+        self.engine.act(root, 'resume')
         self.to_end(root)
         self.assertEqual(self.view(root)['deck_left']['says'],
                          left(pipeline.DECK_LEFT, pipeline.NO_BRAND))
@@ -3840,17 +3820,16 @@ class TroubleTests(DeckCase):
                       self.view(root)['deck_left']['says'])
 
     def test_a_deck_saved_elsewhere_has_nothing_left_before_its_gate(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         import shutil
         shutil.rmtree(root / 'work')
         self.engine = self.make()
         found = self.engine._survey(root, self.record(root))
-        self.assertEqual(found.next.kind, 'wait', 'the deck is not built again')
-        shown = self.gate(root)
+        self.assertEqual(found.next.kind, 'done', 'the deck is not built again')
+        shown = self.deck_shown(root)
         self.assertEqual((shown['slides'], shown['review']['round'], shown['audit']['status']),
                          ([], 1, 'warnings'))
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
+        self.assertEqual(self.to_end(root), [])
 
 
 def engine_no_drive() -> str:
@@ -4095,15 +4074,14 @@ class PageTests(PageCase):
         self.assertEqual(pipeline.audited({'status': 'x', 'blockers': [{'says': 'No logo.'}],
                                            'warnings': []})['status'], 'blocked')
         self.brand.refuse['audit'] = ['The deck could not be opened.']
-        root = self.saved_begin()
-        self.drawn(root)
-        self.assertEqual(self.gate(root)['audit'], {'status': 'blocked', 'warnings': [],
+        root = self.begin()
+        self.assertEqual(self.deck_shown(root)['audit'], {'status': 'blocked', 'warnings': [],
                          'blockers': ["The brand's audit could not be run. The brand skill "
                                       'refused: The deck could not be opened.']})
 
     def test_a_slides_picture_is_served_by_number_to_whoever_holds_the_key(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        self.pause_after('review')    # the deck drawn and reviewed, not yet kept
+        root = self.begin()
         path = str(root)
         self.assertEqual(self.ask('GET', f'/api/slide?{urlencode({"path": path, "artifact": "deck", "number": 3})}'),
                          (200, 'image/png', png(3)))
@@ -4118,8 +4096,8 @@ class PageTests(PageCase):
                          'That folder is not a training this computer knows.')
 
     def test_a_slides_address_can_never_be_made_to_read_another_file(self):
-        root = self.saved_begin()
-        self.drawn(root)
+        self.pause_after('review')    # the deck drawn and reviewed, not yet kept
+        root = self.begin()
         path = str(root)
         secret = root / 'work' / 'deck' / 'secret.png'
         secret.write_bytes(png(9))
@@ -4158,7 +4136,7 @@ class PageTests(PageCase):
     def test_the_check_of_this_computer_gains_what_a_deck_needs(self):
         looked = {'checked_at': 'now', 'ready': True, 'assistants': ['Claude Code'],
                   'wrong': [], 'items': [computer.item('node', 'Node', 'ok', [])]}
-        root = self.saved_begin()
+        root = self.begin()
         self.slides.have['drive'] = False
         with mock.patch.object(computer, 'check', lambda google=False: dict(looked)):
             found = self.post('computer', {})['computer']
@@ -4249,8 +4227,7 @@ class AssetPageTests(PageCase):
 
     def test_the_run_lists_the_decks_assets_and_a_picture_is_supplied_on_the_page(self):
         import base64
-        root = self.saved_begin()
-        self.drawn(root)
+        root = self.begin()
         run = self.get('run', path=str(root))
         self.assertEqual(run['state'], 'waiting')
         self.assertEqual(run['deck']['assets'], [
@@ -4270,7 +4247,6 @@ class AssetPageTests(PageCase):
             'asset', {**sent, 'asset': 'icon_instance'}, 409)['error'])
         run = self.post('asset', sent)
         self.assertIsNone(run['problem'])
-        self.assertEqual(workspace.status(root)['gate'], 'deck')
         self.assertEqual(pipeline.recorded(root, None)['console_view']['alt'], 'The console')
 
 
