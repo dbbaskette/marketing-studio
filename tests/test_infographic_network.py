@@ -93,6 +93,31 @@ class InfographicNetworkTests(unittest.TestCase):
             release.set()
             bridge.shutdown(); bridge.server_close(); native.shutdown(); native.server_close()
 
+    def test_the_page_local_mark_never_crosses_the_bridge(self):
+        # Infographic Studio reads a folder path only for a request carrying its own local
+        # mark, which the bridge never passes on: a phone cannot claim to be this computer.
+        seen = []
+        class Echo(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                seen.append(self.headers.get('X-Infographic-Studio-Local'))
+                self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'{}')
+            def log_message(self, *args): pass
+        native = ThreadingHTTPServer(('127.0.0.1', 0), Echo)
+        threading.Thread(target=native.serve_forever, daemon=True).start()
+        bridge = BridgeServer(('127.0.0.1', 0), f'127.0.0.1:{native.server_port}', 'synthetic-key',
+                              'X-Infographic-Studio-Token', 'infographic')
+        threading.Thread(target=bridge.serve_forever, daemon=True).start()
+        try:
+            with contextlib.closing(http.client.HTTPConnection('127.0.0.1', bridge.server_port, timeout=5)) as client:
+                client.request('POST', '/api/source-folder', body='{}', headers={
+                    'Origin': 'http://' + bridge.authority, 'Content-Type': 'application/json',
+                    'X-Infographic-Studio-Token': 'synthetic-key', 'X-Infographic-Studio-Local': '1'})
+                self.assertEqual(client.getresponse().status, 200)
+            self.assertEqual(seen, [None])
+        finally:
+            bridge.shutdown(); bridge.server_close(); native.shutdown(); native.server_close()
+
     def test_document_routes_accept_bounded_uploads_without_widening_other_routes(self):
         received=[]
         class Echo(BaseHTTPRequestHandler):

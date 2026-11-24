@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from copy import copy
+import threading
 from pathlib import Path
 
 from studio_core import server as core
@@ -25,7 +26,7 @@ shared = core.for_product(
      '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/intake-draft', '/api/status', '/api/projects', '/api/project', '/api/asset',
                          '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/intake-draft', '/api/action-control', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/research-library-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
+    writes=('/api/intake-draft', '/api/action-control', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/source-folder', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/research-library-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -41,6 +42,25 @@ class Page(shared.Page):
         self.research = Jobs(store) if store is not None else None
         # Long actions run as background jobs, one at a time per infographic.
         self.actions = action_jobs.Actions(store, self.activity) if store is not None else None
+
+    # Whether a request came from this computer. Marketing Studio's network bridge passes on
+    # only the headers it lists (marketing_studio/network.py, forward()), so this page's own
+    # LOCAL header reaches the server only from a page opened here; the bridge's VIA mark says
+    # network outright. A folder path on this computer is read only for a local caller.
+    LOCAL = 'X-Infographic-Studio-Local'
+    VIA = 'X-Marketing-Studio-Via'
+
+    def answer(self, target, headers, method='GET', body=None):
+        caller = self.__dict__.setdefault('caller', threading.local())
+        caller.remote = headers.get(self.LOCAL) != '1' or headers.get(self.VIA) == 'network'
+        try:
+            return super().answer(target, headers, method, body)
+        finally:
+            caller.remote = True
+
+    def remote(self):
+        caller = self.__dict__.get('caller')
+        return getattr(caller, 'remote', True) if caller is not None else True
 
     def doing(self, ident):
         """What the activity panel shows for one infographic now."""
@@ -262,10 +282,21 @@ class Page(shared.Page):
             require(sent.get('kind') in ('google-doc', 'url'), 'Choose Google Doc or public URL.')
             result = remote_sources.google(sent.get('url'), account=sent.get('account') or settings.snapshot()['google']['account'], tabs=sent.get('tabs')) if sent['kind'] == 'google-doc' else remote_sources.public(sent.get('url'))
             return shared.as_json(200, result)
+        if path == '/api/source-folder':
+            # A folder on this computer (only for a caller here) or a Google Drive folder link.
+            from . import folder_intake
+            require(isinstance(sent, dict) and set(sent) <= {'folder', 'taken'}, 'Give one folder.')
+            return shared.as_json(200, folder_intake.folder(sent.get('folder'), local=not self.remote(),
+                                                            taken=sent.get('taken', [])))
         if path == '/api/source-preview':
             from . import intake
             require(isinstance(sent, dict) and set(sent) <= {'data', 'kind', 'name', 'selection'},
                     'Preview one supplied document and its explicit selection.')
+            if sent.get('kind') == 'xlsx':
+                # A spreadsheet: every sheet read into text under its name (source_intake).
+                from . import folder_intake
+                return shared.as_json(200, folder_intake.spreadsheet(
+                    sent.get('name'), api.source_bytes(sent.get('data')), local=not self.remote()))
             return shared.as_json(200, intake.prepare(api.source_bytes(sent.get('data')),
                 kind=sent.get('kind'), name=sent.get('name'), selection=sent.get('selection')))
         if path == '/api/csv-preview':

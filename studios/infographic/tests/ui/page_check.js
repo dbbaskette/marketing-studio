@@ -107,4 +107,57 @@ same(done.splice(0), [['select', { story_id: 's2' }]]);
 const chosen = vm.runInContext('chosenMark()', page);
 assert.equal(chosen.tagName, 'SPAN'); assert.equal(chosen.textContent, 'Selected');
 assert.doesNotMatch(source, /button\('Use this story',[^)]*\),\s*true\)/, 'no filled Use this story');
-console.log('PASS Infographic Studio page: Search and jump lists and opens its work; Use this story is quiet');
+// Continue in another studio: the Document Library item in the link is read and checked
+// before the fragment is cleared, then New infographic opens with it picked, saying so.
+assert.ok(source.indexOf('const libraryStart') < source.indexOf('history.replaceState'), 'read before the fragment is cleared');
+vm.runInContext(cut(source, 'libraryLink'), page);
+same(vm.runInContext("libraryLink('notes-1@3')", page), { id: 'notes-1', revision: 3 });
+for (const bad of ['Notes@1', 'notes@0', 'notes@1001', 'notes', '../x@1', 'notes@1@2', ''])
+  same(vm.runInContext('libraryLink(' + JSON.stringify(bad) + ')', page), { invalid: true }, bad);
+const intake = { opened: 0 };
+Object.assign(page, {
+  privateIntake: { startFresh: async () => true }, resetIntake: () => { page.draft.library = []; },
+  draft: { library: [] }, intakeLoaded: false, startingFrom: '',
+  newSheet: async () => { intake.opened += 1; }, error: message => { intake.error = message; },
+  libraryRows: async picks => {
+    if (picks[0].id === 'gone') throw Error('That document is hidden in the Document Library.');
+    return [{ id: picks[0].id, revision: picks[0].revision, title: 'Launch notes', characters: 40, gaps: [] }];
+  },
+});
+vm.runInContext('let startingFrom = "";' + cut(source, 'startFromLibrary'), page);
+(async () => {
+  await vm.runInContext("startFromLibrary({id: 'notes-1', revision: 3})", page);
+  same(page.draft.library, [{ id: 'notes-1', revision: 3, title: 'Launch notes', characters: 40, gaps: [], acknowledged: false }]);
+  assert.equal(vm.runInContext('startingFrom', page), 'Launch notes');
+  assert.equal(intake.opened, 1); assert.equal(intake.error, undefined);
+  assert.match(source, /'Starting from: '\),document\.createTextNode\(startingFrom\+', from the Document Library\./);
+  // Hidden, missing or unreadable: said plainly, and the sheet opens empty.
+  await vm.runInContext("startFromLibrary({id: 'gone', revision: 1})", page);
+  same(page.draft.library, []);
+  assert.equal(intake.opened, 2);
+  assert.match(intake.error, /could not be used: That document is hidden/);
+  assert.match(intake.error, /open without it/);
+  await vm.runInContext('startFromLibrary({invalid: true})', page);
+  assert.match(intake.error, /could not be read, so nothing was picked/);
+
+  // Out-of-date work: each part has Update and Keep as it is, saying what changed.
+  page.calm = () => true; page.stateLine = (kind, words) => { const n = new Element('p'); n.textContent = words; return n; };
+  page.card = (title, ...parts) => { const n = new Element('section'); n.title = title; n.append(...parts.filter(Boolean)); return n; };
+  page.list = () => new Element('ul');
+  vm.runInContext("const STALE_ORDER=['facts','stories','page','artwork'];const STALE_WHAT={facts:'The facts',stories:'The story',page:'The page',artwork:'The artwork'};" + cut(source, 'staleCard'), page);
+  assert.equal(vm.runInContext('staleCard({})', page), null, 'nothing out of date, no card');
+  const card = vm.runInContext("staleCard({stale:{stories:{because:'brief',revision:4},page:{because:'brief',revision:4}}})", page);
+  const buttons = [];
+  const walk = node => { if (node.tagName === 'BUTTON') buttons.push(node); node.children.forEach(walk); };
+  walk(card);
+  same(buttons.map(b => b.textContent), ['Update the story', 'Keep as it is', 'Update the page', 'Keep as it is']);
+  assert.match(card.textContent, /The story was made before the brief changed\./);
+  assert.ok(buttons.every(b => !b.className.includes('button-filled')), 'one main action per view: no filled button here');
+  buttons[1].click(); buttons[2].click();
+  same(done.splice(0), [['keep-stale', { part: 'stories' }], ['refresh-page', null]]);
+
+  // Running background work has Stop beside Stop waiting.
+  assert.match(source, /if\(work\.id&&work\.stoppable\)\{const end=button\('Stop',\(\)=>stopWork\(work\)\)/);
+  console.log('PASS Infographic Studio page: Search and jump lists and opens its work; Use this story is quiet; '
+    + 'a Document Library link opens New infographic with its item; out-of-date work has Update and Keep as it is');
+})().catch(failure => { console.error(failure); process.exit(1); });

@@ -3,6 +3,13 @@
 const {make, add} = Drafting;
 const launch = new URLSearchParams(location.hash.slice(1));
 let token = launch.get('token') || '';
+// Continue in another studio: Marketing Studio names a Document Library revision to start from,
+// `library=<id>@<revision>`. Read and checked here, before the fragment is cleared.
+function libraryLink(value) {
+  const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(String(value || ''));
+  return found && Number(found[2]) <= 1000 ? {id: found[1], revision: Number(found[2])} : {invalid: true};
+}
+const libraryStart = launch.has('library') ? libraryLink(launch.get('library')) : null;
 try { if(token)sessionStorage.setItem('infographic-studio-token',token); else token=sessionStorage.getItem('infographic-studio-token')||''; }catch(f){}
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Infographic-Studio-Token',token:()=>token});
@@ -344,10 +351,12 @@ async function resumeActivity(id,current) {
     else elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));
   }catch(f){if(here(id))error(f.message);else elsewhere(owner,f.message);}finally{endWork(owner);}
 }
+// A page opened on this computer (not through the network link) may add a folder here.
+const here_local = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 async function request(route, data) {
   const labels={'/api/remote-preview':'Reading the linked document','/api/source-preview':'Reading the uploaded file','/api/research-preview':'Reading the selected research'};
   const owner=!shownWork()&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
-  try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
+  try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(here_local ? {'X-Infographic-Studio-Local': '1'} : {}), ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
     const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;failure.recovery=answer.recovery;throw failure;}return answer;
   }finally{if(owner)endWork(owner);}
 }
@@ -499,6 +508,21 @@ async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a s
 // In pieces, so a large source does not hold the page still while it is prepared.
 function encoded(raw) { let binary=''; for (let at=0; at<raw.length; at+=0x8000) binary += String.fromCharCode.apply(null, raw.subarray(at, at+0x8000)); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
+// Opens New infographic with the Document Library revision from the link already picked, and
+// says so. Nothing is created until the person saves the brief.
+let startingFrom='';
+async function startFromLibrary(pick){
+  if(!await privateIntake.startFresh(null,$('main')))return;
+  resetIntake();intakeLoaded=true;startingFrom='';
+  let problem='';
+  if(pick.invalid)problem='The link to the Document Library could not be read, so nothing was picked.';
+  else{
+    try{const [row]=await libraryRows([pick]);draft.library.push({...row,acknowledged:false});startingFrom=row.title;}
+    catch(f){problem='The Document Library item could not be used: '+f.message+' It may be hidden or no longer there.';}
+  }
+  await newSheet();
+  if(problem)error(problem+' The New infographic sheet is open without it.');
+}
 async function startNewIntake(control=null,place=null){if(!await privateIntake.startFresh(control,place))return;resetIntake();intakeLoaded=true;await newSheet();}
 async function newSheet() {
   try{if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
@@ -521,14 +545,15 @@ async function newSheet() {
   const retell=()=>stepRow.querySelectorAll('.intake-step-summary').forEach((node,index)=>{node.textContent=says(index);});
   form.addEventListener('input',retell);form.addEventListener('change',retell);
   add(form, stepRow, make('h3','sheet-part',names[draft.step]));
+  if(startingFrom&&draft.library.some(one=>one.title===startingFrom))form.append(add(make('p','callout ig-starting'),make('strong','','Starting from: '),document.createTextNode(startingFrom+', from the Document Library. Nothing is made until you save the brief.')));
   const problem = make('p', 'problem'); problem.setAttribute('role','alert');
   let title = null;
   if (draft.step === 0) {
     title = field('Working title',draft.title); const text = field('Notes or text',draft.text,'textarea'); text.input.classList.add('ig-source-input');
     retain(title.input,'title'); retain(text.input,'text'); add(form,title.wrap,text.wrap);
     title.input.addEventListener('input',()=>{if(title.input.value.trim())invalid(title,'');});
-    const upload = field('Upload files — text, Markdown, CSV, PDF, Word or HTML');
-    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,application/pdf,.docx,.html,.htm'; upload.input.multiple = true;
+    const upload = field('Upload files — text, Markdown, CSV, PDF, Word, HTML or Excel');
+    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,application/pdf,.docx,.html,.htm,.xlsx'; upload.input.multiple = true;
     upload.input.addEventListener('change', async () => {
       problem.textContent = '';
       try {
@@ -539,8 +564,8 @@ async function newSheet() {
         const prepared = [];
         for (const file of files) {
           const raw = await bytes(file), suffix = file.name.toLowerCase().split('.').pop();
-          const kinds = {txt:'text', md:'markdown', csv:'csv', pdf:'pdf', docx:'docx', html:'html', htm:'html'};
-          if (!kinds[suffix]) throw Error('Choose text, Markdown, CSV, PDF, Word (.docx) or HTML.');
+          const kinds = {txt:'text', md:'markdown', csv:'csv', pdf:'pdf', docx:'docx', html:'html', htm:'html', xlsx:'xlsx'};
+          if (!kinds[suffix]) throw Error('Choose text, Markdown, CSV, PDF, Word (.docx), HTML or Excel (.xlsx).');
           if (suffix === 'csv') {
             new TextDecoder('utf-8',{fatal:true}).decode(raw);
             draft.upload = {data:encoded(raw),kind:'csv',name:file.name}; draft.selection = null;draft.upload_added=false;
@@ -556,6 +581,7 @@ async function newSheet() {
     add(form,upload.wrap,make('p','quiet',draft.upload?'Selected: '+draft.upload.name:'Files are read locally. No OCR, linked-resource fetch or assistant work starts during this preview.'));
     const researchFirst=make('input');researchFirst.type='checkbox';researchFirst.checked=!!draft.research_first;researchFirst.addEventListener('change',()=>{draft.research_first=researchFirst.checked;});
     form.append(add(make('label','check'),researchFirst,document.createTextNode('Research this topic first')),make('p','quiet','You can save a topic and brief without source material, then choose references and optional external search.'));
+    form.append(button('Add a folder',()=>folderSheet(found=>{draft.materials.push(...found.map(preview=>({preview,acknowledged:false})));newSheet();})));
     form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
     const fromLibrary=button('Add from Document Library',()=>libraryPick(draftLibrary).then(done=>{if(done){closeSheet();newSheet();}}));fromLibrary.dataset.key='ig-new-library';form.append(fromLibrary);
     for(const chosen of draft.library){
@@ -633,6 +659,25 @@ async function newSheet() {
       button('Save and close',async()=>{try{await keepIntake(false);closeSheet();void home();}catch(failure){problem.textContent=failure.message;}}),discard));
   sheet('New infographic',form);privateIntake.status();
 
+}
+// A folder on this computer (only from a page opened here) or a Google Drive folder link: every
+// readable document in it becomes a preview to review, as an uploaded file does.
+function folderSheet(use){
+  const where=field(here_local?'Folder on this computer or Google Drive folder link':'Google Drive folder link');
+  where.input.placeholder=here_local?'~/Documents/Launch notes or https://drive.google.com/drive/folders/…':'https://drive.google.com/drive/folders/…';
+  const problem=make('p','problem');problem.setAttribute('role','alert');
+  const go=button('Read the folder',async()=>{
+    if(!where.input.value.trim()){invalid(where,'Give a folder.');return;}
+    go.disabled=true;problem.textContent='';
+    try{
+      const taken=[...draft.materials.map(m=>m.preview.name),...draft.library.map(one=>one.title)];
+      const found=await request('/api/source-folder',{folder:where.input.value.trim(),taken});
+      closeSheet();use(found.previews);
+      const words=[found.said,found.next].filter(Boolean).join(' ');
+      if(words)toast(words);
+    }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}
+  },true);
+  sheet('Add a folder',make('p','',here_local?'Every readable document in the folder is read on this computer and shown for review before anything is saved. A Google Drive folder is read with your Google sign-in.':'From a phone, give a Google Drive folder link, or upload the files. A folder on the computer can be added only on the computer.'),where.wrap,problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();newSheet();})));
 }
 function csvSheet() {
   const data=draft.csv, form=make('form','ig-fields'); const rows=field('Data-row numbers, separated by commas',Array.from({length:data.row_count},(_,i)=>i+1).join(','));
@@ -1060,7 +1105,14 @@ function libraryNote(s){
 }
 function keptPart(delivery){
   const kept=held.library?.kept;
-  if(kept&&kept.export===delivery.id&&kept.state==='kept')return make('p','quiet','Kept in the Document Library: approved revision '+pageOf(kept)+', with its text and PDF (library revision '+kept.library_revision+').');
+  if(kept&&kept.export===delivery.id&&kept.state==='kept'){
+    const said=make('p','quiet','Kept in the Document Library: approved revision '+pageOf(kept)+', with its text and PDF (library revision '+kept.library_revision+').');
+    // Shown only when Marketing Studio opened this page: it opens the Library on this item.
+    const link=typeof StudioShell!=='undefined'&&StudioShell.continueLink?StudioShell.continueLink({document:kept.document,revision:kept.library_revision}):null;
+    if(!link)return said;
+    const go=make('a','button','Continue in another studio');go.href=link;go.dataset.free='';if(!sameTab)go.target='marketing-studio';
+    return add(make('div','stack'),said,go);
+  }
   const again=button(kept&&kept.export===delivery.id?'Keep in Document Library again':'Keep in Document Library',async()=>{
     const result=await action('library-keep',{export_id:delivery.id},null,{quiet:true});
     if(result?.state==='kept')toast('Kept in the Document Library.');else if(result?.problem)error('Not kept in the Document Library: '+result.problem);
@@ -1217,6 +1269,7 @@ if (homeLink) {
   if (sameTab) $('go-suite').removeAttribute('target');
 }
 async function startDesk() {
+  if(libraryStart){await home();await startFromLibrary(libraryStart);return;}
   if(launch.get('resume-intake')==='1'){await home();await newSheet();return;}
   const resumeId=launch.get('resume');
   if(resumeId&&/^[A-Za-z0-9_-]{1,64}$/.test(resumeId)){await openProject(resumeId);return;}
