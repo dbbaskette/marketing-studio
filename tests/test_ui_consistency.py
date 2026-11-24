@@ -294,6 +294,80 @@ class SharedLookTests(unittest.TestCase):
             with self.subTest(sheet=sheet.relative_to(ROOT).as_posix()):
                 self.assertEqual(problems(sheet.read_text()), [])
 
+    def test_all_five_apps_have_one_look(self):
+        # The liquid pilot is the kit's own look now: no stylesheet, page or script opts a
+        # page into it, or out of it.
+        # Exempt: one line in Marketing Studio's setup page script that still sets
+        # `document.body.dataset.pilot`. Nothing reads it any more, so it is a no-op; it is
+        # deleted with that script's next change.
+        exempt = {ROOT / 'core/studio_core/setup_web/app.js'}
+        found = []
+        for suffix in ('*.css', '*.html', '*.js'):
+            for path in ROOT.rglob(suffix):
+                parts = path.relative_to(ROOT).parts
+                if path in exempt or {'.git', 'node_modules', 'tests'} & set(parts):
+                    continue
+                if path.is_symlink():
+                    continue
+                text = path.read_text(encoding='utf-8', errors='replace')
+                if 'data-pilot' in text or 'dataset.pilot' in text:
+                    found.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(found, [])
+
+    def test_the_look_is_the_kits_own(self):
+        # The rules docs/design/ui-kit.md lists under "The look": round, roomy and soft.
+        kit = declared(KIT.read_text())
+        top, phone = kit[''], kit[PHONE]
+        look = {
+            ':root': 'card-round:24px',
+            '.card': 'padding:1.5rem;border-radius:var(--card-round);box-shadow:var(--soft-shadow)',
+            '.card-title': 'color:var(--ink);font-size:1.1rem',
+            '.button': 'min-height:44px;border-radius:999px;background:var(--control-face);'
+                       'border:1px solid var(--control-line)',
+            '.input': 'border:1px solid var(--control-line);border-radius:14px',
+            '.window': 'grid-template-columns:15.5rem minmax(0,1fr)',
+            '.nav-item': 'min-height:46px;border-radius:14px',
+            '.toolbar': 'min-height:4.6rem',
+            '.page': 'padding-top:2.8rem',
+            '.dialog': 'border-radius:28px',
+            '.sheet': 'border-radius:28px',
+            '.tag': 'border-radius:999px;background:var(--well);border:1px solid transparent',
+            '.desk-flow-stages .desk-flow-step': 'padding:.5rem .75rem',
+        }
+        for selector, block in look.items():
+            want = {name.lstrip('-') if selector == ':root' else name: value
+                    for name, value in wanted(block).items()}
+            have = top.get(plain(selector), {})
+            if selector == ':root':
+                have = {name.lstrip('-'): value for name, value in have.items()}
+            with self.subTest(selector=selector):
+                self.assertEqual({name: have.get(name) for name in want}, want)
+        for selector, block in {'.card': 'padding:1.25rem', '.dialog': 'border-radius:24px',
+                                '.sheet': 'border-radius:24px', '.nav-item': 'min-height:49px',
+                                '.toolbar': 'min-height:4.4rem', '.page': 'padding-top:1.6rem'}.items():
+            want = wanted(block)
+            with self.subTest(phone=selector):
+                self.assertEqual({name: phone.get(plain(selector), {}).get(name) for name in want}, want)
+
+    def test_only_work_under_way_moves(self):
+        # A mark that keeps moving says something is running or waiting for the person; a
+        # status that is simply true stands still.
+        kit = re.sub(r'/\*.*?\*/', '', KIT.read_text(), flags=re.S)
+        moving = [selector.strip() for selector, body in re.findall(r'([^{}]+)\{([^{}]*)\}', kit)
+                  if re.search(r'animation\s*:[^;]*\binfinite\b', body)]
+        under_way = ('[data-state="current"]', '[data-state="working"]', '[data-state="yours"]',
+                     '[data-live="true"]', '[data-making="true"]', '.move-working-mark')
+        for selector in moving:
+            for one in selector.split(','):
+                with self.subTest(selector=one.strip()):
+                    self.assertTrue(any(mark in one for mark in under_way))
+        # Infographic Studio draws a "current" bead for statements too: a saved infographic,
+        # the route's step in hand and the ledger's current revision. Those stay still.
+        self.assertIn('.ig-project-card:not([data-working]) .bead[data-state="current"]::before,\n'
+                      '.ig-roadmap .bead[data-state="current"]::before,\n'
+                      '.ig-ledger-item .bead[data-state="current"]::before { animation: none; }',
+                      kit)
+
     def test_app_pages_share_the_shell(self):
         for page in APP_PAGES:
             html = page.read_text()
@@ -437,8 +511,8 @@ class SharedLookTests(unittest.TestCase):
         self.assertEqual(phone['.content'].get('padding-bottom'),
                          'calc(7rem + env(safe-area-inset-bottom))')
         tile = kit[''].get('.card[data-studio]>.studio-symbol', {})
-        self.assertEqual(tile, {'background': 'var(--studio-wash)', 'color': 'var(--studio-color)',
-                                'box-shadow': 'none'})
+        self.assertEqual(tile, {'background': 'var(--studio-color)', 'color': 'var(--on-studio)',
+                                'border-radius': '13px', 'box-shadow': 'var(--face-edge)'})
 
     def test_blog_studios_bar_keeps_its_id(self):
         html = APP_PAGES[1].read_text()
