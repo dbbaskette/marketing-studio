@@ -1,3 +1,104 @@
+# Release notes
+
+The newest release is first. The version being worked on is in [`VERSION`](../VERSION), and the companion skills' floors are in [`pins/companions.json`](../pins/companions.json). Each studio's own changelog has the detail.
+
+# Marketing Studio 4.19.0
+
+Every studio is at 4.19.0. These are the changes since 4.18.1.
+
+- **The parts of a project down the left.** Every studio's project page lists the project's parts on the left (a blog's outline and sections, a deck's slides, a training's materials, an infographic's parts), each with its state, from one shared list. A Presentation Studio deck that is not yet on the desk has no list.
+- **Upgrade a Selected changes deck in place.** A Presentation Studio deck made with Selected changes can become Redesign, keep content without starting again. Nothing is spent until you press Start on the new step, which says what the redesign does and how long it takes; the changes you made are kept, and revisions already delivered stay delivered.
+- **Old saved work opens more often.** A Presentation Studio deck paused in the old step-by-step flow now opens on the desk, and one whose record cannot be read opens as a read-only record with its files. Every saved state of the old flows in Blog Studio, Presentation Studio and Training Studio is now pinned by a test. Known limit: one Presentation Studio record the shared running-step check refuses, such as a desk deck started with research, stops sharing, migration previews and conversation edits for its whole workspace ([#541](https://github.com/dbbaskette/marketing-studio/issues/541)).
+- **One look and fewer waits.** Since 4.18.1: one look for Marketing Studio and all four studios, a command palette that finds your work, questions asked in place, one main action per view, pages that stop polling while hidden, a home page that answers while a studio starts, companion checks that ask once, Brand setup in one pass (PDF brand books read, document templates, Rebrand a Google file), research and finished work kept in the Document Library with **Continue in another studio**, and Infographic Studio's long actions in the background with **Stop**.
+- **Safer and smaller underneath.** Blog Studio, Presentation Studio and Training Studio send Google requests through one shared transport; Presentation Studio and Training Studio refuse redirects and any destination they do not use, and Blog Studio refuses a Word file whose inner XML declares a DOCTYPE or entity. Every PDF, Word and HTML reader is shared. Blog Studio's unused reference toolkit is gone, so a release has two Blog Studio archives, not three.
+
+# Marketing Studio 4.18.1
+
+Every studio is at 4.18.1. These are the changes since 4.18.0.
+
+- **Learner tasks carried through delivery.** A training's assessed learner tasks, shared cases and job aids reach every material built from its teaching plan.
+- **A one-page job aid for Infographic Studio.** An approved teaching plan's **One-page job aid** can be chosen in Infographic Studio's **Import selected studio material**.
+- Research triage keeps a qualification that changes a decision, and Presentation Studio's repair and review steps keep attribution guidance.
+
+# Marketing Studio 4.18.0
+
+Every studio is at 4.18.0. These are the changes since 4.17.1.
+
+- **Technical training that rehearses.** Training Studio plans technical workshops and CLI labs around what learners do: local configuration, a check or a conditional decision taught as such, and instructor preflight for what cannot be assumed.
+- A paired teaching benchmark, for comparing technical trainings, is described in [Training Studio's teaching benchmark](../studios/training/docs/teaching-benchmark.md).
+
+# Marketing Studio 4.17.1
+
+Every studio is at 4.17.1. These are the changes since 4.17.0.
+
+- Marketing Studio previews brands in batches, and research searches passages in batches, so both read less.
+- A provider timeout offers a retry, and the Team Hub guide is back in Training Studio's navigation.
+
+# Marketing Studio 4.17.0
+
+Every studio is at 4.17.0, aligned for the first time. Versions 4.13 to 4.16 of the suite were never released; their work is in this release. These are the changes since 4.12.0.
+
+- **Nothing pinned to one installed version.** Studios, Harness Research, Harness Slides and the brand skill are reached through a stable `current` link and installed and updated from their repositories' `main`, with oldest-accepted versions in [`pins/companions.json`](../pins/companions.json). The brand skill's release setting is gone. Training Studio and Presentation Studio update themselves from `main`.
+- **No spending limits.** Nothing stops, pauses or warns for cost; reported cost stays as information. Assistant steps get more time, and Blog Studio's step time limit is gone.
+- **Desks rebuilt as workbenches** with a shared shell: one Brief, Plan, Make, Ship arc, one card for what waits for you, and a command palette.
+- **More ways in.** **Copy as new** for a training or deck, a whole folder of sources, every link in an uploaded file, up to 1,000 links per research run with Harness Research 1.2.0, the Document Library keeping files of any type, and **Document graphics** in Shared settings. Training Studio follows your outline and documents, plans as an instructor would teach and draws its own charts; Blog Studio writes solution briefs; Training Studio can rebrand a finished deck with **Change brand**.
+- Studio READMEs were rebuilt around a first project, with illustrated guides.
+
+# Marketing Studio 4.12.0
+
+Marketing Studio 4.12.0 ships Presentation Studio 4.15.0 and Training Studio 4.14.0 (Blog Studio 4.10.1 and Infographic Studio 0.5.0 unchanged). These are the changes since 4.11.1.
+
+- Finished research sections can be read before the final check, and concerns you queue are kept privately until you apply them.
+- The time to the first readable section is reported apart from the time to the checked result.
+
+# Marketing Studio 4.11.1
+
+Marketing Studio 4.11.1 ships Presentation Studio 4.14.1 and Training Studio 4.13.1. These are the changes since 4.11.0.
+
+- An idle desk checks a small change signal before reading its content again; focus and reconnecting catch up at once.
+- Quick scan choices say more plainly what they do.
+
+# Marketing Studio 4.11.0
+
+Marketing Studio 4.11.0 ships Presentation Studio 4.14.0, Training Studio 4.13.0 and Infographic Studio 0.5.0. These are the changes since 4.10.0.
+
+- An unfinished start form is kept across reloads, in Infographic Studio too.
+- Slide-text review shows one slide at a time, and corrections are kept across reloads without starting work.
+
+# Marketing Studio 4.10.0
+
+Marketing Studio 4.10.0 ships Infographic Studio 0.4.0. These are the changes since 4.9.0.
+
+- Marketing Studio's home refreshes pending work, and a preview that fails says why and how to recover.
+- Infographic Studio keeps its renderer guidance when an approved file is recovered.
+
+# Marketing Studio 4.9.0
+
+These are the changes since 4.8.0.
+
+- Brands are written and finished in the brands repository set in Shared settings.
+
+# Marketing Studio 4.8.0
+
+Marketing Studio 4.8.0 ships Presentation Studio 4.13.0 and Training Studio 4.12.0. These are the changes since 4.7.1.
+
+- New decks and trainings warned and carried on at a project spending amount instead of stopping. (Spending limits were removed altogether in 4.17.0.)
+
+# Marketing Studio 4.7.1
+
+These are the changes since 4.7.0.
+
+- `marketing-studio` commands reuse a studio link that is already running instead of starting another.
+
+# Marketing Studio 4.7.0
+
+Marketing Studio 4.7.0 ships Blog Studio 4.10.1, Presentation Studio 4.12.1, Training Studio 4.11.1 and Infographic Studio 0.3.1. These are the changes since 4.6.0.
+
+- **See what the assistant is doing.** Every studio shows the assistant's work as it happens and keeps an Activity log for each project.
+- **Approve the plan before detailed research.** Training Studio starts with a Quick scan outline you approve, and Presentation Studio with a slide story you approve. A new deck or training can be left half filled in and resumed.
+- **Research that keeps its parts.** Section contributions are kept across retries, and a change to the sources previews which sections it affects before anything is redone. Local build steps recover, and saved work resumes where it was.
+- **Settings.** A model and reasoning level for each kind of work, and a brands repository fetched only when you ask. Google Slides sources are read through Google Drive, and each studio README shows its workflow as a diagram.
+
 # Marketing Studio 4.6.0
 
 Marketing Studio 4.6.0 ships Blog Studio 4.10.0, Presentation Studio 4.9.0, Training Studio 4.8.0 and, for the first time, Infographic Studio 0.3.0, which is not yet signed off. Installs pin Harness Research 1.1.0 and Harness Slides 0.16.0, and Tanzu Brand 0.14.1 was tested. These are the changes since 4.5.0.
