@@ -440,6 +440,16 @@ class SlowPrepareTests(IsolatedHome):
         self.assertIn('prepared', found)
         self.assertTrue(state.read()['done'])
 
+    def test_the_same_setup_sent_twice_succeeds_twice(self):
+        # Two tabs, or a double click: the second arrives while the first prepares.
+        shared.update({'local': {'root': str(self.root / 'work')}})
+        sent = {'done': True, 'prepare': True}
+        self.during = lambda: self.pool.submit(self.write, '/api/setup', sent)
+        first, second = self.started('/api/setup', sent)
+        replies = [first.result(timeout=10), second.result(timeout=10)]
+        self.assertTrue(all(reply['setup']['done'] and 'prepared' in reply for reply in replies))
+        self.assertTrue(state.read()['done'])
+
     def test_settings_changed_during_setup_keep_the_newer_state(self):
         shared.update({'local': {'root': str(self.root / 'work')}})
         install = self.root / 'installed-blog'

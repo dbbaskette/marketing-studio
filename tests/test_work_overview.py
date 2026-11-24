@@ -189,6 +189,26 @@ class KeptOverviewTests(unittest.TestCase):
         self.item('outline');self.counted()
         work_overview.snapshot(self.STUDIOS)
         kept=work_overview._kept['training']
-        work_overview._kept['training']=(kept[0],kept[1]-work_overview.FRESH_SECONDS,kept[2])
+        work_overview._kept['training']=(kept[0],kept[1]-work_overview.FRESH_SECONDS,*kept[2:])
         work_overview.snapshot(self.STUDIOS)
         self.assertEqual(len(self.made),2)
+
+    def test_an_older_listing_never_replaces_a_newer_one(self):
+        import threading
+        self.item('outline')
+        release=threading.Event();self.addCleanup(release.set)
+        started=threading.Event();answers=iter(['older','newer'])
+        def listed(identifier):
+            made=next(answers)
+            if made=='older':
+                started.set()
+                release.wait(10)   # a slow home read, begun before the change
+            return {'made':made}
+        with mock.patch.object(work_overview,'listing',side_effect=listed):
+            slow=threading.Thread(target=work_overview.cached,args=('training',),daemon=True)
+            slow.start()
+            self.assertTrue(started.wait(5))
+            # The page's write reads afresh while the slow read is still in hand.
+            self.assertEqual(work_overview.cached('training',fresh=True),{'made':'newer'})
+            release.set();slow.join(5)
+            self.assertEqual(work_overview.cached('training'),{'made':'newer'})

@@ -238,3 +238,65 @@ class RestingPollTests(unittest.TestCase):
             self.assertIsNot(self.engine._polling_scan,old)
             self.assertIsNone(old.walk)
             self.assertEqual(held,[])
+
+    def tracked_scandir(self):
+        held=[]
+        real=os.scandir
+        class Tracked:
+            def __init__(self,path):
+                self.inner=real(path);held.append(self)
+            def __enter__(self):
+                self.inner.__enter__();return self
+            def __iter__(self):
+                return iter(self.inner)
+            def __exit__(self,*exc):
+                held.remove(self);return self.inner.__exit__(*exc)
+        patcher=patch.object(polling.os,'scandir',Tracked)
+        patcher.start();self.addCleanup(patcher.stop)
+        return held
+
+    def test_a_replaced_scan_opens_no_walk_and_leaks_no_handle(self):
+        held=self.tracked_scandir()
+        polling.snapshot(self.engine,self.data,maximum=4)
+        old=self.engine._polling_scan
+        self.engine.workspace=SimpleNamespace(root=self.root/'moved');(self.root/'moved').mkdir()
+        self.poll()
+        walks=self.walks
+        # A poll that took the old scan before it was replaced, advancing it now.
+        with old.lock:
+            late=old.advance(4,.075)
+        self.assertEqual((late['complete'],late['cached']),(False,False))
+        self.assertEqual(self.walks,walks)
+        self.assertIsNone(old.walk)
+        self.assertEqual(held,[])
+
+    def test_a_poll_whose_scan_is_replaced_meanwhile_answers_from_the_current_one(self):
+        held=self.tracked_scandir()
+        polling.snapshot(self.engine,self.data,maximum=4)
+        old=self.engine._polling_scan
+        moved=self.root/'moved';moved.mkdir()
+
+        class Interleaved:
+            """The engine's lock; once this poll has taken its scan and let go of the lock,
+            another poll, after the workspace moved, replaces that scan."""
+            def __init__(self,during):
+                self.inner,self.during=threading.RLock(),during
+            def __enter__(self):
+                self.inner.acquire();return self
+            def __exit__(self,*exc):
+                self.inner.release()
+                during,self.during=self.during,None
+                if during:during()
+
+        def elsewhere():
+            self.engine.workspace=SimpleNamespace(root=moved)
+            polling.snapshot(self.engine,self.data,maximum=1)
+        self.engine._lock=Interleaved(elsewhere)
+        polling.snapshot(self.engine,self.data,maximum=1)
+        current=self.engine._polling_scan
+        self.assertIsNot(current,old)
+        self.assertTrue(old.retired);self.assertIsNone(old.walk)
+        # Only the current scan walks: its own walk is the one left open, nothing on the old.
+        self.assertEqual(self.walks,2)
+        current.close()
+        self.assertEqual(held,[])

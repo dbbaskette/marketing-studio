@@ -5,7 +5,7 @@ import base64
 import binascii
 import threading
 import shutil
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
@@ -57,6 +57,7 @@ class Home(server.Page):
         self.launcher = launcher
         self.models = Catalog()
         self.changes = threading.RLock()
+        self.finishing = threading.Lock()   # one Finish setup at a time; see write
         # Each request is answered on its own thread: whether this one came over the bridge.
         self.caller = threading.local()
         # Upgrade a completed pre-shared setup on opening Marketing Studio.
@@ -369,8 +370,11 @@ class Home(server.Page):
         # Preparing studios runs each one's bridge in turn and can take minutes. The settings
         # it needs are read under the lock, the lock is let go while it runs, so Home and
         # This computer keep answering, and on taking it back the outcome is kept only when
-        # the settings it was made for still stand.
-        with self.changes:
+        # the settings it was made for still stand. Finishing setup also waits for any other
+        # finish in hand (taken before `changes`, never while holding it), so the same
+        # request sent twice reads what the first one saved and succeeds again.
+        finishing = self.finishing if path == '/api/setup' else nullcontext()
+        with finishing, self.changes:
             if path == '/api/shared':
                 before = shared.read()[0]
                 try:
@@ -410,8 +414,11 @@ class Home(server.Page):
                         return
                     with released(self.changes):
                         report = self.launcher.prepare(kept, values)
-                    # Raised before setup is marked complete: nothing is recorded.
-                    if state.read() != kept:
+                    # Only what the prepare was made from counts: the installations here,
+                    # and the shared storage, which finish's own guard checks. The same
+                    # request sent twice succeeds twice. Raised before setup is marked
+                    # complete, so nothing is recorded.
+                    if state.read().get('paths', {}) != kept.get('paths', {}):
                         raise WorkspaceError(CHANGED_WHILE_PREPARING)
                     outcome['prepared'] = report
                 try:
@@ -422,7 +429,8 @@ class Home(server.Page):
                         shared.update({'setup': {'version': 0}})
                 except ValueError as failure:
                     raise WorkspaceError(str(failure)) from failure
-                state.save({**kept, 'done': sent['done']})
+                # Read again: the lock may have been let go while studios were prepared.
+                state.save({**state.read(), 'done': sent['done']})
                 return server.as_json(200, {**self.snapshot(fresh=True), **outcome})
             elif path == '/api/paths':
                 paths = sent.get('paths')

@@ -262,6 +262,51 @@ class CliTests(Disposable):
         # Its worker is free again; a command arriving as it is freed waits for it briefly.
         self.assertEqual(control.request(self.data, {'command': 'state'}), {'answered': 'state'})
 
+    @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
+    def test_when_every_worker_and_wait_is_taken_accepting_goes_on(self):
+        handle, entered, release = self.slow_start()
+        with mock.patch.object(control, 'WORKERS', 1), mock.patch.object(control, 'WAITING', 1):
+            ipc = control.Control(self.data, handle, shutdown=lambda: None)
+        self.addCleanup(ipc.close)
+        with mock.patch.object(control, 'BUSY_WAIT', 30):
+            starting, started = self.in_background({'command': 'start', 'studio': 'training'})
+            self.assertTrue(entered.wait(5))
+            waiting, waited = self.in_background({'command': 'state'})
+            # The second command holds the only place to wait for a worker.
+            for _ in range(200):
+                if ipc.waiting._value == 0:
+                    break
+                threading.Event().wait(.02)
+            self.assertEqual(ipc.waiting._value, 0)
+            # A third is answered at once by the accepting thread, without being waited on.
+            self.assertEqual(control.request(self.data, {'command': 'state'}), {'error': control.BUSY})
+            self.assertTrue(waiting.is_alive(), 'The waiting command was still waiting')
+            release.set()
+            starting.join(5)
+            waiting.join(5)
+        self.assertEqual((started, waited), ([{'started': True}], [{'answered': 'state'}]))
+        self.assertEqual(control.request(self.data, {'command': 'state'}), {'answered': 'state'})
+
+    def test_a_refused_connection_is_tried_again_before_saying_none_runs(self):
+        tries = []
+
+        class Refusing:
+            def __init__(self, *args):
+                tries.append(self)
+
+            def settimeout(self, value):
+                pass
+
+            def connect(self, path):
+                raise ConnectionRefusedError
+
+            def close(self):
+                pass
+        with mock.patch.object(control.socket, 'socket', Refusing), \
+                mock.patch.object(control.time, 'sleep'):
+            self.assertIsNone(control.connected(self.data / 'control.sock'))
+        self.assertEqual(len(tries), 3)
+
     def test_long_data_root_has_private_short_socket_path(self):
         long = self.data / ('long' * 50)
         long.mkdir()

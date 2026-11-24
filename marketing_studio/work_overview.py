@@ -1,4 +1,5 @@
 """Bounded summary-only adapters for the launchpad; no engine imports or processes."""
+import itertools
 import os
 from pathlib import Path
 import threading
@@ -59,8 +60,9 @@ def listing(identifier):
 # drafts and a moved workspace, and the age bound covers what it cannot see, such as older
 # work rewritten in place. Changes made through Marketing Studio itself read it fresh.
 FRESH_SECONDS = 10
-_kept = {}
+_kept = {}   # identifier: (freshness key, when, listing, the number it was begun with)
 _keeping = threading.Lock()
+_begun = itertools.count()
 
 
 def _seen(path):
@@ -91,11 +93,16 @@ def cached(identifier, fresh=False):
     now = time.monotonic()
     with _keeping:
         kept = _kept.get(identifier)
+        begun = next(_begun)   # taken before listing: a later listing has a larger number
     if not fresh and kept and kept[0] == key and now - kept[1] < FRESH_SECONDS:
         return kept[2]
     found = listing(identifier)
     with _keeping:
-        _kept[identifier] = (key, now, found)
+        # A listing begun before the one kept never replaces it: a slow read that started
+        # before a change must not stand in for a fresh one made after it.
+        held = _kept.get(identifier)
+        if held is None or held[3] < begun:
+            _kept[identifier] = (key, now, found, begun)
     return found
 
 

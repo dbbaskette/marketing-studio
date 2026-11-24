@@ -73,11 +73,17 @@ class _Scan:
         self.walk_quiet = False
         self.generation = 0
         self.walk_generation = 0
+        self.retired = False   # replaced as the engine's scan: it never walks again
 
     def close(self):
         if self.walk is not None:
             self.walk.close()
         self.walk = None
+
+    def retire(self):
+        """Close its walk for good. Called holding `lock`, as it is replaced."""
+        self.retired = True
+        self.close()
 
     def invalidate(self):
         """Something was written: the next poll walks."""
@@ -87,7 +93,8 @@ class _Scan:
 
     def advance(self, maximum, seconds, idle=True):
         started = time.monotonic()
-        if maximum <= 0 or seconds <= 0:
+        if self.retired or maximum <= 0 or seconds <= 0:
+            # A replaced scan opens no new walk, so no directory is left open on it.
             self.close()
             return {'revision': secrets.token_hex(32), 'complete': False, 'cached': False}
         if not idle:
@@ -154,9 +161,19 @@ def snapshot(engine, data, *, maximum=5000, seconds=.075):
     if replaced is not None:
         # Its unfinished walk holds open directory handles: close them now.
         with replaced.lock:
-            replaced.close()
-    with scan.lock:
-        signal = scan.advance(maximum, seconds, idle=not active)
+            replaced.retire()
+    signal = None
+    for _ in range(2):
+        with scan.lock:
+            if not scan.retired:
+                signal = scan.advance(maximum, seconds, idle=not active)
+                break
+        # Another poll replaced it after this one took it (the workspace moved): the
+        # engine's current scan answers instead.
+        with engine._lock:
+            scan = getattr(engine, '_polling_scan', scan)
+    if signal is None:
+        signal = {'revision': secrets.token_hex(32), 'complete': False, 'cached': False}
     # `complete` refers only to the scan just finished. `cached` explicitly refers
     # to a previous completed scan, never a claim that this partial scan is fresh.
     # Clients must keep active-job refresh and their periodic authoritative reads.
