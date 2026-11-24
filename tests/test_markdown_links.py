@@ -36,8 +36,8 @@ ALLOWED = {
         '(blog-legacy-research.md beside blog-deep-research.md); it was never a link from this plan',
 }
 
-# Link texts that are placeholders in prose or examples, not links: `[N]`, `url`, `path`.
-PLACEHOLDER = re.compile(r'^(url|link|path|target|href|\.\.\.|…|<[^>]*>|[A-Z_]+)$')
+# Placeholder targets in examples (`url`, `[N]`, `path`) all sit in fenced or inline code,
+# which is not read, so none needs a skip of its own.
 
 FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
 COMMENT = re.compile(r'<!--.*?-->', re.S)
@@ -125,7 +125,7 @@ def problems(name, cache):
         target = target.strip()
         if target.startswith('<') and target.endswith('>'):
             target = target[1:-1].strip()
-        if not target or SCHEME.match(target) or target.startswith('//') or PLACEHOLDER.match(target):
+        if not target or SCHEME.match(target) or target.startswith('//'):
             continue
         address, _, anchor = target.partition('#')
         address = unquote(address.split('?', 1)[0])
