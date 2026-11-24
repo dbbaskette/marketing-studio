@@ -34,15 +34,25 @@ def main():
             if '--desk' in sys.argv:
                 root = case.start_desk(look='default')
                 case.waiting(root)
-            if '--selected' in sys.argv:
+            if '--selected' in sys.argv or '--selected-again' in sys.argv:
                 # A deck started at Selected changes, on the desk with slide 2 changed: it offers
                 # Upgrade to Redesign, keep content. Upgrading it, then Start on its priced step,
-                # runs the redesign with the stand-in assistant jobs.
+                # runs the redesign with the stand-in assistant jobs. With --selected-again, a
+                # first such deck is upgraded and redrawn before it, so this computer has a
+                # record of how long a redesign's steps take, which the priced step says.
+                from runner_support import read_word_for_word
                 from test_desk_words import planned
-                case.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-                root = case.existing_deck('automatic', 'selected', flow='desk',
-                                          selected='Shorten the words on slide 2')
-                case.on_desk(root)
+                for again in range(2 if '--selected-again' in sys.argv else 1):
+                    case.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+                    root = case.existing_deck('automatic', 'selected', flow='desk',
+                                              selected='Shorten the words on slide 2')
+                    case.on_desk(root)
+                    if again == 0 and '--selected-again' in sys.argv:
+                        case.engine.desk_upgrade(root, case.desk_view(root)['expected'])
+                        case.engine.desk_redesign_start(root)
+                        case.pick_look(root)
+                        case.on_desk(root)
+                        case.workers.queued['outline'] = [read_word_for_word(case)] * 4
             if '--saved' in sys.argv:
                 # A deck the earlier gated flow saved, waiting at its deck: it opens on the desk.
                 root = case.gated(title='Saved gated deck')
