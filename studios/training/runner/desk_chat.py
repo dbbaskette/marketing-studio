@@ -14,7 +14,6 @@ import shutil
 import stat
 import tempfile
 import threading
-import zlib
 
 import home
 import workspace
@@ -24,7 +23,12 @@ from runner import deck_edit, drafts, gitstate, pipeline, settings, team, worker
 from studio_core import research_contract, research_sites
 from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
-KINDS = ('text', 'outline', 'research', 'drawing', 'part')
+# ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
+# test_shared_runner_use checks the bound parts, and the suites call the rest.
+from studio_core import modules
+from studio_core.shared_runner import desk_chat as _shared
+modules.bind(globals(), _shared, _shared.NAMES)
+
 CHANGED = 'The training or its inputs changed. Read desk context again before saving.'
 MAX_BYTES, MAX_FILES = 256 * 1024 * 1024, 10000
 # What new work takes as supplied documents: how many, and how many bytes in all.
@@ -162,10 +166,6 @@ def _canonical(value, stage, root):
     if isinstance(value, (tuple, list)):
         return [_canonical(item, stage, root) for item in value]
     return value
-
-
-def _digest(value):
-    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def _staged_engine(engine):
@@ -502,11 +502,6 @@ def _prepared(engine, path, target, change=False, owner=True):
         yield space, root, stage, staged, before, context
 
 
-def context(engine, path, target):
-    with _prepared(engine, path, target) as prepared:
-        return prepared[-1]
-
-
 def show(engine, path):
     with _prepared(engine, path, 'ownership') as prepared:
         _, root, stage, staged, _, context = prepared
@@ -677,10 +672,6 @@ def submit(engine, path, request):
     if result is not None and isinstance(result, dict) and result.get('approval'):
         shown['approval'] = result['approval']
     return shown
-
-
-def save(engine, path, request):
-    return submit(engine, path, request)
 
 
 def _person_request(request):
@@ -995,33 +986,6 @@ def _drawing(engine, root, record, target, payload):
     engine._ready_again(root)
 
 
-def _preview_png(data):
-    """Keep visual PNG chunks byte-for-byte; discard only text and clock metadata."""
-    signature = b'\x89PNG\r\n\x1a\n'
-    if not data.startswith(signature):
-        raise WorkspaceError('The look preview is not a complete PNG.')
-    kept, offset, image = [signature], len(signature), False
-    while offset + 12 <= len(data):
-        length = int.from_bytes(data[offset:offset + 4], 'big')
-        end = offset + length + 12
-        kind = data[offset + 4:offset + 8]
-        body = data[offset + 8:end - 4]
-        if end > len(data) or not all(65 <= b <= 90 or 97 <= b <= 122 for b in kind) \
-                or zlib.crc32(kind + body) != int.from_bytes(data[end - 4:end], 'big') \
-                or (offset == 8 and (kind != b'IHDR' or length != 13)) \
-                or (offset != 8 and kind == b'IHDR'):
-            break
-        if kind not in (b'tEXt', b'zTXt', b'iTXt', b'tIME'):
-            kept.append(data[offset:end])
-        image = image or kind == b'IDAT'
-        if kind == b'IEND':
-            if length == 0 and end == len(data) and image:
-                return b''.join(kept)
-            break
-        offset = end
-    raise WorkspaceError('The look preview is a malformed or truncated PNG.')
-
-
 def _answer_context(engine, root, record, target, level):
     _brand(engine, root, level)
     record = engine._load(root)
@@ -1141,17 +1105,3 @@ def _handoff_check(engine, root, record, scope):
         raise WorkspaceError(ready.problem)
 
 
-# Explicit saved-work migration stays separate from checked content publication.
-def prepare_migration(record, saved_inputs):
-    from runner.desk_migration import prepare_migration as prepare
-    return prepare(record, saved_inputs)
-
-
-def migration_preview(engine, path):
-    from runner.desk_migration import migration_preview as preview
-    return preview(engine, path)
-
-
-def migrate(engine, path, expected):
-    from runner.desk_migration import migrate as apply
-    return apply(engine, path, expected)
