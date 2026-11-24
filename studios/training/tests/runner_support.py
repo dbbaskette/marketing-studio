@@ -1667,9 +1667,10 @@ class StudioCase(unittest.TestCase):
         self.addCleanup(engine.close)
         return engine
 
-    def start(self, **changes) -> Path:
+    def start(self, engine=None, **changes) -> Path:
         from runner import pipeline
-        return Path(self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
+        engine = engine or self.engine
+        return Path(engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
 
     def saved_start(self, engine=None, saved_contract=None, schema=None, **changes) -> Path:
         """Construct a saved queue/policy session and run, then resume real readers."""
