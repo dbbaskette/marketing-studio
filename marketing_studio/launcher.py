@@ -16,6 +16,8 @@ import subprocess
 import sys
 import threading
 import time
+from collections import namedtuple
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -62,6 +64,105 @@ def ps(*arguments):
     return done.stdout if done.returncode == 0 else None
 
 
+# --- one process list per inspection --------------------------------------------------
+#
+# A look at the studios (is a recorded studio still ours, which jobs run under it) asks
+# several questions of the process list. Inside `inspection()` they are all answered from
+# one `ps` run, read the first time one is asked. Nothing is signalled inside one: every
+# signal and every wait for a process to end looks at the processes as they are now.
+
+Row = namedtuple('Row', 'ppid pgid stat seconds started command')
+LISTING = ('-axww', '-o', 'pid=,ppid=,pgid=,stat=,etime=,lstart=,command=')
+_inspecting = threading.local()
+
+
+class _Listing:
+    def __init__(self):
+        self.asked = False
+        self.rows = None
+
+    def read(self):
+        if not self.asked:
+            self.asked = True
+            self.rows = listing(ps(*LISTING))
+        return self.rows
+
+
+def listing(output):
+    """{pid: Row} from the full process list, or None when there is none."""
+    if output is None:
+        return None
+    rows = {}
+    for line in output.splitlines():
+        parts = line.split(None, 10)
+        if len(parts) < 10:
+            continue
+        try:
+            number, parent, group, elapsed = int(parts[0]), int(parts[1]), int(parts[2]), seconds(parts[4])
+        except ValueError:
+            continue
+        # lstart as `ps -o lstart=` prints it on its own: the day of the month padded to two.
+        began = f'{parts[5]} {parts[6]} {parts[7]:>2} {parts[8]} {parts[9]}'
+        rows[number] = Row(parent, group, parts[3], elapsed, began, parts[10] if len(parts) > 10 else '')
+    return rows
+
+
+@contextmanager
+def inspection():
+    """Answer every process question asked inside from one process list. Nested
+    inspections share the outer one's list."""
+    if getattr(_inspecting, 'listing', None) is not None:
+        yield
+        return
+    _inspecting.listing = _Listing()
+    try:
+        yield
+    finally:
+        _inspecting.listing = None
+
+
+@contextmanager
+def _live():
+    """Signals and waits look at the processes as they are now, never at an inspection's list."""
+    kept = getattr(_inspecting, 'listing', None)
+    _inspecting.listing = None
+    try:
+        yield
+    finally:
+        _inspecting.listing = kept
+
+
+def _inspected():
+    found = getattr(_inspecting, 'listing', None)
+    return found.read() if found is not None else _OUTSIDE
+
+
+_OUTSIDE = object()
+
+
+def listed():
+    """Whether this computer's process list can be read."""
+    rows = _inspected()
+    if rows is _OUTSIDE:
+        return ps('-o', 'pid=', '-p', str(os.getpid())) is not None
+    return rows is not None
+
+
+def waited_out(running, seconds):
+    """Wait up to `seconds` for `running()` to turn false, looking less often as it goes on:
+    an ending process is usually gone at the first or second look. True when it did."""
+    deadline = time.monotonic() + seconds
+    pause = .05
+    while True:
+        if not running():
+            return True
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return False
+        time.sleep(min(pause, left))
+        pause = min(pause * 2, .5)
+
+
 def home_key():
     """Names this data root on each studio bridge's command line, so a bridge started
     for another data root can never be taken for one of these."""
@@ -73,11 +174,19 @@ def marker(identifier):
 
 
 def started(pid):
+    rows = _inspected()
+    if rows is not _OUTSIDE:
+        row = rows.get(pid) if rows else None
+        return row.started if row else None
     found = ps('-o', 'lstart=', '-p', str(pid))
     return found.strip() or None if found else None
 
 
 def command_of(pid):
+    rows = _inspected()
+    if rows is not _OUTSIDE:
+        row = rows.get(pid) if rows else None
+        return row.command.strip() or None if row else None
     found = ps('-ww', '-o', 'command=', '-p', str(pid))
     return found.strip() or None if found else None
 
@@ -88,7 +197,12 @@ def alive(pid):
     except (ProcessLookupError, PermissionError):
         return False
     # A finished process its parent has not collected yet is not running.
-    status = ps('-o', 'stat=', '-p', str(pid))
+    rows = _inspected()
+    if rows is _OUTSIDE:
+        status = ps('-o', 'stat=', '-p', str(pid))
+    else:
+        # Not listed reads as ps does for a missing process: confirmed by a second probe.
+        status = None if rows is None else rows[pid].stat if pid in rows else ''
     if not (status or '').strip():
         # It can exit between the first PID probe and ps. Missing process-list
         # access still means unknown/alive when a second PID probe succeeds.
@@ -155,35 +269,41 @@ def label(command):
 def descendant_jobs(pid, table=None):
     """Assistant jobs started, at any depth, under the studio process `pid`.
 
-    A job may run in its own session; it is still a descendant."""
+    A job may run in its own session; it is still a descendant. With no `table` (pid,
+    ppid, etime, command per line), the inspection's process list is read, with each
+    job's start time from the same list."""
     live = table is None
     if live:
-        table = ps('-axww', '-o', 'pid=,ppid=,etime=,command=')
-    if not table:
-        return []
-    rows, children = {}, {}
-    for line in table.splitlines():
-        parts = line.split(None, 3)
-        if len(parts) < 4:
-            continue
-        try:
-            number, parent, elapsed = int(parts[0]), int(parts[1]), seconds(parts[2])
-        except ValueError:
-            continue
-        rows[number] = (elapsed, parts[3])
-        children.setdefault(parent, []).append(number)
+        with inspection():
+            rows = _inspected()
+        if not rows:
+            return []
+    else:
+        rows = {}
+        for line in table.splitlines():
+            parts = line.split(None, 3)
+            if len(parts) < 4:
+                continue
+            try:
+                number, parent, elapsed = int(parts[0]), int(parts[1]), seconds(parts[2])
+            except ValueError:
+                continue
+            rows[number] = Row(parent, None, '', elapsed, None, parts[3])
+    children = {}
+    for number, row in rows.items():
+        children.setdefault(row.ppid, []).append(number)
     jobs, pending, seen = [], list(children.get(pid, ())), set()
     while pending:
         number = pending.pop(0)
         if number in seen:
             continue
         seen.add(number)
-        elapsed, command = rows[number]
-        name = assistant(command)
+        row = rows[number]
+        name = assistant(row.command)
         if name:
             # One job is the outermost assistant process; its own helpers are part of it.
-            jobs.append({'assistant': name, 'label': label(command), 'pid': number, 'seconds': elapsed,
-                         **({'started': started(number)} if live else {})})
+            jobs.append({'assistant': name, 'label': label(row.command), 'pid': number, 'seconds': row.seconds,
+                         **({'started': row.started} if live else {})})
             continue
         pending.extend(children.get(number, ()))
     return jobs
@@ -209,9 +329,13 @@ def end_jobs(jobs):
         pid = job.get('pid')
         if type(pid) is not int or pid <= 1:
             continue
-        if alive(pid):
-            if not job.get('started') or started(pid) != job['started'] \
-                    or assistant(command_of(pid) or '') != job['assistant']:
+        # Who it is now, from one process list, just before it would be signalled.
+        with _live(), inspection():
+            running = alive(pid)
+            same = running and bool(job.get('started')) and started(pid) == job['started'] \
+                and assistant(command_of(pid) or '') == job['assistant']
+        if running:
+            if not same:
                 continue
             try:
                 group = os.getpgid(pid)
@@ -221,22 +345,21 @@ def end_jobs(jobs):
                 stop_group(pid)
             elif group is not None:
                 stop_one(pid)
-        if not alive(pid):
-            gone.append(job)
+        with _live():
+            if not alive(pid):
+                gone.append(job)
     return gone
 
 
 def stop_one(pid):
-    for signalled, wait in ((signal.SIGTERM, WAIT), (signal.SIGKILL, 5)):
-        try:
-            os.kill(pid, signalled)
-        except (ProcessLookupError, PermissionError):
-            return
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline and alive(pid):
-            time.sleep(.1)
-        if not alive(pid):
-            return
+    with _live():
+        for signalled, wait in ((signal.SIGTERM, WAIT), (signal.SIGKILL, 5)):
+            try:
+                os.kill(pid, signalled)
+            except (ProcessLookupError, PermissionError):
+                return
+            if waited_out(lambda: alive(pid), wait):
+                return
 
 
 def describe_job(job):
@@ -272,16 +395,14 @@ def stop_group(pid):
     """Stop a recorded process group, led by `pid`, until none of it is running."""
     if pid == os.getpgrp():
         return
-    for signalled, wait in ((signal.SIGTERM, WAIT), (signal.SIGKILL, 5)):
-        try:
-            os.killpg(pid, signalled)
-        except (ProcessLookupError, PermissionError):
-            return
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline:
-            if not group_alive(pid):
+    with _live():
+        for signalled, wait in ((signal.SIGTERM, WAIT), (signal.SIGKILL, 5)):
+            try:
+                os.killpg(pid, signalled)
+            except (ProcessLookupError, PermissionError):
                 return
-            time.sleep(.1)
+            if waited_out(lambda: group_alive(pid), wait):
+                return
 
 
 def local_link(link):
@@ -295,16 +416,35 @@ def local_link(link):
 
 
 class Launcher:
+    """Opens, prepares, connects and stops studios.
+
+    Each studio has its own lock, held for the whole of opening, preparing, connecting or
+    stopping it, so connecting one studio never holds up opening or stopping another.
+    `self.state` guards only `children` and `closed`.
+
+    Lock order: a studio's lock, then `self.state`. `self.state` is never held across a
+    subprocess, a signal or a wait, and no studio lock is taken while it is held. No code
+    holds two studio locks at once: preparing and closing take them one at a time."""
+
     def __init__(self, network=None):
         self.network = network
         # Set once the home page is listening; until then no studio is told a port.
         self.home_port = None
         self.children = {}
-        self.lock = threading.RLock()
         self.closed = False
+        self.state = threading.Lock()
+        self.studio_locks = {}
+
+    def studio_lock(self, identifier):
+        with self.state:
+            return self.studio_locks.setdefault(identifier, threading.RLock())
+
+    def child(self, identifier):
+        with self.state:
+            return self.children.get(identifier)
 
     def running(self, identifier):
-        child = self.children.get(identifier)
+        child = self.child(identifier)
         return bool(child and child[0].poll() is None)
 
     def orphan(self, identifier):
@@ -322,17 +462,20 @@ class Launcher:
             target.unlink(missing_ok=True)
             return None
         pid = found.get('pid') if isinstance(found, dict) else None
-        if any(child[0].pid == pid for child in list(self.children.values())):
+        with self.state:
+            ours = [child[0].pid for child in self.children.values()]
+        if pid in ours:
             return None
-        try:
-            if type(pid) is not int or pid <= 1 or not alive(pid) or os.getpgid(pid) != pid:
-                raise ProcessLookupError
-        except (ProcessLookupError, PermissionError):
-            target.unlink(missing_ok=True)
-            return None
-        if not isinstance(found.get('started'), str) or not found['started']:
-            return None  # Never signal a process whose start was not recorded.
-        command, began = command_of(pid), started(pid)
+        with inspection():
+            try:
+                if type(pid) is not int or pid <= 1 or not alive(pid) or os.getpgid(pid) != pid:
+                    raise ProcessLookupError
+            except (ProcessLookupError, PermissionError):
+                target.unlink(missing_ok=True)
+                return None
+            if not isinstance(found.get('started'), str) or not found['started']:
+                return None  # Never signal a process whose start was not recorded.
+            command, began = command_of(pid), started(pid)
         if command is None or began is None:
             return None  # Unverifiable without ps: never signal it, keep the record.
         if marker(identifier) not in command or ' --home-data ' + home_key() not in command \
@@ -342,20 +485,22 @@ class Launcher:
         return pid
 
     def process(self, identifier):
-        child = self.children.get(identifier)
+        child = self.child(identifier)
         if child and child[0].poll() is None:
             return child[0].pid
         return self.orphan(identifier)
 
     def jobs(self, identifier):
         """Assistant jobs running under this studio, whether started here or earlier."""
-        pid = self.process(identifier)
-        return descendant_jobs(pid) if pid else []
+        with inspection():
+            pid = self.process(identifier)
+            return descendant_jobs(pid) if pid else []
 
     def stop(self, identifier):
         """Stop one studio. True when one was running."""
-        with self.lock:
-            child = self.children.pop(identifier, None)
+        with self.studio_lock(identifier):
+            with self.state:
+                child = self.children.pop(identifier, None)
             if child and child[0].poll() is None:
                 self.stop_process(child[0])
                 forget(identifier)
@@ -372,43 +517,53 @@ class Launcher:
     def clean_orphans(self, keep_busy=False):
         """Stop studios earlier Marketing Studio sessions of this data root left running.
 
-        With keep_busy, a studio with a running assistant job is left alone.
+        With keep_busy, a studio with a running assistant job is left alone. Every studio
+        is looked at from one process list before any is stopped.
         """
+        with inspection():
+            left = [(identifier, pid, descendant_jobs(pid)) for identifier, pid in
+                    ((identifier, self.orphan(identifier)) for identifier in catalog.STUDIOS) if pid]
         report = []
-        for identifier in catalog.STUDIOS:
-            pid = self.orphan(identifier)
-            if not pid:
-                continue
-            jobs = descendant_jobs(pid)
+        for identifier, pid, jobs in left:
             row = {'id': identifier, 'name': catalog.STUDIOS[identifier][0], 'jobs': jobs,
                    'stopped': not (keep_busy and jobs)}
             if row['stopped']:
-                stop_group(pid)
-                forget(identifier)
+                with self.studio_lock(identifier):
+                    stop_group(pid)
+                    forget(identifier)
                 # Assistants run in their own sessions, outside the studio's group.
                 row['jobs'] = end_jobs(jobs)
             report.append(row)
         return report
 
+    def is_closed(self):
+        with self.state:
+            return self.closed
+
     def open(self, identifier, preferences, shared, remote=False):
         """The studio's link, starting it first when it is not running. `remote` is a caller
         that reached Marketing Studio over the network bridge: only it is given, and only it
         starts, the studio's own bridge. Everyone else is given the loopback link."""
-        with self.lock:
-            if self.closed:
-                raise WorkspaceError('Marketing Studio is closing. Open it again to launch a studio.')
-            if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
-                raise WorkspaceError('Choose one of the studios shown on the home page.')
-            if self.running(identifier):
-                return self.link(identifier, self.children[identifier][1], remote)
+        closing = WorkspaceError('Marketing Studio is closing. Open it again to launch a studio.')
+        if self.is_closed():
+            raise closing
+        if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
+            raise WorkspaceError('Choose one of the studios shown on the home page.')
+        with self.studio_lock(identifier):
+            if self.is_closed():
+                raise closing
+            child = self.child(identifier)
+            if child and child[0].poll() is None:
+                return self.link(identifier, child[1], remote)
             root = catalog.locate(identifier, preferences.get('paths', {}))
             if root is None:
                 raise WorkspaceError('This studio was not found. Install it or set its folder in Settings.')
             name = catalog.STUDIOS[identifier][0]
-            left = self.orphan(identifier)
+            with inspection():
+                left = self.orphan(identifier)
+                jobs = descendant_jobs(left) if left else []
             if left:
                 # An earlier Marketing Studio left it running; its link died with that session.
-                jobs = descendant_jobs(left)
                 if jobs:
                     raise WorkspaceError(
                         f'{name} is still running from an earlier Marketing Studio session and is working: '
@@ -463,7 +618,9 @@ class Launcher:
                 if isinstance(failure, queue.Empty):
                     raise WorkspaceError(launch_problem(name + ' took too long to open. Try again.', log)) from failure
                 raise
-            self.children[identifier] = (process, link)
+            with self.state:
+                # Closing waits for this studio's lock, so it stops this child next.
+                self.children[identifier] = (process, link)
             record(identifier, process.pid)
             return self.link(identifier, link, remote)
 
@@ -488,43 +645,45 @@ class Launcher:
 
         Returns each studio's report by its identifier: {'prepared': True, 'workspace': …}
         and 'connect' when the studio keeps a different workspace, which only the Connect
-        action moves."""
-        with self.lock:
-            prepared = {}
-            for identifier in catalog.STUDIOS:
-                if only is not None and identifier != only:
-                    continue
-                root = catalog.locate(identifier, preferences.get('paths', {}))
-                if root is None:
-                    continue
+        action moves. Each studio's lock is held only while that studio is prepared."""
+        prepared = {}
+        for identifier in catalog.STUDIOS:
+            if only is not None and identifier != only:
+                continue
+            root = catalog.locate(identifier, preferences.get('paths', {}))
+            if root is None:
+                continue
+            with self.studio_lock(identifier):
                 result = self.bridge(identifier, root, shared, '--prepare', TIMEOUT,
                                      'Workspace setup took too long. Check the repository connection and try again.')
-                if result.get('prepared') is not True:
-                    raise WorkspaceError(catalog.STUDIOS[identifier][0] + ': ' + (
-                        result.get('error') or 'Workspace setup failed. Check Git and the studio installation.'))
-                prepared[identifier] = result
-            return prepared
+            if result.get('prepared') is not True:
+                raise WorkspaceError(catalog.STUDIOS[identifier][0] + ': ' + (
+                    result.get('error') or 'Workspace setup failed. Check Git and the studio installation.'))
+            prepared[identifier] = result
+        return prepared
 
     def connect(self, identifier, preferences, shared):
         """Connect one studio to the storage the shared settings name, through the studio's
         own join, carrying its work over. A studio running an assistant job is refused, and
         so is a running one when the process list cannot say; an idle running studio is
         stopped first, and the report says so."""
-        with self.lock:
-            if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
-                raise WorkspaceError('Choose one of the studios shown on the home page.')
+        if not isinstance(identifier, str) or identifier not in catalog.STUDIOS:
+            raise WorkspaceError('Choose one of the studios shown on the home page.')
+        with self.studio_lock(identifier):
             root = catalog.locate(identifier, preferences.get('paths', {}))
             name = catalog.STUDIOS[identifier][0]
             if root is None:
                 raise WorkspaceError('This studio was not found. Install it or set its folder in Settings.')
             stopped = False
-            pid = self.process(identifier)
+            with inspection():
+                pid = self.process(identifier)
+                readable = bool(pid) and listed()
+                jobs = descendant_jobs(pid) if readable else []
             if pid:
-                if ps('-o', 'pid=', '-p', str(pid)) is None:
+                if not readable:
                     raise WorkspaceError(f'{name} is running, and this computer cannot say whether it is '
                                          f'working on a job. Stop it first with: marketing-studio stop '
                                          f'--{identifier[0]}s, then connect.')
-                jobs = descendant_jobs(pid)
                 if jobs:
                     raise WorkspaceError(f'{name} is working: ' + ', '.join(map(describe_job, jobs))
                                          + '. Wait for it to finish, then connect.')
@@ -566,28 +725,47 @@ class Launcher:
         """Stop a child studio and every process left in its group."""
         if process.poll() is not None:
             return
-        deadline = time.monotonic() + WAIT
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=WAIT)
-            while time.monotonic() < deadline and group_alive(process.pid):
-                time.sleep(.1)
-            if not group_alive(process.pid):
+        with _live():
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                deadline = time.monotonic() + WAIT
+                process.wait(timeout=WAIT)
+                if waited_out(lambda: group_alive(process.pid), max(0, deadline - time.monotonic())):
+                    return
+            except ProcessLookupError:
                 return
-        except ProcessLookupError:
-            return
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=5)
 
     def close(self):
-        with self.lock:
+        """Stop every studio started here. No studio opens once this has begun. A studio
+        that is being opened, prepared or connected is stopped once that ends; every other
+        studio is stopped first, without waiting for it."""
+        with self.state:
             self.closed = True
-            for identifier, (process, _) in self.children.items():
-                self.stop_process(process)
-                forget(identifier)
-            self.children.clear()
+            identifiers = list(dict.fromkeys([*catalog.STUDIOS, *self.children]))
+        waiting = []
+        for identifier in identifiers:
+            lock = self.studio_lock(identifier)
+            if lock.acquire(blocking=False):
+                try:
+                    self.close_one(identifier)
+                finally:
+                    lock.release()
+            else:
+                waiting.append(identifier)
+        for identifier in waiting:
+            with self.studio_lock(identifier):
+                self.close_one(identifier)
+
+    def close_one(self, identifier):
+        with self.state:
+            child = self.children.pop(identifier, None)
+        if child:
+            self.stop_process(child[0])
+            forget(identifier)

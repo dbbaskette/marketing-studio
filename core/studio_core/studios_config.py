@@ -11,6 +11,7 @@ from json import decoder
 from pathlib import Path
 
 from studio_core.modules import fresh_module
+from studio_core.process_lock import backoff
 
 PRODUCT = globals().get("PRODUCT", "Studio")
 WorkspaceError = globals().get("WorkspaceError", ValueError)
@@ -223,6 +224,7 @@ def _locked():
                              'as it is.')
     try:
         deadline = time.monotonic() + WAIT
+        waits = backoff()
         while True:
             try:
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -231,7 +233,7 @@ def _locked():
                 if time.monotonic() >= deadline:
                     raise WorkspaceError(f'Another studio is changing {shown(path())}, so '
                                          'nothing was saved. Try again in a moment.')
-                time.sleep(0.05)
+                time.sleep(min(next(waits), max(0.0, deadline - time.monotonic())))
         yield
     finally:
         os.close(handle)

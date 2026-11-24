@@ -12,6 +12,18 @@ import threading
 import time
 
 WAIT = 10.0
+FIRST_WAIT = 0.005      # seconds before the first retry of a taken lock
+LONGEST_WAIT = 0.05     # the most any one retry waits; the total stays the lock's timeout
+
+
+def backoff(first: float = FIRST_WAIT, longest: float = LONGEST_WAIT):
+    """The waits between tries of a taken lock: 5 ms, doubling to 50 ms, then 50 ms each.
+    A lock held for a moment is taken soon after it is let go; one held long is asked for
+    no more often than before."""
+    wait = first
+    while True:
+        yield wait
+        wait = min(wait * 2, longest)
 
 
 class LockPathChanged(RuntimeError):
@@ -69,6 +81,7 @@ class ProcessRLock:
             path = Path(self._path())
             path.parent.mkdir(parents=True, exist_ok=True)
             handle = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+            waits = backoff()
             while True:
                 try:
                     fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -84,7 +97,7 @@ class ProcessRLock:
                         os.close(handle)
                         self._thread.release()
                         return False
-                    time.sleep(min(.05, remaining))
+                    time.sleep(min(next(waits), remaining))
         except BaseException:
             if handle is not None:
                 os.close(handle)

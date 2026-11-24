@@ -793,5 +793,141 @@ class HomeLibraryTests(LibraryCase):
             self.write('/api/library-hide', {'id': ident})
 
 
+class DoingEachJobOnceTests(LibraryCase):
+    """Counted, never timed: index builds, catalog.json reads, record reads and tidying."""
+
+    def catalog_reads(self):
+        real = store._json
+        reads = []
+
+        def counted(path, *args, **kwargs):
+            if Path(path).name == 'catalog.json':
+                reads.append(path)
+            return real(path, *args, **kwargs)
+        return mock.patch.object(store, '_json', counted), reads
+
+    def test_a_marketing_studio_library_request_indexes_once(self):
+        made = self.made()
+        made.add_upload('notes.txt', b'words here')
+        made.hide(made.catalog()['items'][0]['id'])
+        made.adopt('blog:old-post', 'blog', 'blog', 'imported', 'Old post', text='# Old\n')
+        with mock.patch.object(store.Library, '_index', autospec=True,
+                               side_effect=store.Library._index) as index:
+            found = context.answer('/api/library', {'filters': {}}, 'marketing')
+        self.assertEqual(index.call_count, 1)
+        self.assertEqual((found['total'], found['hidden'], found['imported']), (1, 1, True))
+        with mock.patch.object(store.Library, '_index', autospec=True,
+                               side_effect=store.Library._index) as index:
+            found = context.answer('/api/library', {'filters': {}}, 'blog')
+        self.assertEqual(index.call_count, 1)
+        self.assertNotIn('hidden', found)
+
+    def test_an_unchanged_catalog_is_parsed_once_and_a_changed_one_is_read_again(self):
+        made = self.made()
+        for name in ('one.txt', 'two.txt'):
+            made.add_upload(name, b'words in ' + name.encode())
+        made.catalog()      # rebuilt and written, so this process holds nothing of it yet
+        made.catalog()      # read and parsed once
+        patcher, reads = self.catalog_reads()
+        with patcher:
+            first = made.catalog()
+            library.opened().catalog()      # another request: another Library, the same file
+            library.opened().matching()
+        self.assertEqual(reads, [], 'the unchanged catalog.json was read again')
+        # Another process rewrites catalog.json: its stat changes, so it is read again.
+        cache = made._state() / 'catalog.json'
+        held = json.loads(cache.read_text())
+        held['entries'][0]['title'] = 'Written by another process'
+        cache.write_text(json.dumps(held))
+        with patcher:
+            titles = {row['title'] for row in made.catalog()['items']}
+            made.catalog()
+        self.assertEqual(len(reads), 1)
+        self.assertIn('Written by another process', titles)
+        self.assertEqual(first['total'], 2)
+
+    def test_a_revision_another_process_keeps_is_seen_at_once(self):
+        made = self.made()
+        made.add_upload('one.txt', b'first words')
+        self.assertEqual(made.catalog()['total'], 1)
+        code = ('import sys; sys.path.insert(0, sys.argv[1]);'
+                'from studio_core import document_library as l;'
+                'l.opened().retain("blog:other", "blog", "blog", "Other", "From a studio")')
+        done = subprocess.run([sys.executable, '-c', code, str(ROOT / 'core')], env={**os.environ},
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual({row['title'] for row in made.catalog()['items']}, {'one', 'Other'})
+
+    def test_keyed_and_uploaded_decide_from_revision_json_never_from_the_catalog(self):
+        made = self.made()
+        made.retain('blog:one', 'blog', 'blog', 'One', 'Words of one')
+        row = made.add_upload('kept.txt', b'kept words', studio='blog')
+        made.catalog()
+        # A hand-edited catalog.json whose signature still matches the documents on disk.
+        cache = made._state() / 'catalog.json'
+        held = json.loads(cache.read_text())
+        for entry in held['entries']:
+            entry.update(title='Edited by hand', revision=7, held={'title': 'Forged', 'original': {
+                'sha256': '0' * 64}, 'markdown': {'sha256': '0' * 64}})
+        cache.write_text(json.dumps(held))
+        self.assertEqual({item['title'] for item in made.catalog()['items']}, {'Edited by hand'})
+        found = made.keyed(['blog:one', 'blog:missing'])
+        uploads = made.uploaded('blog')
+        self.assertEqual(set(found), {'blog:one'})
+        self.assertEqual((found['blog:one']['revision'], found['blog:one']['title'],
+                          found['blog:one']['markdown'], found['blog:one']['whole']),
+                         (1, 'One', hashlib.sha256(b'Words of one').hexdigest(), True))
+        self.assertEqual(uploads, {hashlib.sha256(b'kept words').hexdigest():
+                                   {'id': row['id'], 'revision': 1}})
+
+    def test_preview_reads_its_revision_once(self):
+        made = self.made()
+        row = made.add_upload('kept.txt', b'kept words', studio='blog')
+        with mock.patch.object(store.Library, '_record', autospec=True,
+                               side_effect=store.Library._record) as read:
+            self.assertEqual(made.preview(row['id'])['text'].strip(), 'kept words')
+        self.assertEqual(read.call_count, 1)
+
+    def test_a_changed_answer_never_changes_the_next_one(self):
+        made = self.made()
+        made.retain('blog:one', 'blog', 'blog', 'One', 'Words of one', project={'id': 'one', 'title': 'One'})
+        made.add_upload('kept.txt', b'kept words')
+        made.catalog()
+        first = made.catalog()          # from the catalog this process keeps in memory
+        expected = json.loads(json.dumps(first))
+        for item in first['items']:
+            item['formats'].append('forged')
+            item['format_labels'].clear()
+            item['gaps'].append('forged')
+            if item['project']:
+                item['project']['title'] = 'Forged'
+        self.assertEqual(made.catalog(), expected)
+        self.assertEqual(library.opened().catalog(), expected)
+
+    def test_half_made_revisions_are_cleared_at_most_once_per_stale_interval(self):
+        made = self.made()
+        documents = made.root / 'documents'
+        documents.mkdir()
+        old = store.time.time() - store.STALE - 60
+
+        def stale(name):
+            folder = documents / name
+            folder.mkdir()
+            os.utime(folder, (old, old))
+            return folder
+
+        first = stale('.pending-first')
+        made.add_upload('one.txt', b'first words')
+        self.assertFalse(first.exists())
+        second = stale('.pending-second')
+        made.add_upload('two.txt', b'second words')
+        made.retain('blog:one', 'blog', 'blog', 'One', 'Words')
+        made.adopt('blog:old', 'blog', 'blog', 'imported', 'Old', text='# Old\n')
+        self.assertTrue(second.exists(), 'tidied again within the stale interval')
+        store._TIDIED[str(made.root)] -= store.STALE    # the interval has passed
+        made.add_upload('three.txt', b'third words')
+        self.assertFalse(second.exists())
+
+
 if __name__ == '__main__':
     unittest.main()
