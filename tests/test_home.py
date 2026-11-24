@@ -3,6 +3,7 @@ import http.client
 import json
 import os
 import tempfile
+import threading
 import unittest
 from email.message import Message
 from pathlib import Path
@@ -385,3 +386,109 @@ class SharedSettingsSaveTests(IsolatedHome):
         self.write('/api/shared', {'changes': {'person': {'name': 'Bea'},
                                                'brand': {'release': 'v9.9.9'}}, 'seen': seen})
         self.assertEqual(shared.path().read_text(), self.OVERRIDES.replace('"Ana"', '"Bea"'))
+
+
+class SlowPrepareTests(IsolatedHome):
+    """Preparing studios lets go of the home's lock: reads answer meanwhile, and a result
+    made for settings that changed meanwhile is not kept. Counted, never timed."""
+
+    def setUp(self):
+        super().setUp()
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.addCleanup(self.pool.shutdown, wait=True)
+        self.entered, self.release = threading.Event(), threading.Event()
+        self.addCleanup(self.release.set)
+        self.during = None   # what to do while the prepare is in hand, on the test's thread
+
+    def slow(self, preferences, values, only=None):
+        self.entered.set()
+        if not self.release.wait(10):
+            raise AssertionError('The test never let the prepare finish')
+        return {'blog': {'prepared': True, 'workspace': {}}}
+
+    def read(self, path):
+        # Answered on another thread, so a read stuck behind the lock fails instead of hanging.
+        return json.loads(self.pool.submit(self.page.read, path, lambda _: None).result(timeout=5)[2])
+
+    def started(self, path, sent):
+        with mock.patch.object(self.launcher, 'prepare', side_effect=self.slow):
+            reply = self.pool.submit(self.write, path, sent)
+            self.assertTrue(self.entered.wait(5), 'The prepare did not start')
+            found = self.during() if self.during else None
+            self.assertFalse(reply.done(), 'The prepare was still in hand')
+            self.release.set()
+            return reply, found
+
+    def test_home_and_this_computer_answer_while_a_slow_prepare_runs(self):
+        self.write('/api/shared', {'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})
+        self.write('/api/setup', {'done': True})
+        self.during = lambda: (self.read('/api/home'), self.read('/api/computer'))
+        reply, (home, computer) = self.started(
+            '/api/shared', {'changes': {'team': {'repository': str(self.root / 'team.git')}},
+                            'seen': shared.read()[0]})
+        self.assertIn('studios', home)
+        self.assertIn('computer', computer)
+        self.assertEqual(reply.result(timeout=5)['prepared'], {'blog': {'prepared': True, 'workspace': {}}})
+
+    def test_finishing_setup_answers_reads_while_it_prepares(self):
+        shared.update({'local': {'root': str(self.root / 'work')}})
+        self.during = lambda: self.read('/api/home')
+        reply, home = self.started('/api/setup', {'done': True, 'prepare': True})
+        self.assertFalse(home['setup']['done'])
+        found = reply.result(timeout=5)
+        self.assertTrue(found['setup']['done'])
+        self.assertIn('prepared', found)
+        self.assertTrue(state.read()['done'])
+
+    def test_settings_changed_during_setup_keep_the_newer_state(self):
+        shared.update({'local': {'root': str(self.root / 'work')}})
+        install = self.root / 'installed-blog'
+        (install / 'scripts').mkdir(parents=True)
+        (install / 'scripts/start_studio.py').write_text('# fixture')
+        self.during = lambda: self.write('/api/paths', {'paths': {'blog': str(install)}})
+        reply, _ = self.started('/api/setup', {'done': True, 'prepare': True})
+        with self.assertRaisesRegex(WorkspaceError, 'changed while the studios were being prepared'):
+            reply.result(timeout=5)
+        kept = state.read()
+        self.assertEqual(kept['paths'], {'blog': str(install)})
+        self.assertFalse(kept['done'])
+        self.assertFalse(self.page.snapshot()['setup']['done'])
+
+    def test_storage_changed_again_during_a_prepare_is_not_reported_as_done(self):
+        self.write('/api/shared', {'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})
+        self.write('/api/setup', {'done': True})
+        newer = str(self.root / 'newer')
+        self.during = lambda: shared.update({'local': {'root': newer}})
+        reply, _ = self.started('/api/shared', {'changes': {'team': {'repository': str(self.root / 'team.git')}},
+                                                'seen': shared.read()[0]})
+        found = reply.result(timeout=5)
+        self.assertNotIn('prepared', found)
+        self.assertIn('changed while the studios were being prepared', found['prepare_problem'])
+        self.assertEqual(found['shared']['local']['root'], newer)
+
+
+class SnapshotCostTests(IsolatedHome):
+    def test_one_snapshot_looks_each_thing_up_once_and_runs_no_process_list(self):
+        shared.update({'local': {'root': str(self.root / 'work')}, 'assistant': {'agent': 'codex'}})
+        self.write('/api/setup', {'done': True})
+        installed = sum(row['installed'] for row in self.page.snapshot()['studios'])
+        self.assertGreater(installed, 1, 'The bundled studios are found, so the cards repeat the lookups')
+        from marketing_studio import launcher as launching
+        with mock.patch('marketing_studio.page.runtime.assistant_default', return_value='claude') as default, \
+                mock.patch('marketing_studio.page.runtime.assistant_command', return_value='/synthetic/codex') as command, \
+                mock.patch('marketing_studio.page.shutil.which', return_value='/synthetic/git') as which, \
+                mock.patch.object(launching, 'ps', side_effect=AssertionError('No process list')):
+            found = self.page.snapshot()
+        self.assertEqual(default.call_count, 1)
+        self.assertEqual(command.call_count, 1)
+        self.assertEqual([call.args for call in which.call_args_list], [('git',)])
+        self.assertEqual(found['assistant_default'], 'claude')
+        self.assertTrue(all(row['readiness']['state'] == 'done' for row in found['studios'] if row['installed']))
+
+    def test_open_reads_the_shared_settings_once(self):
+        shared.update({'local': {'root': str(self.root / 'work')}})
+        self.write('/api/setup', {'done': True})
+        with mock.patch('marketing_studio.page.shared.read', wraps=shared.read) as read, \
+                mock.patch.object(self.launcher, 'open', return_value='http://127.0.0.1:9/#' + 'a' * 40):
+            self.write('/api/open', {'studio': 'blog'})
+        self.assertEqual(read.call_count, 1)

@@ -61,14 +61,21 @@ def request(data, action):
             return json.loads(stream.readline(4097))
 
 
+WORKERS = 8      # commands answered at once; a slow start never holds up status
+BUSY_WAIT = 2    # seconds a command waits for a free worker before it is told to retry
+BUSY = 'Marketing Studio is busy with other commands. Try again in a moment.'
+
+
 class Control:
     def __init__(self, data, handle, shutdown=interrupt):
-        """`handle` answers each request with a reply; after a shutdown reply is sent,
-        `shutdown` is called from this thread."""
+        """`handle` answers each request with a reply, each on its own worker thread, at
+        most WORKERS at once; after a shutdown reply is sent, `shutdown` is called from
+        that request's thread."""
         self.path = address(data)
         self.handle = handle
         self.shutdown = shutdown
         self.stopped = threading.Event()
+        self.workers = threading.BoundedSemaphore(WORKERS)
         # The caller holds the home singleton lock before clearing a stale socket.
         if self.path.exists():
             info = self.path.lstat()
@@ -95,15 +102,47 @@ class Control:
                 continue
             except OSError:
                 return
-            action = None
+            if not self.workers.acquire(timeout=BUSY_WAIT):
+                # Every worker is taken: the command is answered, never dropped unread.
+                self.refuse(client)
+                continue
+            try:
+                threading.Thread(target=self.answer, args=(client,), daemon=True).start()
+            except BaseException:
+                self.workers.release()
+                client.close()
+                raise
+
+    @staticmethod
+    def read(client):
+        client.settimeout(2)
+        with client.makefile('rb') as stream:
+            raw = stream.readline(4097)
+        if len(raw) > 4096:
+            raise ValueError('The CLI request is too large.')
+        return json.loads(raw)
+
+    @staticmethod
+    def reply(client, result):
+        try:
+            client.sendall(json.dumps(result).encode() + b'\n')
+        except OSError:
+            pass
+
+    def refuse(self, client):
+        with client:
+            try:
+                self.read(client)
+            except Exception:
+                pass
+            self.reply(client, {'error': BUSY})
+
+    def answer(self, client):
+        action, result = None, None
+        try:
             with client:
-                client.settimeout(2)
                 try:
-                    with client.makefile('rb') as stream:
-                        raw = stream.readline(4097)
-                    if len(raw) > 4096:
-                        raise ValueError('The CLI request is too large.')
-                    action = json.loads(raw)
+                    action = self.read(client)
                     if not valid(action):
                         action = None
                         raise ValueError('Choose a supported studio command.')
@@ -112,13 +151,12 @@ class Control:
                         result = {'opened': True}
                 except Exception as failure:
                     result = {'error': str(failure)}
-                try:
-                    client.sendall(json.dumps(result).encode() + b'\n')
-                except OSError:
-                    pass
-            if action and action['command'] == 'shutdown' and 'error' not in result:
-                # The reply is out first: the caller learns it was accepted, then it stops.
-                self.shutdown()
+                self.reply(client, result)
+        finally:
+            self.workers.release()
+        if action and action['command'] == 'shutdown' and 'error' not in result:
+            # The reply is out first: the caller learns it was accepted, then it stops.
+            self.shutdown()
 
     def close(self):
         self.stopped.set()

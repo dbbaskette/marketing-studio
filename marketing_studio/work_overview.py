@@ -1,6 +1,7 @@
 """Bounded summary-only adapters for the launchpad; no engine imports or processes."""
 import os
 from pathlib import Path
+import threading
 import time
 from urllib.parse import quote, urlsplit, urlunsplit
 from studio_core import work_summary, intake_drafts
@@ -52,8 +53,54 @@ def listing(identifier):
         'folders_read':visited,'indexed_candidates':len(candidates),'seconds':round(time.monotonic()-started,4)}
 
 
-def snapshot(studios):
-    return {row['id']:listing(row['id']) for row in studios if row.get('installed')}
+# The home page asks every 5 seconds, from each open tab and phone. A studio's listing is
+# reused while nothing a cheap look can see has changed, for at most FRESH_SECONDS: the
+# look sees saved work added or removed, every summary a studio saves (its index), private
+# drafts and a moved workspace, and the age bound covers what it cannot see, such as older
+# work rewritten in place. Changes made through Marketing Studio itself read it fresh.
+FRESH_SECONDS = 10
+_kept = {}
+_keeping = threading.Lock()
+
+
+def _seen(path):
+    try:
+        found = os.stat(path, follow_symlinks=False)
+    except OSError:
+        return None
+    return (found.st_ino, found.st_mtime_ns, found.st_size)
+
+
+def freshness(identifier):
+    """What a cached listing was made from: the studio's workspace record and a few
+    stats. No folder is listed and no saved work is read."""
+    data = workspaces.data_root(identifier)
+    remembered = workspaces.remembered(identifier)
+    key = [str(data), _seen(data / 'workspace.json'), _seen(data / 'page.json'),
+           _seen(data / 'intake-drafts'), remembered and remembered.get('root')]
+    if remembered:
+        folder = Path(remembered['root']) / ('projects' if identifier == 'infographic'
+                                             else 'articles' if identifier == 'blog' else '')
+        index = work_summary.index_root(folder)
+        key += [_seen(folder), *(_seen(index / shelf) for shelf in work_summary.STATES)]
+    return tuple(key)
+
+
+def cached(identifier, fresh=False):
+    key = freshness(identifier)
+    now = time.monotonic()
+    with _keeping:
+        kept = _kept.get(identifier)
+    if not fresh and kept and kept[0] == key and now - kept[1] < FRESH_SECONDS:
+        return kept[2]
+    found = listing(identifier)
+    with _keeping:
+        _kept[identifier] = (key, now, found)
+    return found
+
+
+def snapshot(studios, fresh=False):
+    return {row['id']:cached(row['id'], fresh) for row in studios if row.get('installed')}
 
 
 def link(identifier, ident, base):

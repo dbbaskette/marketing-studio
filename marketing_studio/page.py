@@ -5,6 +5,7 @@ import base64
 import binascii
 import threading
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
@@ -24,6 +25,18 @@ BRAND_ROUTES = ('list', 'start', 'work', 'source', 'keep', 'extract', 'interpret
                 'save', 'push', 'discard', 'file')
 REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, where the sources, '
                  'your assistant and Git are. Open Marketing Studio there.')
+CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
+                           'result was not kept. Review the settings shown now and save again.')
+
+
+@contextmanager
+def released(lock):
+    """Let others take `lock` while a slow step runs, then take it back."""
+    lock.release()
+    try:
+        yield
+    finally:
+        lock.acquire()
 
 
 class Home(server.Page):
@@ -68,12 +81,13 @@ class Home(server.Page):
                 'local': (values.get('local') or {}).get('root'), 'share': values.get('share')}
 
     @staticmethod
-    def readiness(row, problem, done, agent):
+    def readiness(row, problem, done, agent, found=None):
         """What a launch card can honestly say before the studio opens, and how to recover.
 
         Only local launch prerequisites are looked at: shared setup, the chosen assistant's
         command and Git on PATH. Nothing is run, signed in to, installed or started; account
-        sign-in and task tools are each studio's to check when a task needs them."""
+        sign-in and task tools are each studio's to check when a task needs them. `found`
+        is a callable giving (the assistant's command, Git), looked up once per snapshot."""
         if not row['installed']:
             return {'state': 'off', 'label': 'Not installed',
                     'detail': 'Install it yourself to open it here. Marketing Studio never installs or updates studios.',
@@ -86,9 +100,9 @@ class Home(server.Page):
             return {'state': 'review', 'label': 'Needs setup',
                     'detail': 'Finish shared setup once for all studios.',
                     'action': {'view': 'settings', 'label': 'Finish shared setup'}}
-        missing = [name for name, found in ((runtime.ASSISTANTS.get(agent, 'The assistant'),
-                                             runtime.assistant_command(agent)),
-                                            ('Git', shutil.which('git'))) if not found]
+        command, git = found() if found else (runtime.assistant_command(agent), shutil.which('git'))
+        missing = [name for name, there in ((runtime.ASSISTANTS.get(agent, 'The assistant'), command),
+                                            ('Git', git)) if not there]
         if missing:
             return {'state': 'review', 'label': 'Needs setup',
                     'detail': f"{' and '.join(missing)} {'was' if len(missing) == 1 else 'were'} not found on this computer.",
@@ -98,24 +112,33 @@ class Home(server.Page):
                           'Sign-in is checked when a task needs it.',
                 'action': None}
 
-    def snapshot(self):
+    def snapshot(self, fresh=False):
+        """Everything the home page shows. Each computer lookup is made once per snapshot;
+        `fresh` reads saved work again rather than reusing a recent look."""
         preferences = state.read()
         values, problem = shared.read()
         studios = catalog.describe(preferences.get('paths', {}), self.launcher.running)
         done = not problem and self.configured(values)
-        agent=(values.get('assistant') or {}).get('agent') or runtime.assistant_default(state.data_root())
+        default = runtime.assistant_default(state.data_root())
+        agent = (values.get('assistant') or {}).get('agent') or default
+        looked = []
+
+        def found():
+            if not looked:
+                looked.append((runtime.assistant_command(agent), shutil.which('git')))
+            return looked[0]
         for row in studios:
-            row['readiness'] = self.readiness(row, problem, done, agent)
+            row['readiness'] = self.readiness(row, problem, done, agent, found)
             # Read from each studio's own records: never started, never guessed from a folder's name.
             row['workspace'] = workspaces.connection(row['id'], values) if done and row['installed'] else None
-        return {'studios': studios, 'work_overview': work_overview.snapshot(studios),
-                'shared': shared_preferences.without_retired(values), 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
+        return {'studios': studios, 'work_overview': work_overview.snapshot(studios, fresh=fresh),
+                'shared': shared_preferences.without_retired(values), 'shared_problem': problem, 'setup': {**preferences, 'done': done},
                 # Each kind of work as the form fills it in, with the kinds not yet saved.
                 'models_shown': None if problem else shared_preferences.model_profiles.shown(values),
                 'computer': self.computer(False), 'efforts': validation.EFFORTS,
                 # Whether a Gemini key is here and where from; never the key.
-                'graphics': graphics.snapshot(values, runtime.assistant_default(state.data_root())),
-                'assistant_default': runtime.assistant_default(state.data_root()),
+                'graphics': graphics.snapshot(values, default),
+                'assistant_default': default,
                 # The private link is this computer's to show; the phone already holds it.
                 'network': self.launcher.network.snapshot(private=not getattr(self.caller, 'remote', False))
                 if self.launcher.network else None}
@@ -318,9 +341,9 @@ class Home(server.Page):
         if path == '/api/open':
             with self.changes:
                 preferences = state.read()
-                if not self.configured(shared.read()[0]):
-                    raise WorkspaceError('Finish shared setup before opening a studio.')
                 values, problem = shared.read()
+                if not self.configured(values):
+                    raise WorkspaceError('Finish shared setup before opening a studio.')
                 if problem:
                     raise WorkspaceError(problem)
                 # This computer keeps the loopback link; only a phone is given a studio's bridge.
@@ -342,7 +365,11 @@ class Home(server.Page):
                     raise WorkspaceError('Finish shared setup before connecting a studio.')
             result = self.launcher.connect(sent.get('studio'), preferences, values)
             with self.changes:
-                return server.as_json(200, {**self.snapshot(), 'connected': result})
+                return server.as_json(200, {**self.snapshot(fresh=True), 'connected': result})
+        # Preparing studios runs each one's bridge in turn and can take minutes. The settings
+        # it needs are read under the lock, the lock is let go while it runs, so Home and
+        # This computer keep answering, and on taking it back the outcome is kept only when
+        # the settings it was made for still stand.
         with self.changes:
             if path == '/api/shared':
                 before = shared.read()[0]
@@ -362,25 +389,41 @@ class Home(server.Page):
                     # The storage changed after setup: studios without a workspace get one
                     # there now, and the cards say which ones keep a different workspace.
                     outcome = {}
-                    try:
-                        outcome['prepared'] = self.launcher.prepare(kept, values)
-                    except WorkspaceError as failure:
-                        outcome['prepare_problem'] = str(failure)
-                    return server.as_json(200, {**self.snapshot(), **outcome})
+                    with released(self.changes):
+                        try:
+                            outcome['prepared'] = self.launcher.prepare(kept, values)
+                        except WorkspaceError as failure:
+                            outcome['prepare_problem'] = str(failure)
+                    now, problem = shared.read()
+                    if problem or self.storage(now) != self.storage(values) \
+                            or state.read().get('paths', {}) != kept.get('paths', {}):
+                        # A newer save is shown instead, and prepares for itself.
+                        outcome = {'prepare_problem': CHANGED_WHILE_PREPARING}
+                    return server.as_json(200, {**self.snapshot(fresh=True), **outcome})
             elif path == '/api/setup':
                 if type(sent.get('done')) is not bool:
                     raise WorkspaceError('Choose whether setup is complete.')
                 kept, outcome = state.read(), {}
+
+                def prepare(values):
+                    if sent.get('prepare') is not True:
+                        return
+                    with released(self.changes):
+                        report = self.launcher.prepare(kept, values)
+                    # Raised before setup is marked complete: nothing is recorded.
+                    if state.read() != kept:
+                        raise WorkspaceError(CHANGED_WHILE_PREPARING)
+                    outcome['prepared'] = report
                 try:
                     if sent['done']:
-                        shared_preferences.finish(shared, lambda values: outcome.update(
-                            prepared=self.launcher.prepare(kept, values)) if sent.get('prepare') is True else None)
+                        # Shared settings changed meanwhile are refused by its own guard.
+                        shared_preferences.finish(shared, prepare)
                     else:
                         shared.update({'setup': {'version': 0}})
                 except ValueError as failure:
                     raise WorkspaceError(str(failure)) from failure
                 state.save({**kept, 'done': sent['done']})
-                return server.as_json(200, {**self.snapshot(), **outcome})
+                return server.as_json(200, {**self.snapshot(fresh=True), **outcome})
             elif path == '/api/paths':
                 paths = sent.get('paths')
                 if not isinstance(paths, dict) or set(paths) - catalog.STUDIOS.keys():
@@ -392,4 +435,4 @@ class Home(server.Page):
                         raise WorkspaceError('That folder does not contain the studio launcher.')
                 kept = state.read()
                 state.save({**kept, 'paths': {**kept.get('paths', {}), **paths}})
-            return server.as_json(200, self.snapshot())
+            return server.as_json(200, self.snapshot(fresh=True))

@@ -212,6 +212,56 @@ class CliTests(Disposable):
         self.assertEqual(control.request(self.data, {'command': 'shutdown'}), {'error': 'Not now.'})
         self.assertEqual(called, [])
 
+    def slow_start(self):
+        """A handler whose start waits until released, and that answers state at once."""
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def handle(action):
+            if action['command'] == 'start':
+                entered.set()
+                release.wait(30)
+                return {'started': True}
+            return {'answered': action['command']}
+        return handle, entered, release
+
+    def in_background(self, action):
+        replies = []
+        sender = threading.Thread(target=lambda: replies.append(control.request(self.data, action)), daemon=True)
+        sender.start()
+        self.addCleanup(sender.join, 5)
+        return sender, replies
+
+    @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
+    def test_status_answers_while_a_start_is_slow(self):
+        handle, entered, release = self.slow_start()
+        ipc = control.Control(self.data, handle, shutdown=lambda: None)
+        self.addCleanup(ipc.close)
+        sender, replies = self.in_background({'command': 'start', 'studio': 'training'})
+        self.assertTrue(entered.wait(5))
+        self.assertEqual(control.request(self.data, {'command': 'state'}), {'answered': 'state'})
+        self.assertTrue(sender.is_alive(), 'The start was still in hand when state answered')
+        self.assertEqual(replies, [])
+        release.set()
+        sender.join(5)
+        self.assertEqual(replies, [{'started': True}])
+
+    @unittest.skipUnless(UNIX, 'Local sockets are not permitted here.')
+    def test_a_full_pool_answers_busy_and_drops_nothing(self):
+        handle, entered, release = self.slow_start()
+        with mock.patch.object(control, 'WORKERS', 1):
+            ipc = control.Control(self.data, handle, shutdown=lambda: None)
+        self.addCleanup(ipc.close)
+        sender, replies = self.in_background({'command': 'start', 'studio': 'training'})
+        self.assertTrue(entered.wait(5))
+        with mock.patch.object(control, 'BUSY_WAIT', .05):
+            self.assertEqual(control.request(self.data, {'command': 'state'}), {'error': control.BUSY})
+        release.set()
+        sender.join(5)
+        self.assertEqual(replies, [{'started': True}])
+        # Its worker is free again; a command arriving as it is freed waits for it briefly.
+        self.assertEqual(control.request(self.data, {'command': 'state'}), {'answered': 'state'})
+
     def test_long_data_root_has_private_short_socket_path(self):
         long = self.data / ('long' * 50)
         long.mkdir()
