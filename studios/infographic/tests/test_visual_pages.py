@@ -307,6 +307,13 @@ class VisualPageTests(Isolated):
             for kind in ("process", "timeline", "parts", "comparison", "concept"):
                 with self.subTest(preset=preset, kind=kind):
                     p = project(self.store, kind, preset)
+                    if preset == "social":
+                        # A social card suits one or two short blocks; this fuller story is
+                        # refused as too dense, saying how much to shorten.
+                        from runner.contracts import TooDense
+                        with self.assertRaises(TooDense):
+                            scene.plan(p, arrangement="infographic")
+                        continue
                     p["scene"] = scene.plan(p, arrangement="infographic")
                     output = self.temp / (preset + "-" + kind)
                     result = render.render(
