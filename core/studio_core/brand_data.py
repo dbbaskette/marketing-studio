@@ -6,6 +6,8 @@ What a caller needs to know
     brand_data.bring(address)     # on the person's request: clone or update it, and record it
     brand_data.harness_folder()   # the folder Harness Brand reads by itself, or None
     brand_data.chosen(address)    # `place(address)`, or Harness Brand's folder with no address
+    brand_data.status(address)    # what Shared settings' Brand card says of it; changes nothing
+    brand_data.saved(before, after)   # after a save: a new folder on this computer is recorded
 
 - The shared setting `brand.brands` names the repository: an https or ssh Git address, or an
   absolute folder on this computer. A folder is used as it is and never changed.
@@ -21,6 +23,10 @@ What a caller needs to know
   the local brands folder `harness-brand data --install` fills. So Marketing Studio, the
   studios, the brand shortcuts and Harness Brand run by hand all read one folder. `bring`
   then uses that folder as it is and records nothing.
+- Saving a folder on this computer as `brand.brands` records it for Harness Brand as part of
+  the save (`saved`), when it holds brands. A Git address is only saved: its brands are
+  fetched by `bring`, on the person's request, and `status` says until then that they have
+  not been fetched yet.
 - A brands folder holds one folder per brand with its Harness Brand pack (`<id>/pack/`)
   or rebranding profile (`<id>/rebrand/`, or `<id>/apply-brand/` as older brands folders
   have it); `bring` refuses a repository that holds none.
@@ -182,6 +188,60 @@ def _following() -> dict:
     if not found:
         raise preferences.WorkspaceError(f'{folder} holds no brands: no folder with a pack/ or rebrand/ in it.')
     return {'folder': str(folder), 'brands': found, 'action': 'used', 'following': True}
+
+
+def _same(one: Path | None, other: Path) -> bool:
+    try:
+        return one is not None and one.resolve() == other.resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
+def status(address) -> dict:
+    """What the Brand card in Shared settings says of the saved brands folder. Nothing is
+    fetched, run or recorded. {'state': 'none' | 'following' | 'local' | 'remote', ...}:
+    'folder', 'brands' (ids), 'read' (Harness Brand reads this folder), 'exists', and for a
+    Git address 'address' and 'fetched' (its copy is on this computer)."""
+    reads = harness_folder()
+    if not isinstance(address, str) or not address.strip():
+        if reads is None:
+            return {'state': 'none', 'said': NO_FOLDER}
+        return {'state': 'following', 'folder': str(reads), 'exists': reads.is_dir(),
+                'brands': brands(reads), 'read': True}
+    address = address.strip()
+    try:
+        folder = place(address)
+    except ValueError as failure:
+        return {'state': 'none', 'said': str(failure)}
+    if _local(address):
+        return {'state': 'local', 'folder': str(folder), 'exists': folder.is_dir(),
+                'brands': brands(folder), 'read': _same(reads, folder)}
+    fetched = (folder / '.git').exists()
+    return {'state': 'remote', 'address': address, 'folder': str(folder), 'fetched': fetched,
+            'exists': folder.is_dir(), 'brands': brands(folder) if fetched else [],
+            'read': fetched and _same(reads, folder)}
+
+
+def saved(before: dict, after: dict) -> dict | None:
+    """After Shared settings were saved: when `brand.brands` changed to a folder on this
+    computer that holds brands, Harness Brand is told to read it, as Get brands does. A Git
+    address is never fetched here. None when there was nothing to do; otherwise what was done
+    ({'folder', 'brands', 'action'}) or {'problem': sentence}. Never raises: the save stands."""
+    def named(values):
+        brand = (values or {}).get('brand') if isinstance(values, dict) else None
+        value = brand.get('brands') if isinstance(brand, dict) else None
+        return value.strip() if isinstance(value, str) and value.strip() else None
+    address = named(after)
+    if address is None or address == named(before) or not _local(address):
+        return None
+    folder = Path(address).expanduser()
+    if not folder.is_dir() or not brands(folder):
+        # A folder that holds no brands yet is kept as it is: Brands can make the first one.
+        return None
+    try:
+        return bring(address)
+    except ValueError as failure:
+        return {'problem': str(failure)}
 
 
 def _bring(address) -> dict:

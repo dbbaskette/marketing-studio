@@ -13,7 +13,7 @@ GIT = {'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.com', 'GIT_C
        'GIT_COMMITTER_EMAIL': 'test@example.com', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
 
 
-class BrandDataTests(IsolatedHome):
+class BrandFolders(IsolatedHome):
     def setUp(self):
         super().setUp()
         config = mock.patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config'), **GIT})
@@ -42,6 +42,8 @@ class BrandDataTests(IsolatedHome):
     def recorded(self) -> str:
         return (self.root / 'config' / 'harness-brand' / 'data').read_text()
 
+
+class BrandDataTests(BrandFolders):
     def test_a_brand_with_only_a_rebranding_profile_is_a_brand(self):
         # Harness Brand 1.1 keeps a brand's rebranding profile in `rebrand/`, beside `pack/`.
         folder = self.brands_folder(self.root / 'mixed', 'authored')
@@ -133,3 +135,69 @@ class BrandDataTests(IsolatedHome):
         self.assertIn('id="get-brands"', page)
         self.assertIn("'skill', 'brands']", (Path(__file__).parents[1] / 'core' / 'studio_core' / 'setup_web' / 'app.js').read_text())
         self.assertNotIn('brands', json.dumps(shared.read()[0]))
+
+
+class OnePassBrandCardTests(BrandFolders):
+    """Shared settings' Brand card: Save makes Harness Brand read a brands folder on this
+    computer; a Git address is only saved, and the card says its brands are not fetched yet."""
+
+    def setUp(self):
+        super().setUp()
+        named = mock.patch.dict(os.environ, {'HARNESS_BRAND_DATA': ''})
+        named.start()
+        self.addCleanup(named.stop)
+        nobody = mock.patch.object(brand_data.Path, 'home', return_value=self.root / 'nobody')
+        nobody.start()
+        self.addCleanup(nobody.stop)
+
+    def test_saving_a_folder_with_brands_records_it_as_part_of_save(self):
+        folder = self.brands_folder(self.root / 'brands', 'acme', 'other')
+        with mock.patch('subprocess.run') as run:
+            saved = self.write('/api/shared', {'changes': {'brand': {'brands': str(folder)}}, 'seen': {}})
+            run.assert_not_called()
+        self.assertEqual(saved['brands_saved'], {'folder': str(folder), 'brands': ['acme', 'other'], 'action': 'used'})
+        self.assertEqual(self.recorded(), f'{folder}\n')
+        self.assertEqual(brand_data.status(str(folder)), {
+            'state': 'local', 'folder': str(folder), 'exists': True, 'brands': ['acme', 'other'], 'read': True})
+        # Saving another value records nothing more.
+        again = self.write('/api/shared', {'changes': {'person': {'name': 'Ana'}}, 'seen': shared.read()[0]})
+        self.assertNotIn('brands_saved', again)
+
+    def test_a_folder_without_brands_is_saved_and_not_recorded(self):
+        empty = self.root / 'new-brands'
+        saved = self.write('/api/shared', {'changes': {'brand': {'brands': str(empty)}}, 'seen': {}})
+        self.assertNotIn('brands_saved', saved)
+        self.assertEqual(shared.read()[0]['brand']['brands'], str(empty))
+        self.assertFalse((self.root / 'config' / 'harness-brand' / 'data').exists())
+        self.assertEqual(brand_data.status(str(empty)), {
+            'state': 'local', 'folder': str(empty), 'exists': False, 'brands': [], 'read': False})
+
+    def test_a_repository_address_is_saved_unfetched_and_the_lookup_says_so(self):
+        from studio_core import brand_catalog
+        address = 'https://example.com/org/brands.git'
+        with mock.patch('subprocess.run') as run, mock.patch('subprocess.Popen') as start:
+            saved = self.write('/api/shared', {'changes': {'brand': {'brands': address}}, 'seen': {}})
+            run.assert_not_called()
+            start.assert_not_called()
+        self.assertNotIn('brands_saved', saved)
+        with mock.patch.object(brand_catalog, 'choices', return_value={'skills': [], 'problem': None}):
+            looked = self.write('/api/brands', {})
+        self.assertEqual(looked['store']['state'], 'remote')
+        self.assertEqual((looked['store']['address'], looked['store']['fetched'], looked['store']['brands']),
+                         (address, False, []))
+        self.assertFalse((self.root / 'data' / 'brands').exists())
+
+    def test_status_follows_harness_brand_with_nothing_set(self):
+        self.assertEqual(brand_data.status(None)['state'], 'none')
+        folder = self.brands_folder(self.root / 'theirs', 'acme')
+        brand_data.record(folder)
+        self.assertEqual(brand_data.status(''), {'state': 'following', 'folder': str(folder), 'exists': True,
+                                                 'brands': ['acme'], 'read': True})
+
+    def test_a_fetched_repository_is_said_with_its_brands(self):
+        origin = self.remote('acme')
+        with mock.patch.object(brand_data, '_local', return_value=False):
+            brand_data.bring(str(origin))
+            found = brand_data.status(str(origin))
+        self.assertEqual((found['state'], found['fetched'], found['brands'], found['read']),
+                         ('remote', True, ['acme'], True))

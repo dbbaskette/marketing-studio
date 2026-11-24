@@ -90,8 +90,7 @@
 }
 
 #model-profiles > * + *,
-.setup-more > * + *,
-#brand-choices > * + * {
+.setup-more > * + * {
   margin-top: 0.6rem;
 }
 

@@ -258,6 +258,7 @@ function show(next) {
   }
   $('#prepare-note').hidden = !setup || step !== 2;
   describeAdvanced(); saveState();
+  if (view === 'settings' && snapshot && (!setup || step === 2)) void lookUpBrands();
   // Model lists are read only when Models and reasoning is open: browsing asks no assistant.
   if (view === 'settings' && !setup && $('#models-more').open) loadModels();
   // As in every studio, focus moves to the toolbar title. The step is announced.
@@ -381,6 +382,8 @@ function describeAdvanced() {
   owner('#models-owner', byTask || Boolean(model || effort));
   $('#models-pointer').textContent = `Uses ${byTask ? 'models chosen by task' : single}. ${setup ? 'You can change this in Shared settings, Advanced, after setup.' : 'Change it under Advanced: Models and reasoning.'}`;
   describeQuick();
+  const overrides = ['brand.repository', 'brand.skill'].filter(name => value(name)).length;
+  $('#brand-more-state').textContent = overrides ? `· ${overrides === 1 ? 'one' : 'both'} set` : '· none set';
   $('#research-state').textContent = researchSites.length ? `${researchSites.length} ${researchSites.length === 1 ? 'site' : 'sites'}` : 'No sites yet';
   const folders = [...$('#path-fields').children].filter(field => (field.children?.[1]?.value || '').trim()).length;
   $('#installations-state').textContent = folders ? `${folders} ${folders === 1 ? 'folder' : 'folders'} set by you` : 'Every studio found automatically';
@@ -441,6 +444,9 @@ function fill() {
   researchSites = [...(shared.research?.sites || [])]; renderSites();
   efforts(shared.assistant?.effort); storage(); fillProfiles(); renderGraphics();
   for (const picker of modelPickers.values()) renderModelPicker(picker);
+  // The brand skill overrides stay closed unless one is set.
+  $('#brand-more').open = Boolean(shared.brand?.repository || shared.brand?.skill);
+  renderVariants(); renderBrandStore();
 }
 // Document graphics: who draws pictures, the Gemini model, and whether a key is here. The
 // key itself never comes back to this page: only whether one is set, and where from.
@@ -1053,10 +1059,11 @@ form.addEventListener('submit', async event => {
       catch (error) { fill(); renderHome(); markSaved(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true, false, error.where || view); return; }
     }
     if (setup && step < 2) { step++; rememberStep(); show('settings'); }
-    else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; rememberStep(); fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
+    else if (setup) { brandsSaved(snapshot.brands_saved); snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; rememberStep(); fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
     else { if (standalone) { await api('setup', {done: true}); markSaved(); return openNative(); } fill(); renderHome(); markSaved(clock());
       // The save bar already says Saved at…; a toast says only what still needs doing.
-      const words = savedWords(); if (words !== 'Shared settings saved.') inform(words); }
+      const words = savedWords(); if (words !== 'Shared settings saved.') inform(words);
+      brandsSaved(snapshot.brands_saved); void lookUpBrands(); }
   } catch (error) {
     if (error.field) markInvalid(error.field, error.message);
     else problem(error, Boolean(error.answer?.conflict));
@@ -1206,44 +1213,118 @@ async function loadNewer() {
   finally { done(); }
 }
 $('#problem-newer').addEventListener('click', () => void loadNewer());
-$('#find-brands').addEventListener('click', async () => {
-  const button = $('#find-brands'); button.disabled = true;
-  $('#brand-catalog-status').textContent = 'Looking up installed brands… Your form is kept.';
+// The Brand card in one pass: the installed brands are looked up when the card is shown and
+// after a save, and offered in the Default brand and variant fields; the saved brands folder
+// says what it holds. Only a Git address waits for Get brands, the one action that fetches.
+let brandLook = 0, brandFound = null, brandStore = null;
+const brandCount = names => `${names.length} brand${names.length === 1 ? '' : 's'}${names.length ? ` (${names.join(', ')})` : ''}`;
+function installedBrands() {
+  return (brandFound?.skills || []).flatMap(skill => (skill.brands || []).map(brand => ({skill, brand})));
+}
+async function lookUpBrands() {
+  const asked = ++brandLook;
+  $('#brand-catalog-status').textContent = 'Looking up installed brands… This installs nothing.';
+  if (!brandStore) $('#brand-brands-status').textContent = 'Looking at the brands folder…';
   try {
-    const found = await api('brands', {skill: form.elements['brand.skill'].value.trim() || null});
-    const holder = $('#brand-choices'); holder.replaceChildren(); holder.hidden = false;
-    let index = 0;
-    for (const skill of found.skills || []) for (const brand of skill.brands || []) {
-      const row = element('div', '', 'field-grid brand-choice'), field = element('div', '', 'field');
-      const label = element('label', `${skill.name} · ${brand.name} variant`, 'field-label');
-      const select = element('select', '', 'input'); select.id = label.htmlFor = `brand-choice-${index++}`;
-      for (const variant of brand.variants?.length ? brand.variants : ['']) select.add(new Option(variant || 'Default variant', variant));
-      const use = element('button', `Use ${brand.name}`, 'button'); use.type = 'button';
-      use.addEventListener('click', () => {
-        form.elements['brand.skill'].value = skill.path;
-        form.elements['brand.brand'].value = brand.brand;
-        form.elements['brand.variant'].value = select.value;
-        $('#brand-catalog-status').textContent = `${brand.name} selected. Save settings to keep this choice.`;
-        saveState();
-      });
-      field.append(label, select); row.append(field, use); holder.append(row);
-    }
-    $('#brand-catalog-status').textContent = found.problem || 'Choose a brand and variant. Your saved choices change only when you save.';
-  } catch (error) { $('#brand-catalog-status').textContent = `${error.message} Your form is kept; you can enter the IDs below.`; }
-  finally { button.disabled = false; }
-});
+    const found = await api('brands', {skill: (snapshot?.shared?.brand?.skill || '').trim() || null});
+    if (asked !== brandLook) return;
+    brandFound = found; brandStore = found.store || null;
+  } catch (error) {
+    if (asked !== brandLook) return;
+    brandFound = {skills: [], problem: `${error.message} You can still enter a brand ID.`};
+  }
+  renderBrandChoices(); renderBrandStore();
+}
+function renderBrandChoices() {
+  const list = $('#brand-brand-list'); list.replaceChildren();
+  const found = installedBrands(), many = (brandFound?.skills || []).length > 1;
+  for (const {skill, brand} of found) {
+    const option = element('option'); option.value = brand.brand;
+    option.label = many ? `${brand.name} · ${skill.name}` : brand.name; list.append(option);
+  }
+  renderVariants();
+  const status = $('#brand-catalog-status');
+  if (!brandFound) return;
+  if (!found.length) { status.textContent = brandFound.problem || 'No installed brands were found. You can still enter a brand ID.'; return; }
+  const typed = form.elements['brand.brand'].value.trim();
+  const missing = typed && !found.some(item => item.brand.brand === typed);
+  status.textContent = `${found.length === 1 ? 'One installed brand' : `${found.length} installed brands`}: ${found.map(item => item.brand.name).join(', ')}. Choose one below, then save.`
+    + (missing ? ` ${typed} is not among them, so the studios cannot use it until it is installed.` : '');
+}
+// The variants of the brand chosen, offered for Default variant.
+function renderVariants() {
+  const typed = form.elements['brand.brand'].value.trim();
+  const match = installedBrands().find(item => item.brand.brand === typed);
+  const list = $('#brand-variant-list'); list.replaceChildren();
+  for (const variant of match?.brand.variants || []) { const option = element('option'); option.value = variant; list.append(option); }
+  const variants = match?.brand.variants || [];
+  $('#brand-variant-hint').textContent = variants.length
+    ? `${match.brand.name} offers ${variants.join(', ')}. Leave blank to use ${variants[0]}.`
+    : 'Such as light or dark. Leave blank to use the brand’s first variant.';
+}
+// A brand chosen from the list: its variants are offered, a variant it does not have is
+// cleared, and a brand offered only by another installed skill names that skill's folder.
+function brandChosen() {
+  const typed = form.elements['brand.brand'].value.trim();
+  const match = installedBrands().find(item => item.brand.brand === typed);
+  if (match) {
+    const variant = form.elements['brand.variant'];
+    if (variant.value.trim() && match.brand.variants?.length && !match.brand.variants.includes(variant.value.trim())) variant.value = '';
+    const first = brandFound.skills[0], skill = form.elements['brand.skill'];
+    if (match.skill !== first && !skill.value.trim()) { skill.value = match.skill.path; $('#brand-more').open = true; }
+  }
+  renderBrandChoices(); saveState();
+}
+form.elements['brand.brand'].addEventListener('change', brandChosen);
+form.elements['brand.brand'].addEventListener('input', renderVariants);
+form.elements['brand.brands'].addEventListener('input', () => renderBrandStore());
+// What the saved brands folder holds, and whether Harness Brand reads it.
+function renderBrandStore() {
+  const status = $('#brand-brands-status'), bar = $('#get-brands-bar'), button = $('#get-brands');
+  bar.hidden = true;
+  const store = brandStore;
+  if (!store) return;
+  const typed = form.elements['brand.brands'].value.trim(), saved = (snapshot?.shared?.brand?.brands || '').trim();
+  if (typed !== saved) {
+    status.textContent = typed ? 'Save settings to use this brands folder. A folder on this computer is read as you save; a Git address is fetched after it.'
+      : 'Save settings to use the brands folder Harness Brand already reads.';
+    return;
+  }
+  const offer = words => { if (!isBusy(button)) button.textContent = words; bar.hidden = false; };
+  if (store.state === 'none') status.textContent = store.said;
+  else if (store.state === 'following') status.textContent = store.exists
+    ? `Harness Brand reads ${brandCount(store.brands)} from ${store.folder}.`
+    : `Harness Brand reads its brands from ${store.folder}, and there is no folder there yet.`;
+  else if (store.state === 'local') {
+    if (!store.exists) status.textContent = `There is no folder at ${store.folder} yet. Brands can make the first brand in it.`;
+    else if (!store.brands.length) status.textContent = `${store.folder} holds no brands yet. Make one under Brands, or choose another folder.`;
+    else if (store.read) status.textContent = `Harness Brand reads ${brandCount(store.brands)} from ${store.folder}.`;
+    else { status.textContent = `${store.folder} holds ${brandCount(store.brands)}, but Harness Brand reads another folder. Use this folder to change that.`; offer('Use this folder'); }
+  } else if (!store.fetched) {
+    status.textContent = `The brands have not been fetched yet. Get brands copies ${store.address} to this computer.`; offer('Get brands');
+  } else {
+    status.textContent = `${brandCount(store.brands)} copied from ${store.address} to ${store.folder}.${store.read ? '' : ' Harness Brand reads another folder until you get them again.'}`;
+    offer(store.read ? 'Update brands' : 'Get brands');
+  }
+}
+// A brands folder on this computer saved just now: Harness Brand reads it from now on.
+function brandsSaved(done) {
+  if (!done) return;
+  if (done.problem) inform(`Your settings were saved, but Harness Brand was not told to read the brands folder: ${done.problem}`, true);
+  else inform(`Harness Brand reads ${brandCount(done.brands)} from ${done.folder} from now on.${done.replaced ? ` Until now it read ${done.replaced}.` : ''}`);
+}
 $('#get-brands').addEventListener('click', async () => {
-  const button = $('#get-brands'), status = $('#brand-brands-status'); button.disabled = true;
-  status.textContent = 'Getting the brands… Your form is kept.';
+  const button = $('#get-brands'), status = $('#brand-brands-status');
+  if (isBusy(button)) return;
+  const remote = brandStore?.state === 'remote';
+  const done = busy(button, remote ? 'Getting brands…' : 'Using this folder…');
+  status.textContent = remote ? `Copying the brands from ${brandStore.address} to this computer. This can take a minute; your form is kept.` : 'Telling Harness Brand to read this folder…';
   try {
     const got = await api('brands-repository', {});
     const how = {cloned: 'Copied', updated: 'Updated', used: 'Using'}[got.action] || 'Using';
-    const which = `${how} ${got.brands.length} brand${got.brands.length === 1 ? '' : 's'} (${got.brands.join(', ')}) at ${got.folder}`;
-    status.textContent = got.following
-      ? `${which}, the folder Harness Brand reads. Marketing Studio follows it while no repository is set here.`
-      : `${which}. The brand skills read them from there.${got.replaced ? ` Until now Harness Brand read ${got.replaced}; it reads this folder from now on.` : ''}`;
-  } catch (error) { status.textContent = `${error.message} Your form is kept.`; }
-  finally { button.disabled = false; }
+    inform(`${how} ${brandCount(got.brands)}. Harness Brand reads them from ${got.folder}.${got.replaced ? ` Until now it read ${got.replaced}.` : ''}`);
+    done(); await lookUpBrands();
+  } catch (error) { done(); status.textContent = `${error.message} Your form is kept.`; $('#get-brands-bar').hidden = false; }
 });
 form.elements['assistant.agent'].addEventListener('change', () => { efforts(''); form.elements['assistant.model'].value = ''; for (const name of profileNames) { const select = form.elements[`models.${name}.effort`]; profileLevels(select, select.value); } for (const picker of modelPickers.values()) renderModelPicker(picker); profilesChanged(); if ($('#models-more').open) loadModels(); });
 form.querySelectorAll('[name="storage"]').forEach(input => input.addEventListener('change', storage));
