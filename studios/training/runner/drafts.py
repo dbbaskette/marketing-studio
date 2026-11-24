@@ -691,12 +691,16 @@ def left_said(name: str, why: str) -> str:
     return LEFT[why].format(it=workspace.sentence(workspace.label(name)))
 
 
-def batch_words(level: str | None, kind: str | None, every: bool, count: int) -> str:
-    """What a batch marked, in the words of its commit and its decision: "the reviewed
-    materials of level 101"."""
+def batch_words(level: str | None, kind: str | None, every: bool, count: int,
+                unread: int = 0) -> str:
+    """What a batch marked, in the words of its commit and its decision, the approval record:
+    "3 reviewed materials of level 101", or, when the person chose to mark some they had not
+    opened, "4 materials (3 not opened) of level 101"."""
     what = {'scenario': 'practice scenarios', 'yoodli': 'Yoodli layouts'}.get(kind or '',
                                                                           'materials')
     where = ' of every level' if every else f' of level {level}' if level else ''
+    if unread:
+        return f'{count} {what} ({unread} not opened){where}'
     return f'{count} reviewed {what}{where}'
 
 

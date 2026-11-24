@@ -7978,6 +7978,19 @@ function linkToken() {
 // Continue in another studio: Marketing Studio opens this page with `library=<id>@<revision>`
 // in its fragment. It is read once, as the page begins, and checked here again: a Document
 // Library ID and a revision from 1 to 1000, or nothing.
+function forgetLibraryLink() {
+  try {
+    const params = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    if (!params.has('library')) return;
+    params.delete('library');
+    const kept = params.toString();
+    window.history.replaceState(window.history.state, '', (window.location.pathname || '')
+      + (window.location.search || '') + (kept ? '#' + kept : ''));
+  } catch (failure) {
+    // A browser that cannot change its address keeps it: the sheet opens once per load.
+  }
+}
+
 function libraryFromLink(hash) {
   const given = new URLSearchParams(String(hash || '').replace(/^#/, '')).get('library') || '';
   const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(given);
@@ -8054,8 +8067,11 @@ function begin() {
   const symbol = byId('studio-symbol');
   if (symbol) symbol.append(icon('studio'));
   view.token = linkToken();
-  // Read before anything can change the fragment.
+  // Read before anything can change the fragment, then taken out of the address, so a reload
+  // of this tab does not open the New sheet from it again. The key and the way back to
+  // Marketing Studio stay; shell.js read them as it loaded.
   const fromLibrary = libraryFromLink(window.location.hash);
+  forgetLibraryLink();
   // A new link pasted into a tab that is already open changes only the fragment.
   window.addEventListener('hashchange', () => {
     const next = linkToken();

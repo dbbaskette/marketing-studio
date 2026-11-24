@@ -9194,6 +9194,57 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         shot = result['snapshots']['stopped']
         self.assertIn(said, [line.strip() for line in shot['text'].split('\n')])
 
+    def test_a_draft_that_changed_after_it_was_opened_is_marked_as_it_is_now_when_ticked(self):
+        import json
+        plan, plan_view = self.readable('blueprint@101', 'The plan.')
+        guide, guide_view = self.readable()
+        found = a_desk(plan, guide, levels=('101',), running=False)
+        plan_view['desk'] = guide_view['desk'] = found['body']
+        answered = a_desk(plan, guide, levels=('101',), running=False, marked=[], left=[])
+        # The guide was opened here in an earlier version, kept in the tab's memory.
+        opened = {'document@101': 'b' * 64}
+        result = self.open_desk(self.on_desk(found, **{
+            'GET /api/drafts/card': [ok(plan_view), ok(guide_view)],
+            'POST /api/drafts/reviewed-ready': [answered]}), [
+            {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
+            {'tick': 'Also mark the one I have not opened'}, {'snapshot': 'ticked'},
+            {'click': 'Mark 2 materials ready'}],
+            session={'training-studio-opened:' + str(self.root): json.dumps(opened)})
+        self.assertIn('Guide\nChanged since you opened it', result['snapshots']['sheet']['sheet'])
+        self.assertIn('Guide\nChanged since you opened it: marked as it is now, as you chose',
+                      result['snapshots']['ticked']['sheet'])
+        # Marked as it is now, the version on its card, never the one opened before it
+        # changed, and said to be unopened.
+        address, body = self.posts(result)[-1]
+        self.assertEqual(address, '/api/drafts/reviewed-ready')
+        self.assertEqual(body['seen']['document@101'], seen_of('document@101'))
+        self.assertEqual(sorted(body['seen']), ['blueprint@101', 'document@101'])
+        self.assertEqual(body['unopened'], ['document@101'])
+
+    def test_a_draft_opened_here_then_changed_is_sent_as_it_is_now_not_as_it_was(self):
+        plan, plan_view = self.readable('blueprint@101', 'The plan.')
+        guide, guide_view = self.readable()
+        old = {**guide, 'seen': 'b' * 64}
+        before = a_desk(plan, old, levels=('101',), running=False)
+        after = a_desk(plan, guide, levels=('101',), running=False)
+        plan_view['desk'] = before['body']
+        guide_view.update(seen='b' * 64, desk=before['body'])
+        answered = a_desk(plan, guide, levels=('101',), running=False, marked=[], left=[])
+        result = self.open_desk(self.on_desk(before, **{
+            'GET /api/drafts': [before, before, before, after],
+            'GET /api/drafts/card': [ok(plan_view), ok(guide_view)],
+            'POST /api/drafts/reviewed-ready': [answered]}), [
+            {'click': 'Guide · Draft'}, {'click': 'Plan · Draft'},
+            {'poll': True}, {'poll': True}, {'poll': True},
+            {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
+            {'tick': 'Also mark the one I have not opened'},
+            {'click': 'Mark 2 materials ready'}])
+        self.assertIn('Guide\nChanged since you opened it', result['snapshots']['sheet']['sheet'])
+        address, body = self.posts(result)[-1]
+        # The guide's card holds the version it was opened in; what is sent is the one now.
+        self.assertEqual(body['seen']['document@101'], seen_of('document@101'))
+        self.assertEqual(body['unopened'], ['document@101'])
+
     def test_an_unticked_choice_also_marks_what_was_not_opened_and_never_a_held_one(self):
         cards = [a_card(f'{base}@101') for base, _ in DESK_KINDS]
         cards[2] = a_card('brief@101', 'held', 'Built from an earlier guide.', ('update', 'keep'))
@@ -9219,7 +9270,8 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/drafts/reviewed-ready', {
             'path': str(self.root), 'level': '101', 'scope': 'level',
             'seen': {name: seen_of(name) for name in ('blueprint@101', 'document@101',
-                                                     'deck@101')}})])
+                                                     'deck@101')},
+            'unopened': ['blueprint@101', 'document@101']})])
 
     def test_every_level_is_one_choice_in_the_same_sheet(self):
         answered = a_desk(marked=['deck@101', 'deck@201'], left=[])

@@ -19,6 +19,9 @@ from runner import engine as engines
 from runner import library
 
 PICKED = {'id': 'launch-post', 'revision': 2}
+# The link Marketing Studio gives: the key, the way home, and the item.
+LINK = ('#token=the-test-key&home=http%3A%2F%2F127.0.0.1%3A8900'
+        '&homeToken=home-key-1234&library=')
 READ = {'id': 'launch-post', 'revision': 2, 'title': 'Launch post', 'readable': True,
         'text': '# Launch post\n\nWhat changed.\n'}
 
@@ -36,7 +39,7 @@ class LibraryLinkTests(test_desk.ScriptedPage, test_desk.PageCase):
             self.started()
             self.begun = True
         return self.run_page(self.answers(**answers), steps, research=True,
-                             hash='#token=the-test-key&library=' + given)
+                             hash=LINK + given)
 
     def test_the_item_is_picked_and_said_and_goes_with_start(self):
         result = self.opened('launch-post@2', [
@@ -67,6 +70,20 @@ class LibraryLinkTests(test_desk.ScriptedPage, test_desk.PageCase):
                       'was removed from the library. Start as usual', text)
         self.assertNotIn('Starting from:', text)
         self.assertNotIn('From the Document Library, revision', text)
+
+    def test_the_link_is_forgotten_once_read_so_a_reload_does_not_open_it_again(self):
+        first = self.opened('launch-post@2', [{'snapshot': 'sheet'}],
+                            **{'POST /api/library-document': [test_desk.ok(READ)]})
+        address = first['address']
+        self.assertNotIn('library=', address)
+        self.assertIn('token=the-test-key', address)
+        self.assertIn('home=', address)
+        # A reload of the tab opens with the address as it is now: nothing is read again.
+        again = self.run_page(self.answers(), [{'snapshot': 'home'}], **({'research': True} if True else {}),
+                              hash=address[address.index('#'):])
+        self.assertEqual([one for one in self.posts(again) if one[0] == '/api/library-document'],
+                         [])
+        self.assertNotIn('Starting from:', again['snapshots']['home']['text'])
 
     def test_a_malformed_value_is_left_alone(self):
         for given in ('Launch@2', 'launch-post@0', 'launch-post@1001', 'launch-post', 'x@1x'):

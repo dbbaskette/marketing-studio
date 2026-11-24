@@ -181,7 +181,7 @@ What a caller needs to know
   the deck rebranded by a rebranding skill, nothing drawn again), `/api/drafts/deck-brand`
   {path, level, brand: {brand, variant}, seen} (the decks drawn again in another brand), `/api/drafts/level-ready` {path, level, seen: {name: hash}, kind?: 'scenario' or
   'yoodli', for those cards alone}, `/api/drafts/reviewed-ready` {path, level, scope:
-  'level' or 'training', seen: {name: hash}, kind?} (Mark reviewed materials ready: only
+  'level' or 'training', seen: {name: hash}, kind?, unopened?: [names marked unread]} (Mark reviewed materials ready: only
   what was opened in its current version and is not held; the rest is left and said in
   `left`), `/api/drafts/draft`
   {path, seen: {name: hash}} (Return to draft, and Undo after Mark ready),
@@ -739,9 +739,12 @@ class RunnerPage(desk.Page):
             elif path == f'{DRAFTS}/reviewed-ready':
                 level, seen, kind = sent.get('level'), sent.get('seen'), sent.get('kind')
                 scope = sent.get('scope', 'level')
+                unopened = sent.get('unopened', [])
                 if level is not None and not isinstance(level, str) \
                         or kind not in (None, 'scenario', 'yoodli') \
                         or scope not in ('level', 'training') \
+                        or not isinstance(unopened, list) \
+                        or not all(isinstance(name, str) for name in unopened) \
                         or not isinstance(seen, dict) or not all(
                             isinstance(key, str) and isinstance(value, str)
                             for key, value in seen.items()):
@@ -749,7 +752,8 @@ class RunnerPage(desk.Page):
                                        'the scope as level or training, and the version '
                                        'you opened of each material by its name.')
                 added = self.engine.mark_reviewed_ready(root, level or None, seen, kind,
-                                                        every=scope == 'training')
+                                                        every=scope == 'training',
+                                                        unopened=unopened)
             elif path == f'{DRAFTS}/draft':
                 seen = sent.get('seen')
                 if not isinstance(seen, dict):

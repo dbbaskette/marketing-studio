@@ -4124,8 +4124,11 @@ async function deskDecide(route, sent, pressed, { flush = true, path: at = null 
     }
     if (route === 'level-ready' || route === 'reviewed-ready' || (route === 'draft' && !sent.undo)) {
       sent = { ...sent, seen: { ...sent.seen } };
+      // A draft the person chose to mark without opening it is marked as it is now: the
+      // version shown on its card, never an older one opened before it changed.
+      const unread = new Set(list(sent.unopened));
       for (const name of Object.keys(sent.seen)) {
-        if (held.materials[name]) sent.seen[name] = held.materials[name].view.seen;
+        if (held.materials[name] && !unread.has(name)) sent.seen[name] = held.materials[name].view.seen;
       }
     }
     const { undo, ...body } = sent;
@@ -4212,11 +4215,15 @@ function reviewedBatch(found, opened, level, kind, every) {
   return { mark, left };
 }
 
-function markReviewed(level, mark, pressed, kind, every) {
+// `unread` are the drafts the person chose to mark without opening them as they are now:
+// sent as `unopened`, so they are marked in the version on their card and the approval record
+// says how many were not opened.
+function markReviewed(level, mark, pressed, kind, every, unread = []) {
   const seen = {};
   for (const one of mark) seen[one.name] = one.seen;
+  const unopened = unread.map((one) => one.name);
   return deskDecide('reviewed-ready', { level, scope: every ? 'training' : 'level', seen,
-    ...(kind ? { kind } : {}) }, pressed);
+    ...(kind ? { kind } : {}), ...(unopened.length ? { unopened } : {}) }, pressed);
 }
 
 // The confirmation before Mark this level ready (or every level, or every scenario): what it
@@ -4255,7 +4262,8 @@ function confirmLevel(level, kind, every = false, also = false) {
     const read = batch.mark.includes(one);
     marked.append(add(make('li', 'row step'), add(make('div', 'row-text'),
       make('p', 'step-name', cardTitle(one) + where(one)), make('p', 'quiet', read ? 'Opened'
-        : 'Not opened: marked as you chose')), read ? null : open(one)));
+        : opened[one.name] ? 'Changed since you opened it: marked as it is now, as you chose'
+          : 'Not opened: marked as you chose')), read ? null : open(one)));
   }
   const leftRows = make('ul', 'rows');
   for (const { one, why } of left) {
@@ -4276,7 +4284,7 @@ function confirmLevel(level, kind, every = false, also = false) {
   const kept = mark.filter((one) => ['document', 'brief'].includes(one.kind)).map(cardTitle);
   const go = mark.length ? capsule('Mark ' + count(mark.length, 'material', 'materials') + ' ready',
     'filled', async () => {
-      const answer = await markReviewed(level, mark, go, kind, every);
+      const answer = await markReviewed(level, mark, go, kind, every, also ? unread : []);
       if (view.sheet === 'desk-kit') closeSheet();
       // The button is gone once nothing waits: the toast's Undo is the way back.
       if (answer && !focusKey(kind ? 'desk-group-ready' : 'desk-level-ready')) focusKey('desk-undo');

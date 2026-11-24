@@ -70,6 +70,19 @@ class BatchReadyTests(BatchCase):
         self.assertEqual(self.log()[-1],
                          'Rolling restarts: mark 2 reviewed materials of level 101 ready')
 
+    def test_row_244_drafts_marked_unopened_are_said_so_in_the_approval_record(self):
+        root = self.start(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        plan, guide = 'blueprint@101', 'document@101'
+        answer = self.engine.mark_reviewed_ready(
+            root, '101', {plan: self.seen(root, plan), guide: self.seen(root, guide)},
+            unopened=[guide])
+        self.assertEqual(answer['marked'], [plan, guide])
+        said = 'mark 2 materials (1 not opened) of level 101 ready'
+        self.assertEqual(self.log()[-1], 'Rolling restarts: ' + said)
+        self.assertEqual(self.record(root)['last_decision']['label'],
+                         '2 materials (1 not opened) of level 101')
+
     def test_row_244_nothing_opened_marks_nothing_and_commits_nothing(self):
         root = self.start(flow='desk', levels=['101'])
         self.assertEqual(self.to_end(root), [])
@@ -178,6 +191,8 @@ class BatchEndpointTests(PageCase):
         commits = self.log()
         for sent in ({'level': 101, 'seen': {}}, {'level': '', 'scope': 'all', 'seen': {}},
                      {'level': '', 'kind': 'deck', 'seen': {}}, {'level': '', 'seen': []},
+                     {'level': '', 'seen': {}, 'unopened': 'blueprint'},
+                     {'level': '', 'seen': {}, 'unopened': [1]},
                      {'level': ''}, {'level': '', 'seen': {'blueprint': 7}}):
             with self.subTest(sent=sent):
                 self.post('drafts/reviewed-ready', {'path': self.path, **sent}, expect=400)

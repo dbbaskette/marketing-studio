@@ -6286,7 +6286,8 @@ class Engine(Reviewing):
             self.carry_on(root)
         return {'marked': marked, 'stopped': stopped}
 
-    def mark_reviewed_ready(self, path, level, seen, kind=None, every=False) -> dict:
+    def mark_reviewed_ready(self, path, level, seen, kind=None, every=False,
+                            unopened=()) -> dict:
         """Mark ready, in one batch the person confirmed, every material of one level (or of
         the whole training, `every`) that they opened in the version it is now (`seen`, by
         name: the hash shown when it was opened) and that is not held. Nothing the person
@@ -6296,7 +6297,8 @@ class Engine(Reviewing):
         sentence it was refused with. Each is checked as Mark ready checks it, and the batch
         commits once. With `kind`, 'scenario' or 'yoodli', only cards of that kind. Returns
         {'marked': [names], 'left': [{'name', 'why', 'said'}]}, `why` one of
-        drafts.LEFT_WHY."""
+        drafts.LEFT_WHY. `unopened` names the drafts among `seen` the person chose to mark
+        without opening them (the sheet's Also mark...), and the approval record says how many."""
         marked, left = [], []
         with self.files:
             # A training worked on in conversation is refused here, before anything is read.
@@ -6322,7 +6324,10 @@ class Engine(Reviewing):
                     left.append({'name': name, 'why': why,
                                  'said': drafts.left_said(name, why)})
             if marked:
-                which = drafts.batch_words(level, kind, every, len(marked))
+                # Those the person chose to mark without opening them are said so in the
+                # approval record (`unopened`, names among `seen`).
+                which = drafts.batch_words(level, kind, every, len(marked),
+                                           len(set(marked) & set(unopened or ())))
                 self._ready_again(root)
                 self._remember_decision(root, self._load(root), which, 'approve')
                 self._commit(root, f'mark {which} ready')

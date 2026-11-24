@@ -813,7 +813,15 @@ async function app(file) {
         this.earlier.push(this.state);
         this.state = state;
       },
-      replaceState(state) { this.state = state; },
+      // A new address is kept in the report (`address`) and its fragment becomes the page's.
+      replaceState(state, title, url) {
+        this.state = state;
+        if (typeof url === 'string') {
+          report.address = url;
+          const at = url.indexOf('#');
+          window.location.hash = at < 0 ? '' : url.slice(at);
+        }
+      },
       // The browser's own way back: the state before this one, announced to the page.
       back() {
         if (!this.earlier.length) return;
