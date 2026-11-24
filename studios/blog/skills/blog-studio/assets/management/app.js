@@ -92,7 +92,9 @@ function notice(message, error=false) {
   if(dialog){target=dialog.querySelector('.dialog-notice');if(!target){target=element('p',undefined,'dialog-notice');target.setAttribute('role','alert');dialog.append(target);}}
   target.textContent=message;target.className=error?'dialog-notice error':'dialog-notice';target.hidden=false;
 }
-function savedNotice(result) {if(result.team_sync){notice(result.team_sync.shared?'Saved and shared with the team repository.':result.team_sync.notice||'Saved on this computer; sharing is pending.');return;}notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
+// A blog marked ready (or published) says where its copy went: the Document Library on this computer.
+function keptWords(result) {const copy=result?.document_library;return copy?.state==='kept'?' Kept in the Document Library on this computer (revision '+copy.revision+'), for any studio.':copy?.state==='failed'?' Not kept in the Document Library: '+copy.reason:'';}
+function savedNotice(result) {const kept=keptWords(result);if(result.team_sync){notice((result.team_sync.shared?'Saved and shared with the team repository.':result.team_sync.notice||'Saved on this computer; sharing is pending.')+kept);return;}notice(((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.')+kept);}
 // Each view's toolbar: its one primary action, then the way to the other views. The buttons
 // are made again whenever the view or the access changes, so they always follow both.
 function legacyActions() {

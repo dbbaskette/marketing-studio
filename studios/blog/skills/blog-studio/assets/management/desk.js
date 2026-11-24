@@ -711,7 +711,7 @@ function sBriefFile(file,type){
   const bytes=Uint8Array.from(atob(file.content),char=>char.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type})),link=sNode('a','');
   link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function sBriefSheet(made){
+function sBriefSheet(made,copy){
   const open=made.checks.filter(check=>!check.passed);
   const said=sNode('p','',(made.pages?made.pages+' pages. ':'')+(open.length?open.length+(open.length===1?' thing':' things')+' to look at before it goes out.':'Every check passed.'));
   const list=sNode('ul','brief-checks');
@@ -721,13 +721,16 @@ function sBriefSheet(made){
   bar.append(sButton('Download Word file',()=>sBriefFile(made.files.word,'application/vnd.openxmlformats-officedocument.wordprocessingml.document')));
   const notes=(made.warnings||[]).map(warning=>sNode('p','quiet',warning));
   const kept=sNode('p','quiet','Kept on this computer at '+made.files.word.path+'. Word may break pages a line or two differently from the PDF.');
-  sOpenSheet('Solution brief',said,list,bar,...notes,kept);
+  // Made: its text and PDF are kept in the Document Library too, for any studio, with no address needed.
+  const library=copy?.state==='kept'?sNode('p','','Kept in the Document Library on this computer (revision '+copy.revision+'), for any studio to use. It is not shared with your team.'):copy?.state==='failed'?sNode('p','problem','Not kept in the Document Library: '+copy.reason):null;
+  if(library)library.setAttribute('role','status');
+  sOpenSheet('Solution brief',said,list,bar,...notes,kept,library);
 }
 async function sDeskBrief(held,button){
   await busy(button,'Making the brief…',async()=>{
     await sDeskFlush(held);
     const result=await api('desk-brief',{id:held.id});
-    if(result.brief_made)sBriefSheet(result.brief_made);
+    if(result.brief_made){const {brief_made:made,library_copy:copy,...view}=result,before=held.view;held.view=view;if(sDeskCurrent(held))sDeskRefresh(held,before);sBriefSheet(made,copy);}
   });
 }
 // Share: every way the draft leaves the desk, behind one button, so the toolbar keeps a
@@ -762,6 +765,8 @@ function sDeskGoogleActions(held,flat=false){
 }
 // The Doc as the desk last knew it, said in the toolbar: what waits there, when the desk last
 // sent, and changes not sent yet. Read on this computer; Google is read only when asked.
+// Kept in the Document Library on this computer (marked ready, a brief made, or published).
+function sDeskKeptWords(view){const kept=view.document_library;return kept?'Kept in the Document Library · revision '+kept.revision:'';}
 function sDeskDocWords(view){const g=view.google_state;if(!g)return '';const said=[];if(g.waiting)said.push('Doc: '+g.waiting+' waiting');if(g.last)said.push('last sent '+sDeskWhen(g.last.at));if(g.unsent)said.push('Unsent desk changes');return said.join(' · ');}
 function sDeskWhen(at){const when=new Date(at||'');if(isNaN(when.getTime()))return '';const time=when.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});return when.toDateString()===new Date().toDateString()?time:when.toLocaleDateString('en-US',{month:'short',day:'numeric'})+', '+time;}
 // A Google request that took too long to answer (the phone link's 504), said plainly.
@@ -854,7 +859,7 @@ function sDeskToolbar(held){
   const review=held.review||sDeskHasReview(view)?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}):null;
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
   const team=sDeskTeam(view);
-  sFrame(view.title,sFold([team,stop,review,...sDeskShareMenu(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||sDeskDocWords(view)||'On the desk',()=>sRoute('blogs'));
+  sFrame(view.title,sFold([team,stop,review,...sDeskShareMenu(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||sDeskDocWords(view)||sDeskKeptWords(view)||'On the desk',()=>sRoute('blogs'));
 }
 // Reading is the default; editing mounts only the selected part. The full desk remains
 // available for experienced authors. URL choices contain navigation only, never text.

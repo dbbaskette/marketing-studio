@@ -2061,6 +2061,15 @@ def _dispatch(root, route, data):
                 else None
             )
             shared = kept.pop('document_library', None) if kept else None
+            if (
+                values.get('stage') == 'ready'
+                and values.get('confirm_stage') is True
+                and (record.get('editorial') or {}).get('stage') == 'ready'
+                and desk.on_desk(directory)
+            ):
+                # Marked ready: the saved draft is kept in the Document Library, with no
+                # publication address. Marked ready again after a change adds a revision.
+                shared = shared_library.keep_ready(root, directory, record)
             library = {
                 **({'library': kept} if kept else {}),
                 **({'document_library': shared} if shared else {}),

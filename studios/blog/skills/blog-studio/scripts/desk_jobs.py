@@ -2275,6 +2275,9 @@ def view(root, ident):
         'run': studio.inside(directory, blog_runner.STATE).is_file(),
         'google': editorial.doc_link(record),
         'publication': (record.get('editorial') or {}).get('publication_url') or None,
+        # What the Document Library on this computer keeps of it (marked ready, a brief made
+        # or published): its document and revision, for the desk to say and to continue from.
+        'document_library': shared_library.kept(ident),
         'style_name': style_name,
         'source_names': names,
         # Sections taken out on the Outline tab, to bring back.

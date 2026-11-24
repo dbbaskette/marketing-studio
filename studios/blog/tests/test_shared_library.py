@@ -72,6 +72,117 @@ class KeepTests(SharedLibraryCase):
         self.assertEqual(len(team.FinishTests.kept(self)), 2)
 
 
+class ReadyTests(SharedLibraryCase):
+    """Marked ready, a desk blog is kept in the Document Library with no address (#514)."""
+
+    desk = team.DeskPublishTests.desk
+    publish = team.DeskPublishTests.publish
+
+    def ready(self, ident, **extra):
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        return management.dispatch(
+            self.root,
+            'schedule',
+            {'id': ident, 'expected': shown['expected'], 'stage': 'ready', **extra},
+        )
+
+    def revise(self, ident, text):
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': shown['revision'],
+                'part': shown['sections'][0]['id'],
+                'text': text,
+                'session': 'a' * 16,
+            },
+        )
+
+    def test_marked_ready_keeps_the_draft_without_an_address_and_again_only_when_changed(self):
+        made = self.desk()
+        self.assertEqual(self.shared(), [])
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.ready(made['id'])  # Not a decision without the confirmation box.
+        self.assertEqual(self.shared(), [], 'nothing is kept without a recorded decision')
+        result = self.ready(made['id'], confirm_stage=True)
+        self.assertEqual(result['document_library']['state'], 'kept')
+        rows = self.shared()
+        self.assertEqual((len(rows), rows[0]['revision'], rows[0]['title']), (1, 1, 'Desk post'))
+        draft = studio.inside(self.root, 'articles', made['id']) / 'DRAFT.md'
+        library = document_library.opened()
+        self.assertEqual(library.snapshot(rows[0]['id'], 1)['text'], draft.read_text())
+        _, record = studio.item(self.root, 'articles', made['id'])
+        self.assertEqual(record['editorial']['stage'], 'ready')
+        self.assertNotIn('publication_url', record['editorial'])
+        # The desk says what is kept, for the toolbar and Continue in another studio.
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        self.assertEqual(
+            shown['document_library'],
+            {'id': rows[0]['id'], 'revision': 1, 'title': 'Desk post'},
+        )
+        # Marked ready again with the same text: no new revision.
+        again = self.ready(made['id'], confirm_stage=True)
+        self.assertEqual(again['document_library']['revision'], 1)
+        # Changed after being kept: nothing is kept until it is marked ready again.
+        self.revise(made['id'], 'Ready words, revised.')
+        self.assertEqual(self.shared()[0]['revision'], 1)
+        again = self.ready(made['id'], confirm_stage=True)
+        self.assertEqual((again['document_library']['revision'], len(self.shared())), (2, 1))
+        self.assertIn(
+            'Ready words, revised.', library.snapshot(rows[0]['id'], 2)['text']
+        )
+
+    def test_other_stages_and_a_run_blog_keep_nothing(self):
+        made = self.desk()
+        self.ready(made['id'], stage='review')
+        self.assertEqual(self.shared(), [])
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        self.assertIsNone(shown['document_library'])
+
+    def test_an_empty_draft_is_never_kept(self):
+        made = self.desk()
+        directory = studio.inside(self.root, 'articles', made['id'])
+        _, record = studio.item(self.root, 'articles', made['id'])
+        (directory / 'DRAFT.md').write_text('\n  \n')
+        self.assertIsNone(shared_library.keep_ready(self.root, directory, record))
+        self.assertEqual(
+            shared_library.keep_blog(self.root, record, ' ')['state'], 'failed'
+        )
+        self.assertEqual(self.shared(), [])
+
+    def test_a_library_failure_never_stops_the_decision(self):
+        made = self.desk()
+        with patch.object(
+            document_library, 'opened', side_effect=document_library.LibraryError('Busy.')
+        ):
+            result = self.ready(made['id'], confirm_stage=True)
+        self.assertEqual(result['document_library'], {'state': 'failed', 'reason': 'Busy.'})
+        _, record = studio.item(self.root, 'articles', made['id'])
+        self.assertEqual(record['editorial']['stage'], 'ready')
+
+    def test_publishing_still_needs_and_records_its_address(self):
+        made = self.desk()
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        with self.assertRaisesRegex(ValueError, 'publication URL'):
+            management.dispatch(
+                self.root,
+                'schedule',
+                {
+                    'id': made['id'],
+                    'expected': shown['expected'],
+                    'stage': 'published',
+                    'confirm_stage': True,
+                },
+            )
+        result = self.publish(made['id'])
+        self.assertEqual(result['document_library']['state'], 'kept')
+        self.assertIn('id', result['library'])  # Still kept in the team library as well.
+        _, record = studio.item(self.root, 'articles', made['id'])
+        self.assertEqual(record['editorial']['publication_url'], 'https://example.invalid/post')
+
+
 class TakeTests(SharedLibraryCase):
     def setUp(self):
         super().setUp()
