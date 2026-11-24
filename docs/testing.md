@@ -1,7 +1,7 @@
 # Testing
 
 The record of the first implementation's checks is in
-[Initial implementation verification](verification.md); this guide is the current one.
+[Initial implementation verification](archive/verification.md); this guide is the current one.
 
 Infographic Studio has its own disposable native suite, also included in the root
 check and the four-studio setup/launch/distribution matrix. From the repository root:
@@ -218,7 +218,7 @@ The Week 1 audit changes use the existing Activity log and its disposable tests.
 calls, counts same-second results once, and leaves unknown timings unestimated.
 Presentation Studio’s `WordsTests` includes first-edit/autosave focus preservation;
 its DOM harness models focus loss when a connected subtree is moved. See
-[the companion compatibility check](research-responsiveness-contracts.md).
+[the companion compatibility check](archive/research-responsiveness-contracts.md).
 
 ## Training outcomes
 

@@ -42,7 +42,7 @@ accepted helper bundle; this creator handoff is for the native Training Studio r
 
 The diagram and state transitions are linked from
 [Create training](design/create-training-task-flow.md) and the
-[implementation plan](superpowers/plans/2026-11-05-training-creator-review.md).
+[implementation plan](archive/superpowers/plans/2026-11-05-training-creator-review.md).
 Other studios and older non-collection execution retain their existing correction
 policy described below.
 
@@ -500,6 +500,6 @@ This display does not feed approval or delivery. The registered collection still
 assembles through the helper, and the complete report still passes independent
 verification. First accepted finding, first saved section and checked final report
 have separate timing fields. The
-[scripted measurement](https://github.com/dbbaskette/marketing-studio/blob/main/docs/early-evidence-measurement.md)
+[scripted measurement](https://github.com/dbbaskette/marketing-studio/blob/main/docs/archive/early-evidence-measurement.md)
 records 1.041 / 2.638 / 3.179 seconds and ten unchanged worker calls in one synthetic
 run; it is not a live-model latency estimate.

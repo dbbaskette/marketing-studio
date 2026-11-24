@@ -4,7 +4,7 @@ finding needs the person everywhere, drafts that exist are never "still to make"
 waiting for its slide text says so instead of "Writing". Scripted workers and the stand-ins
 of the deck tests; nothing real is started and nothing leaves this computer. Tests named
 row_194 to row_196 cover those rows of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
+docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import json  # noqa: I001  the path-setting imports must come before runner
 from unittest import mock
 

@@ -210,4 +210,4 @@ CLI and sends it up to 24,000 characters per file, as described under
 [What leaves your computer](#what-leaves-your-computer). PDFs without extracted
 text remain marked **Needs extraction**.
 
-Developer verification: [import-time curation checks](reference-curation-validation.md).
+Developer verification: [import-time curation checks](archive/reference-curation-validation.md).

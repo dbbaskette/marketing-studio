@@ -3,7 +3,7 @@ batch, for a level or for the whole training, that marks ready only what the per
 the version it is now and that is not held, and leaves the rest with why.
 
 Row 244 of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Scripted workers, the
+docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Scripted workers, the
 stand-in for harness-research and a studios config of the test's own; nothing real is
 started."""
 from unittest import mock

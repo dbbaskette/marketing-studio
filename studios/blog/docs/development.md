@@ -151,13 +151,13 @@ layout compatibility is tracked separately by the `minimum_runtime` values in
 
 ## Validation records
 
-[Desk usability validation](desk-usability-validation.md) covers memory/access
+[Desk usability validation](archive/desk-usability-validation.md) covers memory/access
 handling, responsive layouts and article/finding continuation.
 
-[Desk concurrency validation](desk-concurrency-validation.md) records the
+[Desk concurrency validation](archive/desk-concurrency-validation.md) records the
 verified request-ordering and source-conflict fixes.
 
-[Current backlog and verification](remaining-acceptance.md) records the planned
+[Current backlog and verification](archive/remaining-acceptance.md) records the planned
 implementation sets and separates current work from historical acceptance. [Google capabilities](google-capabilities.md)
 records the team contract and actual connection boundaries.
 
@@ -167,14 +167,14 @@ implementation gates; new defects should be tracked against the current app.
 
 ## Architecture, history, and attribution
 
-[October 4 implementation and issue review](implementation-review-2026-10-04.md)
+[October 4 implementation and issue review](archive/implementation-review-2026-10-04.md)
 prioritizes correctness, desk usability, deterministic operations, progressive
 loading, and measured performance follow-ups.
 
 - [Progressive disclosure roadmap](progressive-disclosure-roadmap.md) and [guidance inventory](estimates/blog-studio-token-inventory.json).
 - [Team Hub](team-hub.md), [Google Docs](google-docs.md), and [Google roadmap](google-docs-roadmap.md).
-- [Entry-flow validation](m1-entry-validation.md), [focused guidance](m2-m3-validation.md), and [Google fixtures](g0-g3-validation.md).
-- [Usability validation](usability-validation.md) and [privacy review](privacy-review.md).
+- [Entry-flow validation](archive/m1-entry-validation.md), [focused guidance](archive/m2-m3-validation.md), and [Google fixtures](archive/g0-g3-validation.md).
+- [Usability validation](archive/usability-validation.md) and [privacy review](archive/privacy-review.md).
 - [Package notes and licenses](../skills/blog-studio/references/package-notes.md), [source lock](../skills/blog-studio/sources.lock.json), and [BlogForge asset lock](../skills/blog-studio/blogforge.lock.json).
 
 The skill repository and private writing Hub remain separate. Diagnostic caches

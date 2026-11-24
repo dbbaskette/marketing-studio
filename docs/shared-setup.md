@@ -220,15 +220,15 @@ Each studio's start form starts from this list, may untick sites or add one for 
 piece of work only, and the run pins the list it used. With your sites on and the
 public web off, every page a research job saves must be under a listed site (exact
 host, path at a segment boundary, every redirect checked); see
-[the design](superpowers/specs/2026-10-23-research-sites-design.md) and
+[the design](archive/superpowers/specs/2026-10-23-research-sites-design.md) and
 `core/studio_core/research_sites.py`.
 
 ## The Document Library
 
 One local library holds documents for every studio. The code is in
 `core/studio_core/document_library/`, and the design is in
-[the spec](superpowers/specs/2026-10-29-document-library-design.md) and
-[the plan](superpowers/plans/2026-10-29-document-library-plan.md).
+[the spec](archive/superpowers/specs/2026-10-29-document-library-design.md) and
+[the plan](archive/superpowers/plans/2026-10-29-document-library-plan.md).
 
 **Where it is.** `library.root` in the studios config names its folder. Until the
 first explicit use, the folder is `library/` under `local.root` (normally

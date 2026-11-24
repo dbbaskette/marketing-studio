@@ -62,7 +62,7 @@ A hub reference to a Google Doc helps team members locate it; Google access rema
 
 Runtime targets for added hub instructions: router/status 200–400 tokens; create/join 500–900; save/sync/conflicts 700–1,200; rules and memory selection 400–800. Selected memory content and existing writing/host instructions are additional. These are design targets, not measurements of an implemented feature.
 
-The [detailed spec](superpowers/specs/2026-10-01-blog-studio-team-hub.md) and [implementation plan](superpowers/plans/2026-10-01-blog-studio-team-hub.md) define the interfaces, failure handling, and acceptance checks. No new hub repo, invitation, dependency install, or remote write was performed for this design.
+The [detailed spec](archive/superpowers/specs/2026-10-01-blog-studio-team-hub.md) and [implementation plan](archive/superpowers/plans/2026-10-01-blog-studio-team-hub.md) define the interfaces, failure handling, and acceptance checks. No new hub repo, invitation, dependency install, or remote write was performed for this design.
 
 ## Implementation boundary
 

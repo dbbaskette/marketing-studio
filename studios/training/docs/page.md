@@ -119,4 +119,4 @@ The page is drawn like a Mac app: translucent glass for the sidebar, the toolbar
 | `POST /api/approval` | Moves a training's approval to the page or back: `path`, `mode` |
 | `POST /api/computer` | Checks this computer now |
 
-Every `/api/` request needs the key, in a header named `X-Training-Studio-Token`. A `POST` also needs an `Origin` header naming the page's own address and a JSON body. The page's files live with the scripts, in `skills/training-studio/scripts/desk/`. The design is in the [milestone 1 specification](superpowers/specs/2026-10-13-milestone-1-page-approval.md).
+Every `/api/` request needs the key, in a header named `X-Training-Studio-Token`. A `POST` also needs an `Origin` header naming the page's own address and a JSON body. The page's files live with the scripts, in `skills/training-studio/scripts/desk/`. The design is in the [milestone 1 specification](archive/superpowers/specs/2026-10-13-milestone-1-page-approval.md).

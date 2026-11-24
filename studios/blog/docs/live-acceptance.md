@@ -48,7 +48,7 @@ Verify active article pins do not silently adopt changed defaults. Report protec
 branch/read-only behavior if those permissions are actually available; do not
 simulate two real users by claiming two local fixture registries are live evidence.
 
-Keep evidence in `docs/usability-validation.md`: date, candidate tree fingerprint,
+Keep evidence in `docs/archive/usability-validation.md`: date, candidate tree fingerprint,
 CLI/runtime versions, fixture-versus-live distinction, actual outcome, and remaining
 requirements. Never include tokens, email addresses, private article excerpts, or
 unselected document contents. Existing live issues #8–#10 and #15 stay open until

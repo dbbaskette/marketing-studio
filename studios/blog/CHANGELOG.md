@@ -1029,7 +1029,7 @@ changes for authors first, then what changes for maintainers.
   outcomes easier to consume without changing compatible full JSON.
 - Git tree reads reuse exact immutable revisions within one bounded operation;
   nothing caches remote freshness or changes published history.
-- See [capabilities](docs/capabilities.md), [privacy](docs/privacy-review.md) and
+- See [capabilities](docs/capabilities.md), [privacy](docs/archive/privacy-review.md) and
   [optional proposals](docs/optional-extensions.md) for limits and future scope.
 
 ## 3.0.0 — 2026-10-15

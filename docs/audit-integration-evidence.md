@@ -1,5 +1,10 @@
 # Audit integration evidence
 
+> Point-in-time record, November 4, 2026: the evidence for the audit roadmap as it was
+> merged then. Later releases changed some of what it describes (spending limits were
+> removed in 4.17.0); see the [release notes](release-notes.md). It stays here, not in
+> [the archive](archive/README.md), because every package ships it.
+
 The original audit scope is #297, #305 and #312–#325, tracked by #326. The implementation
 landed in eight weekly cohorts, with one suite PR per cohort. Related spending
 policy #304 was subsequently completed separately. Infographic Studio first-release
@@ -41,14 +46,14 @@ live-provider, signed-in delivery or owner acceptance; #224 remains separate.
 
 Measured benefits and tradeoffs:
 
-- [Large-workspace polling](https://github.com/dbbaskette/marketing-studio/blob/main/docs/incremental-polling-measurement.md):
+- [Large-workspace polling](https://github.com/dbbaskette/marketing-studio/blob/main/docs/archive/incremental-polling-measurement.md):
   modeled full reads across 30 probes fell from 30 to 4 at 6,000 files and to 7 at
   20,000 files. External changes can wait for the scan/catch-up; metadata scanning
   is not universally faster than the old aborted probe.
-- [Early evidence](https://github.com/dbbaskette/marketing-studio/blob/main/docs/early-evidence-measurement.md):
+- [Early evidence](https://github.com/dbbaskette/marketing-studio/blob/main/docs/archive/early-evidence-measurement.md):
   scripted first finding 1.041 s, first section 2.638 s, checked report 3.179 s,
   unchanged ten worker calls.
-- [Provisional renderer spike](https://github.com/dbbaskette/marketing-studio/blob/main/docs/provisional-preview-spike.md):
+- [Provisional renderer spike](https://github.com/dbbaskette/marketing-studio/blob/main/docs/archive/provisional-preview-spike.md):
   a 100-slide cold preview displayed at 1.880 s provisionally versus 12.523 s after
   sealing; a one-slide edit gained 3.540 s. Small edited decks gained only 0.135 s.
   The prototype is deliberately not part of the production approval path.

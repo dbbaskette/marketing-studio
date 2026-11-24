@@ -35,7 +35,7 @@ live in `ui-kit/style.css`. Both retain the upstream copyright and MIT permissio
 Use the affected studio UI module suites, and look at the changed screens at phone and
 desktop width over a disposable fixture. Check retained input, rapid selection, focus, no jobs from navigation, reduced motion,
 light/dark appearance and page overflow. Reuse the full Training Studio suite recorded in
-[the workflow plan](../superpowers/plans/2026-11-07-cult-ui-workflows.md) for unchanged runtime code.
+[the workflow plan](../archive/superpowers/plans/2026-11-07-cult-ui-workflows.md) for unchanged runtime code.
 
 The Tart wrapper `scripts/ci/guest-cult-source-ui.sh` runs the shared intake and
 consistency suites. It no longer drives the five surfaces in a browser.

@@ -3,7 +3,7 @@
 The form's choice, the run that pins it, the worker tools that keep to the sites, the
 research jobs that name them and the research stop that says what was refused. Tests named
 row_129 and row_130 cover those rows of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Nothing touches the
+docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Nothing touches the
 network: pages come from a pretend web, and settings are a disposable studios config.
 """
 import json

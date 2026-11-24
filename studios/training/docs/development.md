@@ -1,6 +1,6 @@
 # Development
 
-Working agreements for this repository are in [AGENTS.md](../AGENTS.md). [The runner](runner.md) and [how it works](how-it-works.md) describe the studio as it is now. The first [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) and its build order, the [plan](superpowers/plans/2026-10-12-training-studio-core-pipeline.md), are history: they come before review levels, combined reviews, synthesis research and your sites.
+Working agreements for this repository are in [AGENTS.md](../AGENTS.md). [The runner](runner.md) and [how it works](how-it-works.md) describe the studio as it is now. The first [design](archive/superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) and its build order, the [plan](archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md), are history: they come before review levels, combined reviews, synthesis research and your sites.
 
 ## Layout
 
@@ -41,7 +41,7 @@ installer/                  install.sh, install.py and a double-click launcher
 tests/                      unit tests; temporary directories only
   stand_ins/                the companion tools the runner calls, played in Python
   fixtures/                 a companion's own contract fixtures, copied unchanged
-docs/                       this documentation, the spec, the plan and reviews
+docs/                       this documentation; archive/ keeps the specs and plans
 ```
 
 ## Run the tests
@@ -244,13 +244,13 @@ The automated suite covers the helper, the installer and the runner. It does not
 
 All five phases are built, each from its own specification:
 
-1. [The core pipeline](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md), as a skill.
-2. [Packaging](superpowers/specs/2026-10-12-phase-2-packaging.md): the installer.
-3. [The Google Docs round-trip](superpowers/specs/2026-10-12-phase-3-google-round-trip.md).
-4. [The team hub](superpowers/specs/2026-10-12-phase-4-team-hub.md).
-5. [The page](superpowers/specs/2026-10-12-phase-5-training-desk.md).
+1. [The core pipeline](archive/superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md), as a skill.
+2. [Packaging](archive/superpowers/specs/2026-10-12-phase-2-packaging.md): the installer.
+3. [The Google Docs round-trip](archive/superpowers/specs/2026-10-12-phase-3-google-round-trip.md).
+4. [The team hub](archive/superpowers/specs/2026-10-12-phase-4-team-hub.md).
+5. [The page](archive/superpowers/specs/2026-10-12-phase-5-training-desk.md).
 
-The runner came after them, in milestones from [its design](superpowers/specs/2026-10-13-studio-runner-design.md): [approval on the page](superpowers/specs/2026-10-13-milestone-1-page-approval.md), [the runner's core](superpowers/specs/2026-10-13-milestone-2-runner-core.md), [the rest of a training](superpowers/specs/2026-10-13-milestone-3-rest-of-training.md), [the slide deck](superpowers/specs/2026-10-13-milestone-4-slides.md) and [the team](superpowers/specs/2026-10-13-milestone-5-team.md).
+The runner came after them, in milestones from [its design](archive/superpowers/specs/2026-10-13-studio-runner-design.md): [approval on the page](archive/superpowers/specs/2026-10-13-milestone-1-page-approval.md), [the runner's core](archive/superpowers/specs/2026-10-13-milestone-2-runner-core.md), [the rest of a training](archive/superpowers/specs/2026-10-13-milestone-3-rest-of-training.md), [the slide deck](archive/superpowers/specs/2026-10-13-milestone-4-slides.md) and [the team](archive/superpowers/specs/2026-10-13-milestone-5-team.md).
 
 The [shared studios convention](shared-studios.md) records the common repository
 layout and the file of shared values every studio reads and writes.

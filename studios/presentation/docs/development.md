@@ -1,6 +1,6 @@
 # Development
 
-Working agreements for this repository are in [AGENTS.md](../AGENTS.md). [The runner](runner.md) describes the studio as it is now. The first [design](superpowers/specs/2026-10-14-presentation-studio-design.md) and its build [plan](superpowers/plans/2026-10-14-presentation-studio.md) are kept as history. Much of the code was ported from Training Studio, which then had its own repository, [dbbaskette/training-studio](https://github.com/dbbaskette/training-studio), since retired; Training Studio now lives in this repository, in [`studios/training`](../../training). `vendor.json` lists every ported file with the file and revision it came from. The runner modules both studios share live once, in `core/studio_core/shared_runner` (see `runner/__init__.py`).
+Working agreements for this repository are in [AGENTS.md](../AGENTS.md). [The runner](runner.md) describes the studio as it is now. The first [design](archive/superpowers/specs/2026-10-14-presentation-studio-design.md) and its build [plan](archive/superpowers/plans/2026-10-14-presentation-studio.md) are kept as history. Much of the code was ported from Training Studio, which then had its own repository, [dbbaskette/training-studio](https://github.com/dbbaskette/training-studio), since retired; Training Studio now lives in this repository, in [`studios/training`](../../training). `vendor.json` lists every ported file with the file and revision it came from. The runner modules both studios share live once, in `core/studio_core/shared_runner` (see `runner/__init__.py`).
 
 ## Layout
 
@@ -33,7 +33,7 @@ installer/                  install.sh, install.py and a double-click launcher;
 tests/                      unit tests; temporary directories only
   stand_ins/                harness-slides, harness-research and a brand skill, played in Python
   fixtures/                 a companion's own contract fixtures, copied unchanged
-docs/                       this documentation, the spec and the plan
+docs/                       this documentation; archive/ keeps the first spec and plans
 ```
 
 ## Run the tests
