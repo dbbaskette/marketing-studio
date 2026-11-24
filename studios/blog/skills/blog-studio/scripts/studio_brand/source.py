@@ -16,7 +16,7 @@ What a caller needs to know
   The guidance's isolated git, which ignores the person's settings, is never used here.
 - There are no releases to choose from and no tags are read: the brand skill is installed
   and updated from its repository's `main`. An update is due when main is at another commit
-  than the one installed. `order` still orders version numbers, for the floor a deck needs:
+  than the one installed. `order` still orders version numbers, for the oldest companion an installer accepts:
   a version whose first number is a year, 2000 to 2099, is from an older way of numbering
   and comes before every other.
 - `check` reads where main is with `git ls-remote` and nothing else. A repository that

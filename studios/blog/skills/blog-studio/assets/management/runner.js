@@ -4,7 +4,6 @@ const RUN_LABELS={desk:'On the desk','on-desk':'On the desk','waiting-for-approv
 const STAGE_STATUSES={draft:'Waiting for you',approved:'Approved',pending:'Not started',stale:'Needs a new review'};
 const BLOG_MODES=[['ideas','Explore ideas'],['from-files','New blog from my files'],['from-outline','Use my outline'],['write','Write a blog'],['outline','Outline only'],['revise','Revise a draft'],['review','Review a draft']];
 const STUDIO_ICONS={home:['M4 11.5 12 4.5l8 7','M6.5 10.5V19.5h11V10.5'],blogs:['M12 4 3.5 8.5 12 13l8.5-4.5z','M3.5 12.5 12 17l8.5-4.5','M3.5 16.5 12 21l8.5-4.5'],status:['M3 12.5h4l2.5-6.5 4.5 12 2.5-5.5H21'],voices:['M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z','M6 11.5a6 6 0 0 0 12 0','M12 17.5V20.5'],settings:['M4.5 7.5h7','M16.5 7.5h3','M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z','M4.5 16.5h3','M12.5 16.5h7','M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z'],back:['M14.5 5.5 8 12l6.5 6.5'],check:['M5.5 12.5 10 17l8.5-10'],eye:['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z','M12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6z'],warn:['M12 6v7.5','M12 17.5h.01']};
-const REVIEW_WORDS={balanced:'Balanced',automatic:'Automatic draft',step_by_step:'Step by step'};
 // Where research may look, said one way wherever it is chosen: your documents, your sites
 // (the shared list in Shared settings) and/or the public web. Older words read as they meant.
 const OLD_RESEARCH={none:{documents:false,sites:false,web:false},'supplied-only':{documents:true,sites:false,web:false},'web-allowed':{documents:true,sites:false,web:true}};

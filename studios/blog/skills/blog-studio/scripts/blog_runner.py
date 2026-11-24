@@ -3562,24 +3562,6 @@ def add_parser(groups):
             cmd.add_argument('--stage', choices=tuple(STAGES))
 
 
-def research_from_words(words, sites):
-    """--research-from documents,sites,web and --site: the shared shape. Sites are the
-    shared list unless sites are given for this blog."""
-    import studios_config
-
-    named = [word.strip() for word in words.split(',') if word.strip()]
-    if not named or set(named) - {'documents', 'sites', 'web'}:
-        raise ValueError('Give --research-from as documents, sites or web, comma separated.')
-    if sites and 'sites' not in named:
-        named.append('sites')
-    listed = []
-    if 'sites' in named:
-        listed = list(sites) or research_sites.defaults(studios_config.read()[0])
-        if not listed:
-            raise ValueError(research_sites.NO_SITES)
-    return {'documents': 'documents' in named, 'sites': listed, 'web': 'web' in named}
-
-
 def command(root, args):
     if args.action == 'create':
         raise ValueError(

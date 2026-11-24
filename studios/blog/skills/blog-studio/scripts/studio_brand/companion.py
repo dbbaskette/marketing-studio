@@ -6,8 +6,8 @@ What a caller needs to know
     VARIABLE, SCRIPT = 'HARNESS_SLIDES_RUNTIME', Path('scripts') / 'harness-slides.mjs'
     places = companion.locations(VARIABLE, 'harness-slides', 'Harness Slides')
     runtime = companion.find_runtime(places, SCRIPT, VARIABLE, 'harness-slides',
-                                     'a deck cannot be made')
-    code, out, err = companion.run_command(command, cwd, 300, 'The slides tool')
+                                     'its version cannot be read')
+    code, out, err = companion.run_command(command, cwd, 300, 'Harness Slides')
     with companion.stopping(run.stop):
         ...                                   # every command run here ends on Stop
     code, late = companion.supervise(command, cwd, env, stdin, seconds, errors, each, stop)
