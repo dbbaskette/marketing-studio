@@ -222,8 +222,8 @@ Reuse the completed disposable Codex round-trip, accepted-text/suggestion,
 visible-comment, template and PDF/Word checks for unchanged behavior. Remaining
 work is the participating-user workflow, independent Claude discovery, shared
 continuation by a second member, and an explicitly selected permission-change
-case. The [acceptance record](issue-validation-2026-10-03.md) separates live evidence
-from fixtures; the [remaining acceptance map](remaining-acceptance.md) lists what
+case. The [acceptance record](archive/issue-validation-2026-10-03.md) separates live evidence
+from fixtures; the [remaining acceptance map](archive/remaining-acceptance.md) lists what
 is still untested. Completing setup documentation performs no live operation.
 
 See the [Google roadmap](google-docs-roadmap.md) for disclosure costs and the
@@ -255,7 +255,7 @@ Renaming the Doc or a tab does not count as a
 change. DOCX fidelity still needs inspection. No live document is modified by
 installing or upgrading.
 
-[Validation evidence and live-test boundaries](google-roundtrip-validation.md).
+[Validation evidence and live-test boundaries](archive/google-roundtrip-validation.md).
 
 ## Freshness and milestone names
 
@@ -343,7 +343,7 @@ that are still missing instead of starting over, and it tells you plainly when
 nothing reached Google. Live Google account validation is separate from fixture
 tests.
 
-Developer evidence and remaining live checks: [suggestion validation](google-suggestions-validation.md).
+Developer evidence and remaining live checks: [suggestion validation](archive/google-suggestions-validation.md).
 
 ## When Google suggestions are unavailable
 

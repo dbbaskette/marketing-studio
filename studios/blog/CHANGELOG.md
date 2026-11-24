@@ -1,5 +1,7 @@
 # Changelog
 
+Unreleased (4.19.0): the blog's parts are listed down the left of the desk: the Outline, the title, the opening and each section, the Finishing tools with open items, and Sources with their count. Choosing one shows it, and the address names the part shown. Google requests go through the studios' one shared Google transport, and a Word file whose inner XML declares a DOCTYPE or an entity is refused. Every saved state of the step-by-step flow is pinned by a test; runs saved with a research execution record keep their saved flow ([#532](https://github.com/dbbaskette/marketing-studio/issues/532), [#519](https://github.com/dbbaskette/marketing-studio/issues/519)).
+
 Unreleased: finished work reaches the Document Library without a publication address. A desk blog is kept in the Document Library on this computer when it is marked **ready**, and a solution brief, with its PDF, when **Make the brief** makes it; the notice, the brief's sheet and the desk's toolbar say so. Marked ready again after a change, the same document gets a new revision; nothing is kept for an empty draft. **Mark as published** still asks for the public address and keeps the draft as before. A kept blog or brief offers **Continue in another studio** under **Share** when Marketing Studio opened Blog Studio, and a Document Library item continued in Blog Studio opens New blog with **Starting from:** its title; it becomes a source only when you start. Verified research is kept there too, and the blog's Activity log says so ([#514](https://github.com/dbbaskette/marketing-studio/issues/514)).
 
 Unreleased: one clear source picker. **Add a source** has four tabs: **This computer** (the Document Library), **Team library**, **Upload** and **Paste or link**, each with one short line in place of the long paragraph. **Upload** also takes Excel workbooks, read as text, and a whole folder: one on this computer (only from this computer, never over the phone link) or a Google Drive folder link ([#516](https://github.com/dbbaskette/marketing-studio/issues/516)).
@@ -1027,7 +1029,7 @@ changes for authors first, then what changes for maintainers.
   outcomes easier to consume without changing compatible full JSON.
 - Git tree reads reuse exact immutable revisions within one bounded operation;
   nothing caches remote freshness or changes published history.
-- See [capabilities](docs/capabilities.md), [privacy](docs/privacy-review.md) and
+- See [capabilities](docs/capabilities.md), [privacy](docs/archive/privacy-review.md) and
   [optional proposals](docs/optional-extensions.md) for limits and future scope.
 
 ## 3.0.0 — 2026-10-15

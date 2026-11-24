@@ -185,6 +185,7 @@ When your decks are kept in a repository your team shares, several people work i
 - **Publishing** marks a finished deck, as it stands, as its next numbered revision.
 - **What is shared.** The deck's text, decisions, brand contract, Google Slides link and a small contact sheet. Uploaded files, the original deck, slide pictures and renders stay on the computer that made them (`sources/` and `work/` are never committed).
 - **A deck made in a conversation** with `/presentation-studio` keeps the same folder and run record as one the runner makes. The runner can copy such a deck into its workspace and carry on from what its record says, leaving the original folder as it was; the page offers it as **Bring in a deck**, on Decks, for the decks this computer remembers: pick one, then **Bring it in**. A deck the runner drives is never also driven from a conversation.
+- **Known limit ([#541](https://github.com/dbbaskette/marketing-studio/issues/541)).** The shared check for running steps refuses the whole workspace when one deck record in it is one it does not read, such as a desk deck started with research (a record newer than schema 3) or an unreadable one. In that workspace, sharing, starting or changing a deck in a conversation, and migration previews then fail with "The repository could not be checked for running Studio steps". This is not fixed yet.
 
 ## Research you can review
 

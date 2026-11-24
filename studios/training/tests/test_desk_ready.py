@@ -7,7 +7,7 @@ material is said before and after; and the topics review is the one thing Home r
 while it is open.
 
 The tests named row_200 to row_204 cover those rows of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Every library is a
+docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Every library is a
 disposable folder (STUDIOS_LIBRARY, set by runner_support), every worker is scripted, and the
 page journeys run the page's own scripts in page_harness.js against answers the real runner
 gave. Nothing reaches Google, an assistant or the network.

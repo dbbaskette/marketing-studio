@@ -5,14 +5,14 @@ description: Write and revise blogs, learn author voices, resume work, browse an
 
 # Blog Studio
 
-For contextual browser tasks and their limits, read [page tools](references/page-tools.md) only when needed.
+For browser tasks and their limits, read [page tools](references/page-tools.md) when needed.
 
 For a shared studios repository, drivers, handovers or migration, read
 [team workspace](references/workspace/team-workspace.md).
 
 For new work in chat, use [conversation desk commands](references/conversation-desk.md).
-The current conversation writes the requested material without opening a page or starting
-another assistant. Outline, research, interview and passage requests keep their scope.
+This conversation writes the requested material; it opens no page and starts no other
+assistant. Outline, research, interview and passage requests keep their scope.
 For older work with `derived/blog-run.json`, use the clearly marked
 [saved step-by-step work](references/guided-runs.md) path.
 For an explicit request to move eligible unfinished work to the desk, use the
@@ -39,6 +39,7 @@ Load the module and required references; reuse unchanged guidance.
 | Outline | [argument](references/modules/blog-argument-outline.md) |
 | Draft/from outline | [write](references/modules/blog-write.md) |
 | Titles/hooks/CTA | [copywriting](references/modules/copywriting.md) |
+| Solution brief | [solution brief](references/modules/solution-brief.md) |
 | Edit/feedback | [editing](references/modules/copy-editing.md) |
 | Voice rules | [voice check](references/modules/blog-voice-check.md) |
 | Prose humanization | [humanize](references/modules/blog-humanize.md) |

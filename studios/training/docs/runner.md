@@ -366,7 +366,7 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 - Claude Code's models are kept in one file, `core/studio_core/claude-code-models.json`, because Claude Code cannot list them and the runner has no key to ask Anthropic. To bring it up to date, read Anthropic's model reference and change that file alone. Set `source` and `date` to the day you read it. A version is `{"id", "label", "family", "levels"}`: `id` is the exact name the agent is given, `label` how the page names it ("Opus 5.5"), and `levels` the reasoning levels it takes, `[]` for none. A family's own name is `{"id", "family", "alias"}`, where `alias` is the version it means now; its label and levels follow from that version. Keep each family's own name first, then its versions newest first, and leave out models only some accounts can use. The runner refuses a file that is not whole, and `tests/test_runner_agents.py` says what the list should hold, so change it there too. The runner on `main` carries the change.
 - `sh ~/.local/share/training-studio/studio status` prints what is set up and where every run is, as JSON. From a copy of the repository it is `python3 runner/studio.py status`.
 
-The design is in [the runner's specification](superpowers/specs/2026-10-13-studio-runner-design.md). Working as a team is specified in [milestone 5](superpowers/specs/2026-10-13-milestone-5-team.md).
+The design is in [the runner's specification](archive/superpowers/specs/2026-10-13-studio-runner-design.md). Working as a team is specified in [milestone 5](archive/superpowers/specs/2026-10-13-milestone-5-team.md).
 
 ## The companions, as the runner uses them
 

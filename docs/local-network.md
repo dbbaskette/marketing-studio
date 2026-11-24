@@ -1,6 +1,6 @@
 # Local-network access
 
-Marketing Studio can serve its responsive interface and all three studios to a
+Marketing Studio can serve its responsive interface and all four studios to a
 phone or tablet on the same trusted local network. Everything runs on the host
 computer; nothing needs installing on the phone.
 
@@ -106,7 +106,7 @@ to check authentication, exact Host/Origin checks, duplicate headers, request si
 limits, fixed targets, key rotation, unavailable children, CLI redaction, reuse,
 and shutdown. It keeps every bridge size limit equal to the studio's own limit, and
 checks which link the computer and the phone are each given. `tests/test_qr_code.py`
-reads each QR code back with a separate decoder. Native launch acceptance also opens and authenticates all three
-real studio HTTP servers through the bridge using synthetic workspaces and no
+reads each QR code back with a separate decoder. Native launch acceptance also opens and authenticates the studios'
+real HTTP servers through the bridge using synthetic workspaces and no
 provider jobs. Responsive visual checks cover narrow forms and home pages; physical
 phone connectivity still depends on the network and host firewall.

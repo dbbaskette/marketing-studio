@@ -927,7 +927,7 @@ transfer or a publishing action. The page does not change Google sharing.
 
 ## Verification
 
-[Runner validation](runner-validation.md) records the state matrix, synthetic
+[Runner validation](archive/runner-validation.md) records the state matrix, synthetic
 checks and acceptance limits. [Hub acceptance](hub-acceptance.md) covers the
 existing create/join, intake, saves, reviews and cross-clone protections.
 

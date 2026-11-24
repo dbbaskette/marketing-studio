@@ -241,7 +241,7 @@ Creator-approved research says **Creator accepted**. Its warnings follow your ch
 Keyboard selection/focus and expanded detail survive polling. The projection
 reuses the existing survey and cards, with no extra file reads or provider calls.
 It does not depend on implementing the proposed concurrent scheduler. The
-[implementation plan](../superpowers/plans/2026-11-06-training-progress-map.md)
+[implementation plan](../archive/superpowers/plans/2026-11-06-training-progress-map.md)
 records the state matrix and verification.
 
 ## How to judge the result
@@ -257,7 +257,7 @@ The readable-first regression compares four levels: the first guide no longer
 waits for three additional level-planning calls. A native two-level scripted run
 reached its first slide approval with both guides, briefs and practice available.
 This measures dispatch order and availability, not live provider latency or
-semantic output quality. The [implementation and verification record](../superpowers/plans/2026-11-06-training-flow-polish.md)
+semantic output quality. The [implementation and verification record](../archive/superpowers/plans/2026-11-06-training-flow-polish.md)
 contains the test evidence and UI audit results.
 
 ## Source map
@@ -271,7 +271,7 @@ contains the test evidence and UI audit results.
 - [Research phase barriers and correction loop](../../core/studio_core/research_session.py): `Workflow`.
 - [Section authors and final assembly](../../core/studio_core/research_sections.py): `combine`.
 - [Slide section pool](../../studios/training/runner/engine.py): `_sections`.
-- [Parallel research checking design](../superpowers/specs/2026-11-05-parallel-research-checking.md).
+- [Parallel research checking design](../archive/superpowers/specs/2026-11-05-parallel-research-checking.md).
 
 Practice planning defaults to AI selection. Creators can instead provide short
 scenario descriptions; each selected level receives those scenario IDs, adapted to

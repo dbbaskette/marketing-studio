@@ -4,7 +4,7 @@ then linked to, and no second Doc after an uncertain answer unless the person as
 stays the person's local approval and never sends anything by itself here. A pretend Drive
 and the stand-ins of the runner tests; nothing reaches Google. Tests named row_197 to
 row_199 cover those rows of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
+docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import helpers  # noqa: F401  the path-setting imports must come before runner
 import gdocs
 import workspace

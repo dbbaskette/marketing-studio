@@ -42,7 +42,7 @@ accepted helper bundle; this creator handoff is for the native Training Studio r
 
 The diagram and state transitions are linked from
 [Create training](design/create-training-task-flow.md) and the
-[implementation plan](superpowers/plans/2026-11-05-training-creator-review.md).
+[implementation plan](archive/superpowers/plans/2026-11-05-training-creator-review.md).
 Other studios and older non-collection execution retain their existing correction
 policy described below.
 
@@ -52,8 +52,8 @@ New researched Presentation Studio desks first run one bounded Quick scan and wa
 an editable slide-story approval. Only retained sections/questions enter the collection
 plan; the complete approved story also reaches the slide-text author. Saving a title or
 question starts no model job. Ready scripts and selected edits retain direct routes.
-The scan uses bounded supplied excerpts, zero external searches, at most 180 seconds
-and $0.25 within existing limits, and never supplies accepted evidence. Partial/fallback
+The scan uses bounded supplied excerpts, zero external searches and at most 270 seconds
+(4.5 minutes), with no spending cap, and never supplies accepted evidence. Partial/fallback
 stories survive stop/timeout without escalation. Schema-5 records preserve this order;
 older records keep their saved flow. The existing whole-dossier independent check and
 subsequent slide-text approval still apply.
@@ -192,11 +192,10 @@ Blog Studio supplies the same brief and typed evidence to later writing jobs.
 Earlier synthesis-driven browser runs use run schema 3, so older studio runtimes
 refuse them rather than resuming through a legacy research adapter. A missing
 research contract is rejected. Existing manual and queued research continues
-through its old adapter. A run records the Harness Research version and digest it
-started with. When Harness Research is updated before the run finishes, the studio
-runs and verifies its research with the matching retained
-`versions/<version>-<digest>` folder of the Harness Research installation; only when
-that version is gone does it ask for it to be restored. Fresh
+through its old adapter. A run records the Harness Research version it started with.
+When Harness Research is updated before the run finishes, the run continues and is
+verified on the installed helper through its stable `current` address (see the end of
+this page); nothing asks for an earlier version to be restored. Fresh
 conversation workflows can explicitly import a complete synthesis case:
 
 - Training Studio: `training.py research-import --case CASE`, then its normal
@@ -309,7 +308,7 @@ bytes are checked again at start; unrelated ready sources survive a failed read.
 
 New supported research runs use up to three investigators (one or two can be
 chosen under Research options), then synthesis and a distinct independent review.
-Every invocation has a host-issued identity. The pinned helper validates its
+Every invocation has a host-issued identity. The installed helper validates its
 capture receipts and investigation packet, then assembles the evidence registry.
 Checked areas survive a peer failure; prose correction reuses the registry and
 located fact correction retries the affected area. An unchanged complete request
@@ -336,8 +335,8 @@ under a condition (`context_note` when `context` is partial) or optional, its
 allowed values, and what it means: `publisher` as the source shows it, `context`
 full or partial, and `source_date` only when the source states one, never guessed.
 `research_contract.source_outline` reads the fields, required list, choices and
-conditions from the pinned helper's `references/synthesis.schema.json`, so the
-outline follows the helper version a run is pinned to. The studio sets
+conditions from the installed helper's `references/synthesis.schema.json`, so the
+outline follows the helper version the run uses. The studio sets
 `original_file` itself. A source saved during the job is built the same way from
 what saving it returned.
 
@@ -352,7 +351,7 @@ and source IDs, repeats and collisions; each fact's statement, author and
 citations; unknown fact and citation fields in an evidence packet; and each quote,
 which must appear exactly in the capture text the helper will read. A quote that
 differs only in spacing or quotation-mark style is shown as the capture has it.
-These checks refuse nothing the helper accepts: the real pinned helper is checked
+These checks refuse nothing the helper accepts: the real helper the tests run is checked
 against each rule in `tests/test_research_packet_problems.py`. When they find
 nothing, the helper runs on the whole submission as before and still decides; when
 they find something in an evidence packet, the helper runs on the part with nothing
@@ -368,19 +367,19 @@ synthesizer, and a serial research author, is handed `synthesis_outline`: what e
 part it returns takes (findings, sections, brief, optional comparisons), the shape
 of a finding, a section, a statement and a comparison with their required fields,
 choices and minimum counts, all read by `research_contract.synthesis_outline` from the
-pinned schema, and the rules Harness Research enforces beyond it (which IDs each
+helper's schema, and the rules Harness Research enforces beyond it (which IDs each
 `refs` may name, gap blocks, distinct IDs, one cell per comparison subject, text
 bounds). A refused synthesis lists every problem at once: `compose_shape` names every
 missing part, and `synthesis_problems` holds the helper's `synthesis save` rules for
 findings, sections, brief and comparisons, so the helper, which stops at the first,
 runs only once these pass, and still decides. The independent review is handed
-`review_outline` (its fields from the pinned schema) beside its `review_template`, and
+`review_outline` (its fields from the helper's schema) beside its `review_template`, and
 is now checked inside its own job: `review_problems` holds every rule of the helper's
 review check except the reviewer's identity and stale evidence, which the studio
 controls, so a review left with a pending verdict, an empty note, a missing item or a
 changed hash is corrected by the reviewer instead of failing the research after the
 job. `tests/test_research_synthesis_problems.py` checks each of these rules against the
-real pinned helper, in both directions.
+real helper the tests run, in both directions.
 
 Progress distinguishes elapsed time from observed active time and total assistant
 time. Overlapping assistants do not multiply wall time, and missing cost remains
@@ -407,8 +406,8 @@ the same form after a lost reply reopens the existing item.
 ## Training Studio outline-first scope
 
 New Training Studio runner desks pin an outline-first flow. One Quick scan uses at most
-48,000 characters of supplied excerpts, zero external searches, 180 seconds and $0.25
-within existing limits. Its structured output is provisional, never accepted evidence.
+48,000 characters of supplied excerpts, zero external searches and 270 seconds (4.5
+minutes), with no spending cap. Its structured output is provisional, never accepted evidence.
 Timeout/stop preserves an editable outline or an explicitly incomplete starting outline.
 
 The person saves or approves local section/objective/question edits against the exact
@@ -416,7 +415,8 @@ intake and source basis. Only approval writes the research plan, with one item p
 section; additional typed questions stay visible and are included with the first retained
 section. Older saved collection grouping caps concurrent areas at three and keeps the saved
 round limits. New section flows follow the incremental protocol below. Independent
-review still checks the complete dossier under the pinned 1.1.1 contract.
+review still checks the complete dossier under the installed helper's contract (Harness
+Research 1.3.1 or newer).
 Teaching-plan/material workers receive the approved scope with the checked research.
 
 Old records retain their flow. Explicit adoption is limited to supported stopped runner
@@ -500,6 +500,6 @@ This display does not feed approval or delivery. The registered collection still
 assembles through the helper, and the complete report still passes independent
 verification. First accepted finding, first saved section and checked final report
 have separate timing fields. The
-[scripted measurement](https://github.com/dbbaskette/marketing-studio/blob/main/docs/early-evidence-measurement.md)
+[scripted measurement](https://github.com/dbbaskette/marketing-studio/blob/main/docs/archive/early-evidence-measurement.md)
 records 1.041 / 2.638 / 3.179 seconds and ten unchanged worker calls in one synthetic
 run; it is not a live-model latency estimate.

@@ -1,5 +1,10 @@
 # Studio repository consolidation
 
+> Point-in-time record, October 16, 2026: the plan and outcome of importing Blog Studio,
+> Presentation Studio and Training Studio into this repository. It does not describe
+> current behaviour; see [the architecture](architecture.md). It stays here, not in
+> [the archive](archive/README.md), because every package ships it.
+
 Approved scope: import all three studios with history; verify independent operation;
 extract shared infrastructure; unify dependencies and installation; retire the old
 repositories after verification.
@@ -50,7 +55,7 @@ The shared Tart wrapper owns VM lifecycle and retains environment/test logs.
 - Additional authorized scope: generated README header, first-run documentation,
   and a simple CLI with private reuse of the running application.
 - Full native suites and clean-machine verification passed. The complete evidence
-  is in `verification-v4.0.0.md`. Publication precedes issue transfer and retirement;
+  is in `archive/verification-v4.0.0.md`. Publication precedes issue transfer and retirement;
   the final cutover record identifies the transferred issues.
 
 - Cutover completed: Marketing Studio 4.0.0 and all four installer archives are

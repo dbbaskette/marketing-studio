@@ -1,6 +1,6 @@
 # Google Docs workflow roadmap
 
-Status: G0–G3 implementation is delivered in the current 1.12.2 runtime. G1/G2 are closed after authorized disposable Codex/Google acceptance; PDF/Word export inspection also passed. Remaining work is per-participant/Claude discovery, an explicitly selected sharing case, and the marketing-user pilot. See [Google Docs usage](google-docs.md), [connection contract](google-capabilities.md), and [remaining acceptance](remaining-acceptance.md).
+Status: G0–G3 implementation is delivered in the current 1.12.2 runtime. G1/G2 are closed after authorized disposable Codex/Google acceptance; PDF/Word export inspection also passed. Remaining work is per-participant/Claude discovery, an explicitly selected sharing case, and the marketing-user pilot. See [Google Docs usage](google-docs.md), [connection contract](google-capabilities.md), and [remaining acceptance](archive/remaining-acceptance.md).
 
 ## Implemented scope
 

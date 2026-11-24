@@ -73,7 +73,7 @@ writes and the shell keeps: Auto follows `prefers-color-scheme`, Light stands it
 Dark applies the same dark tokens. No script reads or rewrites a stylesheet to switch it,
 and every `var()` a stylesheet reads names a token one defines (`tests/test_css_tokens.py`).
 See the
-[design it was built from](../superpowers/specs/2026-11-10-golden-gate-3-design.md).
+[design it was built from](../archive/superpowers/specs/2026-11-10-golden-gate-3-design.md).
 
 | Need | Component |
 | --- | --- |
@@ -264,7 +264,7 @@ styles bare controls or headings for the whole page, and takes every colour from
 `tests/test_ui_consistency.py` checks the stylesheets' selectors; a page class on a shared
 element is outside what it can see.
 
-The [Cult-inspired workflow implementation](../superpowers/plans/2026-11-07-cult-ui-workflows.md)
+The [Cult-inspired workflow implementation](../archive/superpowers/plans/2026-11-07-cult-ui-workflows.md)
 records the Training Studio inspector, compact progress, guided steps and grouped
 delivery controls. These adapt interaction patterns within the shared vanilla UI kit.
 

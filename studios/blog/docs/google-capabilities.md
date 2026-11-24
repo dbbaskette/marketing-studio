@@ -37,7 +37,7 @@ into another team's setup.
 
 “Implemented” describes code and conditional guidance, not account access.
 The Codex observations below apply only to the authorized disposable fixtures
-in the [dated acceptance record](issue-validation-2026-10-03.md).
+in the [dated acceptance record](archive/issue-validation-2026-10-03.md).
 
 | Operation | Local gcloud route | Connected Codex evidence | Remaining live boundary |
 | --- | --- | --- | --- |

@@ -14,11 +14,11 @@ The current package implements the six routes, twenty capability modules, and co
 
 ## Repository updates (historical: 1.x)
 
-The installed bootstrap quietly fetches approved `main` for a new writing task, returns a compact status/path record, and progressively reads the pinned repository guidance. Existing articles resume their saved pin and runtime. Core executable updates are explicit managed installs with backup, repair, and rollback. See [installation](installation.md) and the [implementation record](superpowers/plans/2026-10-01-blog-studio-installation.md).
+The installed bootstrap quietly fetches approved `main` for a new writing task, returns a compact status/path record, and progressively reads the pinned repository guidance. Existing articles resume their saved pin and runtime. Core executable updates are explicit managed installs with backup, repair, and rollback. See [installation](installation.md) and the [implementation record](archive/superpowers/plans/2026-10-01-blog-studio-installation.md).
 
-M1 reduced the parent plus entry to **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](m1-entry-validation.md). M2 and M3 are now implemented: focused continuity references and four attributed working craft guides. See the [combined validation record](m2-m3-validation.md). M4 scoped reviews are implemented; I4/M5 pilot progress and remaining live checks are recorded in [the validation record](i4-m4-m5-validation.md).
+M1 reduced the parent plus entry to **1,195 tokens** (787 + 408), down from 2,329. Required capability reads and conditional support reads are explicit. The installed bootstrap is measured separately at **857 tokens**. See the [M1 validation record](archive/m1-entry-validation.md). M2 and M3 are now implemented: focused continuity references and four attributed working craft guides. See the [combined validation record](archive/m2-m3-validation.md). M4 scoped reviews are implemented; I4/M5 pilot progress and remaining live checks are recorded in [the validation record](archive/i4-m4-m5-validation.md).
 
-The current parent plus entry is **1,342 estimated tokens**; the bootstrap is **1,054**. Readiness adds **477** only when needed; workspace plus context controls add **767**. Google modules remain optional. Runtime 1.3.0 adds these usability controls; see [live validation](usability-validation.md).
+The current parent plus entry is **1,342 estimated tokens**; the bootstrap is **1,054**. Readiness adds **477** only when needed; workspace plus context controls add **767**. Google modules remain optional. Runtime 1.3.0 adds these usability controls; see [live validation](archive/usability-validation.md).
 
 ## Disclosure layers
 

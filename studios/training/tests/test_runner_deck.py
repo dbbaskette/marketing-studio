@@ -2403,7 +2403,7 @@ class DesignTests(DeckCase):
     """A slides tool with a design session: what a deck says is proposed with how each slide
     is drawn, the person's one decision is the tool's answer, and the sections are drawn
     from and built against what was approved. Rows V01, V02, V03, V04, V13 and V14 of the
-    state-transition matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    state-transition matrix in docs/archive/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
     WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
@@ -2720,7 +2720,7 @@ class JudgedTests(DeckCase):
     answers the tool's own assessment, a drawing finding is drawn again within its limits,
     and one that needs other words or another concept takes what the deck says back to the
     person. Rows V04, V08 and V09 of the state-transition matrix in
-    docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    docs/archive/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
     WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
@@ -2982,7 +2982,7 @@ class AssetTests(DeckCase):
     """A slides tool that keeps the deck's assets: the icons an approved design names are found
     and recorded before any section is drawn, a picture is the person's to supply on the page,
     and what is drawn is made from what each asset is now. Rows V05, V06 and V07 of the
-    state-transition matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    state-transition matrix in docs/archive/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
     WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
@@ -3373,7 +3373,7 @@ class AdoptionTests(DeckCase):
 class CompatibleTests(DeckCase):
     """A slides tool as released, 0.13.1, with no design session, and trainings that were
     already under way when a newer tool came. Rows V10, V11 and V12 of the state-transition
-    matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md: a deck begun
+    matrix in docs/archive/superpowers/plans/2026-10-14-visual-teaching-in-decks.md: a deck begun
     without a design carries on as it began, is drawn again from one only when the person
     asks, and a new deck waits for a tool that has what it needs."""
     WALKTHROUGH = True   # its decks walk through each slide's design

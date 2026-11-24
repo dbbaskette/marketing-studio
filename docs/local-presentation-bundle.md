@@ -73,7 +73,7 @@ tracked template. Each component accepts a local Git checkout or a Git URL:
       "git": "https://github.com/dbbaskette/harness-research-skill.git",
       "ref": "v1.0.0"
     },
-    "brand": {"path": "../tanzu-brand"}
+    "brand": {"path": "../harness-brand-skill"}
   }
 }
 ```
@@ -107,7 +107,7 @@ Override the brand or output location explicitly when needed:
 
 ```sh
 presentation-studio-package \
-  --brand /path/to/tanzu-brand \
+  --brand /path/to/harness-brand-skill \
   --output "$HOME/LocalBundles/presentation-studio"
 ```
 
