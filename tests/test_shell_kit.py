@@ -89,7 +89,8 @@ class LoadedTests(unittest.TestCase):
                      '[data-zone="rail"]', '.workbench-head'):
             self.assertIn(part, kit)
         script = (ROOT / 'core/studio_core/deck_web/shell.js').read_text(encoding='utf-8')
-        for name in ('connect', 'commands', 'palette', 'track', 'setAppearance', 'arc', 'pulse', 'move'):
+        for name in ('connect', 'commands', 'palette', 'track', 'setAppearance', 'arc', 'pulse', 'move',
+                     'parts'):
             self.assertRegex(script, rf'\b{name}\b')
         # The finish card was never shown by any studio, so it is no longer offered.
         self.assertNotIn('function finish', script)

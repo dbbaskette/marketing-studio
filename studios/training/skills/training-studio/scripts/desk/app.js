@@ -519,7 +519,7 @@ const TRACK_STATES = { done: 'done', review: 'yours', late: 'yours', current: 'c
 // With `calm` (a training that is working and waits on nobody) a stage that can already be
 // read is shown as ready to read, not as the person's move.
 function beads(stages, small, calm = false) {
-  if (typeof StudioShell !== 'undefined') {
+  if (typeof StudioShell !== 'undefined' && StudioShell.track) {
     return StudioShell.track(list(stages).map(stage => {
       const readable = calm && stage.state === 'review';
       return { label: stage.name,
@@ -1055,7 +1055,9 @@ function show(screen, where, replace) {
 
 function back() {
   if (view.pushed > 0) {
-    window.history.back();
+    // Back leaves the screen, past the parts of a desk chosen on it (deskAddress).
+    const parts = Number(window.history.state?.deskStep) || 0;
+    if (parts) window.history.go(-1 - parts); else window.history.back();
     return;
   }
   const up = { gate: homeOf(view.path), index: homeOf(view.path), outline: 'run', new: 'home',
@@ -9494,6 +9496,8 @@ function begin() {
     suite.hidden = false;
   }
   window.addEventListener('popstate', (event) => {
+    // Back or Forward between two parts of the desk on screen shows that part, no more.
+    if (typeof deskReturnTo === 'function' && deskReturnTo(event.state)) return;
     view.pushed = Math.max(0, view.pushed - 1);
     open(event.state || { screen: 'home' });
   });

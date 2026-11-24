@@ -11,7 +11,7 @@
 // {notification: which one} for a click on a notification the page showed, {attach: the
 // label of a file picker, files: what is chosen in it}, {polls: how many} for the page's own
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
-// another or brought back, {timer: a function's name} for the last timer the page set to
+// another or brought back, {back: true} for the browser's own Back, {timer: a function's name} for the last timer the page set to
 // call it, {tick: the name of a check box} for a click on that box, and {hold: the name of
 // a control} to follow that very node, {command: a title} to choose that title in Search and
 // jump (with a plan of {shell: true}), and {edit: a material's Edit control} to open it for
@@ -601,6 +601,13 @@ function snapshot() {
       : document.activeElement ? (document.activeElement.id || name(document.activeElement)) : '',
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
     current: document.body.querySelectorAll('[aria-current]').filter(node => node.getAttribute('aria-current') !== 'step').map(name),
+    // The list of the training's parts (StudioShell.parts): each group's heading and its parts,
+    // each named as a screen reader hears it, the one shown marked '> '.
+    partsList: document.body.querySelectorAll('.parts-group').filter(visible).map((group) => [
+      group.querySelector('.parts-group-title').textContent, group.querySelectorAll('.parts-item')
+        .map((item) => (item.getAttribute('aria-current') === 'true' ? '> ' : '') + name(item))]),
+    partsControl: document.body.querySelectorAll('.parts-toggle').filter(visible).map((node) => [name(node),
+      node.getAttribute('aria-expanded')]),
     sheet: sheet.hidden ? '' : words(sheet).replace(/\n+/g, '\n'),
     toasts: document.body.querySelectorAll('.toast').map((node) => node.textContent),
     links: document.body.querySelectorAll('a').filter((node) => visible(node) && node.href)
@@ -804,7 +811,8 @@ async function app(file) {
       reload() { report.reloads += 1; } },
     history: {
       state: plan.state || null,
-      earlier: [],
+      // A plan with {earlier: [states]} has been there before: Back goes to them in turn.
+      earlier: (plan.earlier || []).slice(),
       pushState(state) {
         this.earlier.push(this.state);
         this.state = state;
@@ -822,6 +830,12 @@ async function app(file) {
       back() {
         if (!this.earlier.length) return;
         this.state = this.earlier.pop();
+        for (const listener of windowListeners.popstate || []) listener({ state: this.state });
+      },
+      // Several entries back at once (go(-n)), announced to the page once, as a browser does.
+      go(steps) {
+        if (!(steps < 0) || !this.earlier.length) return;
+        for (let left = -steps; left > 0 && this.earlier.length; left -= 1) this.state = this.earlier.pop();
         for (const listener of windowListeners.popstate || []) listener({ state: this.state });
       },
     },
@@ -907,7 +921,20 @@ async function app(file) {
       return true;
     } };
   }
-  // The shell kit is the shared core's, checked on its own by the repository's
+  // The list of a project's parts is the shell kit's own (StudioShell.parts), checked on its
+  // own by the repository's tests/shell_page_check.js. It is loaded here by itself, drawing
+  // on this page's document, so every plan's desk lists its parts as a browser shows them.
+  const kit = vm.createContext({ document: { createElement: (tag) => document.createElement(tag),
+    get activeElement() { return document.activeElement; }, get body() { return document.body; },
+    querySelector: (selector) => document.querySelector(selector),
+    querySelectorAll: (selector) => document.querySelectorAll(selector),
+    documentElement: { style: {} }, readyState: 'loading', addEventListener() {} },
+  navigator: { platform: '' }, location: { hash: '', protocol: '', hostname: '', port: '' },
+  sessionStorage: { getItem: () => null, setItem() {} }, URLSearchParams });
+  vm.runInContext(fs.readFileSync(path.join(PAGE, '..', 'studio_core', 'deck_web', 'shell.js'), 'utf8')
+    + '\nthis.StudioShell = StudioShell;', kit, { filename: 'shell.js' });
+  window.StudioShell = { parts: kit.StudioShell.parts, connect() {}, commands() {} };
+  // The rest of the shell kit is the shared core's too, checked on its own by the repository's
   // tests/shell_page_check.js. A plan with {shell: true} stands it in: it keeps the lists the
   // page hands Search and jump, for a {command: a title} step to choose from, and the report
   // says which workbench parts the desk asked it for (`shell`) and what was listed
@@ -922,6 +949,7 @@ async function app(file) {
       return node;
     };
     window.StudioShell = {
+      parts: kit.StudioShell.parts,
       connect() {},
       // Continue in another studio: Marketing Studio's link when a plan names its home
       // (`continueHome`), as the shell gives it when Marketing Studio opened the page; else null.
@@ -1005,7 +1033,11 @@ async function app(file) {
         report.storageSnapshots[step.captureStorage] = { ...storage };
       }
       if(step.disclose){const d=document.body.querySelector('[data-key="'+step.disclose+'"]');if(d && !d.open)d.querySelector('summary').click();}
-      if (step.snapshot) shots[step.snapshot] = snapshot();
+      if (step.snapshot) {
+        shots[step.snapshot] = snapshot();
+        // What the browser keeps with the screen now, and how many entries lie behind it.
+        shots[step.snapshot].history = { state: window.history.state, behind: window.history.earlier.length };
+      }
       if (step.click) control(step.click, step.index || 0).click();
       // {edit: a material's Edit control}: open it for editing unless it is open already, as
       // it is while it holds recovered or unsaved text.
@@ -1040,6 +1072,8 @@ async function app(file) {
         held.dispatch('change', { target: held });
       }
       if (step.see !== undefined) see(step.see);
+      // The browser's own Back.
+      if (step.back) window.history.back();
       if (step.poll) await timers.filter((timer) => (timer.name === 'refresh' || /refresh\(true\)/.test(String(timer)))).pop()();
       if (step.timer) {
         const tick = timers.filter((timer) => timer && (timer.name === step.timer

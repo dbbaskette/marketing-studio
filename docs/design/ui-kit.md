@@ -87,6 +87,8 @@ See the
 | A line of light | `.workbench-pulse`, from `StudioShell.pulse('working' \| 'yours' \| 'still')` |
 | The one move | `.move-card`, from `StudioShell.move`: the question, what it sets going, one amber action; `calm` where nothing waits. It animates (`.move-card-new`) only when it is a different move, never when it is drawn again |
 | A band instead of a rail | `.workbench-top` holding `.workbench-head`, where a desk already pairs its work with a side panel (Blog Studio, a deck's slides) |
+| The parts of a project | `StudioShell.parts({label, groups, chosen, choose, key})`, the one list of an open project's parts down the left of its workbench; see [The parts of a project](#the-parts-of-a-project) |
+| A workbench with no rail | A desk with parts and work and nothing for a rail (its band is on top: Presentation Studio) gives the rail's room to the work |
 
 ### One arc, one workbench, one move
 
@@ -127,6 +129,96 @@ as F and Escape do. Toasts rise over it (`--foot-lift`).
   Blog Studio's desk is a plain button beside the move.
 - **On a phone** the sidebar is the bar of screens, so **Search and jump** and the
   appearance close each page under its content (`.shell-foot-page`).
+
+### The parts of a project
+
+Every studio's project page lists the open project's parts in one place, built by one
+function, so a person always sees what exists, what state each part is in and which one is
+in front of them. It is drawn only by the kit (`ui-kit/style.css`, "the parts of a
+project") and behaves only as `StudioShell.parts` does (`core/studio_core/deck_web/shell.js`,
+which every studio page already loads); a studio hands it data and one callback and draws
+nothing of its own for it.
+
+```js
+const nav = StudioShell.parts({
+  label: 'Parts of this training',          // the <nav>'s name: "Parts of this deck|draft|infographic"
+  key: 'desk-parts',                         // optional; what its controls are known by (data-key)
+  groups: [                                  // in order; a group with no parts is left out
+    { title: 'Level 101', parts: [
+      { id: 'guide', name: 'Guide', state: 'Draft' },
+      { id: 'deck', name: 'Deck', state: 'Writing' },           // busy: moves, as only work under way does
+    ] },
+    { title: 'Behind it', parts: [{ id: 'sources', name: 'Research & sources', count: '3 sources' }] },
+  ],
+  chosen: 'guide',                           // the id of the part shown in the middle
+  choose: (id) => { /* show it, keep it in the address, draw the page again */ },
+});
+```
+
+**Inputs.** A part is `{id, name, state, count, busy}`. `id` is any string unique in the
+list; `name` is the words the part is called by. `state` is one word of the vocabulary below,
+or nothing: any other word is not shown. `count` is a short phrase about supporting material
+("3 sources", "4 slides"), shown only where there is no state. `busy` marks the part as being
+made, the one thing in the list that moves; it is true for Writing unless said otherwise.
+
+**What it returns.** A `<nav class="parts" data-zone="parts" aria-label="label">`, placed
+as a direct part of the page like any other zone. It holds a `.parts-toggle` button and a
+`.parts-list`: each group a visible `h2.parts-group-title` and a list of `button.parts-item`
+(`type="button"`), each showing its name (`.parts-name`) and its state or count
+(`.parts-state[data-state]`), with a hidden comma between so a screen reader hears the name,
+then the state ("Guide, Draft"). The part shown carries `aria-current="true"`.
+
+**Behaviour.**
+- From 72rem it is the workbench's left column (13rem), held in view beside the work as the
+  page scrolls and no taller than the window. Narrower, the `.parts-toggle` above the work
+  names the part shown, its group when there are several (`Level 201: Guide, Draft`,
+  otherwise `Showing: Section 2, 3 slides`), and opens the same list under it in the page's
+  flow: never a sheet over the work and never a sideways scroll.
+- Tab enters the list at the part shown (the only item with `tabIndex` 0); Up and Down move
+  part by part across groups, Home and End go to the first and last; Enter or Space chooses.
+  Escape closes the narrow list and gives the focus to its control.
+- `choose(id)` is called for every part chosen, the one shown too (a studio whose page is one
+  column brings it back into view). After it returns, the focus stays on the part chosen as
+  the page draws it again, or on the narrow control when the list was opened from there,
+  unless `choose` moved the focus somewhere of its own (a heading, say), where it stays.
+- A list open on a narrow screen stays open when it is drawn again with the same `key`, so a
+  refresh never closes it. Drawing it again is the studio's to do, on every change: the
+  component keeps no other state.
+- Reading alone (F) hides it with the parts zone at every width.
+
+**The studio's side.** The studio shows the part chosen in the middle, keeps it in its own
+address (choosing a part adds a history entry, so Back returns to the part before; a reload
+opens the same part; a poll or refresh only says again what is shown), and replaces with the
+list any control that listed the same parts. A control that switches views of one part stays
+inside that part.
+
+**States: one vocabulary.** Each word means the same in every studio, and its tint only
+repeats what the word says; the longer sentence a studio shows today stays on the part itself.
+Where a studio has no state for a part, it shows none (or a count) rather than invent one.
+
+| Word | Meaning | Tint (`data-state`) |
+| --- | --- | --- |
+| Writing | The assistant is making or remaking it now; the only state that moves | studio colour (`working`) |
+| Queued | It will be made after what is being made now | quiet (`queued`) |
+| Needs you | It waits on the person: a decision, an approval, a fix, a change not saved | amber (`yours`) |
+| Draft | Made, not yet marked ready | quiet (`draft`) |
+| Ready | The person marked it ready | green words (`done`) |
+| Out of date | Made from something that has changed since | red (`stale`) |
+| Left out | The person chose to leave it out | quiet (`out`) |
+
+**Per studio.**
+
+| Studio | Groups and parts | State mapping | Replaced controls, and where they live now |
+| --- | --- | --- | --- |
+| Training Studio | One group per level ("Level 101"; "Materials" without levels) with its materials in order: Plan, Guide, Brief, Deck, Practice, Yoodli; several scenarios or Yoodli layouts of a level are one part ("Practice · 3") with its picker inside it. Behind it: Research & sources, counting the research's sources | writing Writing, queued Queued, decide and needs Needs you, held Out of date, draft Draft, ready Ready (left-out materials are not listed, as before). A part of several materials says the most pressing of theirs | The level switch and the material tabs: both are the list. "Open research & sources", the needs line's jumps and the Mark-ready sheet's Open choose a part through it. The scenario picker stays inside Practice |
+| Presentation Studio | Deck: the Outline (where the deck has one), then each section ("Section 1", or the kind of the deck's opening and closing slides; a deck of your own at Selected changes is one part, "Slides"), its slides shown in the middle at the slide kept, else its first | A section says Writing while one of its slides is drawn again, Needs you while one blocks delivery or waits on the person, otherwise its count of slides: the desk has no approval to call Ready. The Outline says Needs you while a change on it is not saved | The Slides and Outline tabs. The navigator of slides stays, as the way between the slides of the deck; Sources and research stay beside the slides and the look in the Outline, where they were |
+| Blog Studio | Not fitted yet: keeps its own Draft and Outline tabs | | |
+| Infographic Studio | Not fitted yet: keeps its one column | | |
+
+`tests/test_ui_consistency.py` (`PartsListTests`) holds the kit's side: drawn once, before the
+desk's parts, opaque, every control at least 44px, only a part being written moving and still
+under reduced motion, one control and no sideways scroll below 72rem. `tests/shell_page_check.js`
+drives the behaviour; each studio's page suite checks its own list, its states and its address.
 
 ## Shared components and page stylesheets
 

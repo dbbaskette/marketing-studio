@@ -791,7 +791,9 @@ function show(screen, where, replace) {
 
 function back() {
   if (view.pushed > 0) {
-    window.history.back();
+    // Back leaves the screen, past the parts of a deck chosen on it (deck-desk.js address).
+    const parts = Number(window.history.state?.deskStep) || 0;
+    if (parts) window.history.go(-1 - parts); else window.history.back();
     return;
   }
   const up = { new: 'home', setup: 'settings', published: 'decks' };
@@ -7725,6 +7727,9 @@ function begin() {
     suite.hidden = false;
   }
   window.addEventListener('popstate', (event) => {
+    // Back or Forward between two parts of the deck on screen shows that part, no more.
+    if (view.screen === 'deck' && event.state && event.state.screen === 'deck'
+        && window.deckDesk && window.deckDesk.returnTo(event.state)) return;
     view.pushed = Math.max(0, view.pushed - 1);
     open(event.state || { screen: 'home' });
   });
