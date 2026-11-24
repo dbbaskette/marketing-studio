@@ -35,6 +35,31 @@ NO_RUN = (
     'to bring its saved draft to the desk.'
 )
 OUTLINE_LOSS = 'This outline cannot yet be moved losslessly. Keep using the saved flow or supply a supported manuscript.'
+NOTES_FINISHED = (
+    'This finished outline is notes the desk cannot read as sections, and an outline-only '
+    'request has no later step on the desk to keep them with. Its outline stays readable here.'
+)
+# A condition of the workspace or of this computer, never of the blog: it waits until cleared.
+OLDER_HUB = (
+    'This workspace is connected to an older Team Hub, which the writing desk does not share '
+    'through. Leave that Team Hub for this workspace (hub leave keeps its clone and queued '
+    'work), then open this blog on the desk.'
+)
+NEWER_RUNTIME = (
+    'This workspace needs a newer Blog Studio. Update Blog Studio, then open this blog on the desk.'
+)
+IDENTITY = (
+    'This computer’s Blog Studio identity cannot be read. Take this blog on this computer, '
+    'which records a new identity, then open it on the desk.'
+)
+MARKER = (
+    'This workspace’s sharing record (hub.json) cannot be read by this Blog Studio. Update '
+    'Blog Studio or restore that record, then open this blog on the desk.'
+)
+LINKED_WORKSPACE = (
+    'This workspace or its blog folder is a link. Open the workspace from its real folder, '
+    'then open this blog on the desk.'
+)
 
 
 class Wait(ValueError):
@@ -243,13 +268,20 @@ def prepare_migration(record, saved_inputs):
             # image data, or a review request that has no outline step, are not moved.
             if scope == 'part' or desk_images.holds(text) or len(text) > desk.LIMIT:
                 raise ValueError(OUTLINE_LOSS)
+            # Notes the person already approved stay approved: their next step is the draft.
+            approved = stages.get('outline', {}).get('status') == 'approved'
+            if approved and scope != 'draft':
+                # A finished outline-only request has no later step to keep its notes with.
+                raise ValueError(NOTES_FINISHED)
             draft.update(opening='', opening_brief='', sections=[])
-            steps = ['outline', 'draft'] if scope == 'draft' else ['outline']
+            steps = (
+                ['draft'] if approved else ['outline', 'draft'] if scope == 'draft' else ['outline']
+            )
             writes['desk/start.json'] = {
                 'schema': 1,
                 'way': 'outline' if scope == 'draft' else 'shape',
                 'steps': steps,
-                'step': 'outline',
+                'step': steps[0],
                 'job': None,
                 'execution': 'conversation',
                 'started_at': at,
@@ -509,7 +541,7 @@ def _snapshot(root, ident):
 
     ident = studio.identifier(ident)
     if root.is_symlink() or (root / 'articles').is_symlink():
-        raise ValueError('Choose an ordinary local Blog Studio workspace, without linked folders.')
+        raise Wait(LINKED_WORKSPACE)
     directory = studio.inside(root, 'articles', ident)
     files, budget = {}, [0, 0]
     if pending(root, ident):
@@ -532,9 +564,7 @@ def _snapshot(root, ident):
         raise ValueError('Restore this blog’s supported original session and run records first.')
     driver = _driver_record(original['run.json']) if 'run.json' in original else {}
     if os.path.lexists(root / '.team-hub.json') or os.path.lexists(root / '.hub-workspace.json'):
-        raise ValueError(
-            'This older Team Hub workspace still needs its saved flow. A supported local ownership transform is required first.'
-        )
+        raise Wait(OLDER_HUB)
     for entry in record.get('sources', []):
         source = studio.identifier(entry['source_id'])
         folder, current = studio.item(root, 'sources', source)
@@ -568,9 +598,12 @@ def _snapshot(root, ident):
     marker = root / 'hub.json'
     if os.path.lexists(marker):
         if marker.is_symlink() or marker.stat().st_size > 1_000_000:
-            raise ValueError('Restore an ordinary Blog Studio workspace marker first.')
+            raise Wait(MARKER)
         files['workspace/hub.json'] = marker.read_bytes()
-        hub = json.loads(files['workspace/hub.json'])
+        try:
+            hub = json.loads(files['workspace/hub.json'])
+        except (ValueError, UnicodeError):
+            raise Wait(MARKER) from None
         if (
             not isinstance(hub, dict)
             or type(hub.get('schema')) is not int
@@ -584,27 +617,32 @@ def _snapshot(root, ident):
             or hub.get('repository') is not None
             and (not isinstance(hub['repository'], str) or not hub['repository'])
         ):
-            raise ValueError(
-                'Restore a supported Blog Studio workspace marker before opening on the desk.'
+            raise Wait(MARKER)
+        try:
+            newer = support.as_tuple(hub['minimum_runtime']) > support.as_tuple(
+                support.runtime_version()
             )
-        if support.as_tuple(hub['minimum_runtime']) > support.as_tuple(support.runtime_version()):
-            raise ValueError(
-                'This workspace requires a newer Blog Studio runtime. Keep using its supported saved flow.'
-            )
+        except (ValueError, TypeError):
+            raise Wait(MARKER) from None
+        if newer:
+            raise Wait(NEWER_RUNTIME)
         computer_path = support.data_root() / 'computer.json'
         if (
             computer_path.is_symlink()
             or computer_path.exists()
             and (not computer_path.is_file() or computer_path.stat().st_size > 1_000_000)
         ):
-            raise ValueError('Restore a supported local ownership record first.')
+            raise Wait(IDENTITY)
         computer = (
             computer_path.read_bytes()
             if computer_path.is_file() and not computer_path.is_symlink()
             else b'null'
         )
         files['ownership/computer.json'] = computer
-        identity = json.loads(computer)
+        try:
+            identity = json.loads(computer)
+        except (ValueError, UnicodeError):
+            raise Wait(IDENTITY) from None
         if identity is not None and (
             not isinstance(identity, dict)
             or set(identity) != {'schema', 'id'}
@@ -613,9 +651,7 @@ def _snapshot(root, ident):
             or not isinstance(identity.get('id'), str)
             or re.fullmatch(r'[a-f0-9]{16}', identity['id']) is None
         ):
-            raise ValueError(
-                'Restore a supported local computer identity before opening on the desk.'
-            )
+            raise Wait(IDENTITY)
         if hub.get('repository'):
             if not driver.get('computer') or driver.get('computer') != (identity or {}).get('id'):
                 raise Wait(
@@ -734,6 +770,19 @@ UNREAD_SESSION = 'Its saved blog record cannot be read.'
 UNKNOWN_SESSION = 'Its saved blog record is in a format this Blog Studio does not support.'
 UNREAD_RUN = 'Its saved run record cannot be read.'
 UNKNOWN_RUN = 'Its saved run record is in a format this Blog Studio does not support.'
+NOT_A_RUN = 'Its saved run record holds no run: it is not a record this Blog Studio can read.'
+
+
+def _a_blog(directory):
+    """A saved blog's own folder: an ordinary folder holding its session or run record. In
+    a team workspace, where blogs sit at the top, no other folder is taken for one."""
+    import blog_runner
+
+    return (
+        directory.is_dir()
+        and not directory.is_symlink()
+        and any(os.path.lexists(directory / name) for name in ('session.json', blog_runner.STATE))
+    )
 
 
 def _small_json(path):
@@ -745,6 +794,10 @@ def _small_json(path):
     if len(raw) > 1_000_000:
         raise ValueError('oversized record')
     return json.loads(raw)
+
+
+# What a from-files run holds as its brief until an angle is chosen: not a point or audience.
+PLACEHOLDERS = ('Write a blog from the uploaded files.', 'To be chosen with the angle.')
 
 
 def _start_from(session, run):
@@ -759,8 +812,9 @@ def _start_from(session, run):
     brief = brief if isinstance(brief, dict) else {}
     start = {'title': title.strip()[:500]}
     for key, said in (('point', 'goal'), ('audience', 'audience')):
-        if isinstance(brief.get(said), str) and brief[said].strip():
-            start[key] = brief[said].strip()[: 2000 if key == 'point' else 500]
+        value = brief.get(said)
+        if isinstance(value, str) and value.strip() and value.strip() not in PLACEHOLDERS:
+            start[key] = value.strip()[: 2000 if key == 'point' else 500]
     return start
 
 
@@ -781,7 +835,7 @@ def _verdict(root, ident, shown, failure):
 
     try:
         directory = studio.inside(root, 'articles', studio.identifier(ident))
-        if not directory.is_dir() or directory.is_symlink():
+        if not _a_blog(directory):
             raise ValueError('not a saved blog')
     except (OSError, ValueError):
         return {**said(None, ' '.join(shown['blockers'])), 'next': None}  # No saved blog.
@@ -811,11 +865,13 @@ def _verdict(root, ident, shown, failure):
         run = _small_json(directory / blog_runner.STATE)
     except (OSError, ValueError, UnicodeError):
         return said('read-only', UNREAD_RUN, session)
+    if not isinstance(run, dict):
+        return said('read-only', NOT_A_RUN, session)  # JSON, but not a run record.
     if not session_supported(session, directory.name):
         return said('read-only', UNKNOWN_SESSION, session, run)
     try:
         blog_runner.load(root, ident)
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         return said('read-only', str(error) or UNKNOWN_RUN, session, run)
     if not run_supported(run):
         return said('read-only', UNKNOWN_RUN, session, run)
@@ -907,7 +963,13 @@ def saved_file(root, ident, name):
     """One saved file of a blog, read in place: a name SAVED_FILES lists, an ordinary file
     inside the blog's folder, its text shortened past SAVED_TEXT characters. Only reads."""
     directory = studio.inside(root, 'articles', studio.identifier(ident))
-    if name not in SAVED_FILES or name not in _saved_files(directory):
+    if (
+        name not in SAVED_FILES
+        or not _a_blog(directory)
+        or name not in _saved_files(directory)
+        or classify(root, directory.name)['outcome'] != 'read-only'
+    ):
+        # Only a read-only record's files are served here; other blogs have their own views.
         raise ValueError('Choose a saved file this blog holds.')
     with (directory / name).open('rb') as handle:
         raw = handle.read(SAVED_TEXT * 4 + 1)

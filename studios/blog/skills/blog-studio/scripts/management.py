@@ -3029,7 +3029,7 @@ def view(root, name, query):
                     # A blog on the writing desk has no run: its address opens the desk.
                     return {'id': arg('id'), 'on_desk': True}
                 return blog_runner.engine(root).describe(arg('id'))
-            except (ValueError, OSError, KeyError, TypeError) as refusal:
+            except (ValueError, OSError, KeyError, TypeError, AttributeError) as refusal:
                 # A saved blog whose records cannot be read or understood is shown as a
                 # read-only record; any other refusal is said as before.
                 shown = desk_migration.saved_record(root, arg('id'), refusal)

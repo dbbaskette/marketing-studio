@@ -1,0 +1,38 @@
+{
+  "enabled": false,
+  "status": "paused",
+  "error": "",
+  "reason": null,
+  "started_at": "2026-01-05T09:30:00+00:00",
+  "research": {
+    "jobs": [
+      {
+        "phase": "discovery",
+        "round": 0,
+        "seconds": 0.0,
+        "tokens": null,
+        "dollars": null,
+        "outcome": "kept"
+      },
+      {
+        "phase": "author",
+        "round": 1,
+        "seconds": 0.0,
+        "tokens": null,
+        "dollars": null,
+        "outcome": "kept"
+      },
+      {
+        "phase": "review",
+        "round": 1,
+        "seconds": 0.0,
+        "tokens": null,
+        "dollars": null,
+        "outcome": "kept"
+      }
+    ],
+    "round": null,
+    "phase": null,
+    "refusal": null
+  }
+}
