@@ -23,6 +23,9 @@ What a caller needs to know
 - `load(..., title=)` gives the copy another title and folder name, as two decks of the
   same kind in one workspace have; in a shared workspace the copy is claimed by this
   computer, as `saved_start` claims the deck it constructs.
+- Captured with the engine option `at_once=1` (one section, or one research question, at
+  a time) where the engine's default is 3: side-by-side jobs otherwise record in whichever
+  order they finish, and stable stored bytes matter more here than the default.
 - tests/test_saved_fixtures.py makes each state again from the saved flow and compares it
   with the stored tree. It is the proof that the stored files are what the flow writes,
   and it goes when the saved flow does (GitHub issue #542).
@@ -446,61 +449,63 @@ def write(state: str, name: str, files: dict, digests: dict) -> None:
     (folder / SCRUBBED).write_text(json.dumps(digests, indent=1, sort_keys=True) + '\n')
 
 
-# Values that differ on every run of the same flow: when, and for how long; and every
-# digest and random name, since what is hashed holds a time (the brand contract's export,
-# the outline, a drawing round) or is picked at random (a round's folder, a job's ID).
-VOLATILE = [(re.compile(rb'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?'), b'<when>'),
-            (re.compile(rb'"(seconds|elapsed|duration|took)": ?[0-9.]+'), rb'"\1": <seconds>'),
-            (re.compile(rb'(?<![0-9A-Za-z])[0-9a-f]{6,64}(?![0-9A-Za-z])'), b'<hex>'),
-            # The slides stand-in numbers the Google decks it makes in one process.
-            (re.compile(rb"stand-in-deck-\d+"), b"stand-in-deck-<n>")]
+# What differs between two runs of the same flow, each named. Everything else must match.
+# 1. When: every time a record keeps (a run's start, a step's tries, an answer, a commit).
+TIMES = re.compile(rb'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?')
+# 2. For how long: the seconds a step, a research attempt or the run's own clock measured
+#    ("seconds", "active_seconds", "elapsed_seconds" and the like).
+DURATIONS = re.compile(rb'"(\w*seconds|elapsed|duration|took)": ?[0-9.]+(?:e-?\d+)?')
+# 3. The slides stand-in's numbering of the Google decks it makes in one process.
+GOOGLE = re.compile(rb'stand-in-deck-\d+')
+# 4. Digests and random names. What is hashed holds a time (the stand-in brand contract's
+#    export, the outline, a drawing round), and some names are picked at random (a round's
+#    folder, a job's or a research worker's ID). They are not masked: each distinct value is
+#    named by the order it first appears in, the same on both sides, so a pin must still
+#    name the same thing as on the other side. A digest is a run of 6 to 64 lowercase hex
+#    characters with a letter in it; the random round names of 6 and the job IDs of 12 may
+#    be digits alone, so those are matched by where they stand.
+TOKENS = re.compile(rb'(?<![0-9A-Za-z])(?=[0-9]*[a-f])[0-9a-f]{6,64}(?![0-9A-Za-z])'
+                    rb'|(?:(?<=whole-)|(?<=-0-)|(?<=outline-)|(?<="drawn": "))[0-9a-f]{6}(?![0-9A-Za-z])'
+                    rb'|(?<="id":")[0-9a-f]{12}(?![0-9A-Za-z])')
 
 
 def _unzipped(data: bytes) -> bytes:
-    """A zip's members and their contents, without the times it keeps."""
+    """A zip's members and their contents, in the order it holds them, without the times
+    it keeps for each."""
     if not data.startswith(b'PK\x03\x04'):
         return data
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as kept:
-            return b'\n'.join(sorted(member.encode() + b'\0' + kept.read(member)
-                                     for member in kept.namelist()))
+            return b'\n'.join(member.encode() + b'\0' + kept.read(member)
+                              for member in kept.namelist())
     except zipfile.BadZipFile:
         return data
 
 
-def _sorted(value):
-    if isinstance(value, dict):
-        return {key: _sorted(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return sorted((_sorted(item) for item in value), key=lambda item: json.dumps(item, sort_keys=True))
-    return value
-
-
-def _ordered(name: str, data: bytes) -> bytes:
-    """The same content whatever order it was written in: sections drawn and questions
-    researched side by side finish in either order."""
-    if name.endswith('.json'):
-        try:
-            return json.dumps(_sorted(json.loads(data)), sort_keys=True, indent=1).encode()
-        except ValueError:
-            return data
-    if name.endswith('.jsonl'):
-        return b'\n'.join(sorted(data.splitlines()))
-    return data
-
-
 def normal(files: dict) -> list:
-    """The files with what differs on every run put aside, to compare two captures: each
-    (name, data), in order. Names may repeat once their digests are put aside."""
-    shown = []
+    """The files, each (name, data), with what differs between runs put aside as TIMES,
+    DURATIONS, GOOGLE and TOKENS name it, in an order that does not depend on those values.
+    Nothing is re-ordered inside a file: lists, slides and history keep their order."""
+    timed = {}
     for name, data in files.items():
         data = _unzipped(data)
-        name = name.encode()
-        for pattern, said in VOLATILE:
+        for pattern, said in ((TIMES, b'<when>'), (DURATIONS, rb'"\1": <seconds>'),
+                              (GOOGLE, b'stand-in-deck-<n>')):
             data = pattern.sub(said, data)
-            name = pattern.sub(said, name)
-        shown.append((name.decode(), _ordered(name.decode(), data)))
-    return sorted(shown)
+        timed[name] = data
+    blind = {name: (TOKENS.sub(b'*', name.encode()), TOKENS.sub(b'*', data))
+             for name, data in timed.items()}
+    named = {}
+
+    def rename(found):
+        return named.setdefault(found.group(), b'<%d>' % len(named))
+
+    # Contents first, in an order that does not depend on the values: a value is named by
+    # where a record first mentions it, never by the order of files that differ only by it
+    # (the drawing progress pictures, named by their own digests).
+    order = sorted(timed, key=lambda name: blind[name])
+    contents = {name: TOKENS.sub(rename, timed[name]) for name in order}
+    return sorted((TOKENS.sub(rename, name.encode()).decode(), contents[name]) for name in order)
 
 
 def _replace(placed: dict, old: str, new: str) -> None:
