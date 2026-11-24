@@ -90,13 +90,19 @@ def _then(sent, key):
     return sent.get(key, False)
 
 
-def action(found, sent):
+def shape(sent):
+    """An action's verb, infographic ID and expected revision, once its fields are checked."""
     require(isinstance(sent, dict), 'Supply one Infographic Studio action.')
     verb, ident, revision = sent.get('action'), sent.get('id'), sent.get('expected_revision')
     require(isinstance(verb, str) and verb in FIELDS
             and set(sent) <= {'action', 'id', 'expected_revision'} | FIELDS[verb],
             'Choose a supported action and only its listed fields.')
     require(isinstance(ident, str) and type(revision) is int, 'Every action needs an infographic ID and expected revision.')
+    return verb, ident, revision
+
+
+def action(found, sent):
+    verb, ident, revision = shape(sent)
     store = found.store
     # Validate the shared revision before costly or filesystem work.
     if verb == 'image-start':

@@ -83,12 +83,17 @@ class BuildRecoveryTests(Isolated):
         page=server.Page(8000,self.store,self.engine)
         self.renderer.side_effect=RuntimeError('private-key /machine/path secret-prompt')
         status,_,raw=page.write('/api/action',{'id':self.ident,'action':'build','expected_revision':6,'request_id':'build-api'})
-        shown=json.loads(raw)
-        self.assertEqual(status,422)
+        self.assertEqual(status,202)
+        # The build runs in the background; its ending carries the same safe receipt.
+        for ident,(_,_,thread) in list(page.actions.active.items()):thread.join(10)
+        shown=page.doing(self.ident)
+        self.assertEqual(shown['state'],'failed')
+        self.assertIn('could not finish. Completed work is kept.',shown['problem'])
         self.assertEqual(shown['recovery']['next_action'],'preview')
         self.assertEqual(shown['recovery']['completed'],['Page composition'])
-        self.assertNotIn('private-key',raw.decode())
-        self.assertNotIn('/machine/path',raw.decode())
+        raw=json.dumps(shown)
+        self.assertNotIn('private-key',raw)
+        self.assertNotIn('/machine/path',raw)
 
     def test_two_projects_keep_their_own_concurrent_failed_stage(self):
         from concurrent.futures import ThreadPoolExecutor

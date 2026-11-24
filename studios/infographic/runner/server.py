@@ -9,7 +9,7 @@ from studio_core import server as core
 from studio_core.document_library import context as library_context
 
 from .contracts import PRODUCT, Invalid
-from . import activity, api, author, computer, exports, history, settings, sources
+from . import action_jobs, activity, api, author, computer, exports, history, settings, sources
 from .engine import Engine
 from .validation import identifier, require
 
@@ -25,7 +25,7 @@ shared = core.for_product(
      '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/intake-draft', '/api/status', '/api/projects', '/api/project', '/api/asset',
                          '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/intake-draft', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
+    writes=('/api/intake-draft', '/api/action-control', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -39,6 +39,12 @@ class Page(shared.Page):
                                           checkpoint=store.keep_activity if store is not None else None)
         from .research_jobs import Jobs
         self.research = Jobs(store) if store is not None else None
+        # Long actions run as background jobs, one at a time per infographic.
+        self.actions = action_jobs.Actions(store, self.activity) if store is not None else None
+
+    def doing(self, ident):
+        """What the activity panel shows for one infographic now."""
+        return self.actions.current(ident) if self.actions is not None else self.activity.snapshot(ident)
 
     def body_limit(self, target, headers):
         if target.partition('?')[0] == '/api/intake-draft':
@@ -76,12 +82,12 @@ class Page(shared.Page):
         if path == '/api/desk':
             ident = one('id')
             return shared.as_json(HTTPStatus.OK, {**self.engine.inspect(ident),
-                                                  'activity': self.activity.snapshot(ident)})
+                                                  'activity': self.doing(ident)})
         if path == '/api/activity':
             ident = one('id')
             project = self.store.read(ident)
             from .image_jobs import Jobs
-            return shared.as_json(200, {'activity': self.activity.snapshot(ident),
+            return shared.as_json(200, {'activity': self.doing(ident),
                                        'revision': project['revision'],
                                        'recovery': Jobs(self.store, {}).recovery(ident)})
         if path == '/api/activity-log':
@@ -118,7 +124,7 @@ class Page(shared.Page):
         if path == '/api/projects':
             # Home shows the work each infographic is doing now; observing starts nothing.
             return shared.as_json(HTTPStatus.OK, {'projects': [
-                {**item, 'activity': self.activity.snapshot(item['id'])} for item in self.store.listing()]})
+                {**item, 'activity': self.doing(item['id'])} for item in self.store.listing()]})
         if path == '/api/project':
             return shared.as_json(HTTPStatus.OK, {'project': self.store.read(one('id'))})
         if path == '/api/source':
@@ -168,10 +174,22 @@ class Page(shared.Page):
                     account=lambda: settings.snapshot()['google']['account']).dispatch(sent))
             except ValueError as error:
                 raise Invalid(str(error)) from None
+        if path == '/api/action-control':
+            require(isinstance(sent, dict) and set(sent) == {'id', 'action'} and sent['action'] in ('stop', 'dismiss'),
+                    'Choose Stop for the running work of one infographic.')
+            self.store.read(sent['id'])
+            control = self.actions.stop if sent['action'] == 'stop' else self.actions.dismiss
+            return shared.as_json(HTTPStatus.OK, control(sent['id']))
         if path == '/api/action':
             try:
                 configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story', 'approve', 'review')
                 verb = sent.get('action') if isinstance(sent, dict) else None
+                if isinstance(verb, str) and verb in action_jobs.BACKGROUND:
+                    # Answered at once: the work runs on, and the page follows it in Activity.
+                    api.shape(sent)
+                    make = (lambda: api.engine(self.store)) if configured else (lambda: copy(self.engine))
+                    job = self.actions.start(sent, make, api.action)
+                    return shared.as_json(HTTPStatus.ACCEPTED, {'job': job})
                 if isinstance(verb, str) and verb in activity.LABELS:
                     self.store.read(sent.get('id'))
                     with self.activity.track(sent['id'], verb) as report, author.watching(report.said):
@@ -270,10 +288,13 @@ def desk(store, port=0, engine=None, *, standalone=False):
             self.page.engine = Engine(current)
             from .research_jobs import Jobs
             self.page.research = Jobs(current)
+            self.page.actions = action_jobs.Actions(current, self.page.activity)
 
         def stop(self):
             if self.page.research is not None:
                 self.page.research.stop()
+            if self.page.actions is not None:
+                self.page.actions.shutdown()
             from .images.codex import stop_owned
             from .workspace import data_root
             from .image_jobs import Jobs

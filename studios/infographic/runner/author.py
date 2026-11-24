@@ -34,6 +34,21 @@ def watching(activity):
         _WATCHING.reset(token)
 
 
+# The stop signal of this thread's background operation (action_jobs), or None: an assistant
+# call made while it is set ends its process group at once.
+_STOPPING = ContextVar('infographic_stopping', default=None)
+
+
+@contextmanager
+def stopping(event):
+    """End every assistant job started in this thread when `event` is set."""
+    token = _STOPPING.set(event)
+    try:
+        yield
+    finally:
+        _STOPPING.reset(token)
+
+
 def narrator(agent, activity):
     """A function that reads one assistant event and tells `activity` what it did, in plain
     words, as Training Studio's and Presentation Studio's workers say it. None without one."""
@@ -149,6 +164,7 @@ class Author:
             # What it is doing, in plain words, as its events arrive; a run that cannot follow
             # them is read through once it ends.
             watch = narrator(agent, activity or _WATCHING.get())
+            stop = stop if stop is not None else _STOPPING.get()
             follows = watch is not None and _follows(self.run)
             try:
                 options = {**({'stop': stop} if stop is not None else {}), **({'watch': watch} if follows else {})}

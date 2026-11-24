@@ -23,9 +23,8 @@ TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name 
                  (('marketing', 'Marketing'), ('blog', 'Blog'),
                   ('presentation', 'Presentation'), ('training', 'Training'), ('infographic', 'Infographic'))}
 UPSTREAM_TIMEOUT = 100
-# Native infographic actions can include two renders, a seven-and-a-half-minute author
-# call and a ten-minute image call. Keep the bridge alive across those bounded stages.
-INFOGRAPHIC_ACTION_TIMEOUT = 1350
+# Infographic Studio's long actions (finding the story, building the page, artwork) answer at
+# once and run in the background, so its actions take the ordinary bridge time limit.
 # Google previews may perform account/token lookup and several fixed API reads.
 INFOGRAPHIC_REMOTE_TIMEOUT = 240
 # Blog Studio's Google sends make several Google calls of up to a minute each, and a library
@@ -91,11 +90,8 @@ def upstream_timeout(identifier, method, path):
         return INFOGRAPHIC_REMOTE_TIMEOUT
     if identifier == 'blog' and method == 'POST' and path in BLOG_REMOTE:
         return BLOG_REMOTE_TIMEOUT
-    if identifier == 'infographic' and method == 'POST':
-        if path == '/api/action':
-            return INFOGRAPHIC_ACTION_TIMEOUT
-        if path == '/api/remote-preview':
-            return INFOGRAPHIC_REMOTE_TIMEOUT
+    if identifier == 'infographic' and method == 'POST' and path == '/api/remote-preview':
+        return INFOGRAPHIC_REMOTE_TIMEOUT
     return UPSTREAM_TIMEOUT
 
 

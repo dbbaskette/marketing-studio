@@ -78,16 +78,27 @@ class ActivityServerTests(Isolated):
 
         sent = {'action': 'suggest', 'id': project['id'], 'expected_revision': 0}
         route = '/api/activity?id=' + project['id']
-        result = []
+
+        def ended():
+            for _ in range(200):
+                shown = request('GET', route)[1]['activity']
+                if shown['state'] != 'running':
+                    return shown
+                threading.Event().wait(.02)
+            self.fail('The background action did not end.')
         with mock.patch.object(api, 'action', side_effect=action):
-            caller = threading.Thread(target=lambda: result.append(request('POST', '/api/action', sent)))
-            caller.start()
+            # A long action is answered at once; the work runs on in the background.
+            status, started = request('POST', '/api/action', sent)
             try:
+                self.assertEqual(status, 202)
+                self.assertEqual(started['job']['state'], 'running')
+                self.assertTrue(started['job']['stoppable'])
                 self.assertTrue(entered.wait(3))
                 self.assertEqual(request('GET', route, token=False)[0], 403)
                 status, observed = request('GET', route)
                 self.assertEqual(status, 200)
                 self.assertEqual(observed['activity']['state'], 'running')
+                self.assertEqual(observed['activity']['id'], started['job']['id'])
                 self.assertEqual(observed['activity']['label'], 'Reading supplied information')
                 self.assertEqual(request('POST', '/api/action', sent)[0], 409)
                 self.assertEqual(calls, ['suggest'])
@@ -100,12 +111,14 @@ class ActivityServerTests(Isolated):
                 self.assertEqual(calls, ['suggest'], 'Listing starts and repeats nothing')
             finally:
                 release.set()
-                caller.join(5)
-            self.assertEqual(result, [(200, {'result': {'saved': True}})])
-            self.assertEqual(request('GET', route)[1]['activity']['state'], 'complete')
+            finished = ended()
+            self.assertEqual(finished['state'], 'complete')
+            self.assertEqual(finished['result'], {'saved': True})
         with mock.patch.object(api, 'action', side_effect=RuntimeError('private provider detail')):
             status, failed = request('POST', '/api/action', sent)
-            self.assertEqual(status, 409)
-            self.assertNotIn('private provider detail', json.dumps(failed))
-            self.assertEqual(request('GET', route)[1]['activity']['state'], 'failed')
+            self.assertEqual(status, 202)
+            shown = ended()
+            self.assertEqual(shown['state'], 'failed')
+            self.assertIn('could not complete this action', shown['problem'])
+            self.assertNotIn('private provider detail', json.dumps(request('GET', route)[1]))
         self.assertEqual(request('GET', '/api/activity?id=..%2Fprivate')[0], 409)

@@ -184,7 +184,7 @@ function paintWork() {
     // It is built again only when the work, its pending image, quiet or Cancel changes, so
     // the handlers made here stay right: Stop waiting holds nothing, and Cancel calls the
     // `cancel` of the work it was made for, which stays the same while that shape does.
-    const shape=(work.id||'')+'|'+(work.pending||'')+'|'+(work.quiet?'q':'')+'|'+(work.cancel?'c':'');
+    const shape=(work.id||'')+'|'+(work.pending||'')+'|'+(work.quiet?'q':'')+'|'+(work.cancel?'c':'')+'|'+(work.stoppable?'s':'');
     if(surface.dataset.shape!==shape) {
       surface.dataset.shape=shape;
       const bead=make('span','bead');bead.dataset.workBead='';bead.setAttribute('aria-hidden','true');
@@ -198,6 +198,8 @@ function paintWork() {
       const controls=make('div','bar');
       // Stop waiting leaves the work running; nothing is cancelled or repeated.
       if(work.id&&!work.quiet){const stop=button('Stop waiting',()=>{closeSheet();void home();});stop.dataset.free='';stop.dataset.key='ig-work-stop-waiting';controls.append(stop);}
+      // Stop ends the work itself: its assistant or image worker ends on this computer.
+      if(work.id&&work.stoppable){const end=button('Stop',()=>stopWork(work));end.dataset.free='';end.dataset.key='ig-work-stop';end.classList.add('ig-work-end');controls.append(end);}
       if(work.cancel){const cancel=button('Cancel this request',()=>work.cancel());cancel.dataset.free='';cancel.dataset.key='ig-work-cancel';controls.append(cancel);}
       if(controls.childElementCount)surface.append(controls);
     }
@@ -241,6 +243,18 @@ function guard() {
   }
 }
 function free(node){node.dataset.free='';return node;}
+// Work an earlier run of Infographic Studio left unfinished: never shown as running.
+function interruptedCard(found){
+  const id=held.project.id;
+  const node=card('Work was interrupted',stateLine('review',found.problem),make('p','',found.next),
+    add(make('div','bar'),button('Clear this notice',async()=>{try{await request('/api/action-control',{id,action:'dismiss'});await openProject(id);}catch(f){error(f.message);}})));
+  node.classList.add('ig-interrupted');return node;
+}
+async function stopWork(owner){
+  owner.stoppable=false;owner.label='Stopping';owner.detail='Stopping now. Saved work is kept.';paintWork();
+  try{await request('/api/action-control',{id:owner.id,action:'stop'});}
+  catch(f){error(f.message);}
+}
 // `id` names the infographic the work belongs to; without one it is a sheet's own read.
 function beginWork(label, elapsed=0, id=null) {
   const owner={label,id,started:Date.now()-elapsed*1000,connected:true,detail:id?WAITING:'This can take a few minutes. Your saved work is kept.',title:held?.project.id===id?held.project.brief.title:''};
@@ -272,7 +286,7 @@ function elsewhere(owner,problem) {
 function progressNotice(progress,owner,id) {
   if(running.get(id)!==owner)return;
   const current=progress.activity;
-  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=WAITING;owner.worker=current.worker||null;paintWork();}
+  if(current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail=current.stopping?'Stopping now. Saved work is kept.':WAITING;owner.worker=current.worker||null;owner.stoppable=!!current.stoppable&&!current.stopping;paintWork();}
   const pending=progress.recovery?.find(r=>!r.local_artwork_available&&['queued','running','unknown'].includes(r.state));
   if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
     owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
@@ -289,7 +303,10 @@ async function recoverActivity(id,owner) {
     await new Promise(resolve=>setTimeout(resolve,2000));
   }
 }
+const stoppedWords='Stopped. Nothing is running for it now, and your saved work is kept.';
 function recoveredNotice(result) {
+  if(result?.state==='stopped'){toast(stoppedWords);return;}
+  if(result?.state==='interrupted'){error(result.problem+' '+result.next);return;}
   if(result?.state==='complete')toast('Finished. Your saved work is ready to review.');
   else if(result?.state==='outdated')toast('The earlier result was kept and did not replace newer work.');
   else error(result?.state==='failed'?(result.problem||'The operation could not finish. Your saved work is kept.'):result?.state==='cancelled'?'The image request was cancelled. Remote charges may remain unknown.':'The earlier outcome could not be confirmed. Check the saved work and recovery controls before retrying.');
@@ -297,7 +314,7 @@ function recoveredNotice(result) {
 function here(id){return screen==='project'&&held?.project.id===id;}
 async function resumeActivity(id,current) {
   if(running.has(id))return;
-  const owner=beginWork(current.label,current.elapsed_seconds,id);
+  const owner=beginWork(current.label,current.elapsed_seconds,id);owner.stoppable=!!current.stoppable&&!current.stopping;paintWork();
   try{const result=await recoverActivity(id,owner);
     if(here(id)){await openProject(id);recoveredNotice(result);}
     else elsewhere(owner,['complete','outdated'].includes(result?.state)?'':(result?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));
@@ -353,7 +370,22 @@ async function action(verb, values={}, revision=null, options={}) {
   let checking=false;
   const polling=setInterval(async()=>{if(checking||document.hidden)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
-    const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
+    let answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
+    if(answer.job){
+      // A long action answers at once and runs on in the background: follow it until it
+      // ends, with Stop, then read its outcome as the request used to return it.
+      clearInterval(polling);owner.stoppable=!!answer.job.stoppable;paintWork();
+      const ended=await recoverActivity(id,owner);
+      if(ended?.state!=='complete'){
+        if(!options.quiet&&!here(id)){elsewhere(owner,ended?.state==='stopped'?'':(ended?.problem||'The earlier outcome could not be confirmed. Open it to check the saved work.'));return;}
+        closeSheet();await openProject(id);
+        if(ended?.state==='stopped')toast(stoppedWords);
+        else if(ended?.recovery)recoverySheet(ended.recovery);
+        else if(ended)recoveredNotice(ended);
+        return;
+      }
+      answer={result:ended.result};
+    }
     if(!options.quiet&&!here(id)){const result=answer.result,state=result?.state;elsewhere(owner,['unknown','failed'].includes(state)?(imageProblems[result.reason]||imageUncertain):'');return result;}
     clearInterval(polling);
     closeSheet(); await openProject(id); if(options.quiet)return answer.result;
@@ -428,7 +460,7 @@ async function drawHome() {
     listedProjects = data.projects;
     const cards = data.projects.map(p => {
       const working=workingNow(p);
-      const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
+      const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):p.activity?.state==='interrupted'?stateLine('review','Interrupted: '+p.activity.label+'. Open it to see what to do next.'):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
       const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[state,make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); if(working)node.dataset.working=''; return node;
     });
@@ -635,6 +667,7 @@ function renderProject() {
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
   const doing=make('section','card ig-doing');doing.id='ig-doing';doing.hidden=true;doing.setAttribute('aria-label','What the assistant is doing');
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.'),doing,standing(held.roadmap,p,delivery,needs)];
+  if(held.activity?.state==='interrupted')parts.push(interruptedCard(held.activity));
   if(held.workflow_recovery?.state==='failed') parts.push(card('Work kept after a failed step',recoveryContent(held.workflow_recovery)));
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id})):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
