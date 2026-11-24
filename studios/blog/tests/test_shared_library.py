@@ -183,6 +183,51 @@ class ReadyTests(SharedLibraryCase):
         self.assertEqual(record['editorial']['publication_url'], 'https://example.invalid/post')
 
 
+class ResearchTests(SharedLibraryCase):
+    """Verified research published into a blog is kept in the Document Library too (#514)."""
+
+    desk = team.DeskPublishTests.desk
+
+    def test_verified_research_is_kept_and_said_in_the_activity_log(self):
+        import blog_activity
+        from synthesis_fixture import published_bundle
+
+        made = self.desk()
+        directory = studio.inside(self.root, 'articles', made['id'])
+        published_bundle(directory / 'research')
+        (directory / 'research' / 'report.md').write_text('# Gateway research\n\nTwo retries.\n')
+        import hashlib
+        import json
+
+        manifest = json.loads((directory / 'research' / 'output.json').read_text())
+        manifest['artifacts'] = [
+            {**entry, 'sha256': hashlib.sha256((directory / 'research' / entry['file']).read_bytes()).hexdigest()}
+            for entry in manifest['artifacts']
+        ]
+        (directory / 'research' / 'output.json').write_text(json.dumps(manifest))
+        _, record = studio.item(self.root, 'articles', made['id'])
+        found = shared_library.keep_research(self.root, directory, record)
+        self.assertEqual(found['state'], 'kept', found)
+        library = document_library.opened()
+        rows = library.catalog(kind='research')['items']
+        self.assertEqual([row['id'] for row in rows], [found['document']])
+        self.assertIn('Two retries.', library.snapshot(rows[0]['id'], 1)['text'])
+        log = blog_activity.view(blog_activity.Running(self.root), blog_activity.blog(made['id']))
+        self.assertEqual(log['jobs'][0]['label'], 'Research kept in the Document Library')
+        lines = blog_activity.entry(self.root, blog_activity.blog(made['id']), log['jobs'][0]['id'])
+        self.assertIn('Research kept in the Document Library on this computer (revision 1)', json.dumps(lines))
+
+    def test_research_that_does_not_pass_is_not_kept_and_never_raises(self):
+        made = self.desk()
+        directory = studio.inside(self.root, 'articles', made['id'])
+        (directory / 'research').mkdir()
+        (directory / 'research' / 'report.md').write_text('# Not verified\n')
+        _, record = studio.item(self.root, 'articles', made['id'])
+        found = shared_library.keep_research(self.root, directory, record)
+        self.assertIn(found['state'], ('refused', 'failed'))
+        self.assertEqual(document_library.opened().catalog(kind='research')['items'] if document_library.opened() else [], [])
+
+
 class TakeTests(SharedLibraryCase):
     def setUp(self):
         super().setUp()

@@ -273,6 +273,50 @@ def keep_brief(root, ident, made):
     return keep_blog(root, record, text, pdf=pdf)
 
 
+def keep_research(root, directory, record):
+    """Harness Research that passed verification, published into a blog's `research/`, kept
+    in the Document Library too (studio_core.document_library.research), and said as a line
+    of the blog's own Activity log. Never raises and never delays the research: whatever
+    stops it is said there instead. Returns what the library said, or None."""
+    try:
+        from studio_core.document_library import research
+
+        found = research.keep_research(
+            studio='blog',
+            project={'id': record['id'], 'title': record.get('title')},
+            case=Path(directory) / 'research',
+            author=(record.get('author') or '').strip() or None
+            if isinstance(record.get('author'), str)
+            else None,
+        )
+    except Exception:  # the research stands whatever happens here
+        return None
+    try:
+        import blog_activity
+
+        said = (
+            'Research kept in the Document Library on this computer (revision '
+            + str(found.get('revision'))
+            + '), for any studio. It is not shared with your team.'
+            if found.get('state') == 'kept'
+            else 'Research not kept in the Document Library: '
+            + (found.get('problem') or 'it could not be kept.')
+        )
+        running = blog_activity.Running(root)
+        line = running.start(
+            blog_activity.blog(record['id']),
+            'Research kept in the Document Library'
+            if found.get('state') == 'kept'
+            else 'Research not kept in the Document Library',
+            'research',
+        )
+        line.say(said)
+        running.end(line, 'finished')
+    except Exception:  # the Activity log is best effort, as every line of it is
+        pass
+    return found
+
+
 def kept(ident):
     """What the Document Library holds of this blog: {'id', 'revision', 'title'}, or None
     when it holds nothing (or cannot be read). Read only."""

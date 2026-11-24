@@ -1212,6 +1212,10 @@ def _land_research(root, ident, job, result):
         if contract and case.is_dir():
             research_contract.copy_case(case, directory / research_contract.CASE)
             research_contract.publish(case, directory / 'research')
+            # Verified, so kept in the Document Library too; said in the Activity log.
+            import shared_library
+
+            shared_library.keep_research(root, directory, studio.item(root, 'articles', ident)[1])
         elif not contract:
             studio.atomic(
                 studio.inside(directory, blog_runner.STAGES['research'][1]),

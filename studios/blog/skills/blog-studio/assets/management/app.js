@@ -46,6 +46,15 @@ function suitePort(port, here) {
     ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
 }
 const resumeBlogId = new URLSearchParams(location.hash.slice(1)).get('resume');
+// Continue in another studio: Marketing Studio opens this page with library=<id>@<revision>, a
+// Document Library revision to start a new blog from. Read here, before the fragment is cleared,
+// and checked again as the Document Library names its documents; New blog opens with it.
+function libraryPick(hash){
+  const value=new URLSearchParams(String(hash||'').replace(/^#/,'')).get('library');if(value===null)return null;
+  const found=/^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(value);
+  return found&&Number(found[2])<=1000?{id:found[1],revision:Number(found[2])}:{invalid:true};
+}
+const libraryStart = libraryPick(location.hash);
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Blog-Studio-Token',token});
@@ -193,7 +202,9 @@ async function loadReceipts(signal, current=()=>true) {
 
 async function api(route, data, signal, options) {
   if(data)document.querySelectorAll('.dialog-notice').forEach(e=>e.hidden=true);
-  const headers={'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{})};
+  // A folder on this computer is read only for a request from this computer: this header never
+  // passes Marketing Studio's phone link, so the page server knows one from afar (files_intake).
+  const headers={'X-Blog-Studio-Token':token,...(data?{'Content-Type':'application/json'}:{}),...(route==='files-intake'?{'X-Blog-Studio-Local':'1'}:{})};
   let response,result;
   try {
     response=await fetch('/api/'+route,{method:data?'POST':'GET',headers,body:data?JSON.stringify(data):undefined,signal});
@@ -811,4 +822,4 @@ $('import-reload').addEventListener('click',async()=>{if(importBusy||!importStat
 
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
-applyCapabilities();loadCapabilities().then(async()=>{await load();if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));
+applyCapabilities();loadCapabilities().then(async()=>{await load();if(libraryStart){await sDeskFromLibrary(libraryStart);return;}if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));

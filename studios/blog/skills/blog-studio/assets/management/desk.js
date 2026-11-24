@@ -86,7 +86,7 @@ const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft',
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
 const DESK_START_STEPS=['Idea and sources','Writing preferences'];
 const DESK_START_LEDES=['Bring your idea or outline and add any sources once.','Check the writing preferences, then start. Your choices and sources are kept.'];
-const DESK_INTAKE_FIELDS='step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData'.split(' ');
+const DESK_INTAKE_FIELDS='libraryStart step kind style researchOn have brief title audience point angles angle angleOp outline outlineFrom outlineWay source article manuscript url link collection preview first_pass humanizeOn humanizeLevel geoReview voiceOn voiceGuide files role keep from searchSites searchWeb length tone operation upload uploaded docKeep sourceDraft sourceEntry fileData outlineFileData'.split(' ');
 class BlogIntake extends Drafting.Intake {
   snapshot(held,open=true){
     const value=Object.fromEntries(DESK_INTAKE_FIELDS.filter(key=>held[key]!==undefined).map(key=>[key,held[key]]));
@@ -153,6 +153,40 @@ function sDeskHeld(){
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
   return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',brief:false,title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',link:'',collection:null,collectionProblem:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',geoReview:false,voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
+// Continue in another studio: New blog opens with a Document Library revision picked as a
+// source, said in words. It is looked up through the Document Library's own route; one that is
+// hidden, gone or unreadable is said plainly and New blog opens without it. It is taken into
+// the blog only when the person starts (sDeskGo): nothing is made before then.
+async function sDeskFromLibrary(pick){
+  let found=null,said='';
+  if(!pick||pick.invalid)said='The Document Library item in this link could not be read, so New blog opens without it.';
+  else{
+    try{
+      const shown=await api('document-library-document',{id:pick.id,revision:pick.revision}),title=shown.title||'Untitled';
+      if(shown.hidden)said='“'+title+'” was removed from the Document Library, so New blog opens without it.';
+      else if(shown.state!=='readable')said='“'+title+'” cannot be read in the Document Library, so New blog opens without it.';
+      else found={id:pick.id,revision:pick.revision,title,role:'facts'};
+    }catch(error){said='That item is not in the Document Library on this computer, so New blog opens without it. '+error.message;}
+  }
+  await sDeskBegin({step:0,libraryStart:found,...(said?{problem:said}:{})});
+}
+function sDeskLibraryStartCard(held){
+  const pick=held.libraryStart;if(!pick)return null;
+  const said=sNode('p','','Starting from: '+pick.title+', from the Document Library');said.setAttribute('role','status');
+  const roles=[['facts','Facts (may be quoted)'],['messaging','Approved messaging'],['example','Example of the kind of post']];
+  const drop=sButton('Start without it',()=>{held.libraryStart=null;sDeskKeep(held,false);sDeskStartAgain(held);});
+  return sCard('Starting from',said,sNode('p','quiet','Revision '+pick.revision+'. It becomes one of this blog’s sources when you start; nothing is made before then.'),sField('desk-library-start-role','Use it as',pick,'role',{options:roles}),sAdd(sNode('div','bar'),drop));
+}
+// At Start: the Document Library revision the page was opened with becomes a file of this blog,
+// as Choose from the Document Library makes one.
+async function sDeskTakeLibraryStart(held){
+  const pick=held.libraryStart;if(!pick)return;
+  if(held.files.length>=20)throw new Error('Use up to 20 files for one blog.');
+  const result=await api('document-library-take',{operation:operationId(),picks:[{id:pick.id,revision:pick.revision,role:pick.role||'facts'}]});
+  const asRole={facts:'material',messaging:'messaging',example:'inspiration'};
+  for(const row of result.files||[])if(!held.files.some(file=>file.id===row.source.id))held.files.push({id:row.source.id,filename:row.filename,state:row.state,chars:row.chars||0,note:row.note||'',link:'',role:asRole[row.role]||'material',kept:false,shared:true});
+  held.libraryStart=null;
+}
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
 async function sDeskBegin(preset={}){
@@ -207,6 +241,7 @@ function sDeskHave(held){
   // A solution brief is always written from its sources: there is nothing else to bring.
   const parts=held.brief?[]:[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
   const content=held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)],research=sDeskResearchOptions(held);
+  const start=sDeskLibraryStartCard(held);if(start)parts.unshift(start);
   parts.push(content[0],sFilesCard(held,problem,()=>sDeskStartAgain(held),()=>{}),...content.slice(1),research);
   const go=sNode('button','button button-filled','Next');go.type='submit';go.disabled=!access.actions.edit;
   form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),sGeoInstead());
@@ -552,6 +587,7 @@ function sDeskPolishOptions(held){return held.first_pass==='copyedit'?{humanize:
 async function sDeskGo(held){
   const turn=studio.turn;
   if(!await sDeskKeep(held))throw Error(sBlogIntake().problem||'Save this intake before starting.');
+  await sDeskTakeLibraryStart(held);
   // A draft takes a kind of post only to be reshaped to it (sDeskPolish keeps held.style so).
   const common={intake_revision:sBlogIntake().revision,operation:held.operation,style:held.brief?'':held.have==='draft'?held.style:held.kind||'',tone:held.brief?'':held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{}),...(held.geoReview&&!held.brief?{geo_review:true}:{})};
   let made;
@@ -701,9 +737,10 @@ function sDeskShareActions(held){
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
   const download=sButton('Download',async()=>{if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
+  const onward=sDeskContinue(view);
   // A solution brief is made in the brand's template; a blog is marked as published.
-  if(view.brief){const make=sButton('Make the brief',button=>sDeskBrief(held,button),'filled');make.disabled=!editable;return [copy,download,make];}
-  return [copy,download,...sDeskGoogleActions(held,true),publish];
+  if(view.brief){const make=sButton('Make the brief',button=>sDeskBrief(held,button),'filled');make.disabled=!editable;return [copy,download,make,onward].filter(Boolean);}
+  return [copy,download,...sDeskGoogleActions(held,true),publish,onward].filter(Boolean);
 }
 // Make the brief: Harness Brand lays the draft out in the brand's solution brief template.
 // The sheet says what was checked and offers the Word file and the PDF; the draft is unchanged.
@@ -765,6 +802,15 @@ function sDeskGoogleActions(held,flat=false){
 }
 // The Doc as the desk last knew it, said in the toolbar: what waits there, when the desk last
 // sent, and changes not sent yet. Read on this computer; Google is read only when asked.
+// Continue in another studio: Marketing Studio's Library opens on this blog's kept copy with
+// the other studios to choose from. Offered only for a kept blog or brief, and only when
+// Marketing Studio opened this page (StudioShell.continueLink gives no link otherwise).
+function sDeskContinue(view){
+  const kept=view.document_library;if(!kept||typeof StudioShell==='undefined'||typeof StudioShell.continueLink!=='function')return null;
+  const href=StudioShell.continueLink({id:kept.id,revision:kept.revision});if(!href)return null;
+  const go=sNode('a','button','Continue in another studio');go.href=href;go.setAttribute('aria-label','Continue in another studio, from the Document Library copy, revision '+kept.revision);
+  return go;
+}
 // Kept in the Document Library on this computer (marked ready, a brief made, or published).
 function sDeskKeptWords(view){const kept=view.document_library;return kept?'Kept in the Document Library · revision '+kept.revision:'';}
 function sDeskDocWords(view){const g=view.google_state;if(!g)return '';const said=[];if(g.waiting)said.push('Doc: '+g.waiting+' waiting');if(g.last)said.push('last sent '+sDeskWhen(g.last.at));if(g.unsent)said.push('Unsent desk changes');return said.join(' · ');}

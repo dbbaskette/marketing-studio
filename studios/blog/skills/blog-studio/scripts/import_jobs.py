@@ -46,6 +46,9 @@ ROUTES = {
     'desk-google-send': ('Sending to the Google Doc', False),
     'editor-google-send': ('Sending feedback to the Google Doc', False),
     'desk-google-take': ('Bringing the Google Doc’s text to the desk', False),
+    # A folder or a spreadsheet for the source picker (management.files_intake): read, then
+    # saved as files for the blog, in one go.
+    'files-intake': ('Reading the folder', False),
 }
 TURNS = 40  # Calls one library add may make: 40 batches of links, as the page made before.
 STOPPED = 'Stopped. Nothing was changed.'

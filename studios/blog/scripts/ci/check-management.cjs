@@ -105,6 +105,7 @@ async function check(){
   await voiceLinksJourney();
   await libraryAddJourney();
   await importJobs();
+  await documentLibraryHandoff();
   await libraryWordsAndBatches();
   await libraryScreen();
   await librarySelectAll();
@@ -2097,6 +2098,79 @@ async function importJobs(){
   assert.deepEqual(requests.filter(r=>r.url==='/api/import-stop').map(r=>r.data),[{job:'a'.repeat(32)}]);
   await step();
   assert.deepEqual(JSON.parse(JSON.stringify(await stopped)),{message:'Stopped. Nothing was changed.',stopped:true});
+}
+
+// The Document Library handoff (#514): library=<id>@<revision> opens New blog with that revision
+// said in words and taken only at Start; a hidden or unreadable one is said and left out; a kept
+// blog offers Continue in another studio only when Marketing Studio gives a link; a folder or a
+// Drive folder link goes to files-intake with the header that says the page is on this computer.
+async function documentLibraryHandoff(){
+  const requests=[];let item={id:'launch-facts',revision:2,title:'Launch facts',state:'readable',hidden:false};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data,headers:options?.headers||{}});
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/document-library-document')return item.missing?{__http:400,error:'That document is not in the library.'}:item;
+    if(url==='/api/document-library-take')return {files:[{filename:'Launch facts',source:{id:'lib1'},state:'ready',chars:900,role:data.picks[0].role,note:'From the Document Library, revision 2'}],state:'saved',receipts:[]};
+    if(url==='/api/desk-create')return {...deskView({id:'created'}),first_pass_problem:null};
+    if(url.startsWith('/api/desk?'))return deskView({id:'created'});
+    if(url==='/api/files-intake')return {files:[{filename:'Plans - Launch.md',source:{id:'fold1'},state:'ready',chars:400,note:''}],state:'saved',receipts:[],said:'2 documents were added from Launch.',next:null,skipped:[]};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),texts=()=>nodes().map(n=>n.textContent);
+  // Each start below is a new one: no unfinished form is left to ask about replacing.
+  const fresh=async()=>{f.run('studio.deskStart=null');await f.run('sBlogIntake().discard()');};
+  // The link's value is checked as the Document Library names a document.
+  assert.deepEqual(JSON.parse(JSON.stringify(f.run("libraryPick('#tok&library=launch-facts@2')"))),{id:'launch-facts',revision:2});
+  for(const bad of ['#tok&library=Launch@2','#tok&library=a@0','#tok&library=a@1001','#tok&library=a','#tok&library=../x@1'])assert.deepEqual(JSON.parse(JSON.stringify(f.run('libraryPick('+JSON.stringify(bad)+')'))),{invalid:true},bad);
+  assert.equal(f.run("libraryPick('#tok&resume=x')"),null);
+  // A readable revision: New blog says where it starts from, and nothing is taken or made yet.
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().includes('Starting from: Launch facts, from the Document Library'),texts().join('|').slice(0,400));
+  assert.deepEqual(requests.filter(r=>r.url==='/api/document-library-document').map(r=>r.data),[{id:'launch-facts',revision:2}]);
+  assert.equal(requests.some(r=>/document-library-take|desk-create/.test(r.url)),false,'nothing is made before Start');
+  const role=nodes().find(n=>n.id==='desk-library-start-role');role.value='messaging';role.listeners.change();
+  f.run("Object.assign(studio.deskStart,{title:'Launch post',point:'What the launch changes.'})");
+  await f.run('sDeskGo(studio.deskStart)');
+  const take=requests.findIndex(r=>r.url==='/api/document-library-take'),made=requests.findIndex(r=>r.url==='/api/desk-create');
+  assert.ok(take>=0&&made>take,'taken at Start, before the blog is made');
+  assert.deepEqual(requests[take].data.picks,[{id:'launch-facts',revision:2,role:'messaging'}]);
+  assert.deepEqual(requests[made].data.sources,['lib1'],'the blog starts with it as a source');
+  // Hidden, gone or unreadable: said plainly, and New blog opens without it.
+  await fresh();item={...item,hidden:true};
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().some(t=>/“Launch facts” was removed from the Document Library, so New blog opens without it\./.test(t)));
+  assert.equal(f.run('studio.deskStart.libraryStart'),null);
+  await fresh();item={...item,hidden:false,state:'needs-text'};
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().some(t=>/cannot be read in the Document Library/.test(t)));
+  await fresh();item={missing:true};
+  await f.run("sDeskFromLibrary({id:'launch-facts',revision:2})");
+  assert.ok(texts().some(t=>/not in the Document Library on this computer/.test(t)));
+  await fresh();
+  await f.run('sDeskFromLibrary({invalid:true})');
+  assert.ok(texts().some(t=>/could not be read, so New blog opens without it/.test(t)));
+  // Continue in another studio: only for a kept blog, and only with Marketing Studio's link.
+  const actions=view=>f.run('sDeskShareActions({view:'+JSON.stringify(view)+',id:"created"})').map(n=>n.textContent);
+  f.set('StudioShell',{continueLink:({id,revision})=>'http://127.0.0.1:9/#token=k&continue='+id+'@'+revision});
+  assert.ok(!actions(deskView()).includes('Continue in another studio'),'not before it is kept');
+  const kept=deskView({document_library:{id:'blog-launch',revision:3,title:'Launch post'}});
+  assert.ok(actions(kept).includes('Continue in another studio'));
+  const link=f.run('sDeskShareActions({view:'+JSON.stringify(kept)+',id:"created"})').find(n=>n.textContent==='Continue in another studio');
+  assert.equal(link.href,'http://127.0.0.1:9/#token=k&continue=blog-launch@3');
+  assert.ok(f.run('sDeskShareActions({view:'+JSON.stringify({...kept,brief:true})+',id:"created"})').some(n=>n.textContent==='Continue in another studio'),'a kept brief too');
+  f.set('StudioShell',{continueLink:()=>null});
+  assert.ok(!actions(kept).includes('Continue in another studio'),'not when Blog Studio runs alone');
+  assert.equal(f.run('sDeskKeptWords('+JSON.stringify(kept)+')'),'Kept in the Document Library · revision 3');
+  // A folder on this computer or a Google Drive folder link: one request, with the local header.
+  f.run("studio.team={joined:false};globalThis.handoffDraft={files:[],fileMethod:'files'};document.getElementById('studio-page').replaceChildren(sFilesCard(handoffDraft,document.createElement('p'),()=>{},()=>{}))");
+  const folder=nodes().find(n=>n.id==='files-folder');folder.value='/Users/someone/Launch';
+  await nodes().find(n=>n.id==='files-folder-add').listeners.click();
+  const sent=requests.filter(r=>r.url==='/api/files-intake').at(-1);
+  assert.equal(sent.data.folder,'/Users/someone/Launch');assert.equal(sent.data.room,20);assert.equal(sent.headers['X-Blog-Studio-Local'],'1');
+  assert.equal('local' in sent.data,false,'the page never says itself that it is local');
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(handoffDraft.files.map(file=>file.filename))')),['Plans - Launch.md']);
+  assert.equal(f.run('handoffDraft.problem'),'2 documents were added from Launch.');
+  assert.match(nodes().find(n=>n.id==='files-input').accept,/\.xlsx/,'a workbook can be chosen');
+  assert.equal(requests.filter(r=>r.url==='/api/upload').some(r=>r.headers['X-Blog-Studio-Local']),false,'only the folder intake carries it');
 }
 
 // Issue 260: Add to the team library sends large sets in groups that each fit a request (the
