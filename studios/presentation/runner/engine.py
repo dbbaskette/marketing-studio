@@ -3637,7 +3637,10 @@ class Engine(Jobs, Researching, DeskActions):
         raw = self._saved_original(root)
         if raw is None:
             return None
-        form = raw.get('form') if isinstance(raw.get('form'), dict) else None
+        # What becomes of it, and why, is the migration's one answer for saved-flow work
+        # (`desk_migration.outcome`); with the runner's refusal it is a read-only record.
+        from runner import desk_migration
+        found = desk_migration.outcome(raw or None, {}, refusal=refusal)
         title = raw.get('title') if isinstance(raw.get('title'), str) and raw['title'].strip() \
             else root.name
         return {'id': root.name, 'path': str(root), 'title': title,
@@ -3646,9 +3649,8 @@ class Engine(Jobs, Researching, DeskActions):
                 # Which flow made a record that cannot be read at all is not known.
                 'sentence': SAVED_RECORD if raw else UNREAD_RECORD,
                 'gate': None, 'desk': None, 'deliver': None,
-                'saved_record': {'why': str(refusal), 'files': self._saved_files(root),
-                                 'next': 'copy' if form and raw.get('route') in decks.ROUTES
-                                 else 'new'}}
+                'saved_record': {'why': found['why'], 'files': self._saved_files(root),
+                                 'next': found['next']}}
 
     def view(self, path) -> dict | None:
         """Everything the page shows for one deck. None when there is no deck there. A deck
