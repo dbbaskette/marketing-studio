@@ -194,6 +194,60 @@ class OnePassBrandCardTests(BrandFolders):
         self.assertEqual(brand_data.status(''), {'state': 'following', 'folder': str(folder), 'exists': True,
                                                  'brands': ['acme'], 'read': True})
 
+    def test_a_folder_that_cannot_be_recorded_still_saves_and_says_why(self):
+        folder = self.brands_folder(self.root / 'brands', 'acme')
+        refused = PermissionError(13, 'Permission denied', str(self.root / 'config' / 'harness-brand'))
+        with mock.patch.object(brand_data, 'record', side_effect=refused):
+            saved = self.write('/api/shared', {'changes': {'brand': {'brands': str(folder)}}, 'seen': {}})
+        self.assertIn('Permission denied', saved['brands_saved']['problem'])
+        self.assertEqual(shared.read()[0]['brand']['brands'], str(folder))
+
+    def onboarding_request(self, path, sent):
+        from email.message import Message
+        from studio_core import onboarding
+        page = onboarding.Controller(8000, 'a' * 40, 'Training Studio', 'X-Test-Token', lambda _: None, shared)
+        headers = Message()
+        for key, value in {'Host': '127.0.0.1:8000', 'Origin': 'http://127.0.0.1:8000',
+                           'Content-Type': 'application/json', 'X-Test-Token': 'a' * 40}.items():
+            headers[key] = value
+        reply = page.answer('/onboarding/api/' + path, headers, 'POST', json.dumps(sent).encode())
+        return reply[0], json.loads(reply[2])
+
+    def test_a_studios_own_setup_page_also_records_a_folder_as_part_of_save(self):
+        folder = self.brands_folder(self.root / 'brands', 'acme')
+        status, saved = self.onboarding_request('shared', {'changes': {'brand': {'brands': str(folder)}}, 'seen': {}})
+        self.assertEqual(status, 200)
+        self.assertEqual(saved['brands_saved'], {'folder': str(folder), 'brands': ['acme'], 'action': 'used'})
+        self.assertEqual(self.recorded(), f'{folder}\n')
+        self.assertEqual(saved['shared']['brand']['brands'], str(folder))
+        # And its lookup says what the folder holds, while a failing skill lookup leaves it standing.
+        from studio_core import brand_catalog
+        with mock.patch.object(brand_catalog, 'choices', side_effect=OSError('no skills folder')):
+            status, looked = self.onboarding_request('brands', {})
+        self.assertEqual((status, looked['skills'], looked['store']['state'], looked['store']['brands']),
+                         (200, [], 'local', ['acme']))
+        self.assertIn('no skills folder', looked['problem'])
+
+    def test_a_caller_through_the_network_bridge_is_told_no_paths(self):
+        from studio_core import brand_catalog
+        folder = self.brands_folder(self.root / 'brands', 'acme', 'other')
+        self.write('/api/shared', {'changes': {'brand': {'brands': str(folder)}}, 'seen': {}})
+        with mock.patch.object(brand_catalog, 'choices', return_value={'skills': [], 'problem': None}):
+            self.page.caller.remote = True
+            try:
+                looked = self.write('/api/brands', {})
+            finally:
+                self.page.caller.remote = False
+            here = self.write('/api/brands', {})
+        self.assertEqual(looked['store'], {'state': 'local', 'exists': True, 'read': True, 'count': 2})
+        self.assertNotIn(str(self.root), json.dumps(looked))
+        self.assertEqual(here['store']['folder'], str(folder))
+
+    def test_a_folder_that_cannot_be_looked_at_is_said_and_the_lookup_answers(self):
+        with mock.patch.object(brand_data, 'status', side_effect=OSError('the disk went away')):
+            store = brand_data.lookup('/somewhere')
+        self.assertEqual(store, {'state': 'unknown', 'said': 'The brands folder could not be looked at: the disk went away'})
+
     def test_a_fetched_repository_is_said_with_its_brands(self):
         origin = self.remote('acme')
         with mock.patch.object(brand_data, '_local', return_value=False):

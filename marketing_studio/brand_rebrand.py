@@ -20,7 +20,12 @@ What a caller needs to know
 - One rebrand at a time in this Marketing Studio. Its record is MARKETING_STUDIO_DATA's
   `brand-rebrand/job.json`; its run folder, given as `--run-dir`, is `brand-rebrand/runs/<id>/`,
   where Harness Brand writes report.md and result.json. A page reloaded meanwhile reads the
-  record again; a job left running by a Marketing Studio that closed reads as stopped.
+  record again. The record keeps the run's process group: closing Marketing Studio ends it
+  (atexit), and a record a Marketing Studio that ended abruptly left saying running has its
+  run ended first, when that group still runs this job's `rebrand run` (its leader's
+  command line names the run folder), before it is called stopped; a run that finished by
+  itself meanwhile is read for its result. Nothing claims no copy was made unless the run
+  ended before making one.
 - The result gives the copy's link, the report, and Harness Brand's verdict in its own words
   (its status and next action). Without the review the copy awaits the person's own look at
   every page: it is never called accepted.
@@ -28,10 +33,15 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+import atexit
 import json
+import os
 import re
 import secrets
 import shlex
+import signal
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -62,7 +72,8 @@ FINISHED = ('branded', 'branded_with_exceptions')
 NOT_A_LINK = ('Paste the link of a Google Slides or Google Docs file. It starts with '
               'https://docs.google.com/presentation/d/ or https://docs.google.com/document/d/.')
 LOCK = threading.RLock()
-RUNNING: dict[str, tuple[threading.Thread, threading.Event]] = {}
+CLOSING = threading.Event()      # Marketing Studio is closing: _shutdown says how the job ended
+RUNNING: dict[str, tuple[threading.Thread, threading.Event, dict]] = {}   # the job: thread, stop, record
 
 
 def folder() -> Path:
@@ -90,6 +101,9 @@ def choices(place) -> list[dict]:
     """The brands in the brands folder, by id, with the name each pack gives itself."""
     shown = []
     for ident in brand_data.brands(place.folder):
+        # Only an id Harness Brand takes; a folder named like an option never follows --brand.
+        if not brand_store.SLUG.fullmatch(ident):
+            continue
         name = ident
         for kind in brand_data.PROFILES:
             told = brand_store.read_json(place.folder / ident / kind / 'brand.json', {})
@@ -160,21 +174,127 @@ def _checkpoint(job: dict) -> str | None:
     return _copy_link(told.get('url')) if isinstance(told, dict) else None
 
 
+def _command_line(pid: int) -> str | None:
+    """A running process's command line, or None when it cannot be read: from /proc on
+    Linux, from the kernel (sysctl KERN_PROCARGS2) on macOS, else from ps."""
+    proc = Path(f'/proc/{pid}/cmdline')
+    if proc.parent.is_dir():
+        try:
+            return proc.read_bytes().replace(b'\0', b' ').decode('utf-8', 'replace')
+        except OSError:
+            return None
+    if sys.platform == 'darwin':
+        try:
+            import ctypes
+            import ctypes.util
+            libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+            mib = (ctypes.c_int * 3)(1, 49, pid)          # CTL_KERN, KERN_PROCARGS2, the process
+            size = ctypes.c_size_t(0)
+            if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) == 0 and size.value:
+                buffer = ctypes.create_string_buffer(size.value)
+                if libc.sysctl(mib, 3, buffer, ctypes.byref(size), None, 0) == 0:
+                    return buffer.raw[:size.value].replace(b'\0', b' ').decode('utf-8', 'replace')
+        except (OSError, AttributeError, ValueError):
+            pass
+    try:
+        return subprocess.run(['ps', '-o', 'command=', '-p', str(pid)], capture_output=True, text=True,
+                              timeout=10).stdout or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _group_runs_it(job: dict) -> bool:
+    """Whether the process group recorded for this job still runs this job's `rebrand run`:
+    its leader's command line names the job's run folder. A process group id taken since by
+    anything else, or one whose leader cannot be read, is never touched."""
+    pgid = job.get('pgid')
+    if not isinstance(pgid, int) or pgid <= 1:
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    command = _command_line(pgid)
+    return bool(command) and job['runDir'] in command
+
+
+def _end_group(pgid: int, seconds: float = 5) -> None:
+    """End a process group and wait, briefly, until nothing in it is left."""
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        return
+    limit = time.monotonic() + seconds
+    while time.monotonic() < limit:
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.05)
+
+
+def _settle_stale(job: dict) -> None:
+    """A record that says running with no job behind it in this Marketing Studio: one that
+    was closed meanwhile. Its `rebrand run`, if it is still going, is ended first; one that
+    finished by itself is read for its result. Hold LOCK."""
+    ended = _group_runs_it(job)
+    if ended:
+        _end_group(job['pgid'])
+    result = None if ended else _outcome(job, '', '')
+    copy = (result or {}).get('url') or job.get('copy') or _checkpoint(job)
+    if result is not None:
+        state = 'done' if result['status'] in FINISHED else 'failed'
+        detail = '' if state == 'done' else (result['error'] or f'{brand_skill.SKILL} ended {result["verdict"]}.')
+        job.update(state=state, result=result, copy=copy, ended=time.time(),
+                   detail=('It finished after Marketing Studio was closed. ' + detail).strip())
+    else:
+        job.update(state='stopped', ended=time.time(), copy=copy,
+                   detail='Marketing Studio was closed while this ran, so it was stopped'
+                   + (' when Marketing Studio next opened Brands.' if ended else '.')
+                   + (' A copy had already been made in your Google Drive; check it before you use it.' if copy
+                      else ' No copy was recorded. Look in your Google Drive before you start again, in case '
+                           'one was being made.'))
+    job.pop('pgid', None)
+    _keep(job)
+
+
 def view(place=None) -> dict:
     """What the page shows: the last job, and the brands a file can be rebranded with."""
     with LOCK:
         job = _read()
         if job and job.get('state') == 'running' and not _alive():
-            copy = job.get('copy') or _checkpoint(job)
-            job.update(state='stopped', ended=time.time(), copy=copy,
-                       detail='Marketing Studio was closed while this ran, so it was stopped.'
-                       + (' A copy had already been made in your Google Drive; check it before you use it.' if copy
-                          else ' No copy had been made.'))
-            _keep(job)
+            _settle_stale(job)
     shown = {'job': job}
     if place is not None:
         shown['brands'] = choices(place)
     return shown
+
+
+def _shutdown() -> None:
+    """When Marketing Studio stops: the running `rebrand run` is ended with it, and its
+    record says so, so nothing goes on making a copy that nobody is watching."""
+    running = RUNNING.get('job')
+    if running is None:
+        return
+    CLOSING.set()
+    running[1].set()
+    job = running[2]
+    if isinstance(job.get('pgid'), int):
+        _end_group(job['pgid'], 2)
+    try:
+        copy = job.get('copy') or _checkpoint(job)
+        job.update(state='stopped', ended=time.time(), copy=copy,
+                   detail='Marketing Studio was closed while this ran, so it was stopped.'
+                   + (' A copy had already been made in your Google Drive; check it before you use it.' if copy
+                      else ' No copy was recorded. Look in your Google Drive before you start again, in case '
+                           'one was being made.'))
+        job.pop('pgid', None)
+        _keep(job)
+    except (OSError, WorkspaceError):
+        pass
+
+
+atexit.register(_shutdown)
 
 
 # --- the job ---------------------------------------------------------------------------
@@ -219,7 +339,12 @@ def start(found, place, link, brand, review, reviewer) -> dict:
     if reviewer not in ('claude', 'codex'):
         raise WorkspaceError('Choose Claude Code or Codex in Shared settings before asking for a review.')
     checked = check(found, place, link, brand)
+    CLOSING.clear()   # a start is never part of closing
     with LOCK:
+        # A rebrand an earlier Marketing Studio left going is ended first: one at a time.
+        stale = _read()
+        if stale and stale.get('state') == 'running' and not _alive():
+            _settle_stale(stale)
         if _alive():
             raise WorkspaceError('A rebrand is running. Wait for it to finish, or stop it, before starting another.')
         ident = time.strftime('%Y%m%d-%H%M%S') + '-' + secrets.token_hex(3)
@@ -236,7 +361,7 @@ def start(found, place, link, brand, review, reviewer) -> dict:
         stop_event = threading.Event()
         thread = threading.Thread(target=_work, args=(job, command, brand_skill.environment(place.folder), stop_event),
                                   daemon=True, name='brand-rebrand')
-        RUNNING['job'] = (thread, stop_event)
+        RUNNING['job'] = (thread, stop_event, job)
         thread.start()
     return view(place)
 
@@ -258,17 +383,25 @@ def _work(job: dict, command: list[str], env: dict, stop_event: threading.Event)
             return
         if event.get('status') == 'progress' and isinstance(event.get('stage'), str):
             stage = event['stage']
+            with LOCK:
+                job['stage'] = stage[:80]
             line(STAGES.get(stage, 'Working: ' + stage.replace('_', ' ')[:80]))
         elif event.get('status') == 'copy_created':
             with LOCK:
                 job['copy'] = _copy_link(event.get('url')) or job['copy']
             line('The new copy is in your Google Drive')
 
+    def started(process):
+        # Kept in the record, so a Marketing Studio that closed before this ended can end it.
+        with LOCK:
+            job['pgid'] = process.pid
+            _keep(job)
+
     ending, detail, result = 'failed', 'It ended unexpectedly.', None
     try:
         try:
             code, out, err = brand_skill.run(command, env=env, seconds=SECONDS, stop=stop_event,
-                                             each_error=heard, said=brand_skill.SKILL)
+                                             each_error=heard, said=brand_skill.SKILL, started=started)
             result = _outcome(job, out, err)
             if result is None:
                 ending, detail = 'failed', f'{brand_skill.SKILL} did not finish: {_reason(err, code)}'
@@ -284,12 +417,20 @@ def _work(job: dict, command: list[str], env: dict, stop_event: threading.Event)
             ending, detail = 'failed', f'{type(failure).__name__}: {failure}'
     finally:
         with LOCK:
-            job['copy'] = (result or {}).get('url') or job['copy'] or _checkpoint(job)
-            if ending != 'done':
-                detail += (' A copy had already been made in your Google Drive; check it before you use it.'
-                           if job['copy'] else ' No copy was made in your Google Drive.')
-            job.update(state=ending, detail=detail, result=result, ended=time.time())
-            _keep(job)
+            # When Marketing Studio is closing, _shutdown has recorded how this ended.
+            if not CLOSING.is_set():
+                job['copy'] = (result or {}).get('url') or job['copy'] or _checkpoint(job)
+                if ending != 'done':
+                    if job['copy']:
+                        detail += ' A copy had already been made in your Google Drive; check it before you use it.'
+                    elif job.get('stage') in ('creating_native_copy', 'verifying_native_copy', 'checking_native_render'):
+                        detail += (' It ended while the copy was being made, and none was recorded: look in your '
+                                   'Google Drive before you start again.')
+                    else:
+                        detail += ' No copy was made in your Google Drive.'
+                job.pop('pgid', None)
+                job.update(state=ending, detail=detail, result=result, ended=time.time())
+                _keep(job)
             if RUNNING.get('job', (None,))[0] is threading.current_thread():
                 del RUNNING['job']
 

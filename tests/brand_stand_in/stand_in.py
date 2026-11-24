@@ -287,6 +287,8 @@ def rebrand_run(args):
     writes report.md and result.json into the run folder. STAND_IN_REBRAND_FAIL makes it end
     incomplete with that error, after the copy was made."""
     import time
+    if os.environ.get('STAND_IN_PIDS'):   # this process and the one that started it (Node)
+        Path(os.environ['STAND_IN_PIDS']).write_text(json.dumps([os.getpid(), os.getppid()]))
     source, brand, run_dir = args[0], option(args, '--brand'), Path(option(args, '--run-dir'))
     review, pause = '--review' in args, float(os.environ.get('STAND_IN_REBRAND_PAUSE') or 0)
     if run_dir.exists() and any(run_dir.iterdir()):

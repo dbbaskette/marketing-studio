@@ -1218,20 +1218,31 @@ $('#problem-newer').addEventListener('click', () => void loadNewer());
 // says what it holds. Only a Git address waits for Get brands, the one action that fetches.
 let brandLook = 0, brandFound = null, brandStore = null, brandReplaced = '';
 const brandCount = names => `${names.length} brand${names.length === 1 ? '' : 's'}${names.length ? ` (${names.join(', ')})` : ''}`;
+// What a brands folder holds, as the lookup said it: its brand ids, or over the network a count.
+const brandsHeld = store => store.brands ? brandCount(store.brands) : `${store.count} brand${store.count === 1 ? '' : 's'}`;
+const heldNone = store => store.brands ? !store.brands.length : !store.count;
+// A folder's path, when this computer's paths were given; a phone is told none.
+const brandWhere = (store, words) => store.folder ? `${words} ${store.folder}` : '';
+const gitAddress = text => /^(https?:\/\/|ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(text || '');
+let brandLookupSkill = '';
 function installedBrands() {
   return (brandFound?.skills || []).flatMap(skill => (skill.brands || []).map(brand => ({skill, brand})));
 }
 async function lookUpBrands() {
   const asked = ++brandLook;
+  const skill = (snapshot?.shared?.brand?.skill || '').trim();
   $('#brand-catalog-status').textContent = 'Looking up installed brands… This installs nothing.';
   if (!brandStore) $('#brand-brands-status').textContent = 'Looking at the brands folder…';
   try {
-    const found = await api('brands', {skill: (snapshot?.shared?.brand?.skill || '').trim() || null});
+    const found = await api('brands', {skill: skill || null});
     if (asked !== brandLook) return;
-    brandFound = found; brandStore = found.store || null;
+    brandFound = found; brandStore = found.store || null; brandLookupSkill = skill;
   } catch (error) {
     if (asked !== brandLook) return;
+    // Neither lookup answered: say so in both places, and keep Get brands for a saved address.
     brandFound = {skills: [], problem: `${error.message} You can still enter a brand ID.`};
+    brandStore = {state: 'unknown', said: `The brands folder could not be looked at: ${error.message}`};
+    brandLookupSkill = skill;
   }
   renderBrandChoices(); renderBrandStore();
 }
@@ -1242,7 +1253,7 @@ function renderBrandChoices() {
     const option = element('option'); option.value = brand.brand;
     option.label = many ? `${brand.name} · ${skill.name}` : brand.name; list.append(option);
   }
-  renderVariants();
+  renderVariants(); renderBrandFrom();
   const status = $('#brand-catalog-status');
   if (!brandFound) return;
   if (!found.length) { status.textContent = brandFound.problem || 'No installed brands were found. You can still enter a brand ID.'; return; }
@@ -1251,10 +1262,18 @@ function renderBrandChoices() {
   status.textContent = `${found.length === 1 ? 'One installed brand' : `${found.length} installed brands`}: ${found.map(item => item.brand.name).join(', ')}. Choose one below, then save.`
     + (missing ? ` ${typed} is not among them, so the studios cannot use it until it is installed.` : '');
 }
+// The installed skills that offer the brand typed, and the one the form names now.
+function brandOffers() {
+  const typed = form.elements['brand.brand'].value.trim();
+  return installedBrands().filter(item => item.brand.brand === typed);
+}
+function brandMatch() {
+  const offers = brandOffers(), skill = form.elements['brand.skill'].value.trim();
+  return offers.find(item => item.skill.path === skill) || offers[0] || null;
+}
 // The variants of the brand chosen, offered for Default variant.
 function renderVariants() {
-  const typed = form.elements['brand.brand'].value.trim();
-  const match = installedBrands().find(item => item.brand.brand === typed);
+  const match = brandMatch();
   const list = $('#brand-variant-list'); list.replaceChildren();
   for (const variant of match?.brand.variants || []) { const option = element('option'); option.value = variant; list.append(option); }
   const variants = match?.brand.variants || [];
@@ -1262,21 +1281,41 @@ function renderVariants() {
     ? `${match.brand.name} offers ${variants.join(', ')}. Leave blank to use ${variants[0]}.`
     : 'Such as light or dark. Leave blank to use the brand’s first variant.';
 }
+// When more than one installed skill offers the brand, the person says which.
+function renderBrandFrom() {
+  const offers = brandOffers(), field = $('#brand-from-field'), select = $('#brand-from');
+  field.hidden = offers.length < 2;
+  if (field.hidden) return;
+  select.replaceChildren(...offers.map(item => new Option(item.skill.name, item.skill.path)));
+  select.value = brandMatch().skill.path;
+}
+// A brand's skill, as Shared settings keep it: empty when the skill the studios find by
+// themselves offers it, else that skill's folder. A lookup made through a saved folder lists
+// only that skill's brands, so the folder stays as it is.
+function useBrandSkill(match) {
+  if (!match || brandLookupSkill) return;
+  const skill = form.elements['brand.skill'];
+  const wanted = match.skill === brandFound.skills[0] ? '' : match.skill.path;
+  if (skill.value.trim() !== wanted) { skill.value = wanted; if (wanted) $('#brand-more').open = true; }
+}
 // A brand chosen from the list: its variants are offered, a variant it does not have is
-// cleared, and a brand offered only by another installed skill names that skill's folder.
+// cleared, and the brand skill folder always agrees with the skill that offers it.
 function brandChosen() {
-  const typed = form.elements['brand.brand'].value.trim();
-  const match = installedBrands().find(item => item.brand.brand === typed);
+  const offers = brandOffers();
+  const match = offers.find(item => item.skill === brandFound.skills[0]) || offers[0] || null;
   if (match) {
     const variant = form.elements['brand.variant'];
     if (variant.value.trim() && match.brand.variants?.length && !match.brand.variants.includes(variant.value.trim())) variant.value = '';
-    const first = brandFound.skills[0], skill = form.elements['brand.skill'];
-    if (match.skill !== first && !skill.value.trim()) { skill.value = match.skill.path; $('#brand-more').open = true; }
+    useBrandSkill(match);
   }
   renderBrandChoices(); saveState();
 }
+$('#brand-from').addEventListener('change', () => {
+  useBrandSkill(brandOffers().find(item => item.skill.path === $('#brand-from').value));
+  renderVariants(); saveState();
+});
 form.elements['brand.brand'].addEventListener('change', brandChosen);
-form.elements['brand.brand'].addEventListener('input', renderVariants);
+form.elements['brand.brand'].addEventListener('input', () => { renderVariants(); renderBrandFrom(); });
 form.elements['brand.brands'].addEventListener('input', () => renderBrandStore());
 // What the saved brands folder holds, and whether Harness Brand reads it.
 function renderBrandStore() {
@@ -1292,18 +1331,23 @@ function renderBrandStore() {
   }
   const offer = words => { if (!isBusy(button)) button.textContent = words; bar.hidden = false; };
   if (store.state === 'none') status.textContent = store.said;
-  else if (store.state === 'following') status.textContent = store.exists
-    ? `Harness Brand reads ${brandCount(store.brands)} from ${store.folder}.`
-    : `Harness Brand reads its brands from ${store.folder}, and there is no folder there yet.`;
+  else if (store.state === 'unknown') {
+    status.textContent = store.said;
+    // The address is saved: fetching it does not need the look that failed.
+    if (gitAddress(saved)) { status.textContent += ` Get brands copies ${saved} to this computer.`; offer('Get brands'); }
+  } else if (store.state === 'following') status.textContent = store.exists
+    ? `Harness Brand reads ${brandsHeld(store)}${brandWhere(store, ' from')}.`
+    : `Harness Brand reads its brands from ${store.folder || 'a folder'} that is not there yet.`;
   else if (store.state === 'local') {
-    if (!store.exists) status.textContent = `There is no folder at ${store.folder} yet. Brands can make the first brand in it.`;
-    else if (!store.brands.length) status.textContent = `${store.folder} holds no brands yet. Make one under Brands, or choose another folder.`;
-    else if (store.read) status.textContent = `Harness Brand reads ${brandCount(store.brands)} from ${store.folder}.`;
-    else { status.textContent = `${store.folder} holds ${brandCount(store.brands)}, but Harness Brand reads another folder. Use this folder to change that.`; offer('Use this folder'); }
+    const at = store.folder || 'The brands folder';
+    if (!store.exists) status.textContent = `There is no folder at ${store.folder || 'the saved place'} yet. Brands can make the first brand in it.`;
+    else if (heldNone(store)) status.textContent = `${at} holds no brands yet. Make one under Brands, or choose another folder.`;
+    else if (store.read) status.textContent = `Harness Brand reads ${brandsHeld(store)}${brandWhere(store, ' from')}.`;
+    else { status.textContent = `${at} holds ${brandsHeld(store)}, but Harness Brand reads another folder. Use this folder to change that.`; offer('Use this folder'); }
   } else if (!store.fetched) {
-    status.textContent = `The brands have not been fetched yet. Get brands copies ${store.address} to this computer.`; offer('Get brands');
+    status.textContent = `The brands have not been fetched yet. Get brands copies ${store.address || saved} to this computer.`; offer('Get brands');
   } else {
-    status.textContent = `${brandCount(store.brands)} copied from ${store.address} to ${store.folder}.${store.read ? '' : ' Harness Brand reads another folder until you get them again.'}`;
+    status.textContent = `${brandsHeld(store)} copied from ${store.address || saved}${brandWhere(store, ' to')}.${store.read ? '' : ' Harness Brand reads another folder until you get them again.'}`;
     offer(store.read ? 'Update brands' : 'Get brands');
   }
   // Which folder Harness Brand read before this page moved it, said once beside the folder.
@@ -1318,9 +1362,10 @@ function brandsSaved(done) {
 $('#get-brands').addEventListener('click', async () => {
   const button = $('#get-brands'), status = $('#brand-brands-status');
   if (isBusy(button)) return;
-  const remote = brandStore?.state === 'remote';
+  const saved = (snapshot?.shared?.brand?.brands || '').trim();
+  const remote = brandStore?.state === 'remote' || (brandStore?.state === 'unknown' && gitAddress(saved));
   const done = busy(button, remote ? 'Getting brands…' : 'Using this folder…');
-  status.textContent = remote ? `Copying the brands from ${brandStore.address} to this computer. This can take a minute; your form is kept.` : 'Telling Harness Brand to read this folder…';
+  status.textContent = remote ? `Copying the brands from ${brandStore?.address || saved} to this computer. This can take a minute; your form is kept.` : 'Telling Harness Brand to read this folder…';
   try {
     const got = await api('brands-repository', {});
     const how = {cloned: 'Copied', updated: 'Updated', used: 'Using'}[got.action] || 'Using';

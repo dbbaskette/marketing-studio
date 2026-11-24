@@ -222,6 +222,28 @@ def status(address) -> dict:
             'read': fetched and _same(reads, folder)}
 
 
+def unplaced(store: dict) -> dict:
+    """`status` for a caller that came over the network: its state and counts, without the
+    folders, addresses or brand ids on this computer."""
+    shown = {key: store[key] for key in ('state', 'exists', 'read', 'fetched') if key in store}
+    if 'brands' in store:
+        shown['count'] = len(store['brands'])
+    if store.get('state') in ('none', 'unknown'):
+        shown['said'] = ('There is no brands folder on the computer Marketing Studio runs on yet.' if store['state'] == 'none'
+                         else 'The brands folder could not be looked at on the computer Marketing Studio runs on.')
+    return shown
+
+
+def lookup(address, remote=False) -> dict:
+    """`status` as the Brand card asks for it: never raises, and without this computer's
+    paths for a caller that came over the network."""
+    try:
+        store = status(address)
+    except (ValueError, OSError) as failure:
+        store = {'state': 'unknown', 'said': f'The brands folder could not be looked at: {failure}'}
+    return unplaced(store) if remote else store
+
+
 def saved(before: dict, after: dict) -> dict | None:
     """After Shared settings were saved: when `brand.brands` changed to a folder on this
     computer that holds brands, Harness Brand is told to read it, as Get brands does. A Git
@@ -240,7 +262,7 @@ def saved(before: dict, after: dict) -> dict | None:
         return None
     try:
         return bring(address)
-    except ValueError as failure:
+    except (ValueError, OSError) as failure:   # such as a ~/.config that cannot be written
         return {'problem': str(failure)}
 
 

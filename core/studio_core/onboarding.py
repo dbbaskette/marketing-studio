@@ -60,9 +60,14 @@ class Controller:
                     if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
                                              or not Path(skill).expanduser().is_absolute()):
                         raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
+                    # A failure of either lookup leaves the other standing.
                     values, problem = owner.store.read()
-                    store = brand_data.status(None if problem else (values.get('brand') or {}).get('brands'))
-                    return protocol.as_json(200, {**brand_catalog.choices(skill), 'store': store})
+                    store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'))
+                    try:
+                        found = brand_catalog.choices(skill)
+                    except (ValueError, OSError) as failure:
+                        found = {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
+                    return protocol.as_json(200, {**found, 'store': store})
                 if path.endswith('/graphics'):
                     return protocol.as_json(200, graphics.act(sent))
                 if path.endswith('/models'):

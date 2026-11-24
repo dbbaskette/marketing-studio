@@ -347,9 +347,16 @@ class Home(server.Page):
                 raise WorkspaceError('Choose an absolute installed brand skill folder, or leave it blank.')
             # The installed brands, and what the saved brands folder holds: the Brand card
             # in Shared settings asks for both when it is shown and after a save.
+            # A failure of either lookup leaves the other standing. A phone, through the
+            # network bridge, is told states and counts, not this computer's folders.
             values, problem = shared.read()
-            store = brand_data.status(None if problem else (values.get('brand') or {}).get('brands'))
-            return server.as_json(200, {**brand_catalog.choices(skill), 'store': store})
+            store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'),
+                                      remote=getattr(self.caller, 'remote', False))
+            try:
+                found = brand_catalog.choices(skill)
+            except (ValueError, OSError) as failure:
+                found = {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
+            return server.as_json(200, {**found, 'store': store})
         if path == '/api/graphics':
             try:
                 return server.as_json(200, graphics.act(

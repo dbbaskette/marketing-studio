@@ -167,6 +167,67 @@ class BrandCardTests(unittest.TestCase):
         # The card keeps one filled action: Save, at the form's end.
         self.assertNotIn('button-filled', card)
 
+    def test_a_failed_lookup_says_so_and_still_offers_get_brands_for_a_saved_address(self):
+        address = 'https://example.com/org/brands.git'
+        shots = self.page([self.load(shown(brands=address)), {'show': 'settings'}, {'wait': True},
+                           {'snapshot': 'failed', 'read': READ},
+                           {'responses': {'brands-repository': {'folder': '/data/brands/b', 'brands': ['example'], 'action': 'cloned'},
+                                          'brands': {**SKILLS, 'store': {**REMOTE, 'fetched': True, 'exists': True,
+                                                                         'brands': ['example'], 'read': True}}}},
+                           {'press': '#get-brands'}, {'wait': True}, {'snapshot': 'got', 'read': READ}],
+                          responses={'brands': {'error': 'This page has lost touch with Marketing Studio.'}})
+        failed = shots['failed']['read']
+        self.assertEqual(failed['#brand-brands-status']['text'],
+                         'The brands folder could not be looked at: This page has lost touch with Marketing Studio. '
+                         f'Get brands copies {address} to this computer.')
+        self.assertFalse(failed['#get-brands-bar']['hidden'])
+        self.assertEqual(failed['#get-brands']['text'], 'Get brands')
+        self.assertIn('lost touch', failed['#brand-catalog-status']['text'])
+        self.assertEqual(shots['got']['read']['#get-brands']['text'], 'Update brands')
+        # A failed lookup with a folder on this computer offers nothing to fetch.
+        local = self.page([self.load(shown(brands='/work/brands')), {'show': 'settings'}, {'wait': True},
+                           {'snapshot': 'failed', 'read': READ}],
+                          responses={'brands': {'error': 'Not answered.'}})['failed']['read']
+        self.assertEqual(local['#brand-brands-status']['text'], 'The brands folder could not be looked at: Not answered.')
+        self.assertTrue(local['#get-brands-bar']['hidden'])
+
+    def test_a_phone_is_told_counts_and_never_a_folder(self):
+        shots = self.page([self.load(shown()), {'show': 'settings'}, {'wait': True}, {'snapshot': 'phone', 'read': READ}],
+                          responses={'brands': {**SKILLS, 'store': {'state': 'following', 'exists': True, 'read': True, 'count': 2}}})
+        self.assertEqual(shots['phone']['read']['#brand-brands-status']['text'], 'Harness Brand reads 2 brands.')
+
+    def test_the_brand_skill_always_agrees_with_the_brand_chosen(self):
+        both = {'skills': [
+            {'name': 'First skill', 'path': '/opt/first', 'brands': [
+                {'name': 'Plain Co', 'brand': 'plain', 'variants': ['light']},
+                {'name': 'Shared Co', 'brand': 'shared', 'variants': ['light']}]},
+            {'name': 'Second skill', 'path': '/opt/second', 'brands': [
+                {'name': 'Other Co', 'brand': 'other', 'variants': ['dark']},
+                {'name': 'Shared Co', 'brand': 'shared', 'variants': ['dark']}]}], 'problem': None, 'store': None}
+        pick = lambda brand: {'run': f"form.elements['brand.brand'].value = '{brand}'; form.elements['brand.brand'].fire('change');" + PROBE}
+        from_skill = lambda path: {'run': f"$('#brand-from').value = '{path}'; $('#brand-from').fire('change');" + PROBE}
+        shots = self.page([self.load(shown()), {'show': 'settings'}, {'wait': True},
+                           pick('other'), {'snapshot': 'other', 'read': ['#probe']},
+                           pick('plain'), {'snapshot': 'plain', 'read': ['#probe']},
+                           pick('shared'), {'snapshot': 'shared', 'read': ['#probe'], 'ids': ['brand-from-field']},
+                           from_skill('/opt/second'), {'snapshot': 'second', 'read': ['#probe', '#brand-variant-hint']},
+                           from_skill('/opt/first'), {'snapshot': 'first', 'read': ['#probe']}],
+                          responses={'brands': both})
+        skill = lambda name: json.loads(shots[name]['read']['#probe']['text'])['skill']
+        # A brand only the second skill offers names it; then one the first offers clears it.
+        self.assertEqual((skill('other'), skill('plain')), ('/opt/second', ''))
+        # A brand both offer asks which, and each answer leaves a matching pair.
+        self.assertFalse(shots['shared']['hidden']['brand-from-field'])
+        self.assertEqual(skill('shared'), '')
+        self.assertEqual(skill('second'), '/opt/second')
+        self.assertEqual(shots['second']['read']['#brand-variant-hint']['text'], 'Shared Co offers dark. Leave blank to use dark.')
+        self.assertEqual(skill('first'), '')
+        # With a saved skill folder, the lookup lists that skill alone, and choosing keeps it.
+        kept = self.page([self.load(shown(skill='/opt/second')), {'show': 'settings'}, {'wait': True},
+                          pick('other'), {'snapshot': 'kept', 'read': ['#probe']}],
+                         responses={'brands': {'skills': [both['skills'][1]], 'problem': None, 'store': None}})
+        self.assertEqual(json.loads(kept['kept']['read']['#probe']['text'])['skill'], '/opt/second')
+
     def test_a_lookup_that_fails_still_lets_a_brand_id_be_typed(self):
         shots = self.page([self.load(shown()), {'show': 'settings'}, {'wait': True},
                            {'snapshot': 'shown', 'read': READ}],

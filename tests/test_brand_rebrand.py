@@ -7,6 +7,8 @@ no assistant. Every setting, brands folder and record is disposable too (BrandsC
 import json
 import os
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 from unittest import mock
@@ -138,15 +140,38 @@ class Rebrand(BrandsCase):
         self.assertEqual((job['state'], job['review'], job['result']['verdict'], job['result']['review']),
                          ('done', True, 'branded with exceptions', 'passed_with_findings'))
 
-    def test_stop_ends_the_run_and_says_whether_a_copy_was_made(self):
-        with mock.patch.dict(os.environ, {'STAND_IN_REBRAND_PAUSE': '5'}):
+    def gone(self, *pids, seconds=5):
+        """Whether every one of these processes has ended (and been reaped by whoever owned it)."""
+        limit = time.monotonic() + seconds
+        while time.monotonic() < limit:
+            alive = []
+            for pid in pids:
+                try:
+                    os.kill(pid, 0)
+                    alive.append(pid)
+                except ProcessLookupError:
+                    pass
+            if not alive:
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_stop_ends_the_run_and_every_process_it_started(self):
+        pids = self.root / 'pids.json'
+        with mock.patch.dict(os.environ, {'STAND_IN_REBRAND_PAUSE': '5', 'STAND_IN_PIDS': str(pids)}):
             self.start()
-            self.until(lambda shown: len(shown['job']['lines']) > 1)
+            self.until(lambda shown: len(shown['job']['lines']) > 1 and pids.exists())
+            child, node = json.loads(pids.read_text())
+            running = json.loads(brand_rebrand.record_path().read_text())
+            self.assertEqual(running['pgid'], node)   # kept, so a later Marketing Studio can end it
             began = time.monotonic()
             self.call('rebrand-stop')
             brand_rebrand.wait(20)
         self.assertLess(time.monotonic() - began, 5)
+        # Node, and the Python process it started, are both gone.
+        self.assertTrue(self.gone(child, node), 'the rebrand left a process running')
         job = self.call('rebrand')['job']
+        self.assertNotIn('pgid', job)
         self.assertEqual(job['state'], 'stopped')
         self.assertEqual(job['detail'], 'It was stopped before it finished. No copy was made in your Google Drive.')
         self.assertIsNone(job['result'])
@@ -165,20 +190,103 @@ class Rebrand(BrandsCase):
         self.assertEqual((job['result']['verdict'], job['copy']),
                          ('incomplete', 'https://docs.google.com/presentation/d/stand-in-copy-1234567890/edit'))
 
-    def test_a_reloaded_page_finds_the_job_and_one_left_by_a_closed_studio_reads_as_stopped(self):
+    def test_a_reloaded_page_finds_the_job_and_one_left_by_a_closed_studio_reads_as_it_ended(self):
         self.start()
         brand_rebrand.wait(20)
         listed = self.call('list')
         self.assertEqual(listed['rebrand']['job']['state'], 'done')
-        # A record left running, with no job behind it, as after Marketing Studio closed.
         record = brand_rebrand.record_path()
         job = json.loads(record.read_text())
-        job.update(state='running', result=None, copy=None)
+        # A record left running, as after Marketing Studio closed, whose run finished by itself:
+        # its result is read, not guessed.
+        job.update(state='running', result=None, copy=None, pgid=999_999)
+        record.write_text(json.dumps(job))
+        shown = self.call('rebrand')['job']
+        self.assertEqual((shown['state'], shown['result']['verdict']), ('done', 'branded'))
+        self.assertTrue(shown['detail'].startswith('It finished after Marketing Studio was closed.'))
+        # One whose run was cut short: stopped, and its checkpoint says a copy was made.
+        (Path(job['runDir']) / 'result.json').unlink()
         record.write_text(json.dumps(job))
         shown = self.call('rebrand')['job']
         self.assertEqual(shown['state'], 'stopped')
         self.assertIn('Marketing Studio was closed while this ran', shown['detail'])
-        self.assertIn('A copy had already been made', shown['detail'])   # its checkpoint says so
+        self.assertIn('A copy had already been made', shown['detail'])
+        # With neither a result nor a checkpoint, nothing is claimed about the copy.
+        (Path(job['runDir']) / 'checkpoint.json').unlink()
+        record.write_text(json.dumps(job))
+        self.assertIn('No copy was recorded. Look in your Google Drive', self.call('rebrand')['job']['detail'])
+
+    def orphan(self, job_id='orphan'):
+        """A `rebrand run` that a Marketing Studio which has closed left going: started in a
+        process group of its own, with a record that still says running."""
+        run_dir = brand_rebrand.folder() / 'runs' / job_id
+        fake = Path(os.environ['BRAND_SKILL_RUNTIME'])
+        pids = self.root / f'{job_id}-pids.json'
+        env = {**os.environ, 'STAND_IN_REBRAND_PAUSE': '30', 'STAND_IN_PIDS': str(pids),
+               'HARNESS_BRAND_DATA': str(self.brands)}
+        process = subprocess.Popen(['node', str(fake / 'scripts/harness-brand.mjs'), 'rebrand', 'run', CANONICAL,
+                                    '--brand', 'example', '--run-dir', str(run_dir)], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        limit = time.monotonic() + 10
+        while not pids.exists() and time.monotonic() < limit:
+            time.sleep(0.05)
+        brand_rebrand.record_path().parent.mkdir(parents=True, exist_ok=True)
+        brand_rebrand.record_path().write_text(json.dumps({
+            'schema': 1, 'id': job_id, 'source': CANONICAL, 'kind': 'slides', 'brand': 'example',
+            'brandName': 'Example Co', 'review': False, 'state': 'running', 'lines': ['Starting Harness Brand'],
+            'detail': '', 'copy': None, 'result': None, 'started': time.time(), 'ended': None,
+            'runDir': str(run_dir), 'pgid': process.pid}))
+        return process, json.loads(pids.read_text())
+
+    def test_a_run_left_going_by_a_closed_studio_is_ended_before_it_is_called_stopped(self):
+        process, (child, _) = self.orphan()
+        shown = self.call('rebrand')['job']
+        process.wait(5)
+        self.assertTrue(self.gone(child, process.pid), 'the orphaned rebrand was left running')
+        self.assertEqual(shown['state'], 'stopped')
+        self.assertTrue(shown['detail'].startswith('Marketing Studio was closed while this ran, so it was stopped '
+                                                   'when Marketing Studio next opened Brands.'), shown['detail'])
+        self.assertIn('No copy was recorded', shown['detail'])
+
+    def test_a_new_rebrand_ends_one_left_going_first_so_only_one_runs(self):
+        process, (child, _) = self.orphan()
+        self.start()
+        process.wait(5)
+        self.assertTrue(self.gone(child, process.pid))
+        brand_rebrand.wait(20)
+        self.assertEqual(self.call('rebrand')['job']['state'], 'done')
+
+    def test_a_process_group_now_running_something_else_is_never_touched(self):
+        other = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], start_new_session=True)
+        self.addCleanup(lambda: (other.kill(), other.wait()))
+        brand_rebrand.record_path().parent.mkdir(parents=True, exist_ok=True)
+        brand_rebrand.record_path().write_text(json.dumps({
+            'schema': 1, 'id': 'old', 'source': CANONICAL, 'kind': 'slides', 'brand': 'example', 'brandName': 'Example Co',
+            'review': False, 'state': 'running', 'lines': [], 'detail': '', 'copy': None, 'result': None,
+            'started': 0, 'ended': None, 'runDir': str(self.root / 'no-such-run'), 'pgid': other.pid}))
+        self.assertEqual(self.call('rebrand')['job']['state'], 'stopped')
+        self.assertIsNone(other.poll(), 'a process that is not this rebrand was ended')
+
+    def test_closing_marketing_studio_ends_the_running_rebrand(self):
+        pids = self.root / 'pids.json'
+        with mock.patch.dict(os.environ, {'STAND_IN_REBRAND_PAUSE': '5', 'STAND_IN_PIDS': str(pids)}):
+            self.start()
+            self.until(lambda shown: pids.exists())
+            child, node = json.loads(pids.read_text())
+            brand_rebrand._shutdown()   # what Marketing Studio's exit runs
+            self.assertTrue(self.gone(child, node))
+            brand_rebrand.wait(20)
+        job = json.loads(brand_rebrand.record_path().read_text())
+        self.assertEqual(job['state'], 'stopped')
+        self.assertTrue(job['detail'].startswith('Marketing Studio was closed while this ran, so it was stopped.'), job['detail'])
+
+    def test_a_folder_named_like_an_option_is_never_offered_as_a_brand(self):
+        brand_pack(self.brands, 'odd')
+        (self.brands / 'odd').rename(self.brands / '--help')
+        ids = [each['id'] for each in self.call('rebrand')['brands']]
+        self.assertNotIn('--help', ids)
+        self.assertIn('Choose a brand', self.refused('rebrand-check', source=SLIDES, brand='--help'))
 
     def test_the_routes_are_brand_routes_refused_over_the_network(self):
         from marketing_studio.page import Home

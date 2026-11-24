@@ -581,6 +581,93 @@ class PdfBrandBooks(BrandsCase):
         self.assertEqual(named, ['c.pdf (left out: the prompt had no room)'])
         self.assertEqual(read.call_count, 2, 'a PDF with no room left is not read at all')
 
+    @staticmethod
+    def encrypted(members):
+        """A ZIP archive whose every member says it is encrypted, as a password-protected
+        archive does: its flag bit set in each local and central header."""
+        raw = bytearray(zipped(members))
+        for signature, at in ((b'PK\x03\x04', 6), (b'PK\x01\x02', 8)):
+            start = 0
+            while (found := raw.find(signature, start)) >= 0:
+                raw[found + at] |= 1
+                start = found + 4
+        return bytes(raw)
+
+    def test_an_encrypted_member_of_an_archive_is_named_unreadable_and_the_rest_is_read(self):
+        given, named = self.sources(locked__zip=self.encrypted({'book.pdf': made_pdf(), 'rules.md': '# Rules'}),
+                                    notes__md=b'# Open notes\n')
+        self.assertEqual([item['source'] for item in given], ['notes.md'])
+        self.assertEqual(len(named), 2)
+        for name in named:
+            self.assertRegex(name, r'^locked\.zip!(book\.pdf|rules\.md) \(not readable: it is encrypted or packed in a way '
+                                   r'that cannot be opened, .*encrypted.*\)$')
+
+    def test_stop_ends_reading_the_sources_before_the_next_file(self):
+        stop = threading.Event()
+        read = []
+        def slow(raw, timeout=20):
+            read.append(timeout)
+            stop.set()               # Stop is pressed while the first PDF is read
+            return 'Rule.'
+        folder = self.root / 'sources'
+        folder.mkdir()
+        for name in ('a.pdf', 'b.pdf'):
+            (folder / name).write_bytes(made_pdf())
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', slow):
+            with self.assertRaises(brand_skill.Stopped):
+                brand_job.source_texts(folder, stop)
+            self.assertEqual(len(read), 1)
+            # Inside an archive too, between one member and the next.
+            stop.clear(); read.clear()
+            (folder / 'a.pdf').unlink(); (folder / 'b.pdf').unlink()
+            (folder / 'kit.zip').write_bytes(zipped({'c.pdf': made_pdf(), 'd.pdf': made_pdf()}))
+            with self.assertRaises(brand_skill.Stopped):
+                brand_job.source_texts(folder, stop)
+        self.assertEqual(len(read), 1)
+
+    def test_stop_during_the_jobs_pdf_reading_keeps_nothing(self):
+        key = self.new_brand()
+        self.add(key, 'brand-book.pdf', made_pdf())
+        self.add(key, 'second-book.pdf', made_pdf())
+        self.extract(key)
+        reading, asked = threading.Event(), []
+        def slow(raw, timeout=20):
+            reading.set()
+            time.sleep(0.5)
+            return 'Rule.'
+        def assistant(*args, **kwargs):
+            asked.append(True)
+            return json.dumps(proposal())
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', slow), \
+                mock.patch.object(brand_job, 'run_assistant', assistant):
+            self.call('interpret', key=key)
+            self.assertTrue(reading.wait(10))
+            self.call('stop', key=key)
+            work = self.settle(key)
+        self.assertEqual(work['task']['state'], 'stopped')
+        self.assertEqual(asked, [], 'the assistant was asked after Stop')
+
+    def test_pdfs_are_read_up_to_a_count_and_a_time_in_all(self):
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', return_value='Rule.') as read, \
+                mock.patch.object(brand_job, 'PDF_MOST', 2):
+            given, named = self.sources(a__pdf=made_pdf(), b__pdf=made_pdf(), c__pdf=made_pdf())
+        self.assertEqual([item['source'] for item in given], ['a.pdf', 'b.pdf'])
+        self.assertEqual(named, ['c.pdf (left out: only the first 2 PDFs, for at most 5 minutes in all, are read)'])
+        self.assertEqual(read.call_count, 2)
+        self.root.joinpath('sources').rename(self.root / 'old-sources')
+        with mock.patch.object(brand_job.source_documents, 'pdf_text', return_value='Rule.') as read, \
+                mock.patch.object(brand_job, 'PDF_SECONDS', 0):
+            given, named = self.sources(a__pdf=made_pdf())
+        self.assertEqual((given, read.call_count), ([], 0))
+        self.assertTrue(named[0].startswith('a.pdf (left out: only the first'))
+
+    def test_a_pdf_with_more_text_than_the_extraction_keeps_is_named_too_long_not_unreadable(self):
+        with mock.patch.object(brand_job.source_documents, 'pdf_text',
+                               side_effect=ValueError('PDF text exceeds the extraction limit.')):
+            given, named = self.sources(huge__pdf=made_pdf())
+        self.assertEqual(given, [])
+        self.assertEqual(named, ['huge.pdf (left out: its text is too long to read whole; split it into smaller PDFs)'])
+
     def test_starting_the_job_reads_no_pdf_in_the_request(self):
         key = self.new_brand()
         self.extract(key)
@@ -639,7 +726,7 @@ class DocumentTemplates(BrandsCase):
         listed = self.call('documents', id='example')
         self.assertEqual(listed, {'brand': 'example', 'documents': [{
             'id': 'solution-brief', 'name': 'Solution brief', 'useWhen': 'A two-page overview of one solution.',
-            'page': 'US Letter', 'notes': BRIEF['notes'], 'file': 'solution-brief.dotx'}]})
+            'page': 'US Letter', 'notes': BRIEF['notes'], 'file': 'solution-brief.dotx'}], 'left': 0})
         self.assertEqual(self.asked(), [['documents', '--brand', 'example', '--json']])
         self.call('documents', id='example')
         self.assertEqual(len(self.asked()), 1, 'asked again within the moment it is kept')
@@ -651,7 +738,15 @@ class DocumentTemplates(BrandsCase):
     def test_a_brand_with_no_templates_says_so_and_the_list_is_asked_only_when_opened(self):
         self.call('list')
         self.assertEqual(self.asked(), [])
-        self.assertEqual(self.call('documents', id='plain'), {'brand': 'plain', 'documents': []})
+        self.assertEqual(self.call('documents', id='plain'), {'brand': 'plain', 'documents': [], 'left': 0})
+        # One entry Harness Brand did not describe is left out on its own; the rest still show.
+        brand = json.loads((self.pack / 'brand.json').read_text())
+        brand['documents'].append({**BRIEF, 'id': 'Not A Slug'})
+        (self.pack / 'brand.json').write_text(json.dumps(brand))
+        brand_store._DOCUMENTS.clear()
+        listed = self.call('documents', id='example')
+        self.assertEqual(([each['id'] for each in listed['documents']], listed['left']), (['solution-brief'], 1))
+        self.assertIn('could not be shown', (ROOT / 'marketing_studio/web/brands.js').read_text())
         script = (ROOT / 'marketing_studio/web/brands.js').read_text()
         self.assertIn('has no document templates.', script)
         self.assertIn("more.addEventListener('toggle'", script)
@@ -1458,6 +1553,22 @@ class CommandBounds(unittest.TestCase):
         with self.assertRaisesRegex(WorkspaceError, 'did not finish'):
             brand_skill.run([sys.executable, '-c', 'import time; time.sleep(30)'], seconds=.1)
         self.assertLess(time.monotonic() - began, 3)
+
+    def test_a_stop_pressed_after_the_command_finished_keeps_what_it_did(self):
+        # The stop is set only as the command's process group is ended, after it exited by
+        # itself: the result stands. One set while it runs still stops it.
+        stop = threading.Event()
+        real = os.killpg
+        def ended(pgid, sig):
+            stop.set()
+            return real(pgid, sig)
+        with mock.patch.object(brand_skill.os, 'killpg', ended):
+            code, out, _ = brand_skill.run([sys.executable, '-c', 'print("done")'], stop=stop, seconds=10)
+        self.assertEqual((code, out.strip()), (0, 'done'))
+        early = threading.Event()
+        early.set()
+        with self.assertRaises(brand_skill.Stopped):
+            brand_skill.run([sys.executable, '-c', 'import time; time.sleep(30)'], stop=early, seconds=10)
 
 
 class Routes(unittest.TestCase):

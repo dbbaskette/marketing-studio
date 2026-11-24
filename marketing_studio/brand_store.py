@@ -1154,7 +1154,8 @@ def _words(value, limit=2000) -> str | None:
     return ' '.join(value.split())[:limit] if isinstance(value, str) and value.strip() else None
 
 
-def _documents(found, place: Storage, brand) -> list[dict]:
+def _documents(found, place: Storage, brand) -> tuple[list[dict], int]:
+    """(the templates Harness Brand listed and described, how many it listed undescribed)."""
     if not isinstance(brand, str) or not SLUG.fullmatch(brand):
         raise WorkspaceError('Choose a brand from this page.')
     pack = no_links(place.folder / brand / 'pack')
@@ -1173,11 +1174,12 @@ def _documents(found, place: Storage, brand) -> list[dict]:
     listed = said.get('documents') if isinstance(said, dict) else None
     if not isinstance(listed, list):
         raise WorkspaceError(f'{brand_skill.SKILL} did not list the document templates of {brand}.')
-    shown = []
+    shown, left = [], 0
     for entry in listed[:100]:
         if not isinstance(entry, dict) or not isinstance(entry.get('id'), str) or not SLUG.fullmatch(entry['id']) \
                 or not isinstance(entry.get('file'), str) or not isinstance(entry.get('path'), str):
-            raise WorkspaceError(f'{brand_skill.SKILL} listed a document template of {brand} it did not describe.')
+            left += 1      # left out on its own, and counted: the others are still shown
+            continue
         shown.append({'id': entry['id'], 'name': _words(entry.get('name'), 200) or entry['id'],
                       'useWhen': _words(entry.get('useWhen')), 'page': _words(entry.get('page'), 80),
                       'notes': _words(entry.get('notes')), 'file': Path(entry['file']).name,
@@ -1185,19 +1187,21 @@ def _documents(found, place: Storage, brand) -> list[dict]:
     with LOCK:
         for old in [old for old, (when, _) in _DOCUMENTS.items() if not 0 <= now - when < DOCUMENTS_KEPT_FOR]:
             del _DOCUMENTS[old]
-        _DOCUMENTS[key] = (now, shown)
-    return shown
+        _DOCUMENTS[key] = (now, (shown, left))
+    return shown, left
 
 
 def documents(found, place: Storage, brand) -> dict:
-    """What a brand's row shows: {'brand', 'documents': [{id, name, useWhen, page, notes, file}]}."""
-    return {'brand': brand, 'documents': [{k: v for k, v in entry.items() if k != 'path'}
-                                          for entry in _documents(found, place, brand)]}
+    """What a brand's row shows: {'brand', 'documents': [{id, name, useWhen, page, notes, file}],
+    'left': how many templates Harness Brand listed without describing them, left out}."""
+    shown, left = _documents(found, place, brand)
+    return {'brand': brand, 'documents': [{k: v for k, v in entry.items() if k != 'path'} for entry in shown],
+            'left': left}
 
 
 def document_file(found, place: Storage, brand, ident) -> tuple[str, str, bytes]:
     """(file name, media type, bytes) of one template the skill listed for this brand."""
-    entry = next((each for each in _documents(found, place, brand) if each['id'] == ident), None)
+    entry = next((each for each in _documents(found, place, brand)[0] if each['id'] == ident), None)
     if entry is None:
         raise WorkspaceError('That is not a document template Harness Brand lists for this brand.')
     pack = (place.folder / brand / 'pack').resolve()

@@ -50,8 +50,13 @@ update the skill. Installation remains an explicit action in a studio's settings
 **Brand skill overrides**, a disclosure that stays closed unless one is set, holds
 **Brand skill Git repository** and **Installed skill folder**, separate and optional.
 A repository address does not require an installed folder. Leave the folder blank for
-automatic discovery, or use it to select an existing installation; choosing a default
-brand that only another installed skill offers fills in that skill's folder.
+automatic discovery, or use it to select an existing installation. Choosing a default
+brand keeps the folder in agreement with it: empty when the skill the studios find by
+themselves offers the brand, else the folder of the skill that does; when two installed
+skills offer the same brand, **From brand skill** asks which. When the lookup cannot be
+made, the card says why, a brand ID can still be typed, and a saved Git address still
+offers **Get brands**. Through the network bridge the card is told how many brands there
+are, not this computer's folders.
 The brand skill is installed and updated from its repository's `main`, so there is no
 release to choose and Shared settings has no release field. A `brand.release` an older
 version saved is not read or shown, is left in the file as it is, and one sent by a form
@@ -580,7 +585,10 @@ each, then **Extract** to read design tokens, measure PowerPoint templates and d
 available previews. A PDF brand book, alone or inside a ZIP archive, is given to the
 assistant as text (read with pdftotext, within the same limits as other sources); one
 that cannot be read, because pdftotext is not installed or the PDF has no text layer,
-is named to the assistant with that reason. Libraries accept SVG, JSON or ZIP sources and show a contact
+is named to the assistant with that reason. At most 30 PDFs, for at most five minutes in
+all, are read for one request, and Stop ends the reading before the next file. A PDF whose
+text is more than the shared extraction keeps (8 MB) is named as too long to read whole, an
+encrypted or unreadable member of a ZIP archive is named with why, and the rest is read. Libraries accept SVG, JSON or ZIP sources and show a contact
 sheet. Extraction uses Harness Brand. **Ask your assistant** is a separate explicit
 request to propose judgement files using the shared Writing model. Review each part,
 accept it or save your own edit; unchanged parts on an update remain visible. Pending
@@ -605,7 +613,8 @@ is for, its paper size and its notes (fonts it needs, what is placeholder, wheth
 official). Harness Brand is asked only when the person opens them, and the answer is kept
 for 15 seconds while the brand's `brand.json` is unchanged. **Download** is served by the
 page server for exactly the files Harness Brand listed for that brand, and only from
-inside that brand's pack folder. A brand with none says so in one line.
+inside that brand's pack folder. A brand with none says so in one line; a template
+Harness Brand lists without describing it is left out on its own, and the row says so.
 
 **Rebrand a Google file** makes a branded copy of an existing Google Slides deck or
 Google Doc with Harness Brand's `rebrand run`. Paste the file's link (only a
@@ -619,7 +628,10 @@ pages** is ticked (it is off unless ticked), the pages and their text are sent t
 assistant's provider. **Make the copy** starts a background job, one at a time, with its
 progress and **Stop**; it survives a page reload. The result gives the copy's link,
 Harness Brand's report and its verdict in its own words. Without the review the copy is
-awaiting your visual check, never accepted. The job's record and run folder are kept in
+awaiting your visual check, never accepted. Closing Marketing Studio ends a running
+rebrand; a run an abruptly ended Marketing Studio left going is ended when Brands is next
+opened (only when its process still names this run's folder), and a run that finished by
+itself meanwhile is read for its result. The job's record and run folder are kept in
 Marketing Studio's data folder under `brand-rebrand/`.
 
 Home refreshes saved-work summaries on its normal status poll and when you return to

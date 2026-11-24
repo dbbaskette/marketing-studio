@@ -135,10 +135,11 @@
       holder.replaceChildren(el('p', 'Asking Harness Brand for the templates…', 'field-hint quiet'));
       try {
         const found = await ctx.api('brand-documents', {id: pack.id});
-        if (!found.documents.length) { holder.replaceChildren(el('p', `${pack.name} has no document templates.`, 'field-hint quiet')); return; }
+        const left = found.left ? el('p', `${found.left === 1 ? 'One template' : `${found.left} templates`} could not be shown: Harness Brand listed ${found.left === 1 ? 'it' : 'them'} without saying what ${found.left === 1 ? 'it is' : 'they are'}.`, 'field-hint quiet') : null;
+        if (!found.documents.length) { holder.replaceChildren(...(left ? [left] : [el('p', `${pack.name} has no document templates.`, 'field-hint quiet')])); return; }
         const list = el('ul', '', 'brand-document-rows');
         for (const template of found.documents) list.append(templateRow(pack, template));
-        holder.replaceChildren(list);
+        holder.replaceChildren(...[list, left].filter(Boolean));
       } catch (error) {
         asked = false;
         holder.replaceChildren(el('p', `${error.message} Close and open this again to retry.`, 'field-hint'));
