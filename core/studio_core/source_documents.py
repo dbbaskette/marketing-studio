@@ -3,6 +3,16 @@
 A studio with its own size limit or error type passes `limit` and `error`
 (Infographic Studio reads up to 16 MB and raises its own Invalid); the
 defaults are the shared 8 MB and ValueError.
+
+Every studio reads Word, PDF and HTML text with the readers here, and keeps its own
+limits, return shapes and sentences around them:
+- `word_xml(xml, style=...)` reads a Word document's XML: 'paragraphs' (each
+  paragraph's own text, as `word` and Blog Studio keep it) or 'lines' (paragraphs,
+  list items and table rows as lines, as the deck studios keep a supplied document).
+- `pdftotext(path, program=..., timeout=...)` is pdftotext's layout text of a PDF
+  file; `pdf_text` is the bounded reader for research sources.
+- `PageText` reads an HTML page: its blocks (`blocks()`, as `extract` keeps them) or
+  its text with a line break at each block (`joined()`, as a fetched page is kept).
 """
 from __future__ import annotations
 
@@ -18,6 +28,7 @@ import subprocess
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from xml.parsers import expat
 import zipfile
 
 MAX_SOURCE_BYTES = 8_000_000
@@ -54,14 +65,210 @@ def result(parts, extractor, warnings=(), *, limit=MAX_SOURCE_BYTES, error=Value
             'warnings': list(dict.fromkeys(warnings)), 'readable': bool(value.strip())}
 
 
-def xml(raw, error=ValueError):
+DECLARED = 'Document XML cannot contain entities, UTF-16/32 data or exceed the extraction limit. Save a fresh UTF-8 Word document.'
+MALFORMED = 'The document XML is malformed. Save a fresh Word document or supply text.'
+
+
+def _plain_xml(raw, error=ValueError):
     require(len(raw) <= XML_LIMIT and b'\x00' not in raw
-            and not re.search(br'<!\s*(?:DOCTYPE|ENTITY)', raw, re.I),
-            'Document XML cannot contain entities, UTF-16/32 data or exceed the extraction limit. Save a fresh UTF-8 Word document.', error)
+            and not re.search(br'<!\s*(?:DOCTYPE|ENTITY)', raw, re.I), DECLARED, error)
+
+
+def xml(raw, error=ValueError):
+    _plain_xml(raw, error)
     try:
         return ET.fromstring(raw)
     except ET.ParseError:
-        require(False, 'The document XML is malformed. Save a fresh Word document or supply text.', error)
+        require(False, MALFORMED, error)
+
+
+# --- Word -----------------------------------------------------------------------------
+
+WORD_SPACES = (WORD, STRICT_WORD)
+MARKUP = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
+
+
+class WordUnreadable(ValueError):
+    """A Word document's XML that cannot be read. `why` is 'malformed', 'declared'
+    (it declares a DOCTYPE or an entity, which is never read) or 'long' (more text than
+    the reader was allowed)."""
+
+    def __init__(self, why):
+        super().__init__(why)
+        self.why = why
+
+
+class _WordParagraphs:
+    """Each paragraph's own text, in the order paragraphs start: its text runs, tabs and
+    line breaks, a paragraph inside it included. The namespace is the root document's
+    when it is one of `spaces`, else the first of them (and `root_ok` is False). Also
+    notes what was not read, as `warnings`."""
+
+    def __init__(self, spaces, most=None):
+        self.spaces, self.most = spaces, most
+        self.space, self.root_ok = None, False
+        self.paragraphs, self.warnings = [], []
+        self.open, self.text = [], []     # paragraphs not ended; text runs, innermost last
+
+    def start(self, name, attributes):
+        space, _, tag = name.rpartition(' ')
+        if self.space is None:
+            self.root_ok = space in self.spaces and tag == 'document'
+            self.space = space if self.root_ok else self.spaces[0]
+        if self.text:
+            self.text[-1] = False         # a run's text is only what comes before an element in it
+        if space != self.space:
+            return
+        if tag == 'p':
+            self.open.append(len(self.paragraphs))
+            self.paragraphs.append([])
+        elif tag == 't':
+            self.text.append(True)
+        elif tag == 'tab':
+            self._add('\t')
+        elif tag == 'br':
+            self._add('\n')
+        if tag in ('drawing', 'pict', 'object'):
+            self.warnings.append('Images, charts and embedded objects were not read. Review them separately.')
+        if tag in ('ins', 'del', 'moveFrom', 'moveTo'):
+            self.warnings.append('Tracked changes are present. Confirm the extracted wording before using it.')
+
+    def end(self, name):
+        space, _, tag = name.rpartition(' ')
+        if space != self.space:
+            return
+        if tag == 'p':
+            self.open.pop()
+        elif tag == 't':
+            self.text.pop()
+
+    def data(self, text):
+        if self.text and self.text[-1]:
+            self._add(text)
+
+    def _add(self, text):
+        for index in self.open:
+            self.paragraphs[index].append(text)
+
+    def result(self):
+        return [''.join(parts) for parts in self.paragraphs]
+
+
+class _WordLines:
+    """The plain text of a Word document's XML, in the order it is written: a paragraph or
+    a heading is a line, a list item a line that starts with a dash, and a table row a line
+    with its cells set apart. A text box written twice, once for older programs, and a
+    passage still written where it was moved from, are each read once, where shown."""
+
+    def __init__(self, spaces, most=None):
+        self.spaces, self.most = spaces, most
+        self.lines: list[str] = []
+        self.open: list[list] = []          # paragraphs not yet ended: [its text, a list item]
+        self.cells: list[list[str]] = []    # table cells not yet ended, innermost last
+        self.rows: list[list[str]] = []     # table rows not yet ended, innermost last
+        self.in_text, self.skipping, self.chars = False, 0, 0
+
+    def start(self, name: str, attributes: dict) -> None:
+        space, _, tag = name.rpartition(' ')
+        if self.skipping or (space, tag) == (MARKUP, 'Fallback') or (space in self.spaces and tag == 'moveFrom'):
+            self.skipping += 1
+        elif space not in self.spaces:
+            return
+        elif tag == 'p':
+            self.open.append([[], False])
+        elif tag == 't':
+            self.in_text = True
+        elif tag in ('tab', 'ptab'):
+            self._add('\t')
+        elif tag in ('br', 'cr'):
+            self._add('\n')
+        elif tag == 'noBreakHyphen':
+            self._add('-')
+        elif tag in ('numPr', 'numId') and self.open:
+            # Numbering 0 is how a paragraph says it is not in the list its style puts it in.
+            self.open[-1][1] = tag == 'numPr' or attributes.get(f'{space} val') != '0'
+        elif tag == 'tc':
+            self.cells.append([])
+        elif tag == 'tr':
+            self.rows.append([])
+        elif tag == 'tbl' and not self.cells:
+            self.lines.append('')
+
+    def end(self, name: str) -> None:
+        if self.skipping:
+            self.skipping -= 1
+            return
+        space, _, tag = name.rpartition(' ')
+        if space not in self.spaces:
+            return
+        if tag == 't':
+            self.in_text = False
+        elif tag == 'p':
+            self._paragraph()
+        elif tag == 'tc':
+            cell = ' '.join(part for part in self.cells.pop() if part)
+            (self.rows[-1] if self.rows else self.lines).append(cell)
+        elif tag == 'tr':
+            cells = self.rows.pop()
+            row = ' | '.join(cells) if any(cells) else ''
+            (self.cells[-1] if self.cells else self.lines).append(row)
+        elif tag == 'tbl' and not self.cells:
+            self.lines.append('')
+
+    def data(self, text: str) -> None:
+        if self.in_text and not self.skipping:
+            self._add(text)
+
+    def _add(self, text: str) -> None:
+        if not self.open:
+            return
+        self.chars += len(text)
+        if self.most is not None and self.chars > self.most:
+            raise WordUnreadable('long')
+        self.open[-1][0].append(text)
+
+    def _paragraph(self) -> None:
+        parts, item = self.open.pop()
+        text, self.in_text = ''.join(parts), False
+        if self.cells:
+            self.cells[-1].append(' '.join(text.split()))
+        elif item and text.strip():
+            self.lines.append('- ' + ' '.join(text.split()))
+        else:
+            self.lines += ['', *text.split('\n'), '']
+
+    def result(self):
+        return '\n'.join(self.lines)
+
+
+def word_xml(raw, *, style='paragraphs', spaces=WORD_SPACES, most=None):
+    """Read a Word document's XML (bytes) with one parser that never reads a declaration.
+
+    'paragraphs' gives the reader: `.result()` is each paragraph's text, `.root_ok` says
+    the root was a document in one of `spaces`, `.warnings` what was not read. 'lines'
+    gives the reader whose `.result()` is the text as lines, and refuses more than `most`
+    characters. Raises WordUnreadable.
+    """
+    reader = (_WordLines if style == 'lines' else _WordParagraphs)(spaces, most)
+    parser = expat.ParserCreate(namespace_separator=' ')
+    parser.buffer_text = True
+    parser.StartElementHandler = reader.start
+    parser.EndElementHandler = reader.end
+    parser.CharacterDataHandler = reader.data
+
+    def declared(*args):
+        raise WordUnreadable('declared')
+
+    # A Word document declares nothing. One that does is refused before anything it
+    # declares is read, so no entity is ever expanded or fetched.
+    parser.StartDoctypeDeclHandler = declared
+    parser.EntityDeclHandler = declared
+    parser.ExternalEntityRefHandler = declared
+    try:
+        parser.Parse(raw, True)
+    except expat.ExpatError:
+        raise WordUnreadable('malformed') from None
+    return reader
 
 
 def word(raw, *, limit=MAX_SOURCE_BYTES, error=ValueError):
@@ -83,24 +290,14 @@ def word(raw, *, limit=MAX_SOURCE_BYTES, error=ValueError):
             entry = archive.getinfo('word/document.xml')
             with archive.open(entry) as stream:
                 body = stream.read(XML_LIMIT + 1)
-            document = xml(body, error)
-            require(document.tag in ('{' + WORD + '}document', '{' + STRICT_WORD + '}document'),
-                    'The Word document uses an unsupported XML namespace.', error)
-            namespace = document.tag.split('}')[0] + '}'
-            parts = []
-            warnings = []
-            for element in document.iter():
-                if element.tag == namespace + 'p':
-                    words = []
-                    for node in element.iter():
-                        if node.tag == namespace + 't': words.append(node.text or '')
-                        elif node.tag == namespace + 'tab': words.append('\t')
-                        elif node.tag == namespace + 'br': words.append('\n')
-                    parts.append(('Paragraph ' + str(len(parts) + 1), ''.join(words)))
-                if element.tag in (namespace + 'drawing', namespace + 'pict', namespace + 'object'):
-                    warnings.append('Images, charts and embedded objects were not read. Review them separately.')
-                if element.tag in (namespace + 'ins', namespace + 'del', namespace + 'moveFrom', namespace + 'moveTo'):
-                    warnings.append('Tracked changes are present. Confirm the extracted wording before using it.')
+            _plain_xml(body, error)
+            try:
+                read = word_xml(body, style='paragraphs', spaces=WORD_SPACES)
+            except WordUnreadable as failure:
+                require(False, DECLARED if failure.why == 'declared' else MALFORMED, error)
+            require(read.root_ok, 'The Word document uses an unsupported XML namespace.', error)
+            parts = [('Paragraph ' + str(n), text) for n, text in enumerate(read.result(), 1)]
+            warnings = list(read.warnings)
             if any(re.match(r'word/(?:header|footer|footnotes|endnotes|comments)', e.filename) for e in entries):
                 warnings.append('Headers, footers, footnotes and comments were not included in the body extraction.')
             return result(parts, 'stdlib-docx-body-v1', warnings, limit=limit, error=error)
@@ -152,28 +349,74 @@ def pdf(raw, *, limit=MAX_SOURCE_BYTES, error=ValueError):
                   'installed-pdftotext-layout-v1', warnings, limit=limit, error=error)
 
 
-class HTMLText(HTMLParser):
+class PageText(HTMLParser):
+    """The readable text of an HTML page, and its title. Text inside a HIDDEN element is
+    left out; a block starts at an OPENS tag and ends at a CLOSES tag. A studio sets the
+    three for its pages. `blocks()` gives the text as blocks, `joined()` as one text with
+    a line break at each block's start and end."""
+
+    HIDDEN = ('script', 'style', 'iframe')
+    OPENS = ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'li', 'tr', 'br')
+    CLOSES = ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'li', 'tr')
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.parts, self.words, self.hidden, self.warnings = [], [], 0, []
-
-    def flush(self):
-        if self.words:
-            self.parts.append(('Block ' + str(len(self.parts) + 1), ''.join(self.words)))
-            self.words = []
+        self.pieces, self.hidden, self.warnings = [], 0, []   # text, and None between blocks
+        self.title, self.in_title = '', False
 
     def handle_starttag(self, tag, attrs):
-        if tag in ('script', 'style', 'iframe'): self.hidden += 1
-        if tag in ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'li', 'tr', 'br'): self.flush()
+        if tag in self.HIDDEN: self.hidden += 1
+        if tag == 'title': self.in_title = True
+        if tag in self.OPENS: self.pieces.append(None)
         if tag in ('img', 'object', 'video', 'svg'):
             self.warnings.append('HTML images and embedded media were not read; no linked resources were fetched.')
 
     def handle_endtag(self, tag):
-        if tag in ('script', 'style', 'iframe'): self.hidden = max(0, self.hidden - 1)
-        if tag in ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'li', 'tr'): self.flush()
+        if tag in self.HIDDEN and self.hidden: self.hidden -= 1
+        if tag == 'title': self.in_title = False
+        if tag in self.CLOSES: self.pieces.append(None)
 
     def handle_data(self, data):
-        if not self.hidden: self.words.append(data)
+        if self.in_title: self.title += data
+        if not self.hidden: self.pieces.append(data)
+
+    def blocks(self):
+        """[('Block <n>', its text)], one for each run of text between block boundaries."""
+        found, words = [], []
+        for piece in [*self.pieces, None]:
+            if piece is not None:
+                words.append(piece)
+            elif words:
+                found.append(('Block ' + str(len(found) + 1), ''.join(words)))
+                words = []
+        return found
+
+    def joined(self):
+        return ''.join('\n' if piece is None else piece for piece in self.pieces)
+
+
+class HTMLText(PageText):
+    """A document's HTML as `extract` reads it: `parts` holds its blocks once `flush()`
+    is called."""
+
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def flush(self):
+        self.parts = self.blocks()
+
+
+def pdftotext(path, *, program, timeout):
+    """pdftotext's layout text of the PDF file at `path`, as the bytes it wrote. Raises
+    OSError or subprocess.TimeoutExpired when the reader could not run or finish, and
+    subprocess.CalledProcessError when it could not read the file. No limit is put on
+    the text: `pdf_text` is the bounded reader."""
+    done = subprocess.run([program, '-layout', str(path), '-'], capture_output=True,
+                          stdin=subprocess.DEVNULL, timeout=timeout)
+    if done.returncode != 0:
+        raise subprocess.CalledProcessError(done.returncode, program)
+    return done.stdout
 
 
 def extract(raw, kind, *, limit=MAX_SOURCE_BYTES, error=ValueError):

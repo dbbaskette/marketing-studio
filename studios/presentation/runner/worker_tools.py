@@ -96,7 +96,6 @@ import argparse  # noqa: F401  read by the shared parts
 import base64  # noqa: F401  read by the shared parts
 import functools
 import hashlib
-import html.parser
 import http.client
 import importlib
 import inspect  # noqa: F401  read by the shared parts
@@ -127,6 +126,7 @@ from workspace import WorkspaceError  # noqa: E402
 
 from runner.steps import build  # noqa: E402
 from studio_core import slide_assessment
+from studio_core import source_documents  # noqa: E402  the shared document readers
 from studio_core import research_sites  # noqa: E402
 
 from studio_core import modules  # noqa: E402
@@ -146,14 +146,13 @@ class Refusal(WorkspaceError):
 # --- text ------------------------------------------------------------------------------
 
 
-class _Page(html.parser.HTMLParser):
-    """The readable text of a web page, and its title."""
+class _Page(source_documents.PageText):
+    """The readable text of a web page, and its title, read by the shared HTML reader
+    with a line break at the start and end of each of these blocks."""
     SKIP = {'script', 'style', 'noscript', 'svg', 'head', 'template'}
     BREAK = {'p', 'div', 'br', 'li', 'tr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section',
              'article', 'pre', 'table', 'blockquote', 'dt', 'dd'}
-
-
-modules.bind(globals(), _shared, methods={'_Page': _shared.METHODS['_Page']})
+    HIDDEN, OPENS, CLOSES = SKIP, BREAK, BREAK
 
 
 # --- fetching --------------------------------------------------------------------------
