@@ -39,8 +39,11 @@ class Element {
   querySelectorAll(selector) { return all(this).filter(node => matches(node, selector)); }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   focus() { context.document.activeElement = this; }
-  scrollIntoView() {}
+  scrollIntoView(options) { scrolled.push([this, options]); }
+  // On the page only under the stand-in body a group sets (`connected.root`); unknown otherwise.
+  get isConnected() { if (!connected.root) return undefined; let top = this; while (top.parent) top = top.parent; return top === connected.root; }
 }
+const connected = { root: null }, scrolled = [];
 function all(node) { return node.children.flatMap(child => [child, ...all(child)]); }
 function classes(node) { return String(node.className || '').split(' ').filter(Boolean); }
 function matches(node, selector) {
@@ -183,6 +186,85 @@ const groups = {
     await find(wrap,n=>n.dataset.key==='confirm-keep').fire('click');await pressing;
     assert.equal(result,false);assert(held.draft,'Keep it keeps the saved form');
     await answer(startNew);assert.equal(result,true);assert.equal(held.draft,null,'Discard and start new discards it');
+    // A start with no control (Search and jump) asks at the top of the page's <main>, never in
+    // a window.confirm(), and Keep gives the focus to <main>.
+    const pressNamed=(node,label)=>find(node,n=>n.tagName==='button'&&n.textContent===label);
+    held={revision:5,draft:{title:'Kept title',step:0}};
+    const third=new Drafting.Intake(async sent=>{if(sent.action==='read')return held;held={revision:held.revision+1,draft:null};return held;});third.status=()=>{};
+    const main=Drafting.make('main','page'),shown=Drafting.make('p','','Home');main.append(shown);
+    document.querySelector=selector=>selector==='main'?main:null;
+    const asking=third.startFresh();await settle();
+    assert.equal(main.children[0].dataset.key,'confirm-in-place','the question sits at the top of <main>');
+    assert.equal(pressNamed(main,'Discard and start new').className,'button button-danger');
+    await pressNamed(main,'Keep the saved form').fire('click');
+    assert.equal(await asking,false);assert(held.draft,'Keep keeps the saved form');
+    assert.equal(context.document.activeElement,main,'Keep gives the focus to <main>');
+    const yes=third.startFresh();await settle();await pressNamed(main,'Discard and start new').fire('click');
+    assert.equal(await yes,true);assert.equal(held.draft,null);
+    document.querySelector=()=>null;held={revision:8,draft:{title:'Kept title',step:0}};
+    const nowhere=new Drafting.Intake(async sent=>sent.action==='read'?held:(held={revision:9,draft:null}));nowhere.status=()=>{};
+    assert.equal(await nowhere.startFresh(),false,'with nowhere to ask, nothing is discarded');assert(held.draft);
+    delete document.querySelector;
+  },
+  // Drafting.confirmInPlace: Escape is the way out; one question at a time; a question taken
+  // off the page unanswered is answered with its way out; it is brought into view first.
+  async confirmInPlace(){
+    const page=Drafting.make('main','page');
+    const asker=label=>{const bar=Drafting.make('div','bar'),control=Drafting.make('button','button',label);control.dataset.key='ask-'+label;bar.append(control);page.append(bar);return control;};
+    const first=asker('First'),second=asker('Second');
+    const boxes=()=>all(page).filter(n=>n.dataset.key==='confirm-in-place');
+    const escape=box=>box.listeners.keydown[0]({key:'Escape',preventDefault(){},stopPropagation(){}});
+    // Escape answers with the way out: nothing happens, and the control is back with the focus.
+    let asking=Drafting.confirmInPlace(first,{message:'Discard it?',action:'Discard'});
+    assert.equal(first.hidden,true);assert.equal(boxes().length,1);
+    escape(boxes()[0]);
+    assert.equal(await asking,false,'Escape is the way out');
+    assert.equal(first.hidden,false,'the control is shown again');assert.equal(boxes().length,0);
+    assert.equal(context.document.activeElement,first,'Escape gives the focus back');
+    // It is brought into view before its way out takes the focus, without smooth scrolling
+    // where motion is reduced.
+    scrolled.length=0;context.window.matchMedia=query=>({matches:query==='(prefers-reduced-motion: reduce)'});
+    asking=Drafting.confirmInPlace(first,{message:'Discard it?',action:'Discard'});
+    same(scrolled.map(([node,options])=>[node.dataset.key,options]),[['confirm-in-place',{block:'nearest',behavior:'instant'}]]);
+    escape(boxes()[0]);await asking;delete context.window.matchMedia;
+    // One question at a time: a second ask answers the first with its way out (its control
+    // shown again, the focus left for the new one), and only the new one is on the page.
+    let firstAnswer=null;Drafting.confirmInPlace(first,{message:'Discard it?',action:'Discard'}).then(answer=>{firstAnswer=answer;});
+    const later=Drafting.confirmInPlace(second,{message:'Replace it?',action:'Replace'});await settle();
+    assert.equal(firstAnswer,false,'the first question is answered with its way out');
+    assert.equal(first.hidden,false,'its control is shown again');assert.equal(second.hidden,true);
+    assert.equal(boxes().length,1,'one question at a time');assert.match(boxes()[0].textContent,/Replace it\?/);
+    assert.equal(context.document.activeElement,find(boxes()[0],n=>n.dataset.key==='confirm-keep'),'the new way out has the focus');
+    await tick();assert.equal(context.document.activeElement,find(boxes()[0],n=>n.dataset.key==='confirm-keep'));
+    await find(boxes()[0],n=>n.dataset.key==='confirm-yes').fire('click');assert.equal(await later,true);
+    // A start over a saved form asked from Search and jump (no control) and taken over by
+    // another question leaves the focus with the new question, not <main>.
+    const held={revision:1,draft:{title:'Kept'}};
+    const store=new Drafting.Intake(async sent=>sent.action==='read'?held:{revision:2,draft:null});store.status=()=>{};
+    context.document.querySelector=selector=>selector==='main'?page:null;
+    const fresh=store.startFresh();await settle();assert.equal(boxes().length,1);
+    const over=Drafting.confirmInPlace(second,{message:'Replace it?',action:'Replace'});
+    assert.equal(await fresh,false);await settle();assert(held.draft,'nothing is discarded');
+    const keepNow=find(boxes()[0],n=>n.dataset.key==='confirm-keep');assert.equal(context.document.activeElement,keepNow);
+    await keepNow.fire('click');assert.equal(await over,false);assert.equal(context.document.activeElement,second);
+    delete context.document.querySelector;
+    // Taken off the page unanswered (a redraw, a change of screen), a question is answered with
+    // its way out: nothing is discarded and its control is shown again. Its watch ends with it.
+    const body=Drafting.make('body','');body.append(page);connected.root=body;
+    const watching=new Set();
+    context.MutationObserver=class{constructor(fn){this.fn=fn;}observe(target,options){assert.equal(target,context.document);assert.equal(options.subtree,true);watching.add(this);}disconnect(){watching.delete(this);}};
+    const mutate=()=>{for(const watch of [...watching])watch.fn([]);};
+    second.hidden=false;let gone=Drafting.confirmInPlace(second,{message:'Replace it?',action:'Replace'});
+    assert.equal(watching.size,1,'watched while it is asked');
+    mutate();assert.equal(second.hidden,true,'a change that leaves it on the page answers nothing');
+    boxes()[0].remove();mutate();
+    assert.equal(await gone,false,'taken off the page, it is answered with its way out');
+    assert.equal(second.hidden,false,'and its control is shown again');assert.equal(watching.size,0,'its watch ends');
+    // A control hidden before it asked stays hidden after.
+    second.hidden=true;gone=Drafting.confirmInPlace(second,{message:'Replace it?',action:'Replace',place:page});
+    await find(boxes()[0],n=>n.dataset.key==='confirm-keep').fire('click');
+    assert.equal(await gone,false);assert.equal(second.hidden,true);assert.equal(watching.size,0,'an answer ends its watch');
+    delete context.MutationObserver;connected.root=null;
   },
   // Intake.pages saves a press once: Back saves through its own step change, a summary that
   // only opens saves nothing, and any other press in a step saves at once.

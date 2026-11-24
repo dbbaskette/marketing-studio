@@ -2070,7 +2070,7 @@ function drawHome(fresh) {
   const said = greeting();
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
     ['head', [], () => pageHead(HOME_LEDE)]];
-  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:()=>openNew(),discarded:()=>{view.draft=null;drawHome(true);}})]);
+  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:(event)=>openNew(undefined,false,event?.currentTarget),discarded:()=>{view.draft=null;drawHome(true);}})]);
   const setup = [['updates', [upkeepOf()], updatesCard],
     ['studios', studiosMark(), studiosHomeCard]];
   if (!all.length) {
@@ -3746,7 +3746,8 @@ function standingOf(training) {
 }
 
 function newButton(kind, key) {
-  return capsule('New training', kind, () => openNew(key || 'new'), key || 'new');
+  return capsule('New training', kind, (event) => openNew(key || 'new', false, event?.currentTarget),
+    key || 'new');
 }
 
 // The new-training sheet, over the screen it was asked from. What was filled in before is
@@ -3762,9 +3763,28 @@ async function restoreIntake() {
   return saved;
 }
 
-async function openNew(opener, resume=false) {
+// A question asked in place (Drafting.confirmInPlace): beside the control that asked; under
+// its row where it sits in a list row, which lays its parts out in a line; or at the top of
+// the page where the control is in the toolbar or there is none. `ask(place)` asks it.
+function askedFrom(control) {
+  return control && control.closest && control.closest('main') ? null : main();
+}
+async function askedBeside(control, ask) {
+  const row = control && control.closest ? control.closest('li.row') : null;
+  const holder = row ? make('li', '') : null;
+  if (holder) row.after(holder);
+  try {
+    return await ask(holder || askedFrom(control));
+  } finally {
+    if (holder) holder.remove();
+    // The row a question sat under was held as it was (fit): draw it as it is now.
+    if (holder && row.isConnected) draw(false);
+  }
+}
+
+async function openNew(opener, resume=false, control=null) {
   await restoreIntake();
-  if(!resume&&intakeStore().saved){if(!await intakeStore().startFresh())return;view.draft=null;}
+  if(!resume&&intakeStore().saved){if(!await askedBeside(control, (place) => intakeStore().startFresh(control, place)))return;view.draft=null;}
   if (!view.draft) view.draft = newDraft();
   openSheet('new', opener || 'new')();
   readAgents();
@@ -5337,19 +5357,51 @@ function startTraining(pressed) {
 // left exactly as it is, so an answer being written stays under the cursor while the rest
 // of the screen keeps up with the run.
 
+// A question asked in place (Drafting.confirmInPlace) that sits between a holder's parts, at
+// the top of <main> or in the item askedBeside puts under a list row, stays through a redraw
+// where it was put: first, or just after its part. That part is held as it was, with the
+// control that asked waiting behind the question, until the question is answered; then
+// askedBeside draws the screen again. Each is [node, the part before it, or null when first].
+function questionsIn(holder) {
+  const found = [];
+  let before = null;
+  for (const node of Array.from(holder.children)) {
+    if (PARTS.has(node)) { before = node; continue; }
+    const box = node.dataset && node.dataset.key === 'confirm-in-place' ? node
+      : node.querySelector && node.querySelector('[data-key="confirm-in-place"]');
+    if (box) found.push([node, before]);
+  }
+  return found;
+}
+function partName(node) {
+  return String(PARTS.get(node) || '').split('\n')[0];
+}
+// Puts each held question back among `nodes`, in place. One whose part has gone goes too;
+// Drafting.confirmInPlace then answers it with its way out, so nothing is discarded.
+function placeAsking(nodes, pending) {
+  for (const [node, after] of pending) {
+    if (after === null) { nodes.unshift(node); continue; }
+    const at = nodes.indexOf(after);
+    if (at < 0) node.remove();
+    else nodes.splice(at + 1, 0, node);
+  }
+}
+
 // Put parts in a holder in order. A part is [name, what it is drawn from, how it is built],
 // and a node already there that was built from the same is kept where it is, untouched.
 // A fourth item fills a part, whether it was kept or built: a list inside it is fitted
 // the same way, one item at a time.
 function fit(holder, parts, fresh) {
   const kept = new Map();
+  const pending = fresh ? [] : questionsIn(holder);
+  const asked = new Map(pending.filter(([, after]) => after).map(([, after]) => [partName(after), after]));
   for (const node of fresh ? [] : Array.from(holder.children)) {
     if (PARTS.has(node)) kept.set(PARTS.get(node), node);
   }
   const nodes = [];
   for (const [name, from, build, fill] of parts.filter(Boolean)) {
     const mark = name + '\n' + JSON.stringify(from);
-    let node = kept.get(mark);
+    let node = kept.get(mark) || asked.get(name);
     if (!node) {
       node = build();
       if (!node) continue;
@@ -5359,6 +5411,7 @@ function fit(holder, parts, fresh) {
     if (fill) fill(node);
     nodes.push(node);
   }
+  placeAsking(nodes, pending);
   // Replaced status panels must not force a retained editor to move in the DOM.
   const wanted = new Set(nodes);
   for (const node of Array.from(holder.children)) {
@@ -8330,20 +8383,34 @@ async function copyAsNew(training, key, pressed) {
   const turn = view.turn;
   const store = intakeStore();
   await restoreIntake();
-  if (store.saved && !confirm(COPY_REPLACES)) return;
+  if (store.saved && !await askedBeside(pressed, (place) => Drafting.confirmInPlace(pressed,
+    { message: COPY_REPLACES, action: 'Discard and copy', keep: 'Keep the saved form', place }))) return;
+  if (turn !== view.turn) return;
+  // Where the copy ends on this screen, the focus goes back to the control that asked for it
+  // (or, where a redraw built it again, the one with its key), never left on the page.
+  const back = () => {
+    if (turn !== view.turn) return;
+    if (pressed.isConnected && !pressed.hidden) pressed.focus({ preventScroll: true });
+    else focusKey(key);
+  };
   pressed.disabled = true;
-  let found;
+  let found, failed = null;
   try {
     found = await send('training-copy', { path: training.path });
   } catch (failure) {
-    toast(failure.message + (failure.kind === 'stopped' ? '' : ' Nothing was copied.'));
-    return;
+    failed = failure;
   } finally {
     pressed.disabled = false;
+  }
+  if (failed) {
+    toast(failed.message + (failed.kind === 'stopped' ? '' : ' Nothing was copied.'));
+    back();
+    return;
   }
   if (turn !== view.turn) return;
   if (store.saved && !await store.discard()) {
     toast(store.problem || 'The unfinished form could not be discarded. Nothing was copied.');
+    back();
     return;
   }
   view.draft = copiedDraft(found, training.title || 'Untitled');

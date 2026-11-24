@@ -2741,6 +2741,74 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Confirm discard', result['snapshots']['confirm']['buttons'])
         self.assertNotIn('Resume draft', result['snapshots']['cleared']['buttons'])
 
+    def test_start_new_over_a_saved_form_asks_in_place_and_keep_keeps_it(self):
+        # Asked beside Start new (Drafting.confirmInPlace), never in a blocking
+        # window.confirm(), which the harness refuses.
+        self.started()
+        result = self.run_page(self.answers(**{
+            'GET /api/intake-draft': [{'status': 200, 'body': {'revision': 1, 'draft': {'title': 'Unfinished synthetic form', 'step': 1, 'intakeOpen': False}}}],
+            'POST /api/intake-draft': [{'status': 200, 'body': {'revision': 2, 'draft': None}}]}),
+            [{'click': 'Start new'}, {'snapshot': 'asked'},
+             {'click': 'Keep the saved form'}, {'snapshot': 'kept'},
+             {'click': 'Start new'}, {'click': 'Discard and start new'}, {'snapshot': 'fresh'}])
+        asked = result['snapshots']['asked']
+        self.assertIn('This studio keeps one unfinished form. Discard it and start new?', asked['text'])
+        self.assertIn('Discard and start new', asked['buttons'])
+        self.assertNotIn('Start new', asked['buttons'], 'the control that asked waits behind it')
+        kept = result['snapshots']['kept']
+        self.assertIn('Start new', kept['buttons'])
+        self.assertIn('Unfinished synthetic form', kept['text'])
+        self.assertNotIn('Discard and start new', kept['buttons'])
+        discards = [call for call in result['requests'] if call['address'] == '/api/intake-draft'
+                    and (call.get('body') or {}).get('action') == 'discard']
+        self.assertEqual(len(discards), 1)
+
+    def test_a_question_asked_in_place_stays_through_a_redraw_until_it_is_answered(self):
+        # Home is read again while the training works. Copy as new's question under its row
+        # stays through each redraw with its control behind it; Keep sends nothing. New
+        # training's question at the top of the page answers it, and a second question
+        # answers that one: one question at a time.
+        self.started()
+        moving = [self.listed('working', f'Writing part {at}.') for at in range(12)]
+        asked = 'This studio keeps one unfinished form. Discard it and copy this training'
+        started = 'This studio keeps one unfinished form. Discard it and start new?'
+        copy = 'Copy as new: Rolling restarts'
+        result = self.run_page(self.answers(**{
+            'GET /api/trainings': moving,
+            'GET /api/intake-draft': [{'status': 200, 'body': {'revision': 1, 'draft': {'title': 'Unfinished synthetic form', 'step': 1, 'intakeOpen': False}}}],
+            'POST /api/intake-draft': [{'status': 200, 'body': {'revision': 2, 'draft': None}}]}), [
+            {'click': copy}, {'snapshot': 'asked'},
+            {'poll': True}, {'poll': True}, {'snapshot': 'redrawn'},
+            {'click': 'Keep the saved form'}, {'snapshot': 'kept'},
+            {'click': 'New training'}, {'poll': True}, {'snapshot': 'top'},
+            {'click': copy}, {'snapshot': 'second'},
+            {'click': 'Keep the saved form'}, {'snapshot': 'none'}])
+        shots = result['snapshots']
+        names = lambda shot: [name for name in shot['buttons'] if name.startswith(copy)]
+        self.assertEqual(shots['asked']['text'].count(asked), 1)
+        self.assertEqual(names(shots['asked']), [], 'Copy as new waits behind its question')
+        # Read again while asked: the row the question sits under is held as it was, and is
+        # drawn as it is now once the question is answered.
+        self.assertIn('Writing part 0.', shots['redrawn']['text'])
+        self.assertGreater(len(self.asked(result, 'trainings')), 2)
+        self.assertNotIn('Writing part 0.', shots['kept']['text'])
+        self.assertEqual(shots['redrawn']['text'].count(asked), 1, 'the redraw keeps the question')
+        self.assertEqual(names(shots['redrawn']), [], 'and its control behind it')
+        self.assertIn('Keep the saved form', shots['redrawn']['buttons'])
+        self.assertEqual(shots['kept']['text'].count(asked), 0)
+        self.assertEqual(len(names(shots['kept'])), 1, 'Keep shows Copy as new again')
+        self.assertTrue(shots['kept']['focus'].startswith(copy), 'and gives it the focus')
+        self.assertEqual(shots['top']['text'].count(started), 1, 'New training asks at the top')
+        self.assertNotIn('New training', [control['name'] for control in shots['top']['toolbar']])
+        second = shots['second']
+        self.assertEqual((second['text'].count(started), second['text'].count(asked)), (0, 1))
+        self.assertIn('New training', [control['name'] for control in second['toolbar']])
+        self.assertEqual(shots['none']['text'].count(asked) + shots['none']['text'].count(started), 0)
+        self.assertIn('Unfinished synthetic form', shots['none']['text'])
+        self.assertEqual(self.posts(result), [], 'Keep copies nothing')
+        self.assertFalse([call for call in result['requests'] if call['address'] == '/api/intake-draft'
+                          and (call.get('body') or {}).get('action') == 'discard'])
+
     def test_yoodli_fields_copy_from_the_final_review_and_done(self):
         self.started()
         text = test_cli.example('yoodli.md')

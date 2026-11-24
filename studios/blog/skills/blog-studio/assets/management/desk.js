@@ -137,7 +137,7 @@ function sDeskIntakeControls(held){
   const intake=sBlogIntake(),form=$('studio-page').querySelector('form');if(!form)return;
   const status=sNode('p','quiet field-hint');status.dataset.intakeStatus='true';status.setAttribute('role','status');
   const save=sButton('Save and close',async()=>{if(await sDeskKeep(held,false))await sRoute('home');});
-  const discard=sButton('Discard draft',async()=>{if(!confirm('Discard this unfinished blog form? Captured sources and existing blogs are kept.'))return;clearTimeout(held._saveTimer);held._saveTimer=null;if(held._saving)await held._saving;if(await intake.discard()){studio.deskStart=null;await sRoute('home');}});
+  const discard=sButton('Discard draft',async button=>{if(!await Drafting.confirmInPlace(button,{message:'Discard this unfinished blog form? Captured sources and existing blogs are kept.',action:'Discard draft',keep:'Keep the form'}))return;clearTimeout(held._saveTimer);held._saveTimer=null;if(held._saving)await held._saving;if(await intake.discard()){studio.deskStart=null;await sRoute('home');}});
   form.append(sAdd(sNode('div','form-foot'),status,sAdd(sNode('div','bar'),save,discard)));
   const changed=()=>{held._editRevision=(held._editRevision||0)+1;held._dirty=true;clearTimeout(held._saveTimer);held._saveTimer=setTimeout(()=>{held._saveTimer=null;sDeskKeep(held);},250);status.textContent='Saving intake…';};
   form.addEventListener('input',changed);form.addEventListener('change',changed);
@@ -158,7 +158,12 @@ function sDeskHeld(){
 async function sDeskBegin(preset={}){
   const intake=sBlogIntake();await intake.load();
   if(Object.keys(preset).length&&(studio.deskStart||intake.saved)){
-    if(!confirm('Replace the unfinished blog form with this new starting point? Cancel resumes the saved form.'))return sRoute('desk-start');
+    // Asked in place, at the top of the saved form it would replace (Drafting.confirmInPlace),
+    // never in a blocking dialog: Keep leaves that form open to carry on with.
+    await sRoute('desk-start');
+    const page=$('studio-page');
+    if(studio.screen!=='desk-start'||!page)return;
+    if(!await Drafting.confirmInPlace(null,{message:'Replace the unfinished blog form with this new starting point? Keep it to carry on with the saved form.',action:'Replace with the new start',keep:'Keep the saved form',place:page})){$('main')?.focus({preventScroll:true});return;}
     const held=studio.deskStart;if(held){clearTimeout(held._saveTimer);held._saveTimer=null;if(held._saving)await held._saving;}
     if(!await intake.discard())return notice(intake.problem,true);
   }

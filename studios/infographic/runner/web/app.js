@@ -6,6 +6,15 @@ let token = launch.get('token') || '';
 try { if(token)sessionStorage.setItem('infographic-studio-token',token); else token=sessionStorage.getItem('infographic-studio-token')||''; }catch(f){}
 // The shell kit saves the appearance through this page's own key.
 if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Infographic-Studio-Token',token:()=>token});
+// Search and jump finds each infographic Home lists by its name and opens it as its card
+// does, with what its card says of it, while Home is the screen shown. New infographic is
+// always there.
+let listedProjects=[];
+function infographicCommands(){
+  return [...(screen==='home'?listedProjects:[]).map(p=>({title:p.title||'Unreadable infographic',group:'Infographics',hint:p.problem?'Needs attention':workingNow(p)?'Working now':p.readiness?.summary||'Saved',keywords:'infographic project work',run:()=>openProject(p.id)})),
+    {title:'New infographic',group:'Start',keywords:'create start new infographic',run:()=>startNewIntake(null,$('main'))}];
+}
+if(typeof StudioShell!=='undefined')StudioShell.commands(infographicCommands);
 function requestId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');}
 window.addEventListener('hashchange',()=>{const next=new URLSearchParams(location.hash.slice(1)).get('token');if(next&&next!==token)location.reload();});
 function suiteHome(hash, here) {
@@ -392,6 +401,9 @@ function returnToPlace(id){
   if(typeof place.y==='number')requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(0,place.y)));
 }
 let homeTimer=null,homeWaiting=false;
+// Whether an infographic is working now: its saved activity says so, or this page started it.
+// Home's card and Search and jump both ask this.
+function workingNow(p){return p.activity?.state==='running'||running.has(p.id);}
 async function home() {
   resetPicture(); held = null; error(''); remember('home');
   heading('Infographics', button('New infographic', event => startNewIntake(event.currentTarget,$('main')), true),button('Team repository',teamSheet));
@@ -413,8 +425,9 @@ async function drawHome() {
     const said = privateIntake.revision+JSON.stringify(data.projects.map(p => [p.id, p.title, p.problem, p.page_revision, p.readiness, p.activity?.state, p.activity?.label, running.has(p.id)]));
     if ($('main').dataset.home === said) { if (data.projects.some(p => p.activity?.state === 'running' || running.has(p.id))) homeTimer = setTimeout(drawHome, 2000); return; }
     $('main').dataset.home = said;
+    listedProjects = data.projects;
     const cards = data.projects.map(p => {
-      const working=p.activity?.state==='running'||running.has(p.id);
+      const working=workingNow(p);
       const state=working?stateLine('current','Working now: '+(p.activity?.label||running.get(p.id)?.label||'Working')):stateLine(p.readiness?.state||'current',p.readiness?.summary||'Saved');
       const node=card(p.title || 'Unreadable infographic', ...(p.problem?[make('p','problem',p.problem)]:[state,make('p','quiet','Revision '+pageOf(p))]), button('Open ' + (p.title || p.id), () => openProject(p.id)));
       node.classList.add('ig-project-card'); if(working)node.dataset.working=''; return node;
@@ -633,7 +646,7 @@ function renderProject() {
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
   let chosenStory=null;
   if(p.stories.length){
-    const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),s.id===p.selected_story?chosenMark():button('Use this story',()=>action('select',{story_id:s.id}),true))));
+    const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),s.id===p.selected_story?chosenMark():useStory(s))));
     const choices=add(make('section','stack'),make('h2','card-title','Choose the story'),add(make('div','ig-story-grid'),...stories));
     choices.id='story-choice';if(!p.scene)parts.push(choices);else chosenStory=detail('Story: '+selected.headline,choices);
   }
@@ -821,6 +834,9 @@ function historyGroup(group,current){
 // toolbar names it), the three revisions that matter, and what can be downloaded.
 // The story in use says so in words; it is not a button, and not a second filled one.
 function chosenMark(){const mark=make('span','tag','Selected');mark.dataset.state='done';return mark;}
+// A story is one choice among peers, so each card's Use this story is a quiet button that
+// names its story, never a filled one: the toolbar's next step stays the view's one main action.
+function useStory(s){const node=button('Use this story',()=>action('select',{story_id:s.id}));node.classList.add('button-quiet');node.setAttribute('aria-label','Use this story: '+s.headline);return node;}
 function standing(map,p,delivery,needs){
   if(!map)return null;
   const steps=add(make('ol','workflow-steps ig-roadmap'),...map.steps.map(step=>{

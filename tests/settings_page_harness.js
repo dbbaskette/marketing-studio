@@ -27,6 +27,10 @@
 // `focused`, the element focus was last moved to, and `session`; `read` gives `disabled` and
 // `attributes` too. The form's named controls and its parts with a
 // setup step are read from index.html, so fill(), show() and the saved state see them all.
+// Home's work overview (#work-overview) is a real tree: its rows, groups and buttons are found
+// as a page finds them. Every snapshot has `commands`, what Search and jump lists
+// (StudioShell.commands): [group, title, hint, keywords]; {command: title} runs one, as a
+// press in the palette does, settling what it starts.
 'use strict';
 
 const fs = require('fs');
@@ -41,6 +45,7 @@ class El {
     this.style = {};
   }
   addEventListener(name, listener) { (this.listeners[name] ||= []).push(listener); }
+  click() { if (!this.disabled) this.fire('click'); }
   fire(name, event = {}) { for (const listener of this.listeners[name] || []) listener({ preventDefault() {}, key: event.key, target: this, ...event }); }
   append(...nodes) { for (const node of nodes) this.children.push(node); }
   contains(node) { return this === node || this.children.some(child => child?.contains?.(node)); }
@@ -55,7 +60,17 @@ class El {
   getAttribute(name) { return this.attributes[name] ?? null; }
   removeAttribute(name) { delete this.attributes[name]; }
   add() {}
+  // Inside Home's work overview the page's own lookups find what is there, or nothing.
+  get inWork() { return this.id === 'work-overview' || this.dataset.workGroup !== undefined
+    || /\bwork-summary\b/.test(this.className || ''); }
+  matches(selector) {
+    if (selector.startsWith('.')) return String(this.className || '').split(' ').includes(selector.slice(1));
+    if (selector === '[data-work-group]') return this.dataset.workGroup !== undefined;
+    return this.tagName === selector.toUpperCase();
+  }
+  descendants() { return (this.children || []).flatMap(child => child instanceof El ? [child, ...child.descendants()] : []); }
   querySelector(selector) {
+    if (this.inWork) return this.descendants().find(node => node.matches(selector)) || null;
     if (selector === '.studio-readiness-detail') {
       const descendants = node => (node.children || []).flatMap(child => [child, ...descendants(child)]);
       return descendants(this).find(node => /\bstudio-readiness-detail\b/.test(node.className || '')) || null;
@@ -63,6 +78,7 @@ class El {
     return new El();
   }
   querySelectorAll(selector) {
+    if (this.inWork) return this.descendants().filter(node => node.matches(selector));
     if (selector === '.site-row .button') return this.children.map(row => row.children[1].children[0]);
     return [];
   }
@@ -105,7 +121,9 @@ const document = {
   body: { dataset: { standalone: String(Boolean(early.standalone)),
     product: early.product || 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
   addEventListener() {},
-  querySelector: find, querySelectorAll: selector => selector === '[data-part]' ? sectionButtons : [], createElement: tag => new El(tag),
+  querySelector: find, querySelectorAll: selector => selector === '[data-part]' ? sectionButtons
+    : selector === '#work-overview .work-summary' ? find('#work-overview').querySelectorAll('.work-summary') : [],
+  createElement: tag => new El(tag),
   createElementNS: (space, tag) => new El(tag), createTextNode: text => ({ textContent: text }),
 };
 const context = {
@@ -128,6 +146,10 @@ const context = {
   },
 };
 context.window = { addEventListener() {}, matchMedia: () => ({ matches: false }), scrollTo() {}, open() {} };
+// The shell kit's stand-in: what the page hands Search and jump is kept to be listed and run.
+const commandLists = [];
+context.StudioShell = { connect() {}, commands(provide) { if (typeof provide === 'function') commandLists.push(provide); } };
+const listed = () => commandLists.flatMap(provide => provide() || []);
 vm.createContext(context);
 const script = fs.readFileSync(path.join(__dirname, '..', 'core', 'studio_core', 'setup_web', 'app.js'), 'utf8');
 vm.runInContext(script, context, { filename: 'app.js' });
@@ -152,6 +174,10 @@ for (const step of steps) {
   } else if (step.release) {
     deferred.get(step.release)(step.answer);
     for (let i = 0; i < 12; i += 1) await settle();
+  } else if (step.command) {
+    const found = listed().find(one => one.title === step.command);
+    if (!found) throw new Error('Search and jump lists nothing called ' + step.command);
+    found.run(); for (let i = 0; i < 6; i += 1) await settle();
   } else if (step.wait) {
     for (let i = 0; i < 12; i += 1) await settle();
   } else if (step.run) {
@@ -205,6 +231,7 @@ for (const step of steps) {
           running: parts.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
       }),
       toasts: find('#toasts').children.map(toast => toast.textContent),
+      commands: listed().map(one => [one.group, one.title, one.hint || '', one.keywords || '']),
       focused: focused ? focused.id || focused.name || focused.textContent : null,
       session: Object.fromEntries(session),
       ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),

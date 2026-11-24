@@ -555,6 +555,34 @@ class RouteTests(LibraryCase):
         with self.assertRaises(library.LibraryError):
             context.answer('/api/library', {'filters': {'id': 'x'}}, 'blog')
 
+    def test_a_first_load_is_answered_with_the_remembered_filters_applied(self):
+        made = self.made()
+        blog = made.add_upload('blog.md', b'Blog words', studio='blog')
+        made.add_upload('training.md', b'Training words', studio='training')
+        # Nothing remembered: nothing applied, every document listed.
+        found = context.answer('/api/library', {'filters': {}, 'remembered': True}, 'blog')
+        self.assertNotIn('applied', found)
+        self.assertEqual(found['total'], 2)
+        context.answer('/api/library-filters', {'filters': {'studio': 'blog'}}, 'blog')
+        # One request: the remembered filters are applied and named, as a filter only.
+        found = context.answer('/api/library', {'filters': {'query': None, 'kind': None},
+                                                'remembered': True}, 'blog')
+        self.assertEqual(found['applied'], {'studio': 'blog'})
+        self.assertEqual(found['remembered'], {'studio': 'blog'})
+        self.assertEqual([item['id'] for item in found['items']], [blog['id']])
+        self.assertEqual(found['total'], 1)
+        # Filters the page sends win, and a page that does not ask is not filtered for it.
+        found = context.answer('/api/library', {'filters': {'kind': 'upload'},
+                                                'remembered': True}, 'blog')
+        self.assertNotIn('applied', found)
+        self.assertEqual(found['total'], 2)
+        found = context.answer('/api/library', {'filters': {}}, 'blog')
+        self.assertNotIn('applied', found)
+        self.assertEqual(found['total'], 2)
+        # Another studio's remembered filters are its own.
+        self.assertNotIn('applied', context.answer('/api/library', {'remembered': True},
+                                                   'training'))
+
     def test_pin_validates_every_revision_before_changing_anything(self):
         made = self.made()
         good = made.add_upload('good.md', b'Readable words')

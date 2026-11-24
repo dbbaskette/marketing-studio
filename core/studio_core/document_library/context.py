@@ -62,9 +62,19 @@ def answer(path: str, sent: dict, studio: str) -> dict:
         # Hidden documents are offered only on Marketing Studio's Library screen, under Show
         # hidden, to be restored: never in a studio's Add from library.
         manage = studio == 'marketing'
+        remembered = library.filters(studio)
+        # A page opening with `remembered: true` and no filters of its own is answered with
+        # this studio's remembered filters already applied, and says so in `applied`, so
+        # opening the library is one request. A filter, never a selection.
+        applied = None
+        if sent.get('remembered') is True and remembered \
+                and not any(value for value in filters.values()):
+            applied = dict(remembered)
+            filters = {**filters, **applied}
         found = library.catalog(offset=offset, limit=limit,
                                 hidden=manage and sent.get('hidden') is True, **filters)
-        return {'available': True, **found, 'remembered': library.filters(studio),
+        return {'available': True, **found, 'remembered': remembered,
+                **({'applied': applied} if applied is not None else {}),
                 'location': where['shown'], **(library.summary() if manage else {}), **_labels()}
     if library is None:
         raise LibraryError(NOT_MADE)

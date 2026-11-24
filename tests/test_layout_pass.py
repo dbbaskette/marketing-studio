@@ -217,6 +217,31 @@ class PageLayoutTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout)
 
+    def test_search_and_jump_lists_the_work_home_shows_and_opens_it_as_its_row_does(self):
+        def item(ident, title, state, action):
+            return {'id': ident, 'title': title, 'state': state, 'action': action, 'kind': 'project',
+                    'observed_at': '2026-11-20T10:00:00Z'}
+        shown = {**self.SHOWN, 'work_overview': {
+            'blog': {'items': [item('b1', 'Synthetic post', 'needs-you', 'Review')]},
+            'presentation': {'items': [item('p1', 'Synthetic deck', 'recent', 'Open')]}}}
+        shots = self.page([{'snapshot': 'empty'}, {'home': shown}, {'snapshot': 'home'},
+                           {'show': 'settings'}, {'snapshot': 'settings'},
+                           {'show': 'library'}, {'snapshot': 'library'},
+                           {'show': 'brands'}, {'snapshot': 'brands'}, {'show': 'home'},
+                           {'command': 'Synthetic deck'}, {'snapshot': 'opened', 'read': ['#message']}],
+                          responses={'open': {'link': 'http://127.0.0.1:2/#token=x'}})
+        self.assertEqual(shots['empty']['commands'], [])
+        # Only the rows Home shows, each in its studio's group, with what its button says.
+        self.assertEqual(sorted(shots['home']['commands']), [
+            ['Blog Studio', 'Synthetic post', 'Review', 'work project needs-you'],
+            ['Presentation Studio', 'Synthetic deck', 'Open', 'work project recent']])
+        # A page lists only what it shows: none of Home's work while another view is shown.
+        for name in ('settings', 'library', 'brands'):
+            self.assertEqual(shots[name]['commands'], [], name)
+        # Run as the row's own button runs: it asks Marketing Studio to open that work.
+        opened = [request['sent'] for request in shots['opened']['requests'] if request['url'].endswith('/open')]
+        self.assertEqual(opened, [{'studio': 'presentation', 'resume': 'p1'}])
+
     def test_check_computer_shows_only_on_this_computer(self):
         shots = self.page([{'home': self.SHOWN},
                            {'show': 'computer'}, {'snapshot': 'computer', 'ids': ['check']},

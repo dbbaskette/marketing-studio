@@ -79,10 +79,20 @@ class FakeNode {
     return false;
   }
 
+  get isConnected() { return Boolean(document.body?.contains(this)); }
+
   get nextSibling() {
     if (!this.parentNode) return null;
     const held = this.parentNode.childNodes;
     return held[held.indexOf(this) + 1] || null;
+  }
+
+  // Where a question asked in place (Drafting.confirmInPlace) sits: just after its row.
+  after(...nodes) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    const next = this.nextSibling;
+    for (const node of nodes) parent.insertBefore(node, next);
   }
 }
 
@@ -772,6 +782,10 @@ async function app(file) {
   const window = {
     document,
     TextEncoder,
+    // Every question is asked in place (Drafting.confirmInPlace): a blocking dialog fails.
+    confirm(message) {
+      throw new Error('A blocking window.confirm() was used: ' + message);
+    },
     localStorage: {
       get length() { return Object.keys(storage).length; },
       key: index => Object.keys(storage)[index] ?? null,

@@ -606,17 +606,6 @@ function explained(label, options, says, at, choose, key) {
   }, key), meanings];
 }
 
-// A capsule that is on or off. A tick says it is on, so it does not rest on colour.
-function chip(label, on, flip, key) {
-  const node = button('', 'chip', () => {
-    const now = node.getAttribute('aria-pressed') !== 'true';
-    node.setAttribute('aria-pressed', String(now));
-    flip(now);
-  }, key);
-  node.setAttribute('aria-pressed', String(Boolean(on)));
-  return add(node, icon('check'), make('span', '', label));
-}
-
 // A card that is a button: one of several to pick from, with what it means under its name.
 // The one that is picked says so by its tick and its words, not by colour alone.
 function pickCard(title, says, picked, action, key) {
@@ -1185,19 +1174,51 @@ function around() {
     view.savingBrand];
 }
 
+// A question asked in place (Drafting.confirmInPlace) that sits between a holder's parts, at
+// the top of <main> or in the item askedBeside puts under a list row, stays through a redraw
+// where it was put: first, or just after its part. That part is held as it was, with the
+// control that asked waiting behind the question, until the question is answered; then
+// askedBeside draws the screen again. Each is [node, the part before it, or null when first].
+function questionsIn(holder) {
+  const found = [];
+  let before = null;
+  for (const node of Array.from(holder.children)) {
+    if (PARTS.has(node)) { before = node; continue; }
+    const box = node.dataset && node.dataset.key === 'confirm-in-place' ? node
+      : node.querySelector && node.querySelector('[data-key="confirm-in-place"]');
+    if (box) found.push([node, before]);
+  }
+  return found;
+}
+function partName(node) {
+  return String(PARTS.get(node) || '').split('\n')[0];
+}
+// Puts each held question back among `nodes`, in place. One whose part has gone goes too;
+// Drafting.confirmInPlace then answers it with its way out, so nothing is discarded.
+function placeAsking(nodes, pending) {
+  for (const [node, after] of pending) {
+    if (after === null) { nodes.unshift(node); continue; }
+    const at = nodes.indexOf(after);
+    if (at < 0) node.remove();
+    else nodes.splice(at + 1, 0, node);
+  }
+}
+
 // Put parts in a holder in order. A part is [name, what it is drawn from, how it is built],
 // and a node already there that was built from the same is kept where it is, untouched.
 // A fourth item fills a part, whether it was kept or built: a list inside it is fitted
 // the same way, one item at a time.
 function fit(holder, parts, fresh) {
   const kept = new Map();
+  const pending = fresh ? [] : questionsIn(holder);
+  const asked = new Map(pending.filter(([, after]) => after).map(([, after]) => [partName(after), after]));
   for (const node of fresh ? [] : Array.from(holder.children)) {
     if (PARTS.has(node)) kept.set(PARTS.get(node), node);
   }
   const nodes = [];
   for (const [name, from, build, fill] of parts.filter(Boolean)) {
     const mark = name + '\n' + JSON.stringify(from);
-    let node = kept.get(mark);
+    let node = kept.get(mark) || asked.get(name);
     if (!node) {
       node = build();
       if (!node) continue;
@@ -1207,6 +1228,7 @@ function fit(holder, parts, fresh) {
     if (fill) fill(node);
     nodes.push(node);
   }
+  placeAsking(nodes, pending);
   // Remove replaced parts before ordering the survivors. Moving a retained editor in
   // front of an obsolete sibling detaches it, which drops focus on the first key typed.
   const wanted = new Set(nodes);
@@ -1378,8 +1400,10 @@ function noteSheet(kind) {
   // date. It is off unless asked for, and says what it costs.
   const refreshing = kind === 'changes' && gate && gate.name === 'gate:research'
     && gate.research_price ? { on: false } : null;
+  // A setting sent with the request, not an action of its own: a native checkbox (ui-kit.md).
   const refresh = refreshing ? add(make('div', 'field'),
-    chip('Bring the evidence up to date', false, (on) => { refreshing.on = on; }, 'refresh'),
+    StudioLists.tick({ id: 'refresh', label: 'Bring the evidence up to date', on: false,
+      flip: (on) => { refreshing.on = on; } }),
     make('p', 'quiet field-hint', gate.research_price.refresh
       || 'Re-reads the sources and checks the report again: about as long and as costly as '
         + 'the research was.')) : null;
@@ -1480,7 +1504,7 @@ function standingOf(brief) {
 }
 
 function newButton(kind) {
-  return capsule('New deck', kind, () => openNew(), 'new');
+  return capsule('New deck', kind, (event) => openNew(undefined, false, event?.currentTarget), 'new');
 }
 
 // The new-deck sheet, over Home or Decks, at a route when one is given. Elsewhere it opens
@@ -1496,9 +1520,28 @@ async function restoreIntake() {
   return saved;
 }
 
-async function openNew(route, resume=false) {
+// A question asked in place (Drafting.confirmInPlace): beside the control that asked; under
+// its row where it sits in a list row, which lays its parts out in a line; or at the top of
+// the page where the control is in the toolbar or there is none. `ask(place)` asks it.
+function askedFrom(control) {
+  return control && control.closest && control.closest('main') ? null : main();
+}
+async function askedBeside(control, ask) {
+  const row = control && control.closest ? control.closest('li.row') : null;
+  const holder = row ? make('li', '') : null;
+  if (holder) row.after(holder);
+  try {
+    return await ask(holder || askedFrom(control));
+  } finally {
+    if (holder) holder.remove();
+    // The row a question sat under was held as it was (fit): draw it as it is now.
+    if (holder && row.isConnected) draw(false);
+  }
+}
+
+async function openNew(route, resume=false, control=null) {
   await restoreIntake();
-  if(!resume&&intakeStore().saved){if(!await intakeStore().startFresh())return;view.draft=null;}
+  if(!resume&&intakeStore().saved){if(!await askedBeside(control, (place) => intakeStore().startFresh(control, place)))return;view.draft=null;}
   if (!['home', 'decks'].includes(view.screen)) {
     show('new');
     if (route) chooseRoute(route);
@@ -1541,7 +1584,7 @@ function startCard() {
   return add(card('Start a deck'),
     make('p', '', 'From an idea, from a document, or from a deck you already have.'),
     add(make('div', 'bar'), ...ROUTES.map(([route, title]) => capsule(title, '',
-      () => openNew(route), 'start ' + route))));
+      (event) => openNew(route, false, event?.currentTarget), 'start ' + route))));
 }
 
 // The contact sheet of a deck, small: one picture of all its slides.
@@ -1647,7 +1690,7 @@ function drawHome(fresh) {
   // finished.
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
     ['head', [], () => pageHead(HOME_LEDE)]];
-  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:()=>openNew(),discarded:()=>{view.draft=null;drawHome(true);}})]);
+  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:(event)=>openNew(undefined,false,event?.currentTarget),discarded:()=>{view.draft=null;drawHome(true);}})]);
   if (!every().length) {
     parts.push(['invite', [Boolean(view.sheet)], invitation],
       ['updates', [upkeepOf()], updatesCard]);
@@ -3575,7 +3618,7 @@ function wholeDeckSays(last) {
 function sayAgain(problem, pressed) {
   const slides = sayingSlides();
   if (!slides.length) {
-    say(problem, 'Mark a slide with “Change what it says” first.');
+    say(problem, 'Choose “Change what it says” for a slide first.');
     return;
   }
   decide('changes', '', problem, pressed, { direction_target: 'gate:outline', slides });
@@ -3595,33 +3638,29 @@ function tellMarks(status, go) {
   if (go) go.hidden = !saying.length;
 }
 
-// The two marks on one built slide: drawn again as it is, or its words changed. A slide
-// takes one or the other, so the mark set last puts the other away.
+// What happens to one built slide, as one exclusive choice (ui-kit.md): no change, drawn
+// again (with an optional note), or, where the deck has an outline, its words changed. It is
+// a mark for a later request, never sent by itself: Ask for changes or Change what they say
+// sends it.
+const SLIDE_MARKS = ['No change', 'Draw it again', 'Change what it says'];
 function slideMarks(one, held, repaint, saying) {
   const marked = held.marked.includes(one.number);
-  const parts = [chip('Ask for changes to this slide', marked, (on) => {
-    held.marked = held.marked.filter((number) => number !== one.number);
-    if (on) {
-      held.marked.push(one.number);
+  const at = marked ? 1 : saying && held.saying.includes(one.number) ? 2 : 0;
+  const parts = [choice('What happens to slide ' + one.number,
+    SLIDE_MARKS.slice(0, saying ? 3 : 2), at, (index) => {
+      held.marked = held.marked.filter((number) => number !== one.number);
       held.saying = held.saying.filter((number) => number !== one.number);
-    }
-    repaint();
-  }, 'mark ' + one.number)];
+      if (index === 1) held.marked.push(one.number);
+      if (index === 2) {
+        held.saying.push(one.number);
+        delete held.slideNotes[String(one.number)];
+      }
+      repaint();
+    }, 'mark ' + one.number)];
   if (marked) {
     parts.push(field('slide-note-' + one.number, 'What should change on slide ' + one.number,
       held.slideNotes, String(one.number), { long: true, limit: LINE, hint: 'Optional: it goes '
         + 'to the worker that draws this slide again, with your note.' }));
-  }
-  if (saying) {
-    parts.push(chip('Change what it says', held.saying.includes(one.number), (on) => {
-      held.saying = held.saying.filter((number) => number !== one.number);
-      if (on) {
-        held.saying.push(one.number);
-        held.marked = held.marked.filter((number) => number !== one.number);
-        delete held.slideNotes[String(one.number)];
-      }
-      repaint();
-    }, 'say ' + one.number));
   }
   return parts;
 }
@@ -4265,13 +4304,15 @@ function classifyPanel(gate, readonly) {
       then.hidden = !held.wrong;
     };
     tell();
-    add(node, add(make('div', 'field'), chip('That’s wrong', held.wrong, (on) => {
-      held.wrong = on;
-      tell();
-      // Approve, in the toolbar, says what it now does.
-      paintDeck(false);
-    }, 'wrong'), make('p', 'quiet field-hint', 'Press it if this is really '
-      + KINDS[other] + '. Your word is taken: it is not asked again.')), then);
+    // Which kind Approve takes it as, named, as one exclusive choice (ui-kit.md).
+    add(node, choice('Take it as', [capital(KINDS[verdict]), capital(KINDS[other])],
+      held.wrong ? 1 : 0, (index) => {
+        held.wrong = index === 1;
+        tell();
+        // Approve, in the toolbar, says what it now does.
+        paintDeck(false);
+      }, 'wrong', 'Choose ' + KINDS[other] + ' if that is what it really is. Your word is '
+        + 'taken: it is not asked again.'), then);
   }
   return add(node, ...gateSaid(gate));
 }
@@ -6574,20 +6615,34 @@ async function copyAsNew(brief, key, pressed) {
   const turn = view.turn;
   const store = intakeStore();
   await restoreIntake();
-  if (store.saved && !confirm(COPY_REPLACES)) return;
+  if (store.saved && !await askedBeside(pressed, (place) => Drafting.confirmInPlace(pressed,
+    { message: COPY_REPLACES, action: 'Discard and copy', keep: 'Keep the saved form', place }))) return;
+  if (turn !== view.turn) return;
+  // Where the copy ends on this screen, the focus goes back to the control that asked for it
+  // (or, where a redraw built it again, the one with its key), never left on the page.
+  const back = () => {
+    if (turn !== view.turn) return;
+    if (pressed.isConnected && !pressed.hidden) pressed.focus({ preventScroll: true });
+    else focusKey(key);
+  };
   pressed.disabled = true;
-  let found;
+  let found, failed = null;
   try {
     found = await send('deck-copy', { path: brief.path });
   } catch (failure) {
-    toast(failure.message + (failure.kind === 'stopped' ? '' : ' Nothing was copied.'));
-    return;
+    failed = failure;
   } finally {
     pressed.disabled = false;
+  }
+  if (failed) {
+    toast(failed.message + (failed.kind === 'stopped' ? '' : ' Nothing was copied.'));
+    back();
+    return;
   }
   if (turn !== view.turn) return;
   if (store.saved && !await store.discard()) {
     toast(store.problem || 'The unfinished form could not be discarded. Nothing was copied.');
+    back();
     return;
   }
   view.draft = copiedDraft(found, brief.title || 'Untitled');
@@ -7958,7 +8013,7 @@ function begin() {
 function deskParts() {
   return {
     view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout, copiedNote, intakeStore, narrow,
-    state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
+    state, button, capsule, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
     send, ask, toast, dropToast, deckToast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
     workersCard, activityLogCard, researchActivity,
