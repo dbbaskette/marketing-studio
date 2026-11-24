@@ -287,8 +287,9 @@ def fixed_url(value):
 
 @dataclass(frozen=True)
 class Route:
-    """One destination a studio sends to: a host and a path pattern, each matched whole
-    (the path as sent, before any decoding), and the methods it uses there."""
+    """One destination a studio sends to: a host, matched exactly ('*.example.com' is
+    example.com or any name under it), a path pattern matched whole against the path as
+    sent (before any decoding), and the methods it uses there."""
 
     host: str
     path: str
@@ -337,10 +338,19 @@ def allowed(url, method, routes):
         return False
     return any(
         method in route.methods
-        and re.fullmatch(route.host, parsed.netloc)
+        and _host(route.host, parsed.netloc)
         and re.fullmatch(route.path, parsed.path)
         for route in routes
     )
+
+
+def _host(wanted, netloc):
+    if wanted.startswith("*."):
+        return netloc == wanted[2:] or (
+            netloc.endswith(wanted[1:])
+            and re.fullmatch(r"(?:[A-Za-z0-9-]+\.)+", netloc[: -len(wanted[2:])]) is not None
+        )
+    return netloc == wanted
 
 
 def opener():
