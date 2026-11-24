@@ -1488,9 +1488,7 @@ class Engine(Reviewing):
         if self.plan_first and self.outline_first and (not self.parallel_research
                 or not research_parallel.execution(self.research().runtime)):
             raise WorkspaceError('The outline-first flow needs Harness Research 1.1 collection support. Install a compatible helper explicitly before starting.')
-        # A training on the desk has no review level: none is saved with it, and the shared
-        # one is never written from its form.
-        desk = drafts.on_desk(form)
+        # Only a desk training gets this far: every other runner start was refused above.
         # Documents pinned from the library are research's own material besides the editor's.
         selected_sources = research_sources.prepare_start(space.root, research_inputs,
                                                           primary=bool(library)) if research_inputs else None
@@ -1513,9 +1511,10 @@ class Engine(Reviewing):
             record = new_record(agent, model, chosen, form['source_scope'], effort,
                                 form.get('research_from'))
             record['research_questions'] = form.get('research_questions') or []
-            if desk:
-                record.pop('review_policy')
-                record.pop('review_layout')
+            # A training on the desk has no review level: none is saved with it, and the
+            # shared one is never written from its form.
+            record.pop('review_policy')
+            record.pop('review_layout')
             root = pipeline.create(space, form)
             try:
                 if taken:
@@ -1524,27 +1523,24 @@ class Engine(Reviewing):
                     self.documents.add_snapshots(root, taken)
                     (root / pipeline.ADDED).parent.mkdir(parents=True, exist_ok=True)
                     (root / pipeline.ADDED).write_text(home.now() + '\n', encoding='utf-8')
-                if review_policy.level(record) != 'step_by_step':
-                    record['schema'] = 2
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
                 # What the deck says is approved before anything is drawn, unless the form
                 # turned that off. A walkthrough of each slide's design does not turn it
                 # off: on the desk nothing else would stop for the person before drawing.
-                if desk and self.content_first and form.get('slide_text_review'):
+                if self.content_first and form.get('slide_text_review'):
                     record['deck_content'] = deck_content.PROTOCOL
-                if desk and not form.get('flags_review'):
+                if not form.get('flags_review'):
                     # Flags the independent check leaves are decided by an assistant, so
                     # the training carries on; the form can ask to decide them yourself.
                     record['research_flags'] = 'assistant'
-                if desk:
-                    record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
-                        'jobs': [], 'updates': {}, 'findings_before': None})
+                record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
+                    'jobs': [], 'updates': {}, 'findings_before': None})
                 parallel = research_parallel.execution(self.research().runtime) if contract and self.parallel_research else None
                 if parallel:
                     record.update(schema=research_parallel.RECORD_SCHEMA, research_execution=parallel)
-                if desk and self.plan_first:
+                if self.plan_first:
                     record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
                     if self.outline_first:
                         record.update(schema=outline_first.RECORD_SCHEMA,
@@ -1570,8 +1566,6 @@ class Engine(Reviewing):
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
-                if not desk:
-                    session['review_policy'] = record['review_policy']
                 workspace.store(root, session)
                 record['driver'] = team.claim(space)
                 self._tried(record, 'intake', home.now(), 0.0, 'kept')
@@ -1585,19 +1579,9 @@ class Engine(Reviewing):
         if _source_start is not None:
             _source_start.keep({'path': str(root), 'id': root.name, 'gates': 1 if training_plan.enabled(record) else 0})
         self.wake(root)
-        needs = self.deck_needs()
-        drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
-            and not needs['design_update' if form.get('walkthrough') else 'update'] \
-            and not needs['old_brand']
-        # Balanced stops three times: the research plan, the direction, the finished materials,
-        # or twice when the plan is written from the form; Automatic draft once, at the
-        # finished materials. Each deck drawn here stops too.
-        chosen = review_policy.level(record)
-        decks = max(1, len(form['levels'])) if drawn else 0
-        balanced = 2 if pipeline.planned_from_form(record) else 3
-        return {'path': str(root), 'id': root.name, 'gates': (
-            (1 if training_plan.enabled(record) else 0) if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
-            else (balanced if chosen == 'balanced' else 1) + decks)}
+        # A desk training stops for the person only at its teaching plan, when it has one.
+        return {'path': str(root), 'id': root.name,
+                'gates': 1 if training_plan.enabled(record) else 0}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done

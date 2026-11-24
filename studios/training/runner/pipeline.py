@@ -665,17 +665,6 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     return form
 
 
-def gates(form: dict, deck: bool = False) -> int:
-    """The fewest times a training made from this form asks for a decision: the research
-    plan and the research, and a blueprint, a guide and a brief for each level. `deck`
-    says a deck will be made here, which adds three for each level: its outline, its look
-    and the deck. Each practice scenario adds one, and nobody knows how many there are until
-    a blueprint names them."""
-    materials = form.get('materials', MATERIALS)
-    per_level = 1 + sum(stage in materials for stage in ('document', 'brief'))
-    return 2 + (per_level + (3 if deck else 0)) * max(1, len(form['levels']))
-
-
 def intake_text(form: dict) -> str:
     """The form's answers as intake.md: the headings intake has, and nothing else."""
     answers = {
@@ -1663,13 +1652,6 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
 
 
 FROM_FORM = 'Research plan: written from your form'
-
-
-def planned_from_form(record: dict) -> bool:
-    """Whether this training's research plan is written from its form, with no stop of its
-    own: research done as one report and one check, from the person's documents alone."""
-    return bool(record.get('research_contract')) and (
-        (record.get('documents') or {}).get('scope') == 'supplied-only')
 
 
 def plan_from_form(root: Path, found: Survey, asked) -> str:
