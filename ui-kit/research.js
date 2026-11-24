@@ -276,6 +276,9 @@ const StudioResearch = (() => {
       const focused = this.node.contains(document.activeElement) ? document.activeElement.dataset.key : '';
       if (focused) this.focused = focused;
       const restore = focused || (document.activeElement === document.body ? this.focused : '');
+      // Where the caret was in a field being typed in, so a redraw keeps the person's place.
+      const typing = focused && document.activeElement && typeof document.activeElement.selectionStart === 'number'
+        ? [document.activeElement.selectionStart, document.activeElement.selectionEnd, document.activeElement.selectionDirection || 'none'] : null;
       const opened = Array.from(this.node.querySelectorAll('details[open][data-key]')).map(n => n.dataset.key);
       const scroll = this.node.scrollTop;
       let keptListScroll = 0;
@@ -328,7 +331,7 @@ const StudioResearch = (() => {
             this.text = ''; this.pasting = false; this.render();
             // The submit was removed with the pasted-text fields. Return to a stable
             // source action, rather than leaving keyboard focus on the page body.
-            Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === 'research-paste')?.focus();
+            Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === 'research-paste')?.focus({ preventScroll: true });
           }
         }, 'research-add-text'));
       }
@@ -426,7 +429,16 @@ const StudioResearch = (() => {
       if (this.a.library && this.a.libraryFull && this.a.libraryFull()) { const more = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-library'); if (more) more.disabled = true; }
       if (this.problem) { const reload = Array.from(this.node.querySelectorAll('button')).find(n => n.dataset.key === 'research-reload'); if (reload) reload.disabled = this.busy; }
       for (const detail of this.node.querySelectorAll('details[data-key]')) detail.open = opened.includes(detail.dataset.key);
-      if (restore) { const target = Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === restore); if (target && !target.disabled) target.focus(); }
+      if (restore) {
+        const target = Array.from(this.node.querySelectorAll('[data-key]')).find(n => n.dataset.key === restore);
+        if (target && !target.disabled) {
+          target.focus({ preventScroll: true });
+          if (typing && restore === focused && typeof target.setSelectionRange === 'function') {
+            const end = String(target.value || '').length;
+            try { target.setSelectionRange(Math.min(typing[0], end), Math.min(typing[1], end), typing[2]); } catch (error) { /* a field with no caret */ }
+          }
+        }
+      }
       this.node.scrollTop = scroll;
     }
   }

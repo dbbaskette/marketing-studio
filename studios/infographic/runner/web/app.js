@@ -236,7 +236,8 @@ function free(node){node.dataset.free='';return node;}
 function beginWork(label, elapsed=0, id=null) {
   const owner={label,id,started:Date.now()-elapsed*1000,connected:true,detail:id?WAITING:'This can take a few minutes. Your saved work is kept.',title:held?.project.id===id?held.project.brief.title:''};
   if(id)running.set(id,owner);else reading=owner;
-  if(!workTimer)workTimer=setInterval(paintWork,1000);
+  // The elapsed clock ticks only while the page is shown; it is drawn again on return.
+  if(!workTimer)workTimer=setInterval(()=>{if(!Drafting.hidden())paintWork();},1000);
   paintWork();return owner;
 }
 function endWork(owner) {
@@ -245,6 +246,7 @@ function endWork(owner) {
   if(!running.size&&!reading){clearInterval(workTimer);workTimer=null;}
   paintWork();
 }
+document.addEventListener('visibilitychange',()=>{if(!Drafting.hidden()&&workTimer)paintWork();});
 function connectionUncertain(owner) { owner.connected=false;owner.label='Checking the connection';owner.detail='The connection was interrupted. Work may still be running on this computer. No request was repeated.';paintWork(); }
 // Briefly locks every control, navigation too, for a short sheet-bound request.
 function lockControls() {
@@ -271,6 +273,7 @@ function progressNotice(progress,owner,id) {
 async function recoverActivity(id,owner) {
   let failures=0;
   for(;;){
+    await Drafting.shown();   // a hidden tab asks nothing; it asks at once when shown again
     try{const progress=await request('/api/activity?id='+encodeURIComponent(id));failures=0;progressNotice(progress,owner,id);
       if(progress.activity?.state!=='running')return progress.activity;
     }catch(f){connectionUncertain(owner);if(++failures>=5)throw Error('The connection could not be restored. Work may still be running. Reopen this infographic to check before retrying.');}
@@ -388,10 +391,10 @@ function returnToPlace(id){
   for(const summary of $('main').querySelectorAll('details > summary'))if(open.has(summary.textContent))summary.parentElement.open=true;
   if(typeof place.y==='number')requestAnimationFrame(()=>requestAnimationFrame(()=>scrollTo(0,place.y)));
 }
-let homeTimer=null;
+let homeTimer=null,homeWaiting=false;
 async function home() {
   resetPicture(); held = null; error(''); remember('home');
-  heading('Infographics', button('New infographic', () => startNewIntake(), true),button('Team repository',teamSheet));
+  heading('Infographics', button('New infographic', event => startNewIntake(event.currentTarget,$('main')), true),button('Team repository',teamSheet));
   delete $('main').dataset.home;
   await drawHome();
 }
@@ -400,6 +403,8 @@ async function home() {
 async function drawHome() {
   clearTimeout(homeTimer);
   if (screen !== 'home') return;
+  // A hidden tab reads nothing: Home is read again as soon as it is shown.
+  if (Drafting.hidden()) { if (!homeWaiting) { homeWaiting = true; await Drafting.shown(); homeWaiting = false; void drawHome(); } return; }
   try {
     const data = await request('/api/projects');
     await privateIntake.load();
@@ -416,7 +421,7 @@ async function drawHome() {
     });
     const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
     $('main').replaceChildren(intro, add(make('div','ig-project-list'),...cards));
-    const unfinished=privateIntake.resumeCard({resume:()=>newSheet(),fresh:()=>startNewIntake(),discarded:()=>{resetIntake();void home();}});if(unfinished)$('main').prepend(unfinished);
+    const unfinished=privateIntake.resumeCard({resume:()=>newSheet(),fresh:event=>startNewIntake(event?.currentTarget),discarded:()=>{resetIntake();void home();}});if(unfinished)$('main').prepend(unfinished);
     if (!cards.length&&!unfinished) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.')));
     if (cards.some(node => node.dataset.working !== undefined)) homeTimer = setTimeout(drawHome, 2000);
   } catch (failure) { error(failure.message); }
@@ -425,7 +430,7 @@ async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a s
 // In pieces, so a large source does not hold the page still while it is prepared.
 function encoded(raw) { let binary=''; for (let at=0; at<raw.length; at+=0x8000) binary += String.fromCharCode.apply(null, raw.subarray(at, at+0x8000)); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
-async function startNewIntake(){if(!await privateIntake.startFresh())return;resetIntake();intakeLoaded=true;await newSheet();}
+async function startNewIntake(control=null,place=null){if(!await privateIntake.startFresh(control,place))return;resetIntake();intakeLoaded=true;await newSheet();}
 async function newSheet() {
   try{if(!intakeLoaded){const saved=await privateIntake.load();if(saved)Object.assign(draft,saved);intakeLoaded=true;}await keepIntake();}catch(failure){error(failure.message);return;}
   error('');
@@ -553,7 +558,7 @@ async function newSheet() {
   });
   const saved=make('p','quiet field-hint');saved.dataset.intakeStatus='true';saved.setAttribute('role','status');
   for(const event of ['input','change'])form.addEventListener(event,()=>privateIntake.queue(draft));
-  const discard=button('Discard draft',async()=>{if(!confirm('Discard this unfinished form? Captured sources and any saved infographic stay in place.'))return;if(await privateIntake.discard()){resetIntake();closeSheet();void home();}else problem.textContent=privateIntake.problem;});
+  const discard=button('Discard draft',async()=>{if(!await Drafting.confirmInPlace(discard,{message:'Discard this unfinished form? Captured sources and any saved infographic stay in place.',action:'Discard draft'}))return;if(await privateIntake.discard()){resetIntake();closeSheet();void home();}else problem.textContent=privateIntake.problem;});
   add(form,problem,saved,draft.created||draft.request_id?button('Open the saved draft',async()=>{await keepIntake(false);closeSheet();void home();openProject(draft.created?.id||draft.request_id);}):null,
     foot(go,draft.step?button('Back',async()=>{draft.step--;await keepIntake();closeSheet();newSheet();}):null,
       button('Save and close',async()=>{try{await keepIntake(false);closeSheet();void home();}catch(failure){problem.textContent=failure.message;}}),discard));
@@ -1371,11 +1376,16 @@ async function researchSheet(){
   const primary=held.project.sources.length>0;
   const editor=new StudioResearch.Editor({request:sent=>request('/api/research-sources',sent),primarySummary:primary?'Your captured infographic material is included. Add any additional references here.':''});
   const control=async action=>{try{const result=await request('/api/research-control',{id:ident,action});if(action==='preview'){sourceImportSheet(result);return;}await poll();}catch(f){problem.textContent=f.message;}};
+  // One read at a time, and none while the tab is hidden: it reads again as soon as it is
+  // shown. Each answer is drawn in place, keeping what the person opened, focused or scrolled.
+  let pollTimer=null,pollWaiting=false;
   async function poll(){
+    clearTimeout(pollTimer);pollTimer=null;
     if(!$('sheet').open||!$('sheet-body').contains(status))return;
+    if(Drafting.hidden()){if(!pollWaiting){pollWaiting=true;await Drafting.shown();pollWaiting=false;void poll();}return;}
     try{
       const state=await request('/api/research-status?id='+encodeURIComponent(ident));
-      status.replaceChildren();
+      const parts=[];
       if(state){
         // What each research assistant is doing now, shown in the research panel.
         const lines=(job,since)=>request('/api/activity-log?'+new URLSearchParams({id:ident,job,since}));lines.scope='research '+ident;
@@ -1386,10 +1396,11 @@ async function researchSheet(){
         }else if(state.state==='complete')hooks.use=()=>control('preview');
         else if(state.state==='paused')hooks.resume=()=>control('resume');
         else if(['failed','stopped'].includes(state.state))hooks.retry=()=>control('retry');
-        status.append(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
-        if(state.problem)status.append(make('p','problem',state.problem));
-        if(['working','pausing','stopping'].includes(state.state))setTimeout(poll,1500);
+        parts.push(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
+        if(state.problem)parts.push(make('p','problem',state.problem));
       }
+      Drafting.redraw(status,...parts);
+      if(state&&['working','pausing','stopping'].includes(state.state)){clearTimeout(pollTimer);pollTimer=setTimeout(poll,1500);}
     }catch(f){problem.textContent=f.message;}
   }
   const start=button('Start research',async()=>{

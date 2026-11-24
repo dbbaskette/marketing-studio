@@ -12,7 +12,8 @@ class Node{
  contains(n){return this===n||this.children.some(c=>c.contains(n));}
  get childNodes(){return this.children;}
  querySelectorAll(selector){return all(this).filter(n=>selector.split(',').some(s=>s.trim()==='[data-key]'?!!n.dataset.key:s.trim()==='details[open][data-key]'?n.tagName==='details'&&n.open&&n.dataset.key:s.trim()==='details[data-key]'?n.tagName==='details'&&n.dataset.key:n.tagName===s.trim()));}
- focus(){document.activeElement=this;}
+ focus(options){document.activeElement=this;document.focusedWith=options;}
+ setSelectionRange(start,end,direction){this.selectionStart=start;this.selectionEnd=end;this.selectionDirection=direction;}
 }
 function all(n){return n.children.flatMap(c=>[c,...all(c)]);}
 document={createElement:t=>new Node(t),createTextNode:t=>Object.assign(new Node('#text'),{textContent:t}),body:new Node('body'),activeElement:null};document.activeElement=document.body;
@@ -42,6 +43,12 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.equal(editor.urls,'draft link stays');assert.equal(editor.text,'Unsubmitted source text');assert.equal(editor.choice().web,true);assert.equal(document.activeElement.dataset.key,'research-external');
  key(editor,'research-add-text').focus();await key(editor,'research-add-text').listeners.click();await settle();
  assert.equal(document.activeElement.dataset.key,'research-paste','Successful capture returns to a stable source action');
+ // A redraw while typing keeps the field, the caret and the page where they were.
+ {const links=key(editor,'research-urls');links.value='https://example.invalid/typed';links.focus();Object.assign(links,{selectionStart:8,selectionEnd:12,selectionDirection:'forward'});
+  editor.render();const again=key(editor,'research-urls');
+  assert.notEqual(again,links,'the field was drawn again');assert.equal(document.activeElement,again,'focus stays in the field');
+  assert.deepEqual([again.selectionStart,again.selectionEnd,again.selectionDirection],[8,12,'forward'],'the caret stays where it was');
+  assert.equal(document.focusedWith?.preventScroll,true,'restoring focus does not scroll the page');}
  assert.ok(!requests.some(r=>['start','generate','publish','google-write'].includes(r.action)));
  state.sources[0].status='needs-attention';editor.value=state;assert.equal(editor.valid(),false);state.sources[0].status='excluded';assert.equal(editor.valid(),true);
  // Add a folder: one field for a folder path or a Google Drive folder link, then what the scan added and each document it skipped, with the reason.
