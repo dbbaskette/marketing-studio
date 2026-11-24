@@ -9814,6 +9814,9 @@ function linkToken() {
 // Continue in another studio: Marketing Studio opens this page with `library=<id>@<revision>`
 // in its fragment. It is read once, as the page begins, and checked here again: a Document
 // Library ID and a revision from 1 to 1000, or nothing.
+// This page load, to tell a refusal said now from one kept with a saved form.
+const PAGE_LOAD = String(Date.now()) + '-' + String(Math.random()).slice(2);
+
 function forgetLibraryLink() {
   try {
     const params = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
@@ -9850,8 +9853,10 @@ async function openFromLibrary(pick) {
   if (!view.draft) view.draft = newDraft();
   const draft = view.draft;
   if (why) {
+    // Said in this page load only: a form kept and reopened later does not say it again.
     draft.libraryStart = { problem: 'The Document Library item you chose could not be opened: '
-      + String(why).replace(/[.\s]+$/, '') + '. Start as usual, or choose Add from library.' };
+      + String(why).replace(/[.\s]+$/, '') + '. Start as usual, or choose Add from library.',
+    load: PAGE_LOAD };
   } else {
     const title = read.title || 'Untitled';
     draft.library = [...startPicks(draft).filter((one) => one.id !== pick.id),
@@ -9886,7 +9891,9 @@ function continueAction(doc, name) {
 function libraryStartNote(draft) {
   const start = draft && draft.libraryStart;
   if (!start) return null;
-  if (start.problem) return callout('', make('p', 'problem', start.problem));
+  if (start.problem) {
+    return start.load === PAGE_LOAD ? callout('', make('p', 'problem', start.problem)) : null;
+  }
   const still = startPicks(draft).some((one) => one.id === start.id);
   return callout('', make('p', '', 'Starting from: ' + start.title + ', from the Document '
     + 'Library' + (still ? '' : ' (removed from the sources)') + '.'), make('p', 'quiet',
