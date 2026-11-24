@@ -24,9 +24,9 @@ These are upstream GitHub paths, not local copies. The suggested starting point 
 ## Collected local package
 
 All five listed entries are now collected in
-[`skills/blog-writing-toolkit/`](skills/blog-writing-toolkit/SKILL.md), with
-supporting files and pinned upstream provenance. Start at the small entry point
-or load an individual module from `references/modules/` for progressive disclosure.
-See [`PACKAGE.md`](PACKAGE.md) for usage and the portable archive. The original
-upstream skill documents are preserved as `SOURCE.md`; the package notes identify
+[`skills/blog-studio/references/upstream/`](skills/blog-studio/references/upstream/), with
+pinned upstream provenance in
+[`sources.lock.json`](skills/blog-studio/sources.lock.json). Blog Studio's own
+modules are in `skills/blog-studio/references/modules/`. The original upstream
+skill documents are preserved as `SOURCE.md`; the package notes identify
 additional upstream skills, scripts, and agents that are outside this shortlist.

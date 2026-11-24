@@ -41,6 +41,12 @@ PIPELINE: tuple[Step, ...] = (
        'Putting the findings into a report'),
     _s('gate:research', 'research', 'gate', 'Approve the research',
        'Waiting for you to approve the research findings'),
+    # A Selected changes deck upgraded to Redesign, keep content (run['upgraded']): it waits
+    # for Start on a step that states the price, then reads the deck as it was at the upgrade.
+    _s('gate:redesign', 'classify', 'gate', 'Start the redesign',
+       'Waiting for you to start the redesign'),
+    _s('reinventory', 'classify', 'code', 'Look through your deck as it is now',
+       'Listing and picturing every slide of your deck as it is now'),
     _s('extract', 'outline', 'agent', 'Pull out your outline',
        'Taking the outline straight from your deck'),
     _s('outline', 'outline', 'agent', 'Draft the outline',
@@ -108,6 +114,10 @@ def _has(run: dict, name: str) -> bool:
         return route == 'document'
     if name == 'inventory':
         return existing
+    if name in ('gate:redesign', 'reinventory'):
+        # Only a deck upgraded from Selected changes: one started at Redesign, keep content
+        # from the start has neither.
+        return existing and level == 'redesign' and isinstance(run.get('upgraded'), dict)
     if name == 'extract':
         return existing and level in _EXISTING_EXTRACT
     if name == 'outline-check':

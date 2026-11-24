@@ -4,6 +4,9 @@ shell_page_check.js drives deck_web/shell.js: a studio's own work found by name 
 with Return, the focus given back to the opener when the palette is put away (and not when
 a command takes the person on), a pointer that marks a row without scrolling the list, and a
 count of the results past the first forty. Each studio's own list is checked in its suite.
+It checks the parts of a project (StudioShell.parts) too: groups under visible headings, each
+part's name then its state, the part shown marked and entered by Tab, the arrow keys, Home
+and End, a choice keeping the focus, and the one control a narrower window shows.
 It also checks that two of deck_web/deck-panels.js's pickers of looks never share an id.
 """
 import shutil

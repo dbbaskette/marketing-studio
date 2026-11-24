@@ -34,6 +34,40 @@ def main():
             if '--desk' in sys.argv:
                 root = case.start_desk(look='default')
                 case.waiting(root)
+            if '--selected' in sys.argv or '--selected-again' in sys.argv:
+                # A deck started at Selected changes, on the desk with slide 2 changed: it offers
+                # Upgrade to Redesign, keep content. Upgrading it, then Start on its priced step,
+                # runs the redesign with the stand-in assistant jobs. With --selected-again, a
+                # first such deck is upgraded and redrawn before it, so this computer has a
+                # record of how long a redesign's steps take, which the priced step says.
+                from runner_support import read_word_for_word
+                from test_desk_words import planned
+                for again in range(2 if '--selected-again' in sys.argv else 1):
+                    case.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+                    root = case.existing_deck('automatic', 'selected', flow='desk',
+                                              selected='Shorten the words on slide 2')
+                    case.on_desk(root)
+                    if again == 0 and '--selected-again' in sys.argv:
+                        case.engine.desk_upgrade(root, case.desk_view(root)['expected'])
+                        case.engine.desk_redesign_start(root)
+                        case.pick_look(root)
+                        case.on_desk(root)
+                        case.workers.queued['outline'] = [read_word_for_word(case)] * 4
+            if '--saved' in sys.argv:
+                # A deck the earlier gated flow saved, waiting at its deck: it opens on the desk.
+                root = case.gated(title='Saved gated deck')
+            if '--saved-read-only' in sys.argv:
+                # A deck the earlier gated flow saved whose record the runner cannot read (its
+                # review level is missing), shown as a read-only record. It is served on its
+                # own: an unreadable record stops the shared worker scan, and with it the
+                # opening of every other deck in the workspace on the desk.
+                unread = root = case.saved_start(title='Unreadable saved deck')
+                from runner import decks
+                record = decks.read_run(unread)
+                record['schema'] = 2
+                record.pop('review_policy', None)
+                decks.write_run(unread, record)
+                print(json.dumps({'read_only': str(unread)}), file=sys.stderr, flush=True)
         web = server.Desk(page=lambda port: page.RunnerPage(port, case.engine))
         web.start()
         print(json.dumps({'url': web.url, 'path': str(root)}), flush=True)

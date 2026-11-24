@@ -26,10 +26,16 @@ characters and 60 sections; outline briefs to 4,000 characters each. Images reta
 the existing desk limits. The checked local scope is bounded to 2,000 files and
 32 MiB; original session/run and desk interpretation are each at most 1 MB.
 
+This covers a waiting outline, draft, review or handoff, an approved outline before
+drafting, waiting ideas, an author's outline, a supplied manuscript's review or
+revision, a run continued without research, a paused, stopped or failed page run and
+a review the manuscript editor started. Finished outlines and ideas keep Develop.
+
 Brief-only starts, early research or unchosen angles without usable materials,
 unstructured/list outlines, missing declared documents or pins, unreadable or
-unsupported records, links, active or unsettled jobs, older Team Hub contexts and
-oversized work refuse with the saved flow still available. Research, reviews and
+unsupported records (including runs saved with a research execution record), links,
+active or unsettled jobs, older Team Hub contexts and oversized work refuse with the
+saved flow still available. Research, reviews and
 handoff stay as historical records; gaps remain unresolved. These early formats
 retain their saved-flow commands until a supported lossless transform is proven.
 

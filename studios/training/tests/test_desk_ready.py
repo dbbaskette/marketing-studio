@@ -7,7 +7,7 @@ material is said before and after; and the topics review is the one thing Home r
 while it is open.
 
 The tests named row_200 to row_204 cover those rows of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Every library is a
+docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md. Every library is a
 disposable folder (STUDIOS_LIBRARY, set by runner_support), every worker is scripted, and the
 page journeys run the page's own scripts in page_harness.js against answers the real runner
 gave. Nothing reaches Google, an assistant or the network.
@@ -295,7 +295,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
             {'click': 'Mark every material ready'}, {'snapshot': 'sheet'},
             {'click': 'Cancel'}, {'snapshot': 'cancelled'},
             # Read here, the guide is opened in the version shown; Escape changes nothing too.
-            {'click': 'Guide · Draft'}, {'click': 'Mark every material ready'},
+            {'click': 'Guide, Draft'}, {'click': 'Mark every material ready'},
             {'snapshot': 'read'}, {'key': 'Escape'}, {'snapshot': 'escaped'}])
         sheet = result['snapshots']['sheet']
         self.assertIn('Mark every material ready?', sheet['sheet'])
@@ -336,7 +336,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         # On a phone the toolbar's words are short, and the name says what it marks.
         # Each is read first: only what was opened is marked.
         result = self.journey(answers, [
-            {'click': 'Guide · Draft'}, {'click': 'Brief · Draft'},
+            {'click': 'Guide, Draft'}, {'click': 'Brief, Draft'},
             {'click': 'Mark all ready'}, {'click': 'Mark 3 materials ready'},
             {'snapshot': 'marked'}, {'click': 'Undo'}, {'snapshot': 'undone'},
             # The toast's leaving, later, never takes the focus Undo put back.
@@ -367,7 +367,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
             'drafts/reviewed-ready', {'path': self.path, 'level': '', 'scope': 'level',
                                       'seen': seen})]
         result = self.journey(answers, [
-            {'click': 'Guide · Draft'}, {'click': 'Brief · Draft'},
+            {'click': 'Guide, Draft'}, {'click': 'Brief, Draft'},
             {'click': 'Mark every material ready'}, {'click': 'Mark 3 materials ready'},
             {'snapshot': 'marked'}, {'click': 'Home'}, {'snapshot': 'home'}])
         self.assertIn('Undo', result['snapshots']['marked']['buttons'])
@@ -385,7 +385,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         answers['POST /api/drafts/draft'] = [self.read_post('drafts/draft',
                                                             {'path': self.path, 'seen': seen})]
         result = self.journey(answers, [
-            {'click': 'Guide · Ready'}, {'snapshot': 'ready'}, {'click': 'Return to draft'},
+            {'click': 'Guide, Ready'}, {'snapshot': 'ready'}, {'click': 'Return to draft'},
             {'snapshot': 'returned'}], narrow=True)
         shot = result['snapshots']['ready']
         self.assertIn('Kept in the Document Library as Markdown, revision 1. Return to draft '
@@ -396,7 +396,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         said = 'The Document Library keeps revision 1 of this guide until you mark it ready again.'
         self.assertIn('Guide is a draft again. ' + said, shot['toasts'])
         self.assertIn(said, shot['text'])
-        self.assertIn('Guide · Draft', shot['buttons'])
+        self.assertIn('Guide, Draft', shot['buttons'])
         self.assertEqual(shot['focus'], 'Mark ready')
         self.assertEqual(self.shelf(), kept)
 
@@ -415,7 +415,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
             'text': typed, 'session': 'journey'})
         answers['POST /api/drafts/save'] = [saved]
         result = self.journey(answers, [
-            {'click': 'Guide · Ready'}, {'click': 'Edit Guide'}, {'snapshot': 'editing'},
+            {'click': 'Guide, Ready'}, {'click': 'Edit Guide'}, {'snapshot': 'editing'},
             {'fill': 'Text of ' + part['heading'], 'value': typed}, {'timer': 'save'},
             {'snapshot': 'saved'}])
         warning = ('Saving a change returns this guide to Draft. The Document Library keeps '
@@ -428,7 +428,7 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
                       'Document Library keeps revision 1 of this guide until you mark it ready '
                       'again.', shot['toasts'])
         self.assertNotIn(warning, shot['text'])
-        self.assertIn('Guide · Draft', shot['buttons'])
+        self.assertIn('Guide, Draft', shot['buttons'])
         self.assertEqual(shot['fields']['Text of ' + part['heading']], typed)
         self.assertEqual(self.cards()[guide]['state'], 'draft')
         self.assertEqual(sorted(self.shelf().values()), [1])

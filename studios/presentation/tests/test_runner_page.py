@@ -42,7 +42,8 @@ GETS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/int
         '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview',
         '/api/desk-ready-context')
 DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/desk-deliver',
-              '/api/desk-draw-here', '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
+              '/api/desk-draw-here', '/api/desk-upgrade', '/api/desk-redesign-start',
+              '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
               '/api/desk-look-again', '/api/desk-words', '/api/desk-notes',
               '/api/desk-selection', '/api/desk-redraw-words', '/api/desk-discard',
               '/api/desk-restore', '/api/desk-research-again', '/api/desk-leave-out',

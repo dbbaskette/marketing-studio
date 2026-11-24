@@ -68,12 +68,12 @@ import unicodedata
 import zipfile
 import zlib
 from pathlib import Path
-from xml.parsers import expat
 
 import home
 from workspace import WorkspaceError
 
 from runner import worker_tools
+from studio_core import source_documents
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins. IS_ITEM(root) says whether a folder is one of the
@@ -101,7 +101,6 @@ KINDS = {'.txt': 'text (.txt)', '.md': 'Markdown (.md)', '.html': 'web pages (.h
 WORD_PART = re.compile(r'word/document\d*\.xml')
 WORD = ('http://schemas.openxmlformats.org/wordprocessingml/2006/main',
         'http://purl.oclc.org/ooxml/wordprocessingml/main')
-REPEATED = ('http://schemas.openxmlformats.org/markup-compatibility/2006', 'Fallback')
 # What harness-research takes a snapshot that starts this way for: a file that is not text.
 NOT_SNAPSHOTS = ('%PDF-', 'PK\x03\x04')
 
@@ -392,110 +391,6 @@ def _page(data: bytes) -> str:
     return worker_tools.page_text(data, 'text/html')[0]
 
 
-class _Body:
-    """The plain text of a Word document's XML, in the order it is written: a paragraph or
-    a heading is a line, a list item a line that starts with a dash, and a table row a line
-    with its cells set apart."""
-
-    def __init__(self):
-        self.lines: list[str] = []
-        self.open: list[list] = []          # paragraphs not yet ended: [its text, a list item]
-        self.cells: list[list[str]] = []    # table cells not yet ended, innermost last
-        self.rows: list[list[str]] = []     # table rows not yet ended, innermost last
-        self.in_text, self.skipping, self.chars = False, 0, 0
-
-    def read(self, xml: bytes) -> str:
-        parser = expat.ParserCreate(namespace_separator=' ')
-        parser.buffer_text = True
-        parser.StartElementHandler = self._start
-        parser.EndElementHandler = self._end
-        parser.CharacterDataHandler = self._data
-        # A Word document declares nothing. One that does is refused before anything it
-        # declares is read, so no entity is ever expanded or fetched.
-        parser.StartDoctypeDeclHandler = self._declared
-        parser.EntityDeclHandler = self._declared
-        parser.ExternalEntityRefHandler = self._declared
-        try:
-            parser.Parse(xml, True)
-        except expat.ExpatError:
-            raise _Unreadable(NOT_WORD) from None
-        return '\n'.join(self.lines)
-
-    def _declared(self, *args) -> None:
-        raise _Unreadable(NOT_WORD)
-
-    def _start(self, name: str, attributes: dict) -> None:
-        space, _, tag = name.rpartition(' ')
-        # A text box is written twice, once for older programs, and a moved passage is
-        # still written where it was moved from. Each is read once, where it is shown.
-        if self.skipping or (space, tag) == REPEATED or (space in WORD and tag == 'moveFrom'):
-            self.skipping += 1
-        elif space not in WORD:
-            return
-        elif tag == 'p':
-            self.open.append([[], False])
-        elif tag == 't':
-            self.in_text = True
-        elif tag in ('tab', 'ptab'):
-            self._add('\t')
-        elif tag in ('br', 'cr'):
-            self._add('\n')
-        elif tag == 'noBreakHyphen':
-            self._add('-')
-        elif tag in ('numPr', 'numId') and self.open:
-            # Numbering 0 is how a paragraph says it is not in the list its style puts it in.
-            self.open[-1][1] = tag == 'numPr' or attributes.get(f'{space} val') != '0'
-        elif tag == 'tc':
-            self.cells.append([])
-        elif tag == 'tr':
-            self.rows.append([])
-        elif tag == 'tbl' and not self.cells:
-            self.lines.append('')
-
-    def _end(self, name: str) -> None:
-        if self.skipping:
-            self.skipping -= 1
-            return
-        space, _, tag = name.rpartition(' ')
-        if space not in WORD:
-            return
-        if tag == 't':
-            self.in_text = False
-        elif tag == 'p':
-            self._paragraph()
-        elif tag == 'tc':
-            cell = ' '.join(part for part in self.cells.pop() if part)
-            (self.rows[-1] if self.rows else self.lines).append(cell)
-        elif tag == 'tr':
-            cells = self.rows.pop()
-            row = ' | '.join(cells) if any(cells) else ''
-            (self.cells[-1] if self.cells else self.lines).append(row)
-        elif tag == 'tbl' and not self.cells:
-            self.lines.append('')
-
-    def _data(self, text: str) -> None:
-        if self.in_text and not self.skipping:
-            self._add(text)
-
-    def _add(self, text: str) -> None:
-        if not self.open:
-            return
-        self.chars += len(text)
-        if self.chars > TEXT:
-            raise _Unreadable(TOO_LONG)
-        self.open[-1][0].append(text)
-
-    def _paragraph(self) -> None:
-        parts, item = self.open.pop()
-        text, self.in_text = ''.join(parts), False
-        if self.cells:
-            self.cells[-1].append(' '.join(text.split()))
-        elif item and text.strip():
-            self.lines.append('- ' + ' '.join(text.split()))
-        else:
-            self.lines += ['', *text.split('\n'), '']
-
-
 def _word(data: bytes) -> str:
     """The text of a Word file. It is a zip: one part of it is unpacked, the document
     itself, and no more of that than UNPACKED bytes, whatever size it says it is."""
@@ -517,7 +412,12 @@ def _word(data: bytes) -> str:
         raise _Unreadable(NOT_WORD) from None
     if len(xml) > UNPACKED:
         raise _Unreadable(TOO_BIG)
-    return _Body().read(xml)
+    # Read as lines: a paragraph or a heading is a line, a list item a line that starts
+    # with a dash, and a table row a line with its cells set apart.
+    try:
+        return source_documents.word_xml(xml, style='lines', spaces=WORD, most=TEXT).result()
+    except source_documents.WordUnreadable as failure:
+        raise _Unreadable(TOO_LONG if failure.why == 'long' else NOT_WORD) from None
 
 
 def _pdf(path: Path) -> str:

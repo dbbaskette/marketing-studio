@@ -2803,7 +2803,7 @@ class DeskPageTests(PageCase):
     """The desk's view and its decisions on the runner's page: GET /api/drafts and the
     POSTs under /api/drafts/. A desk training refuses the review routes, and a saved one
     refuses the desk's. Tests named row_159 cover that row of the state-transition matrix
-    in docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
+    in docs/archive/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 
     def setUp(self):
         super().setUp()

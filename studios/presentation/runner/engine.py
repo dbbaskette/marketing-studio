@@ -185,12 +185,21 @@ PICTURE_STARTS = (b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')   # a PNG, a JPEG, by t
 PICTURE_MOST = 20_000_000   # bytes of one picture a person gives a slide
 PICTURE_WORDS = 300         # characters of what a picture shows, and of where it came from
 SHEET = 'contact-sheet'
+# A deck's shared files the page may read by name (`/api/file`), a read-only record's among them.
+FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
+         'research/plan.md', 'research/report.md', 'research/review.md')
+SAVED_RECORD = ('This deck was saved by the earlier step-by-step flow, and its saved record '
+                'cannot be read as it is, so it can be neither continued nor opened on the desk. '
+                'Its saved files are kept as they are.')
+UNREAD_RECORD = ('This deck’s saved record cannot be read, so it can be neither continued nor '
+                 'opened on the desk. Its saved files are kept as they are.')
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
 # opened the same way.
 RUN = {
     'intake-source': '_intake_source', 'classify': '_classify', 'inventory': '_inventory',
-    'gate:classify': '_gate', 'scan': '_scan', 'gate:story': '_gate', 'research-plan': '_research_plan',
+    'gate:classify': '_gate', 'gate:redesign': '_gate', 'reinventory': '_reinventory',
+    'scan': '_scan', 'gate:story': '_gate', 'research-plan': '_research_plan',
     'gate:research-plan': '_gate', 'research': '_research',
     'research-report': '_research_report', 'gate:research': '_gate', 'extract': '_extract',
     'outline': '_outline', 'outline-check': '_outline_check', 'gate:outline': '_gate',
@@ -203,11 +212,12 @@ RUN = {
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:story': 'slide story', 'gate:classify': 'classification', 'gate:research-plan': 'research plan',
          'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
-         'gate:build': 'deck'}
+         'gate:build': 'deck', 'gate:redesign': 'redesign'}
 # What a desk deck waits for, in the words of the screen and the button that answer it:
 # Review slide text and Approve text & design deck, Pick the look, and Deliver.
 DESK_WAITING = {'gate:story': 'Waiting for you to approve the slide story before research.', 'slide-text': 'Waiting for you to approve the slide text.',
                 'gate:look': 'Waiting for you to pick the look.',
+                'gate:redesign': 'Waiting for you to start the redesign.',
                 'gate:build': 'Ready to deliver.'}
 # The build's steps, whose work is kept under work/build/ on the computer that did it.
 BUILT = ('build-start', 'build-sections', 'build-whole', 'build-review', 'build-repair',
@@ -1327,13 +1337,15 @@ class Engine(Jobs, Researching, DeskActions):
             if decks.in_conversation(record) or record.get('route') != 'existing' \
                     or gate_state(record, 'gate:classify') != 'approved' \
                     or decks.delivered(root) is not None \
-                    or not (root / existing.SOURCE).is_file() \
+                    or not existing.given_deck(root, record).is_file() \
                     or self._shots(root / existing.ORIGINAL_SHOTS):
                 return
             self._step_marker(root, 'recover-original')
         try:
+            # An upgraded deck's Before is its deck as it was when it was upgraded.
             existing.draw_original(root, record, self.slides(),
-                                   self._renderer(root, stages.BY_NAME['inventory']))
+                                   self._renderer(root, stages.BY_NAME['inventory']),
+                                   existing.given_deck(root, record))
         finally:
             self._step_marker(root)
 
@@ -1761,6 +1773,34 @@ class Engine(Jobs, Researching, DeskActions):
         with self.files:
             record = existing.keep_inventory(root, self._load(root), shared)
             self._done(root, step, clock, 'list every slide of your deck', record)
+
+    def _reinventory(self, root: Path, run: _Run, step: stages.Step) -> None:
+        """A deck upgraded from Selected changes, once Start was pressed: its inventory and
+        its Before pictures are taken again from the deck as it was when it was upgraded
+        (existing.UPGRADED), so the outline is read from every change made so far. Nothing
+        waits for the person: the inventory was confirmed when the deck was started."""
+        deck = root / existing.UPGRADED
+        if not deck.is_file():
+            self._problem(root, step.name, 'stopped', desk.REDESIGN_ELSEWHERE, KEPT_SO_FAR,
+                          action=None)
+            raise _Halted()
+        how = self._renderer(root, step)
+        clock, slides = time.monotonic(), self.slides()
+        shared = existing.read_deck(root, slides, deck)
+        existing.draw_original(root, self._load(root), slides, how, deck)
+        with self.files:
+            existing.write_inventory(root, shared)
+            self._done(root, step, clock, 'list every slide of your deck as it is now')
+
+    def _show_redesign(self, root: Path, record: dict) -> dict:
+        """What the priced step of an upgraded deck shows before Start: what the redesign does
+        and what it costs, and how the deck was upgraded."""
+        slides = len((outlines.inventory_of(root) or {}).get('slides') or ())
+        # On a computer without the deck as it was at the upgrade, Start is not offered: it is
+        # started on the computer that has it.
+        return {'price': desk.redesign_price(record, slides), 'upgraded': desk.upgraded(record),
+                'elsewhere': None if self._redesign_here(root, record)
+                else desk.REDESIGN_ELSEWHERE}
 
     def _brand_step(self, root: Path, run: _Run, step: stages.Step) -> None:
         clock = time.monotonic()
@@ -2750,6 +2790,8 @@ class Engine(Jobs, Researching, DeskActions):
             if action == 'undo':
                 if run.busy or run.workers or state == 'working':
                     raise WorkspaceError('Pause it first: a step is in hand.')
+                if self._just_upgraded(record):
+                    raise WorkspaceError(desk.UPGRADE_FINAL)   # one way only
                 if not gitstate.undo(self.space(), root):
                     raise WorkspaceError(UNDO_NOT)
             else:
@@ -3552,12 +3594,76 @@ class Engine(Jobs, Researching, DeskActions):
             if shown.get('contactSheet') else None
         return shown
 
+    def _saved_original(self, root: Path) -> dict | None:
+        """The original record of a deck saved by the earlier gated flow, as it was written,
+        for a deck whose record the runner refuses to read: None when there is none, when it
+        is a desk deck, or when the deck has desk metadata or an interrupted opening (those
+        keep their own recovery). An empty dict when the record cannot be read at all, so
+        which flow made the deck cannot be known. Only read."""
+        from studio_core import presentation_migration as migration
+        if any((root / name).exists() or (root / name).is_symlink()
+               for name in (migration.RECORD, migration.ORIGIN, migration.PENDING)):
+            return None
+        try:
+            raw = json.loads((root / decks.RUN).read_bytes())
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        return None if decks.on_desk(raw) else raw
+
+    @staticmethod
+    def _saved_files(root: Path) -> list[str]:
+        """The shared files a read-only record lists: each one that is a file inside the
+        deck's folder, so `/api/file` serves every name listed."""
+        inside = root.resolve()
+        found = []
+        for name in FILES:
+            path = root / name
+            try:
+                real = path.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not path.is_symlink() and inside in real.parents and real.is_file():
+                found.append(name)
+        return found
+
+    def saved_record(self, root: Path, refusal: WorkspaceError) -> dict | None:
+        """What the page shows of a deck saved by the earlier gated flow whose record the
+        runner refuses: a read-only record. It says what it is and why it can be neither
+        continued nor opened on the desk, lists the saved files it holds (read as any deck's
+        are, through `/api/file`), and offers one next action: start new work from it, or,
+        where not even its start form can be read, a new deck. None for any other deck."""
+        raw = self._saved_original(root)
+        if raw is None:
+            return None
+        form = raw.get('form') if isinstance(raw.get('form'), dict) else None
+        title = raw.get('title') if isinstance(raw.get('title'), str) and raw['title'].strip() \
+            else root.name
+        return {'id': root.name, 'path': str(root), 'title': title,
+                'route': raw.get('route') if raw.get('route') in decks.ROUTES else None,
+                'execution': 'saved', 'state': 'saved',
+                # Which flow made a record that cannot be read at all is not known.
+                'sentence': SAVED_RECORD if raw else UNREAD_RECORD,
+                'gate': None, 'desk': None, 'deliver': None,
+                'saved_record': {'why': str(refusal), 'files': self._saved_files(root),
+                                 'next': 'copy' if form and raw.get('route') in decks.ROUTES
+                                 else 'new'}}
+
     def view(self, path) -> dict | None:
-        """Everything the page shows for one deck. None when there is no deck there."""
+        """Everything the page shows for one deck. None when there is no deck there. A deck
+        saved by the earlier gated flow whose record the runner refuses is shown as a
+        read-only record (`saved_record`)."""
         root = self.driven(path)
         if root is None:
             return None
-        record = self._load(root)
+        try:
+            record = self._load(root)
+        except WorkspaceError as refusal:
+            shown = self.saved_record(root, refusal)
+            if shown is None:
+                raise
+            return shown
         run = self._run(root)
         state, sentence = self._state(root, record, run)
         mine, who, state, sentence, last = self._whose(root, record, state, sentence)
@@ -3615,7 +3721,15 @@ class Engine(Jobs, Researching, DeskActions):
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file(),
             'desk': self._desk_view(root, record) if decks.on_desk(record) else None,
-            'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
+            'undo': bool(mine and state != 'working' and not run.busy
+                         and not self._just_upgraded(record) and self._can_undo(root))}
+
+    @staticmethod
+    def _just_upgraded(record: dict) -> bool:
+        """Whether the deck was upgraded to Redesign, keep content and waits for Start: its
+        last step is the upgrade, which is never undone."""
+        return isinstance(record.get('upgraded'), dict) \
+            and gate_state(record, 'gate:redesign') == 'waiting'
 
     def _can_undo(self, root: Path) -> bool:
         """Whether Undo the last step would be done, not refused: the last step is this

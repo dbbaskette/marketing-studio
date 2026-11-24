@@ -1,36 +1,25 @@
-"""Where Presentation Studio keeps what belongs to this computer rather than to one deck."""
+"""Where Presentation Studio keeps what belongs to this computer rather than to one deck.
+
+The data folder, the time stamp, the process test, the safe JSON writer and forgetting a
+deck are shared with Training Studio (`studio_core.studio_home`) and bound into this module;
+what a remembered deck holds and how a deck folder is known stay here.
+"""
 from __future__ import annotations
 
+# ruff: noqa: F821  names bound from studio_core.studio_home are unseen by a linter;
+# the root test_studio_scripts checks the bound parts, and the suites call the rest.
+
 import json
-import os
-import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone  # noqa: F401  read by the shared parts
 from pathlib import Path
 
+from studio_core import modules
+from studio_core import studio_home as _shared
+
 NAME = 'presentation-studio'
-
-
-def data_root() -> Path:
-    """The per-user data folder. PRESENTATION_STUDIO_DATA overrides it, for tests and odd setups."""
-    override = os.environ.get('PRESENTATION_STUDIO_DATA')
-    if override:
-        return Path(override).expanduser()
-    return Path.home() / '.local' / 'share' / NAME
-
-
-def now() -> str:
-    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-def alive(pid: int) -> bool:
-    """True while a process with this number exists on this computer."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:  # it exists, and belongs to someone else
-        return True
-    return True
+DATA_VARIABLE = 'PRESENTATION_STUDIO_DATA'   # the data folder, for tests and odd setups
+ITEMS = 'decks'                              # the registry's key
+modules.bind(globals(), _shared, _shared.NAMES)
 
 
 def read_json(path: Path, default=None):
@@ -41,22 +30,7 @@ def read_json(path: Path, default=None):
         return default
 
 
-def write_json(path: Path, value) -> None:
-    """Write JSON so a reader never sees half a file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pending = path.with_name(f'.{path.name}.pending-{secrets.token_hex(4)}')
-    try:
-        pending.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-        os.replace(pending, path)
-    finally:
-        pending.unlink(missing_ok=True)
-
-
 # --- the registry of decks on this computer --------------------------------------
-
-def registry_path() -> Path:
-    return data_root() / 'registry.json'
-
 
 def remember(root: Path, title: str) -> None:
     """Note that a deck lives at `root`. Never fails the command that calls it."""
@@ -66,17 +40,6 @@ def remember(root: Path, title: str) -> None:
         decks = decks if isinstance(decks, dict) else {}
         decks[str(root)] = {'title': title, 'seen_at': now()}
         write_json(registry_path(), {'schema': 1, 'decks': decks})
-    except OSError:
-        pass
-
-
-def forget(root: Path) -> None:
-    """Stop remembering a deck at `root`. Never fails the command that calls it."""
-    try:
-        registry = read_json(registry_path(), {})
-        decks = registry.get('decks') if isinstance(registry, dict) else None
-        if isinstance(decks, dict) and decks.pop(str(root), None) is not None:
-            write_json(registry_path(), {'schema': 1, 'decks': decks})
     except OSError:
         pass
 

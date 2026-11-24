@@ -120,12 +120,12 @@ TRUST = (
     "repository's address once in a terminal and answer yes, then share again."
 )
 IGNORE_NOTE = '# Kept on each computer and never shared. Written by Blog Studio.'
-README = """# Trainings
+README = """# Blogs
 
 This folder holds blogs made with Blog Studio, one folder each. Each step that
 was kept and each decision a person made is a commit, so the history says what happened.
 
-- Open a blog's folder to read its research, blueprint and other files.
+- Open a blog's folder to read its research, outline, draft and other files.
 - `hub.json` tells Blog Studio that this folder is its own. Leave it where it is.
 - Working files, saved sources and lock files stay on each person's computer. The ignore
   file here keeps them out.

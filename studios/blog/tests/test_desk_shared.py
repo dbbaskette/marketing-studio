@@ -188,7 +188,7 @@ class SharedProposalTests(DeskJobCase):
 
         self.offer()
         desk.BlogStore(self.root).local(self.ident, proposals.LATEST).unlink()
-        with patch('desk_finish.sets', side_effect=AssertionError('read every set')):
+        with patch('desk_proposals.sets', side_effect=AssertionError('read every set')):
             with self.assertRaisesRegex(AssertionError, 'read every set'):
                 desk_finish.summary(self.root, self.ident, desk.read(self.root, self.ident))
         shown = desk_finish.summary(self.root, self.ident, desk.read(self.root, self.ident))

@@ -6,8 +6,8 @@ Its companion command exports a task contract with
 `contract export --medium blog --brand ID --variant VARIANT --output NEW_DIR`.
 Read the resulting `VOICE.md` for language and `DESIGN.md` for visual work.
 
-The page's **Settings → Brand skill** accepts its repository and release and
-selects an installed skill, as in Training Studio. New desk work pins the saved brand
+The page's **Settings → Brand skill** takes its repository, installs it from `main` and
+selects an installed skill, as in Training Studio; there is no release to choose. New desk work pins the saved brand
 default unless creation explicitly supplies `brand` and `variant`; `brand: ""` opts out.
 Read `brand` from `desk context` inputs. Older step-by-step work keeps its contract in
 `derived/blog-run.json`; settings changes never replace either saved contract.

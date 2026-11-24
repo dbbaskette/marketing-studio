@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import stat
 
+from studio_core import source_documents
+
 from .contracts import MAX_SOURCE_BYTES, Invalid, canonical, digest
 from .validation import require, text
 
@@ -20,6 +22,11 @@ SOURCE_KINDS = set(KINDS.values()) | {'google-doc', 'google-slides', 'url', 'res
 MAX_ROWS = 20_000
 MAX_COLUMNS = 100
 DECIMAL = re.compile(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z')
+
+
+def extract_document(raw, kind):
+    """A PDF, Word or HTML document read by the shared extractor at Infographic Studio's 16 MB limit."""
+    return source_documents.extract(raw, kind, limit=MAX_SOURCE_BYTES, error=Invalid)
 
 
 def read_file(path: Path) -> tuple[str, bytes]:
@@ -117,9 +124,8 @@ def capture(store, ident: str, raw: bytes, *, kind='text', name='Pasted informat
             selection=None, replace_id=None, expected_revision: int, acknowledge_warnings=False) -> dict:
     require(kind in KINDS.values(), 'Use a supported supplied file type.')
     if kind in ('pdf', 'docx', 'html'):
-        from .documents import extract
         require(selection is None, 'CSV selection applies only to CSV sources.')
-        return capture_extracted(store, ident, raw, extract(raw, kind), kind=kind, name=name,
+        return capture_extracted(store, ident, raw, extract_document(raw, kind), kind=kind, name=name,
                                  replace_id=replace_id, expected_revision=expected_revision,
                                  acknowledge_warnings=acknowledge_warnings)
     value = decoded(raw)

@@ -36,6 +36,8 @@ For a first install, download the suite or Training Studio, unzip it, and run `b
 
 Use a single training for one audience. For a progression, choose **101** for an introduction, **201** for practical use, **301** for architecture and troubleshooting, or **401** for internals and advanced design. Selected levels share research and get their own materials.
 
+For a repeatable task, the teaching plan can include a one-page job aid. Once you approve that plan, select its **One-page job aid** in Infographic Studio’s **Import selected studio material** picker. The review shows the evidence, learner task and success criteria for each objective.
+
 ## Refine the training on the desk
 
 Open a saved guide, brief or slide to edit it. If a source changes, **Update** shows which materials need another pass. To build a second training for a different audience, **Copy as new** reopens the starting form with the prior choices and documents.
@@ -50,5 +52,3 @@ Open a saved guide, brief or slide to edit it. If a source changes, **Update** s
 </details>
 
 [Desk guide](docs/the-desk.md) · [Share training in a Team Hub](docs/team-hub.md) · [Practice and Yoodli](docs/scenarios-and-yoodli.md) · [Google Docs](docs/google-docs.md) · [Work in chat](skills/training-studio/references/conversation.md) · [All studios](../../README.md)
-
-For a repeatable task, the teaching plan can include a one-page job aid. Once you approve that plan, select its **One-page job aid** in Infographic Studio’s **Import selected studio material** picker. The review shows the evidence, learner task and success criteria for each objective.

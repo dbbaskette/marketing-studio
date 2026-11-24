@@ -907,8 +907,13 @@ class DeskTests(DeskPageCase):
         self.assertEqual(shot['filled'], ['Deliver'])
         self.assertEqual(shot['toolbar'][0], {'name': 'Deliver', 'filled': True, 'quiet': False})
         self.assertIn('Download', [control['name'] for control in shot['toolbar']])
-        for tab in ('Slides', 'Outline'):
-            self.assertIn(tab, shot['buttons'])
+        # The deck's parts down the left: the Outline, then each section with its slides, the
+        # one whose slide is shown marked. They replace the Slides and Outline tabs.
+        self.assertEqual(shot['partsList'], [['Deck', ['Outline', '> Cover, 1 slide',
+            'Section 1, 3 slides', 'Section 2, 3 slides', 'Closing, 1 slide']]])
+        self.assertNotIn('Slides', shot['buttons'])
+        self.assertEqual(three['partsList'][0][1][2], '> Section 1, 3 slides',
+                         'choosing a slide marks its section')
         numbered = [part['number'] for part in view['desk']['sections'] if not part['lead']]
         self.assertEqual(numbered, [1, 2])
         # The navigator names every slide; the first is the one shown.
@@ -1151,7 +1156,7 @@ class DeskTests(DeskPageCase):
         blocked['desk']['blockers'] = [{'number': 3, 'says': 'Text runs off the slide.'}]
         result = self.open_deck(path, blocked, [
             {'snapshot': 'desk'}, {'click': 'Outline'}, {'snapshot': 'outline'},
-            {'click': 'Slides'}, {'click': 'Deliver'}, {'snapshot': 'deliver'}])
+            {'click': 'Cover'}, {'click': 'Deliver'}, {'snapshot': 'deliver'}])
         for name, shot in result['snapshots'].items():
             with self.subTest(name):
                 said = shot['text'] + shot['sheet']
@@ -1340,7 +1345,7 @@ class WorkbenchTests(DeskPageCase):
         result = self.open_deck(path, view, [
             to(3), {'fill': title, 'value': 'Typed, not saved', 'stay': True},
             {'fill': note, 'value': 'Shorter.'},
-            {'click': 'Outline'}, {'snapshot': 'outline'}, {'click': 'Slides'},
+            {'click': 'Outline'}, {'snapshot': 'outline'}, {'click': 'Section 1'},
             {'snapshot': 'tabs'},
             {'click': 'Finishing'}, {'click': 'Rehearse'}, {'snapshot': 'finishing'},
             {'click': 'Close Finishing'}, {'snapshot': 'closed'},
@@ -1378,6 +1383,69 @@ class WorkbenchTests(DeskPageCase):
                              [{'snapshot': 'gone'}], state={**kept, 'deskSlide': 'not-there',
                                                             'deskNumber': 4})
         self.assertIn('Slide 4 of 8', gone['snapshots']['gone']['text'].split('\n'))
+
+    def test_a_section_says_writing_or_needs_you_from_its_slides(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        shown = copy.deepcopy(view)
+        cards = {card['number']: card for card in cards_of(shown['desk'])}
+        cards[3]['busy'] = True                                           # being drawn again
+        shown['desk']['blockers'] = [{'number': 5, 'says': 'Text runs off the slide.'}]
+        result = self.open_deck(path, shown, [
+            {'snapshot': 'desk'}, {'click': 'Outline'},
+            {'fill': 'Title of slide 1', 'value': 'A cover'}, {'click': 'Cover'},
+            {'snapshot': 'outline'}],
+            **{'POST /api/desk-outline-price': [ok({'says': 'No section changes.', 'sections': []})]})
+        shots = result['snapshots']
+        # Only work under way moves; a waiting state is said in words, never by colour alone.
+        # The desk opens at the slide that blocks delivery, so its section is the one shown.
+        self.assertEqual(shots['desk']['partsList'], [['Deck', ['Outline', 'Cover, 1 slide',
+            'Section 1, Writing', '> Section 2, Needs you', 'Closing, 1 slide']]])
+        # A change on the Outline not saved yet waits on the person, as the summary says.
+        self.assertEqual(shots['outline']['partsList'][0][1][:2], ['Outline, Needs you', '> Cover, 1 slide'])
+
+    def test_a_part_chosen_shows_its_slides_and_back_returns_to_the_one_before(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'opened'}, {'click': 'Section 2'}, {'snapshot': 'section'},
+            to(7), {'click': 'Outline'}, {'snapshot': 'outline'}, {'back': True},
+            {'snapshot': 'back'}, {'back': True}, {'snapshot': 'first'}])
+        shots = result['snapshots']
+        self.assertEqual((shots['opened']['state']['deskTab'], shots['opened']['history']['behind']),
+                         ('slides', 0), 'opening says what it shows, adding no entry')
+        # A section shows its first slide, marked in the list, the focus kept on the part.
+        self.assertIn('Slide 5 of 8', shots['section']['text'].split('\n'))
+        self.assertIn('> Section 2, 3 slides', shots['section']['partsList'][0][1])
+        self.assertEqual(shots['section']['focus'], 'Section 2, 3 slides')
+        self.assertEqual(shots['outline']['state']['deskStep'], 2)
+        self.assertIn('> Outline', shots['outline']['partsList'][0][1])
+        # Back returns to the section, at the slide last shown in it, then to the first part.
+        self.assertIn('Slide 7 of 8', shots['back']['text'].split('\n'))
+        self.assertIn('> Section 2, 3 slides', shots['back']['partsList'][0][1])
+        self.assertIn('Slide 1 of 8', shots['first']['text'].split('\n'))
+        self.assertIn('> Cover, 1 slide', shots['first']['partsList'][0][1])
+
+    def test_a_reload_opens_the_outline_it_showed_and_back_leaves_past_the_parts(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        kept = {'screen': 'deck', 'path': path, 'deskTab': 'outline', 'deskStep': 1}
+        answers = self.answers(**{'GET /api/run': [ok(view)]})
+        result = self.run_page(answers, [{'snapshot': 'reloaded'}, {'back': True},
+                                         {'snapshot': 'before'}], state=kept,
+                               earlier=[{'screen': 'decks', 'path': None},
+                                        {**kept, 'deskTab': 'slides', 'deskStep': 0}])
+        shots = result['snapshots']
+        self.assertIn('> Outline', shots['reloaded']['partsList'][0][1])
+        self.assertIn('The outline', shots['reloaded']['parts'])
+        self.assertIn('> Cover, 1 slide', shots['before']['partsList'][0][1])
+        # The toolbar's Back, after a part was chosen here, leaves the screen past its parts.
+        left = self.run_page(answers, [{'click': 'Back'}, {'snapshot': 'left'}],
+                             state={**kept, 'deskStep': 2},
+                             earlier=[{'screen': 'decks', 'path': None},
+                                      {**kept, 'deskTab': 'slides', 'deskStep': 0},
+                                      {**kept, 'deskTab': 'slides', 'deskStep': 1}])
+        self.assertEqual(left['snapshots']['left']['state'], {'screen': 'decks', 'path': None})
 
     def test_the_summary_goes_to_each_slide_and_keeps_warnings_apart_from_blockers(self):
         path = self.desk_deck()
@@ -1911,7 +1979,7 @@ class LeadCardTests(DeskPageCase):
         view = self.run_of(path)
         result = self.open_deck(path, view, [
             {'click': 'Outline'}, {'fill': 'Title of slide 1', 'value': 'A cover'},
-            {'click': 'Slides'}, to(1), {'snapshot': 'card'}],
+            {'click': 'Cover'}, to(1), {'snapshot': 'card'}],
             **{'POST /api/desk-outline-price': [ok({'says': 'No section changes.',
                                                     'sections': []})]})
         self.assertIn('On the Outline tab its title is “A cover”, not saved yet.',
@@ -2000,6 +2068,9 @@ class ExistingDeskTests(DeskPageCase):
         self.assertIn('Change slide 2', shot['buttons'])
         self.assertFalse([name for name in shot['buttons'] if name.startswith('Redraw')])
         self.assertNotIn('Outline', shot['buttons'])
+        # Its slides are one part, with no Outline: a deck of your own has none.
+        self.assertEqual(shot['partsList'], [['Deck', ['> Slides, ' + str(len(cards_of(view['desk'])))
+                                                       + ' slides']]])
         self.assertIn('Before', shot['text'].split('\n'))
         (address, body), = self.posts(result)
         self.assertEqual(address, '/api/desk-words')
@@ -2036,6 +2107,133 @@ class ExistingDeskTests(DeskPageCase):
                 said = result['snapshots']['desk']['text']
                 self.assertIsNone(FORBIDDEN_WORDS.search(said))
                 self.assertNotIn(view['desk']['expected'], said)
+
+
+class UpgradePageTests(DeskPageCase):
+    """Issue #538: a Selected changes deck offers Upgrade to Redesign, keep content in its
+    head, saying what is locked and why, and where its speaker notes would be; it is asked in
+    place, spends nothing, and the deck then waits for Start on a step that states the cost.
+    No other level offers it."""
+
+    UPGRADE = 'Upgrade to Redesign, keep content'
+    existing = ExistingDeskTests.existing
+
+    def test_selected_changes_offers_the_upgrade_in_its_head_and_where_notes_are_locked(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        offer = view['desk']['upgrade']
+        result = self.open_deck(path, view, [
+            {'snapshot': 'head'}, to(2), {'snapshot': 'card'}, {'click': self.UPGRADE},
+            {'snapshot': 'asked'}, {'click': 'Upgrade'}, {'snapshot': 'after'}],
+            **{'POST /api/desk-upgrade': [ok(view)]})
+        shots = result['snapshots']
+        self.assertIn(desks.UPGRADE_LOCKED, shots['head']['text'])
+        self.assertIn(desks.OWN_NOTES, shots['card']['text'])
+        # Once in the head and once where the speaker notes are locked; never filled, so
+        # Deliver stays the one filled action.
+        self.assertEqual(shots['card']['buttons'].count(self.UPGRADE), 2)
+        self.assertNotIn(self.UPGRADE, shots['card']['filled'])
+        self.assertEqual(shots['card']['off'], [name for name in shots['card']['off']
+                                                if name != self.UPGRADE])
+        # Asked in place, saying what happens; nothing is sent until it is answered.
+        asked = shots['asked']
+        self.assertIn(offer['confirm'], asked['text'])
+        self.assertIn('This cannot be undone.', asked['text'])
+        self.assertIn('Keep Selected changes', asked['buttons'])
+        self.assertEqual(asked['dialogs'], [])
+        self.assertIn('Upgraded to Redesign, keep content. Nothing is spent until you press '
+                      'Start.', shots['after']['toasts'])
+        (address, body), = self.posts(result)
+        self.assertEqual((address, body), ('/api/desk-upgrade', {
+            'path': path, 'expected': view['desk']['expected']}))
+        # What the page sends is what the server takes: the deck waits on its priced step.
+        upgraded = self.post('desk-upgrade', body)
+        self.assertEqual(upgraded['gate']['name'], 'gate:redesign')
+
+    def test_keeping_selected_changes_sends_nothing(self):
+        path, view = self.existing('selected')
+        result = self.open_deck(path, view, [{'click': self.UPGRADE},
+                                             {'click': 'Keep Selected changes'},
+                                             {'snapshot': 'kept'}])
+        self.assertEqual(self.posts(result), [])
+        self.assertNotIn('Keep Selected changes', result['snapshots']['kept']['buttons'])
+        self.assertIn(self.UPGRADE, result['snapshots']['kept']['buttons'])
+
+    def test_a_refused_upgrade_says_why_beside_it(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        view = copy.deepcopy(view)
+        view['desk']['upgrade']['refused'] = desks.UPGRADE_HALTED
+        result = self.open_deck(path, view, [{'snapshot': 'desk'}, to(2), {'snapshot': 'card'}])
+        shot = result['snapshots']['card']
+        # Said in the head and beside the locked speaker notes, as text a touch screen shows,
+        # and both buttons are off.
+        self.assertEqual(shot['text'].count(desks.UPGRADE_HALTED), 2)
+        self.assertEqual(shot['off'].count(self.UPGRADE), 2)
+
+    def test_no_other_level_offers_the_upgrade(self):
+        from runner import desk as desks
+        for level in ('polish', 'redesign'):
+            path, view = self.existing(level)
+            self.assertIsNone(view['desk']['upgrade'])
+            result = self.open_deck(path, view, [to(2), {'snapshot': 'desk'}])
+            with self.subTest(level):
+                self.assertNotIn(self.UPGRADE, result['snapshots']['desk']['buttons'])
+                self.assertNotIn(desks.UPGRADE_LOCKED, result['snapshots']['desk']['text'])
+
+    def test_the_priced_step_states_the_cost_and_start_begins_the_redesign(self):
+        path, view = self.existing('selected')
+        upgraded = self.post('desk-upgrade', {'path': path, 'expected': view['desk']['expected']})
+        gate = upgraded['gate']
+        result = self.open_deck(path, upgraded, [
+            {'snapshot': 'step'}, {'click': 'Start the redesign'}],
+            **{'POST /api/desk-redesign-start': [ok(upgraded)]})
+        shot = result['snapshots']['step']
+        self.assertIn(gate['price']['says'], shot['text'])
+        self.assertIn('Nothing has been spent', shot['text'])
+        self.assertIn(gate['upgraded']['says'], shot['text'])
+        # Start is the screen's one filled action.
+        self.assertEqual(shot['filled'], ['Start the redesign'])
+        self.assertNotIn(self.UPGRADE, shot['buttons'])
+        self.assertIsNone(FORBIDDEN_WORDS.search(shot['text']))
+        self.assertEqual(self.posts(result), [('/api/desk-redesign-start', {'path': path})])
+        # The server takes it: the deck is read as it is now and redrawn, in the brand's
+        # default look as its start chose, back to the desk.
+        started = self.post('desk-redesign-start', {'path': path})
+        self.assertEqual(started['gate']['name'], 'gate:build', started['sentence'])
+        self.assertEqual(started['desk']['level'], 'redesign')
+
+    def test_the_priced_step_on_another_computer_says_where_to_start_it(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        upgraded = copy.deepcopy(self.post('desk-upgrade', {
+            'path': path, 'expected': view['desk']['expected']}))
+        upgraded['gate']['elsewhere'] = desks.REDESIGN_ELSEWHERE
+        shot = self.open_deck(path, upgraded, [{'snapshot': 'step'}])['snapshots']['step']
+        self.assertIn(desks.REDESIGN_ELSEWHERE, shot['text'])
+        self.assertNotIn('Start the redesign', shot['buttons'])
+
+    def test_a_deck_stopped_at_the_priced_step_says_to_resume_it_first(self):
+        from runner import desk as desks
+        path, view = self.existing('selected')
+        self.post('desk-upgrade', {'path': path, 'expected': view['desk']['expected']})
+        stopped = self.post('run', {'path': path, 'action': 'stop'})
+        self.assertIsNone(stopped['gate'])
+        self.assertEqual(stopped['desk']['redesign_stopped'], desks.REDESIGN_STOPPED)
+        shot = self.open_deck(path, stopped, [{'snapshot': 'step'}])['snapshots']['step']
+        self.assertIn(desks.REDESIGN_STOPPED, shot['text'])
+        self.assertNotIn('Start the redesign', shot['buttons'])
+        self.assertIn('Resume', shot['buttons'])
+
+    def test_earlier_deliveries_are_listed_while_the_deck_is_redrawn(self):
+        path, view = self.existing('selected')
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected']})
+        upgraded = self.post('desk-upgrade', {'path': path,
+                                              'expected': delivered['desk']['expected']})
+        shot = self.open_deck(path, upgraded, [{'snapshot': 'step'}])['snapshots']['step']
+        self.assertIn('Delivered before', shot['text'])
+        self.assertIn('Revision 1 · Google Slides', shot['text'])
+        self.assertIn(upgraded['desk']['upgraded']['says'], shot['text'])
 
 
 BLOCKED = {'status': 'BLOCKED', 'warnings': [],
@@ -2757,7 +2955,7 @@ class DeskFollowThroughTests(DeskPageCase):
         priced = {'says': 'Saving redraws section 2.'}
         result = self.open_deck(path, view, [
             {'click': 'Outline'}, {'snapshot': 'outline'},
-            {'fill': 'Title of slide 4', 'value': 'Batches of two'}, {'click': 'Slides'},
+            {'fill': 'Title of slide 4', 'value': 'Batches of two'}, {'click': 'Cover'},
             {'snapshot': 'slides'}, to(4), {'snapshot': 'slide'}, {'click': 'Deliver'},
             {'snapshot': 'sheet'}, {'click': 'Discard them'}, {'snapshot': 'discarded'}],
             **{'POST /api/desk-outline-price': [ok(priced)]})
@@ -2784,7 +2982,7 @@ class DeskFollowThroughTests(DeskPageCase):
         # Save them goes to the Outline tab, its price worked out, to save there.
         saved = self.open_deck(path, view, [
             {'click': 'Outline'}, {'fill': 'Title of slide 4', 'value': 'Batches of two'},
-            {'click': 'Slides'}, {'click': 'Deliver'}, {'click': 'Save them on the Outline tab'},
+            {'click': 'Cover'}, {'click': 'Deliver'}, {'click': 'Save them on the Outline tab'},
             {'snapshot': 'back'}], **{'POST /api/desk-outline-price': [ok(priced)]})
         back = saved['snapshots']['back']
         self.assertEqual(back['sheet'], '')

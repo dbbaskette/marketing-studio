@@ -86,6 +86,19 @@ class PerformanceTests(unittest.TestCase):
             perf.extract(self.root, b'\xff', '.txt')
         self.assertEqual(local_cache.maintain(self.root)['entries'], before)
 
+    def test_html_text_keeps_blog_studios_own_blocks_through_the_shared_reader(self):
+        # Where Blog Studio's blocks differ from the shared reader's defaults: an iframe's
+        # text is read, h4 and a table row are not blocks, a section is one.
+        raw = (
+            '<title>Page</title><style>p{}</style><h1>Head &amp; more</h1>'
+            '<section>One<br>two</section><h4>Small</h4> inline<table><tr><td>A</td>'
+            '<td>B</td></tr></table><iframe>Framed</iframe><script>x()</script><li>Item</li>'
+        ).encode()
+        found, _ = perf.extract(self.root, raw, '.html')
+        self.assertEqual(
+            found['text'], 'Page\n\nHead & more\n\nOne\n\ntwo\n\nSmall inlineABFramed\n\nItem'
+        )
+
     def test_html_intake_retains_original_and_extraction_provenance(self):
         path = self.file('source.html', '<h1>Heading</h1><p>Evidence</p>')
         record = self.call(

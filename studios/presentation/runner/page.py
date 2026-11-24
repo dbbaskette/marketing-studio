@@ -91,6 +91,9 @@ What a caller needs to know
     `/api/desk-stop` {"path"} stops that redraw and keeps what was redrawn;
     `/api/desk-deliver` {"path", "expected", "blockers_seen"?} delivers the deck on screen;
     `/api/desk-draw-here` {"path"} draws a deck this computer has no drawing of;
+    `/api/desk-upgrade` {"path", "expected"} upgrades a Selected changes deck to Redesign,
+    keep content, one way, starting nothing, and `/api/desk-redesign-start` {"path"} starts
+    its redesign from the priced step it then waits at;
     `/api/desk-open` {"path"} opens a deck delivered the gated way on the desk, still
     delivered, from this computer's drawing of it;
     `/api/desk-outline` {"path", "slides", "expected"} saves the Outline tab;
@@ -171,6 +174,8 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-stop': ('desk_stop', ()),
         '/api/desk-deliver': ('desk_deliver', ('expected', 'blockers_seen?')),
         '/api/desk-draw-here': ('desk_draw_here', ()),
+        '/api/desk-upgrade': ('desk_upgrade', ('expected',)),
+        '/api/desk-redesign-start': ('desk_redesign_start', ()),
         '/api/desk-outline': ('desk_outline', ('slides', 'expected')),
         '/api/desk-reread': ('desk_reread', ('kind',)),
         '/api/desk-look': ('desk_look', ('look', 'note?')),
@@ -226,8 +231,7 @@ DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
 PICTURE = '/api/picture'
 PICTURE_LIMIT = 28_000_000   # bytes: a picture of up to 20 MB for a slide, in base64
-FILES = ('README.md', 'intake.md', 'classify.md', 'outline.md', 'look.md',
-         'research/plan.md', 'research/report.md', 'research/review.md')
+FILES = engines.FILES   # a read-only record lists the same files
 PREVIEW_LIMIT = 1_000_000    # bytes of a file sent to the page
 NO_DECK = 'There is no deck there.'
 NO_KEEPER = ('This runner does not look after the skills on this computer. Run the installer '

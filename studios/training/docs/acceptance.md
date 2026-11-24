@@ -106,7 +106,7 @@ Not the skill's: `harness-research` could not fetch its guidance until the sandb
 
 ## On the page
 
-The runner's real runs are recorded where each part of it was built: in each milestone's section on what the first real run showed, for milestones [2](superpowers/specs/2026-10-13-milestone-2-runner-core.md), [3](superpowers/specs/2026-10-13-milestone-3-rest-of-training.md), [4](superpowers/specs/2026-10-13-milestone-4-slides.md) and [5](superpowers/specs/2026-10-13-milestone-5-team.md), and in the commit that put right what each run showed. All were run on 2026-10-13, through the page in a browser.
+The runner's real runs are recorded where each part of it was built: in each milestone's section on what the first real run showed, for milestones [2](archive/superpowers/specs/2026-10-13-milestone-2-runner-core.md), [3](archive/superpowers/specs/2026-10-13-milestone-3-rest-of-training.md), [4](archive/superpowers/specs/2026-10-13-milestone-4-slides.md) and [5](archive/superpowers/specs/2026-10-13-milestone-5-team.md), and in the commit that put right what each run showed. All were run on 2026-10-13, through the page in a browser.
 
 - **Milestone 2.** On Claude Code, from the form to an approved blueprint. On Codex, from the form to approved research.
 - **Milestone 3.** A whole training on Claude Code, with Yoodli on and no deck, from the form to its index. Research on Codex from two supplied documents alone.

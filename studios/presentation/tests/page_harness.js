@@ -608,6 +608,13 @@ function snapshot() {
       && document.activeElement.dataset.key) || '',
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
     current: document.body.querySelectorAll('[aria-current]').filter(node => node.getAttribute('aria-current') !== 'step').map(name),
+    // The list of the deck's parts (StudioShell.parts): each group's heading and its parts,
+    // each named as a screen reader hears it, the one shown marked '> '.
+    partsList: document.body.querySelectorAll('.parts-group').filter(visible).map((group) => [
+      group.querySelector('.parts-group-title').textContent, group.querySelectorAll('.parts-item')
+        .map((item) => (item.getAttribute('aria-current') === 'true' ? '> ' : '') + name(item))]),
+    partsControl: document.body.querySelectorAll('.parts-toggle').filter(visible).map((node) => [name(node),
+      node.getAttribute('aria-expanded')]),
     // Each dialog on the page that is not the sheet: whether it is modal, and what names it.
     dialogs: document.body.querySelectorAll('[role="dialog"]').filter(visible)
       .filter((node) => node.id !== 'sheet')
@@ -828,6 +835,12 @@ async function app(file) {
         this.state = this.earlier.pop();
         for (const listener of windowListeners.popstate || []) listener({ state: this.state });
       },
+      // Several entries back at once (go(-n)), announced to the page once, as a browser does.
+      go(steps) {
+        if (!(steps < 0) || !this.earlier.length) return;
+        for (let left = -steps; left > 0 && this.earlier.length; left -= 1) this.state = this.earlier.pop();
+        for (const listener of windowListeners.popstate || []) listener({ state: this.state });
+      },
     },
     navigator: { clipboard: { writeText: () => Promise.resolve() } },
     FileReader,
@@ -906,6 +919,10 @@ async function app(file) {
   window.navigator.clipboard.writeText = () => Promise.resolve();
   const context = vm.createContext(window);
   context.navigator = window.navigator;
+  // The desk base is the shared core's, served beside the page: the parts app.js draws and
+  // speaks with, loaded before it as index.html loads it.
+  const base = path.join(PAGE, '..', 'studio_core', 'deck_web', 'desk-base.js');
+  vm.runInContext(fs.readFileSync(base, 'utf8'), context, { filename: 'desk-base.js' });
   // The deck panels are the shared core's, served beside the page.
   const panels = path.join(PAGE, '..', 'studio_core', 'deck_web', 'deck-panels.js');
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
@@ -943,7 +960,20 @@ async function app(file) {
       return panel;
     } };
   }
-  // The shell kit is the shared core's, checked on its own by the repository's
+  // The list of a project's parts is the shell kit's own (StudioShell.parts), checked on its
+  // own by the repository's tests/shell_page_check.js. It is loaded here by itself, drawing
+  // on this page's document, so every plan's desk lists its parts as a browser shows them.
+  const kit = vm.createContext({ document: { createElement: (tag) => document.createElement(tag),
+    get activeElement() { return document.activeElement; }, get body() { return document.body; },
+    querySelector: (selector) => document.querySelector(selector),
+    querySelectorAll: (selector) => document.querySelectorAll(selector),
+    documentElement: { style: {} }, readyState: 'loading', addEventListener() {} },
+  navigator: { platform: '' }, location: { hash: '', protocol: '', hostname: '', port: '' },
+  sessionStorage: { getItem: () => null, setItem() {} }, URLSearchParams });
+  vm.runInContext(fs.readFileSync(path.join(PAGE, '..', 'studio_core', 'deck_web', 'shell.js'), 'utf8')
+    + '\nthis.StudioShell = StudioShell;', kit, { filename: 'shell.js' });
+  window.StudioShell = { parts: kit.StudioShell.parts, connect() {}, commands() {} };
+  // The rest of the shell kit is the shared core's too, checked on its own by the repository's
   // tests/shell_page_check.js. A plan with {shell: true} stands it in, as Training Studio's
   // harness does: it keeps the lists the page hands Search and jump, for a {command: a title}
   // step to choose from, and the report says what was listed (`commands`: group, title, hint).
@@ -957,6 +987,7 @@ async function app(file) {
       return node;
     };
     window.StudioShell = {
+      parts: kit.StudioShell.parts,
       connect() {},
       commands(provide) { if (typeof provide === 'function') commandLists.push(provide); },
       track: () => part('ol', 'track'),
@@ -986,7 +1017,11 @@ async function app(file) {
     try {
       await reachIntake(step, plan.strictIntake);
       if(step.disclose){const d=document.body.querySelector('[data-key="'+step.disclose+'"]');if(d && !d.open)d.querySelector('summary').click();}
-      if (step.snapshot) shots[step.snapshot] = snapshot();
+      if (step.snapshot) {
+        shots[step.snapshot] = snapshot();
+        // What the browser keeps with the screen now, and how many entries lie behind it.
+        shots[step.snapshot].history = { state: window.history.state, behind: window.history.earlier.length };
+      }
       if (step.click) control(step.click).click();
       if (step.type !== undefined) {
         const held = document.getElementById('note-text');

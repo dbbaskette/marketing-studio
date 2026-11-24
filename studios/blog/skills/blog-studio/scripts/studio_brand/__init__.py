@@ -1,1 +1,1 @@
-"""Pinned Training Studio brand discovery, install and command protocols."""
+"""Blog Studio's brand discovery, install and command protocols, pinned from Training Studio."""

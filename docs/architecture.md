@@ -14,9 +14,9 @@ self-contained installer archive for each studio.
 | `studios/presentation/` | Presentation Studio pipeline and native interfaces |
 | `studios/training/` | Training Studio pipeline and native interfaces |
 | `studios/infographic/` | Infographic Studio pipeline and native interfaces |
-| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, packaging, the desk parts, and shared research source intake, execution, recovery and transports |
+| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, packaging, the desk parts, the Google transport, the document readers, and shared research source intake, execution, recovery and transports |
 | `ui-kit/` | Common stylesheet (with the desk's styles), safe Markdown renderer, and the desk's page kit (`drafting.js`) and research component (`research.js`) |
-| `pins/companions.json` | Canonical companion revisions and integrity hashes |
+| `pins/companions.json` | Each companion's repository, the `main` branch it is installed from, its oldest accepted version (a floor) and the release the suite was last tested with |
 | `installer/` | Suite/subset install orchestration and restoration |
 
 Original histories are imported under the studio directories. Old branches and
@@ -34,8 +34,9 @@ The settings implementation comes from Training Studio's compatible lossless
 writer, including its under-lock callable update API. Product facades supply the
 product name, exception type, and address validation. They retain independently
 patchable module contexts, so importing two products cannot change one another's
-configuration. Blog Studio retains its validation and legacy migration API while
-using the shared leaf-patching implementation. Existing shared settings remain in
+configuration. Blog Studio's `studios_config.py` is a thin face over the same shared
+settings module: it keeps its validation and legacy migration entry points, and its
+own leaf patcher (`patch_json`) is gone. Existing shared settings remain in
 `~/.config/studios-config.json`, with the same adjacent lock and merge semantics.
 
 Marketing Studio and Presentation Studio use the shared loopback server directly.
@@ -44,9 +45,11 @@ and writes. Blog Studio runs on the shared server, handler and reply path too, w
 its own page on top: that page keeps Blog Studio's fetch-metadata checks, stronger
 CSP, one-at-a-time workspace access, header and body timeouts, content limits and
 error sentences. Its protocol is not flattened into the other studios' contract.
+Its page server is built with `studio_core.server.for_product`.
 
-The native installers share companion requirement resolution, exact-lock fetching, integrity checks, and
-installation functions. Their compatibility bindings preserve native exception
+The native installers share companion requirement resolution against the floors in
+`pins/companions.json`, fetching from each companion's `main`, the file-for-file check
+before a companion's own installer runs, and installation functions. Their compatibility bindings preserve native exception
 classes and existing injection points. The suite invokes one companion pass for
 the selected tools. Installing software remains an explicit installer action.
 
@@ -55,6 +58,33 @@ only the named suite-owned links, traverses their shared targets, and writes
 ordinary files into every released archive and installed runtime. Unexpected
 links remain refused. No installed studio needs the source checkout, another
 studio, or a shared external core installation.
+
+### Code the studios share, and what stays their own
+
+- **Presentation Studio and Training Studio** share their runner modules in
+  `core/studio_core/shared_runner/` (including `studio`, `desk_chat` and
+  `desk_migration`), the computer check (`computer_check.py`), the per-user data folder
+  and registry (`studio_home.py`) and guidance sync (`guidance_sync.py`). Each studio's
+  `computer.py`, `home.py` and `sync_guidance.py` is a thin file at its old path that binds
+  the shared code to the studio's product name, words and patch points. Their desks share
+  one browser script, `core/studio_core/deck_web/desk-base.js`.
+- **Google requests** from Blog Studio, Presentation Studio and Training Studio go through
+  `studio_core.google_api`: each studio names the hosts, paths and methods it uses, and
+  anything else is refused. Presentation Studio and Training
+  Studio refuse redirects. Infographic Studio keeps its fixed transport (`google_api.Client`).
+- **Document text.** Every PDF, Word and HTML reader is in `studio_core.source_documents`;
+  a Word file whose inner XML declares a DOCTYPE or an entity is refused. Infographic
+  Studio reads documents through it with its own 16 MB limit.
+- **Every studio's project page** draws the list of the project's parts with one shell
+  component, `StudioShell.parts`; see [the UI kit](design/ui-kit.md).
+- **Blog Studio** runs on the shared settings module and page server, and its
+  `desk_finish.py` is a thin face over eight focused `desk_*.py` modules. Its team sharing
+  (`studio_sync/`) and brand handling (`studio_brand/`) stay Blog Studio's own: they are
+  not on the shared runner, because moving them needs a reconciliation of about 1,500
+  lines of Blog Studio-only team-sync and brand logic.
+- Large modules (`research_contract.py`, `research_session.py`, `marketing_studio`'s
+  `brand_store.py`, `launcher.py` and `bridge.py`) are thin faces over focused sibling
+  modules, so every name an importer or a test patches stays where it was.
 
 The shared Document Library (`core/studio_core/document_library/`) is generic
 storage. It does not import any studio. `context.py` gives every studio page the
@@ -289,8 +319,8 @@ Captured bytes, generated images, private job intents and exports live in an own
 local workspace outside this repository. Image intent precedes external execution;
 uncertain/late/cancelled work cannot silently replace current content or replay.
 Immutable exports bind current inputs/scene/checks/approval; export retries do not
-regenerate images. Team storage, Office/Google inputs, URL fetching and research
-handoffs remain follow-up scope. See the [native guide](../studios/infographic/README.md).
+regenerate images. Its document intake, Google reads, research imports, studio handoffs
+and optional team sharing are described below. See the [native guide](../studios/infographic/README.md).
 
 
 ### Infographic Studio document and team boundaries

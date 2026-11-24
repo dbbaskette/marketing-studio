@@ -50,7 +50,8 @@ COMPONENTS = ('.pick-card', '.pick-cards', '.workflow-steps', '.workflow-step', 
               '.panel-heading', '.select-page', '.selection-bar', '.selection-count',
               '.selection-actions', '.create-flow', '.create-step', '.create-foot',
               '.sheet-heading', '.stack', '.page-head', '.research-choices', '.site-choices',
-              '.check')
+              '.check', '.parts', '.parts-toggle', '.parts-list', '.parts-group',
+              '.parts-group-title', '.parts-items', '.parts-item', '.parts-name', '.parts-state')
 SHARED = frozenset({
     'backdrop', 'window', 'sidebar', 'nav-item', 'glass', 'content', 'toolbar-wrap', 'toolbar',
     'page', 'button', 'button-filled', 'button-quiet', 'button-danger', 'button-round', 'field',
@@ -61,7 +62,9 @@ SHARED = frozenset({
     'dialog-header', 'dialog-content', 'dialog-form', 'menu', 'filter-bar', 'more-filters',
     'filters-toggle', 'panel-heading', 'select-page', 'selection-bar', 'selection-count',
     'selection-actions', 'create-flow', 'create-step', 'create-foot', 'sheet-heading', 'stack',
-    'page-head', 'research-choices', 'site-choices', 'check'})
+    'page-head', 'research-choices', 'site-choices', 'check', 'parts', 'parts-toggle',
+    'parts-toggle-label', 'parts-toggle-mark', 'parts-list', 'parts-group', 'parts-group-title',
+    'parts-items', 'parts-item', 'parts-name', 'parts-state'})
 # The parts Blog Studio drew first, now the kit's, with Blog Studio's values (main efdaa11).
 # Each selector's declarations, top level and inside the phone query.
 MOVED = {
@@ -430,8 +433,12 @@ class SharedLookTests(unittest.TestCase):
                 '.desk-finish-sheet', '.desk-finish-tools', '.desk-proposal', '.desk-sides',
                 '.desk-side', '.desk-quote', '.desk-edit', '.desk-comments', '.desk-comment',
                 '.diff-add', '.diff-remove')
+        # And the desk as a workbench beside its list of parts: until 90rem the draft keeps
+        # the width, its sources following it and Finishing first.
         placements = {'.review-checking>.desk-working-note', '.review-status>.desk-working-note', '.review-fix>.desk-sides',
-                      '.review-quick-list .desk-quote'}
+                      '.review-quick-list .desk-quote', '.desk-work[data-zone="work"]>.desk-layout',
+                      '.desk-work[data-zone="work"]>.desk-layout.desk-finishing',
+                      '.desk-work[data-zone="work"]>.desk-layout.desk-finishing>.desk-finish'}
 
         def named(css):
             found = {}
@@ -522,7 +529,7 @@ class SharedLookTests(unittest.TestCase):
     def test_every_shared_control_is_at_least_44px(self):
         kit = declared(KIT.read_text())
         for selector in ('.button', '.nav-item', '.seg-option', '.chip', '.menu-item', '.input',
-                         '.select-page', '.more-filters>summary'):
+                         '.select-page', '.more-filters>summary', '.parts-toggle', '.parts-item'):
             with self.subTest(selector=selector):
                 self.assertGreaterEqual(rem(kit[''][selector]['min-height']), 2.75)
         for context in (PHONE, '(pointer:coarse)'):
@@ -604,6 +611,62 @@ class SharedLookTests(unittest.TestCase):
         narrow = {selector.strip(): block for selector, block in rules(phone.group(1))}
         self.assertTrue(any('.card > .segmented' in selector and 'display: grid' in block
                             for selector, block in narrow.items()), narrow.keys())
+
+
+class PartsListTests(unittest.TestCase):
+    """The parts of a project (StudioShell.parts): one shared list, drawn once by the kit."""
+
+    def section(self):
+        kit = KIT.read_text()
+        start = kit.index('/* --- the parts of a project')
+        return uncommented(kit[start:kit.index('/* --- the desk (drafting.js)')])
+
+    def test_the_kit_draws_it_once_before_the_desk_and_after_the_fallbacks(self):
+        kit = KIT.read_text()
+        self.assertLess(kit.index('/* --- fallbacks'), kit.index('/* --- the parts of a project'))
+        drawn = self.section()
+        for name in ('.parts', '.parts-toggle', '.parts-list', '.parts-item', '.parts-state'):
+            self.assertRegex(drawn, re.escape(name) + r'\s*[{,:\[>]', name)
+        # Nowhere else in the kit draws it: past its section only the workbench places it.
+        rest = uncommented(kit[kit.index('/* --- the desk (drafting.js)'):])
+        for listed, block in rules(rest):
+            if 'parts-' in listed or re.search(r'\.parts\b', listed):
+                with self.subTest(placement=listed.strip()):
+                    self.assertEqual([p for p in properties(block) if not LAYOUT.fullmatch(p)
+                                      and p not in ('overscroll-behavior',)], [])
+
+    def test_it_is_opaque_and_says_its_states_in_words(self):
+        drawn = self.section()
+        self.assertNotIn('glass', drawn)
+        self.assertNotIn('backdrop-filter', drawn)
+        script = (ROOT / 'core/studio_core/deck_web/shell.js').read_text(encoding='utf-8')
+        # One vocabulary, the same words in every studio, each with its own tint.
+        vocabulary = re.search(r'const PART_STATES = \{(.*?)\};', script, flags=re.S).group(1)
+        words = {quoted or bare: tint for quoted, bare, tint
+                 in re.findall(r"(?:'([^']+)'|(\w+)):\s*'(\w+)'", vocabulary)}
+        self.assertEqual(list(words), ['Writing', 'Queued', 'Needs you', 'Draft', 'Ready',
+                                       'Out of date', 'Left out'])
+        for tint in ('working', 'yours', 'done', 'stale'):
+            self.assertIn('.parts-state[data-state="%s"]' % tint, drawn)
+
+    def test_only_a_part_being_written_moves_and_reduced_motion_stills_it(self):
+        drawn = self.section()
+        moving = [selector.strip() for selector, body in re.findall(r'([^{}]+)\{([^{}]*)\}', drawn)
+                  if re.search(r'animation\s*:[^;]*\binfinite\b', body)]
+        self.assertEqual(moving, ['.parts-item[data-making="true"]'])
+        reduced = drawn.split('@media (prefers-reduced-motion: reduce)')[1].split('}\n}')[0]
+        self.assertIn('.parts-item[data-making="true"] { animation: none; }', reduced)
+
+    def test_narrower_than_the_column_it_is_one_control_and_never_scrolls_sideways(self):
+        drawn = self.section()
+        self.assertIn('.parts-toggle[aria-expanded="false"] + .parts-list { display: none; }', drawn)
+        wide = drawn.split('@media (min-width: 72rem)')[1].split('}\n}')[0]
+        self.assertIn('.parts-toggle { display: none; }', wide)
+        self.assertNotRegex(drawn, r'overflow-x|nowrap')
+        # From 72rem it is the workbench's left column, in view beside the work.
+        kit = uncommented(KIT.read_text())
+        self.assertIn(':is(.page, .stack) > .parts[data-zone="parts"] {\n    grid-row: 2 / -1;', kit)
+        self.assertIn('grid-template-columns: [parts] 13rem [work rail] minmax(0, 1fr);', kit)
 
 
 # Every folder a page's scripts are served from.

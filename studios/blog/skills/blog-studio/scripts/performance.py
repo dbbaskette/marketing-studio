@@ -1,38 +1,25 @@
 """Compact local context and exact-input reuse. No provider/model observations cached."""
 
-from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
 import studio
 from local_cache import reuse, maintain
+from studio_core import source_documents
 
 EXTRACTOR_VERSION = 'utf8-html-text-v1'
 PASSAGE_VERSION = 'paragraph-offsets-v1'
 CHECK_VERSION = 'mechanical-lint-v1'
 
 
-class PlainHTML(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.parts = []
-        self.hidden = 0
+class PlainHTML(source_documents.PageText):
+    """An HTML page's text as Blog Studio's library reads it, through the shared reader:
+    script and style left out, and a block at each paragraph, division, line break,
+    heading to h3, list item and section."""
 
-    def handle_starttag(self, tag, attrs):
-        if tag in ('script', 'style'):
-            self.hidden += 1
-        if not self.hidden and tag in ('p', 'div', 'br', 'h1', 'h2', 'h3', 'li', 'section'):
-            self.parts.append('\n')
-
-    def handle_endtag(self, tag):
-        if tag in ('script', 'style'):
-            self.hidden = max(0, self.hidden - 1)
-        if not self.hidden and tag in ('p', 'div', 'h1', 'h2', 'h3', 'li', 'section'):
-            self.parts.append('\n')
-
-    def handle_data(self, data):
-        if not self.hidden:
-            self.parts.append(data)
+    HIDDEN = ('script', 'style')
+    OPENS = ('p', 'div', 'br', 'h1', 'h2', 'h3', 'li', 'section')
+    CLOSES = ('p', 'div', 'h1', 'h2', 'h3', 'li', 'section')
 
 
 def extract(root, data, suffix):
@@ -47,7 +34,7 @@ def extract(root, data, suffix):
             parser.feed(text)
             parser.close()
             text = '\n\n'.join(
-                line.strip() for line in ''.join(parser.parts).splitlines() if line.strip()
+                line.strip() for line in parser.joined().splitlines() if line.strip()
             )
         return {'text': text, 'extractor': EXTRACTOR_VERSION, 'source_sha256': studio.digest(data)}
 

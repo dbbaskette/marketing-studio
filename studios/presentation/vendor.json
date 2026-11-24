@@ -6,6 +6,7 @@
     {
       "path": "skills/presentation-studio/scripts/home.py",
       "from": "skills/training-studio/scripts/home.py",
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/studio_home.py`; the rest is this studio's.",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
@@ -16,11 +17,13 @@
     {
       "path": "skills/presentation-studio/scripts/sync_guidance.py",
       "from": "skills/training-studio/scripts/sync_guidance.py",
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/guidance_sync.py`; the rest is this studio's.",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
       "path": "skills/presentation-studio/scripts/computer.py",
       "from": "skills/training-studio/scripts/computer.py",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/computer_check.py`.",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
@@ -139,7 +142,7 @@
     {
       "path": "skills/presentation-studio/scripts/gdrive.py",
       "from": "skills/training-studio/scripts/gdocs.py",
-      "note": "GcloudTransport only, as Drive.export_text of plain text",
+      "note": "GcloudTransport only, as Drive.export_text of plain text. Requests now go through `core/studio_core/google_api.py`.",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {

@@ -175,7 +175,7 @@ from __future__ import annotations
 # ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
 # test_shared_runner_use checks the bound parts, and the suites call the rest.
 
-import contextlib
+import contextlib  # noqa: F401  read by the shared parts
 import json
 import os  # noqa: F401  read by the shared parts
 import re
@@ -266,36 +266,10 @@ def _problems(err: str, code: int) -> list[str]:
     return lines or [f'it ended with exit code {code}']
 
 
-@contextlib.contextmanager
-def _new(path):
-    """A file or folder a call is about to make. When the call fails, what it wrote is
-    removed; what was already there is never touched."""
-    path = Path(path)
-    there = path.exists() or path.is_symlink()
-    try:
-        yield
-    except BaseException:
-        if not there and path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path, ignore_errors=True)
-        elif not there:
-            path.unlink(missing_ok=True)
-        raise
-
-
 class Slides:
     """The outline, compose and drive commands of one installed harness-slides. `runtime`
     is the folder it is installed in."""
 
-    @contextlib.contextmanager
-    def turn(self, renderer: str):
-        """This process's turn at a renderer: LibreOffice renders one at a time under one
-        profile, and so does Google Drive for a tool without a preview pool; one with
-        `google-preview-pool` renders up to `pool_size()` at once, each in a deck of its
-        pool."""
-        held = _pooled(pool_size()) if renderer == 'drive' \
-            and self.has('google-preview-pool') else PREVIEWING
-        with held:
-            yield
 
     # --- the outline ---
 

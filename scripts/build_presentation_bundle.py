@@ -16,7 +16,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
-from studio_core import bundles, distribution, bundle_sources
+from studio_core import bundles, distribution
+sys.path.insert(0, str(ROOT / 'scripts'))
+import bundle_sources
 
 TEMPLATES = ROOT / 'scripts/local_bundle'
 sys.path.insert(0, str(TEMPLATES))
@@ -104,12 +106,6 @@ def run(command, env, cwd=None):
     if result.returncode:
         raise ValueError('Build command failed: ' + str(command[0]) + '\n' + result.stdout[-3000:] + result.stderr[-3000:])
     return result.stdout
-
-
-def unpack_tar(archive, destination, exclude=()):
-    """Strip the single archive root using the release builder's validated link handling."""
-    # distribution.unpack handles gzip; micromamba's bzip2 archive is handled separately.
-    distribution.unpack(archive, destination, exclude=exclude)
 
 
 def unpack_zip(archive, destination):

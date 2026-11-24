@@ -1,9 +1,9 @@
 """The parts of the runner's `upkeep` both deck studios share. A studio binds them
 into its own module with `studio_core.modules.bind`; they read that module's names.
 
-INSTALLER (built from the studio's own file), TOOLS (the studio's companion modules), the
-messages that name the product or its items, and every definition that differs stay in
-each studio.
+INSTALLER (built from the studio's own file), the messages that name the product or its
+items, and every definition that differs stay in each studio. TOOLS names the studio's own
+companion modules, taken through its `runner` package.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 
+from runner import research as research_tool, slides as slides_tool
 
 SAVED = 'updates.json'    # in the data folder: where each main branch was last found, and when
 DAY = 24 * 3600           # seconds between looks online
@@ -23,6 +24,9 @@ NO_RESTART = 'There is no upgrade waiting for a restart.'
 BRAND = 'brand skill'     # the brand skill's row, and its entry in what was found online
 BRAND_SECONDS = 900       # for the brand skill's own installer to finish
 BRAND_INSTALLING = 'The brand skill is being installed already.'
+UPGRADE_SECONDS = 900     # for a newer version of the studio to be checked and installed
+TOOLS = {'harness-research': (research_tool, 'Harness Research'),
+         'harness-slides': (slides_tool, 'Harness Slides')}
 
 
 def _floor(pin: dict) -> str:
@@ -324,6 +328,20 @@ class Upkeep:
                         **self._brand_entry(commit)}
         home.data_root().mkdir(parents=True, exist_ok=True)
         home.write_json(self.saved_path(), {'schema': 1, **kept, 'found': found})
+
+    def _installed_brand_commit(self, repository: str) -> str | None:
+        """The commit of main last installed from here of the brand skill, from this
+        repository, or None."""
+        kept = self._saved().get('brand_installed') or {}
+        commit = kept.get('commit') if kept.get('repository') == repository else None
+        return commit if isinstance(commit, str) else None
+
+    def _remember_brand_install(self, repository: str, commit: str) -> None:
+        """Keep which commit of main was installed from here, for the brand skill's row."""
+        kept = self._saved()
+        home.data_root().mkdir(parents=True, exist_ok=True)
+        home.write_json(self.saved_path(), {'schema': 1, **kept, 'brand_installed': {
+            'repository': repository, 'commit': commit, 'at': _now()}})
 
     def _installed_commit(self, name: str) -> str | None:
         """The commit of its main branch the studio's installer last installed of a
@@ -904,12 +922,13 @@ class Upkeep:
 
 
 NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'COMMIT', 'UPDATING', 'NO_RESTART',
-         'BRAND', 'BRAND_SECONDS', 'BRAND_INSTALLING', '_floor', '_now', '_age', '_version',
+         'BRAND', 'BRAND_SECONDS', 'BRAND_INSTALLING', 'UPGRADE_SECONDS', 'TOOLS', '_floor', '_now', '_age', '_version',
          'fetch_tree', 'install_root', '_who', '_load')
 METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_refresh',
            '_first', '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools',
            '_current', '_commands', '_main_version', 'saved_path', '_saved', 'due',
-           '_brand_entry', '_installed_commit', '_main_moved', 'remember_brand', 'look',
+           '_brand_entry', '_installed_brand_commit', '_remember_brand_install',
+           '_installed_commit', '_main_moved', 'remember_brand', 'look',
            '_online', '_bring', '_said', '_the_brand', '_brand_installed', '_moved',
            'dismiss', 'releases', '_target', '_link', '_main', '_branch', '_fetch_main',
            '_newest', '_on_main', 'installed_commit', '_ahead', '_refuse_busy',

@@ -5,6 +5,7 @@
      StudioShell.palette()                        open the command palette (also Cmd or Ctrl+K)
      StudioShell.track(stages, label, compact)    a project's stages as one drawn line
      StudioShell.arc(), .pulse(), .move()         a workbench's phases, its line of light, its one move
+     StudioShell.parts({label, groups, chosen, choose})   the open project's parts, down the left
      StudioShell.appearance(), .setAppearance()   light, dark, or this computer's own
      StudioShell.continueLink({id, revision})     Continue in another studio, for a document
                                                   this studio kept in the Document Library
@@ -458,6 +459,140 @@ const StudioShell = (() => {
     return card;
   }
 
+  // --- the parts of a project ------------------------------------------------------------
+  // One list of the open project's parts, down the left of a workbench from 72rem and one
+  // control above the work narrower (docs/design/ui-kit.md, "The parts of a project"):
+  //
+  //   StudioShell.parts({label, groups, chosen, choose, key})
+  //     label    the list's name for a screen reader: "Parts of this training"
+  //     groups   [{title, parts: [{id, name, state, count, busy}]}], in order; a group with
+  //              no parts is left out. `state` is one word of PART_STATES or nothing;
+  //              `count` ("3 sources") is said where there is no state; `busy` (true for
+  //              Writing unless said otherwise) is the one thing that moves
+  //     chosen   the id of the part shown in the middle
+  //     choose   choose(id), called whenever a part is chosen, the one shown too; the studio
+  //              shows it, keeps it in its address and draws the list again
+  //     key      what the list's controls are known by when it is drawn again (data-key);
+  //              by default the label
+  //
+  // It returns a <nav data-zone="parts">, placed as a part of the page like any other. The
+  // studio draws nothing of its own for it.
+  const PART_STATES = { Writing: 'working', Queued: 'queued', 'Needs you': 'yours', Draft: 'draft',
+    Ready: 'done', 'Out of date': 'stale', 'Left out': 'out' };
+  // Lists open on a narrow screen, by key, so drawing one again never closes it.
+  const openParts = new Set();
+  const shown = node => !node || typeof node.getClientRects !== 'function' || node.getClientRects().length > 0;
+  const slug = text => String(text || 'parts').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'parts';
+
+  // A part's name, then its state in words: a screen reader hears "Guide, Draft".
+  function partWords(node, part) {
+    node.append(make('span', 'parts-name', part.name));
+    const state = Object.hasOwn(PART_STATES, part.state) ? part.state : '';
+    const said = state || (part.count === undefined || part.count === null ? '' : String(part.count));
+    if (said) {
+      const words = make('span', 'parts-state', said);
+      words.dataset.state = state ? PART_STATES[state] : 'count';
+      node.append(make('span', 'offscreen', ', '), words);
+    }
+    return node;
+  }
+
+  function parts({ label = 'Parts', groups = [], chosen = null, choose = () => {}, key = '' } = {}) {
+    const named = key || label;
+    const nav = make('nav', 'parts');
+    nav.setAttribute('aria-label', label);
+    nav.dataset.zone = 'parts'; nav.dataset.key = named;
+    const listId = 'parts-' + slug(named);
+    const filled = (groups || []).map(group => ({ title: group && group.title,
+      parts: ((group && group.parts) || []).filter(part => part && part.id !== undefined && part.name) }))
+      .filter(group => group.parts.length);
+    const all = filled.flatMap(group => group.parts);
+    const current = all.find(part => part.id === chosen) || null;
+
+    // Narrower than 72rem: one control naming the part shown and its state, opening the list.
+    const toggle = make('button', 'parts-toggle'); toggle.type = 'button';
+    toggle.dataset.key = named + ' toggle';
+    toggle.setAttribute('aria-controls', listId);
+    // Said before the part: where several groups could hold a part of that name, its group
+    // ("Level 201: Guide, Draft"), otherwise "Showing: Section 2, 3 slides".
+    const holder = current && filled.find(group => group.parts.includes(current));
+    toggle.append(make('span', 'parts-toggle-label', !current ? 'Parts'
+      : filled.length > 1 ? holder.title || label : 'Showing'));
+    if (current) toggle.append(make('span', 'offscreen', ': '));
+    if (current) partWords(toggle, current);
+    const mark = make('span', 'parts-toggle-mark'); mark.setAttribute('aria-hidden', 'true');
+    toggle.append(mark);
+    const list = make('div', 'parts-list'); list.id = listId;
+    const open = value => {
+      toggle.setAttribute('aria-expanded', String(value));
+      if (value) openParts.add(named); else openParts.delete(named);
+    };
+    open(openParts.has(named));
+    toggle.addEventListener('click', () => {
+      const opening = toggle.getAttribute('aria-expanded') !== 'true';
+      open(opening);
+      if (opening) {
+        const at = list.querySelector('[aria-current="true"]') || list.querySelector('.parts-item');
+        if (at) at.focus();
+      }
+    });
+
+    const items = [];
+    filled.forEach((group, index) => {
+      const box = make('div', 'parts-group');
+      const heading = make('h2', 'parts-group-title', group.title || label);
+      heading.id = listId + '-' + index;
+      const rows = make('ul', 'parts-items'); rows.setAttribute('aria-labelledby', heading.id);
+      for (const part of group.parts) {
+        const item = make('button', 'parts-item'); item.type = 'button';
+        item.dataset.part = String(part.id); item.dataset.key = named + ' ' + part.id;
+        partWords(item, part);
+        const busy = part.busy === undefined ? part.state === 'Writing' : Boolean(part.busy);
+        if (busy) item.dataset.making = 'true';   // work under way is the one thing that moves
+        if (part === current) item.setAttribute('aria-current', 'true');
+        // Tab enters the list at the part shown; the arrow keys move from there.
+        item.tabIndex = part === current || (!current && !items.length) ? 0 : -1;
+        item.addEventListener('click', () => {
+          const fromToggle = toggle.getAttribute('aria-expanded') === 'true';
+          open(false);
+          choose(part.id);
+          // Unless choosing took the focus somewhere of its own, it stays on the part chosen,
+          // or on the control above the work where the list was opened from there.
+          const at = document.activeElement;
+          if (at && at !== document.body && at.isConnected !== false && !(at.closest && at.closest('.parts'))) return;
+          const again = Array.from(document.querySelectorAll('.parts-item, .parts-toggle'))
+            .filter(node => node.isConnected !== false && node.closest && node.closest('.parts'));
+          const toggled = again.find(node => node.dataset.key === named + ' toggle');
+          const target = fromToggle && toggled && shown(toggled) ? toggled
+            : again.find(node => node.dataset.key === named + ' ' + part.id);
+          if (target) target.focus();
+        });
+        items.push(item);
+        rows.append(add(make('li'), item));
+      }
+      box.append(heading, rows);
+      list.append(box);
+    });
+    list.addEventListener('keydown', event => {
+      const at = items.indexOf(event.target);
+      if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') {
+        event.preventDefault(); open(false); toggle.focus(); return;
+      }
+      if (at < 0) return;
+      const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[event.key];
+      if (to === undefined) return;
+      event.preventDefault();
+      items[Math.max(0, Math.min(items.length - 1, to))].focus();
+    });
+    nav.append(toggle, list);
+    return nav;
+  }
+
+  function add(node, ...children) {
+    for (const child of children) if (child) node.append(child);
+    return node;
+  }
+
   // --- in the sidebar --------------------------------------------------------------------
 
   function mount() {
@@ -493,5 +628,6 @@ const StudioShell = (() => {
     commands(provide) { if (typeof provide === 'function') providers.push(provide); },
     appearance: () => chosen,
     setAppearance, appearanceSwitch, palette, shortcuts, track, arc, pulse, move, continueLink,
+    parts, PART_STATES: Object.freeze({ ...PART_STATES }),
   };
 })();

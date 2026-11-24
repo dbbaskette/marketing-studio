@@ -15,6 +15,12 @@ from studio_core import research_contract
 from studio_core.sync_guard import worker_in_progress, SYNC_WAIT
 import sync_guidance
 
+# ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
+# test_shared_runner_use checks the bound parts, and the suites call the rest.
+from studio_core import modules
+from studio_core.shared_runner import desk_migration as _shared
+modules.bind(globals(), _shared, _shared.NAMES)
+
 WORKSPACE = '@presentation-workspace/hub.json'
 
 CONSEQUENCES = ('Open existing slide parts for editing in conversation. Incomplete work stays '
@@ -28,6 +34,15 @@ CONSEQUENCES += (' Shared work requires every retained shared file in this deck 
                  'through the existing saved flow or commit them with Git, then preview again. '
                  'Private ignored inputs stay local. Local-only migration is not a complete Git backup.')
 CHANGED = 'The deck or its saved inputs changed. Preview Open on the desk again.'
+# A deck stopped before its outline was drafted has no slide parts to open on the desk.
+NO_OUTLINE = ('This deck has no outline yet. Continue it in its saved flow until its outline '
+              'is drafted, then open it on the desk.')
+# A pause, a stop and a failure are each kept in History; none is resumed on the desk.
+HALTS = {'paused': 'The prior runner pause remains in History. Conversation editing will not '
+                   'resume that runner.',
+         'stopped': 'The prior runner stop or failure remains in History. Conversation editing '
+                    'will not resume that runner.'}
+HALTS['failed'] = HALTS['stopped']
 SHARED = ('Retained shared files in this deck and the existing workspace record must first match '
           'their committed versions and staging index. Record intended changes through the existing '
           'saved flow or commit them with Git, then preview again. Migration does not commit those edits.')
@@ -56,9 +71,23 @@ def materials(record, files):
                 not isinstance(s, dict) or type(s.get('number')) is not int
                 or not isinstance(s.get('objects'), list) for s in slides):
             raise ValueError('The saved original-deck inventory cannot be read.')
-        if inventory.get('sha256') != hashlib.sha256(files[existing.SOURCE]).hexdigest():
+        read = existing.given_name(record)
+        if read != existing.SOURCE:
+            # Upgraded from Selected changes and redrawn: the inventory is of the deck as it was
+            # at the upgrade. That deck must be here as it was kept, and the deck given as it was.
+            upgraded = record['upgraded']
+            if read not in files or not files[read].startswith(b'PK\x03\x04') \
+                    or hashlib.sha256(files[read]).hexdigest() != upgraded.get('sha256'):
+                raise ValueError('The deck the redesign started from is missing or changed. '
+                                 'Continue on the computer that upgraded it.')
+            kept = upgraded.get('original_sha256')
+            if kept and hashlib.sha256(files[existing.SOURCE]).hexdigest() != kept:
+                raise ValueError('The original deck differs from the one that was upgraded.')
+        if inventory.get('sha256') != hashlib.sha256(files[read]).hexdigest():
             raise ValueError('The original deck differs from its saved inventory.')
     if not desk.selected(record):
+        if 'outline.json' not in files:
+            raise ValueError(NO_OUTLINE)
         format.shared_material('outline.json', files.get('outline.json'))
         saved = _json(files, 'outline.json', True)
         slides = saved.get('slides') if isinstance(saved, dict) else None
@@ -114,9 +143,9 @@ def prepare_migration(record, saved_inputs):
             raise ValueError('This deck already has desk metadata or pending recovery.')
         halted = record.get('halted')
         if halted:
-            if not isinstance(halted, dict) or halted.get('state') not in ('stopped', 'failed'):
+            if not isinstance(halted, dict) or halted.get('state') not in HALTS:
                 raise ValueError('This saved runner stop cannot be interpreted. Continue with its saved flow first.')
-            retained.append('The prior runner stop or failure remains in History. Conversation editing will not resume that runner.')
+            retained.append(HALTS[halted['state']])
         if record.get('question'):
             raise ValueError('Resolve the saved runner question in its saved flow before opening it on the desk.')
     except (ValueError, KeyError, TypeError, UnicodeError) as error:
@@ -313,17 +342,6 @@ def _prepared_index(space, root, writes):
     return ''.join(sorted(entries, key=lambda entry: entry.partition('\t')[2]))
 
 
-def _check_recovery_index(space, root, writes, before, prepared):
-    _restore_index(space, root, writes, before, check=True)
-    _restore_index(space, root, writes, prepared, check=True)
-    if prepared != _prepared_index(space, root, writes):
-        raise WorkspaceError('The prepared migration index changed. Keep its recovery record.')
-    paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
-    current = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
-    if current not in (before, prepared):
-        raise WorkspaceError('The migration staging index changed. Nothing was replaced; keep its recovery record.')
-
-
 def _check_shared_recovery(space, root, files, shared, after, before_workspace):
     current, blockers = _shared_basis(space, root, files, marker=False)
     if shared is None and current is None:
@@ -403,37 +421,6 @@ def _recover(space, root, expected):
     _restore_index(space, root, after, journal['index_before'])
     (root / format.PENDING).unlink()
     return False
-
-
-def _path(space, root, name):
-    return space.root / gitstate.MARKER if name == WORKSPACE else root / name
-
-
-def _restore_index(space, root, writes, before, check=False):
-    paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
-    if not isinstance(before, str):
-        raise WorkspaceError('The saved migration index cannot be verified.')
-    entries = before.split('\0')
-    if before and (entries[-1] != '' or any(not entry for entry in entries[:-1])
-                   or entries[:-1] != sorted(entries[:-1], key=lambda entry: entry.partition('\t')[2])):
-        raise WorkspaceError('The saved migration index has an unsupported entry.')
-    seen = set()
-    for entry in entries:
-        if entry:
-            header, _, name = entry.partition('\t')
-            if name not in paths or name in seen or not re.fullmatch(r'100(?:644|755) [a-f0-9]{40,64} 0', header):
-                raise WorkspaceError('The saved migration index has an unsupported entry.')
-            seen.add(name)
-    if check:
-        return
-    removed = gitstate.hub.run(space.repo, 'update-index', '--force-remove', '--', *paths)
-    if removed.returncode:
-        raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
-    if before and gitstate.hub.run(space.repo, 'update-index', '-z', '--index-info', input=before).returncode:
-        raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
-    restored = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
-    if restored != before:
-        raise WorkspaceError('The migration index could not be verified; keep its recovery record.')
 
 
 def migrate(engine, path, expected):

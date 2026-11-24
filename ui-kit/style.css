@@ -1011,12 +1011,7 @@ details > summary {
   font-size: 0.9rem;
 }
 
-/* --- the shared run pattern: where it stops, what it does now ------------------------ */
-
-/* Under a start form's summary: the review level and the stops it leaves, with a way to change it. */
-.stops-line a {
-  color: var(--accent);
-}
+/* --- the shared run pattern: what it does now -------------------------------------- */
 
 /* Under a run's title: the step, its part, the time taken, the cost so far and the limit. */
 .now-line {
@@ -3340,6 +3335,141 @@ body[data-product="Training Studio"] .card > .training-options {
   margin-block: 0.5rem;
 }
 
+/* --- the parts of a project (StudioShell.parts in deck_web/shell.js) -------------------- */
+
+/* Every studio's project page lists the open project's parts in one place: in groups, each
+   part with its state in a word or two, the part shown marked. From 72rem it is the
+   workbench's left column, held in view beside the work (its place is set with the
+   workbench's, below). Narrower it is one control above the work that names the part shown
+   and opens the same list under it, in the page's flow: never a sideways scroll. The list
+   is opaque; only a part being written moves. */
+.parts {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.parts-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.6rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--control-line);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+}
+.parts-toggle:hover { background: var(--well); }
+.parts-toggle-label {
+  color: var(--quiet);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.parts-toggle > .parts-name { flex: 1 1 8rem; font-weight: 650; }
+.parts-toggle-mark {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0 0.2rem 0.2rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 160ms var(--ease);
+}
+.parts-toggle[aria-expanded="true"] .parts-toggle-mark { transform: translateY(0.2rem) rotate(-135deg); }
+.parts-toggle[aria-expanded="false"] + .parts-list { display: none; }
+.parts-list {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 0.75rem 0.6rem;
+  border: 1px solid var(--paper-line);
+  border-radius: 18px;
+  background: var(--card);
+}
+.parts-group { display: grid; gap: 0.2rem; min-width: 0; }
+.parts-group-title {
+  margin: 0;
+  padding: 0 0.6rem 0.15rem;
+  color: var(--quiet);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.parts-items {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.parts-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.15rem 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.parts-item:hover { background: var(--well); }
+.parts-item[aria-current="true"] {
+  background: var(--studio-wash, var(--selection));
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 650;
+}
+.parts-name { min-width: 0; overflow-wrap: anywhere; }
+/* A state is said in words, on a quiet chip; its tint only repeats what the words say. */
+.parts-state {
+  flex: none;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--well);
+  color: var(--quiet);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.parts-state[data-state="working"] { background: var(--studio-wash, var(--selection)); color: var(--accent); }
+.parts-state[data-state="yours"] { background: var(--yours-wash); color: var(--yours); }
+.parts-state[data-state="done"] { color: var(--done); }
+.parts-state[data-state="stale"] { background: var(--late-wash); color: var(--late); }
+.parts-state[data-state="count"] { padding-inline: 0; background: none; font-weight: 500; }
+.parts-item[data-making="true"] {
+  background-image: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--accent) 22%, transparent) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: parts-is-made 2.2s linear infinite;
+}
+@keyframes parts-is-made { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@media (min-width: 72rem) {
+  .parts-toggle { display: none; }
+  .parts-toggle[aria-expanded="false"] + .parts-list { display: grid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .parts-item[data-making="true"] { animation: none; }
+  .parts-toggle-mark, .parts-item { transition: none; }
+}
+@media (forced-colors: active) {
+  .parts-item[aria-current="true"] { outline: 2px solid CanvasText; outline-offset: -2px; }
+  .parts-state { border: 1px solid CanvasText; }
+}
+
 /* --- the desk (drafting.js) --------------------------------------------------------- */
 
 /* The desk's parts, drawn by ui-kit/drafting.js for any studio's page. Last in the kit,
@@ -3487,10 +3617,12 @@ body[data-product="Training Studio"] .outline-notes > summary {
   box-shadow: inset 0 0 0 1px var(--accent);
   font-weight: 600;
 }
-/* On a phone, Training Studio's desk keeps its chrome small: the material and section tabs
-   are one row that scrolls sideways, and a `.toolbar-compact` toolbar is one row (Back, the
-   title, one filled action and More), so the material being read fills the screen. Scoped
-   to Training Studio, whose page alone sets them. */
+/* On a phone, Training Studio's desk keeps its chrome small: the tabs inside one material
+   (its sections, a slide's tasks) are one row that scrolls sideways, and a `.toolbar-compact`
+   toolbar is one row (Back, the title, one filled action and More), so the material being
+   read fills the screen. The materials themselves are the parts list (StudioShell.parts),
+   one control above the work that never scrolls sideways. Scoped to Training Studio, whose
+   page alone sets them. */
 @media (max-width: 52rem) {
   body[data-product="Training Studio"] .desk-workspace-tabs {
     position: relative;
@@ -4463,8 +4595,8 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 }
 
 /* Parts gathered into one keep their own spacing at every width. */
-.workbench-rail, .workbench-parts { display: grid; gap: 0.9rem; align-content: start; min-width: 0; }
-.workbench-rail > *, .workbench-parts > * { margin: 0; min-width: 0; }
+.workbench-rail { display: grid; gap: 0.9rem; align-content: start; min-width: 0; }
+.workbench-rail > * { margin: 0; min-width: 0; }
 @media (min-width: 72rem) {
   :is(.page, .stack):has(> [data-zone="work"]) {
     display: grid;
@@ -4485,10 +4617,6 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   /* One small part may sit above the work, such as its tabs or a selection bar. */
   :is(.page, .stack) > [data-zone="work-top"] { grid-column: work; grid-row: 2; }
   :is(.page, .stack):has(> [data-zone="work-top"]) > [data-zone="work"] { grid-row: 3 / -1; }
-  /* The list of parts runs to the foot of the work, so its height never opens a gap in the
-     rail. It starts under the level switch when there is one, and at the top otherwise. */
-  :is(.page, .stack) > [data-zone="parts"][role="tablist"] { grid-row: 2 / -1; }
-  :is(.page, .stack) > [data-zone="parts"] ~ [data-zone="parts"][role="tablist"] { grid-row: 3 / -1; }
   :is(.page, .stack) > [data-zone="rail"] { grid-column: rail; }
   :is(.page, .stack) > [data-zone="work"] { grid-column: work; grid-row: 2 / -1; }
   /* A desk that gathers its rail into one part: the work and its parts share one row, what
@@ -4497,13 +4625,25 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
      rail never opens a gap between the work and what follows it. */
   :is(.page, .stack):has(> .workbench-rail):has(> [data-zone="work"]) { grid-template-rows: repeat(5, min-content) 1fr; grid-auto-flow: row; }
   :is(.page, .stack):has(> .workbench-rail) > .workbench-rail { grid-column: rail; grid-row: 2 / -1; }
-  :is(.page, .stack):has(> .workbench-rail) > .workbench-parts { grid-column: parts; grid-row: 2; }
   :is(.page, .stack):has(> .workbench-rail) > [data-zone="work"] { grid-column: work; grid-row: 2; }
   :is(.page, .stack):has(> .workbench-rail) > [data-zone="foot"] { grid-column: parts / rail; }
-  /* The work's parts read down the left, the one being made shimmering in the studio's colour. */
-  :is(.page, .stack) > [data-zone="parts"].desk-workspace-tabs,
-  :is(.page, .stack) > [data-zone="parts"] .desk-workspace-tabs { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  :is(.page, .stack) > [data-zone="parts"] [role="tab"] { justify-content: flex-start; width: 100%; }
+  /* A desk whose work needs no rail (its band is on top) gives the rail's room to the work. */
+  :is(.page, .stack):has(> [data-zone="parts"]):has(> [data-zone="work"]):not(:has(> [data-zone="rail"], > .workbench-rail, > :not([data-zone]))) {
+    grid-template-columns: [parts] 13rem [work rail] minmax(0, 1fr);
+  }
+  /* The list of parts (StudioShell.parts) is held in view beside the work as the page
+     scrolls, as tall as the window at most, its own list scrolling down when longer. It
+     runs to the foot of the work, or beside the work alone where foot parts follow. */
+  :is(.page, .stack) > .parts[data-zone="parts"] {
+    grid-row: 2 / -1;
+    align-self: start;
+    position: sticky;
+    top: 5rem;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  :is(.page, .stack):has(> .workbench-rail) > .parts[data-zone="parts"] { grid-row: 2; }
   :is(.page, .stack) > [data-zone="rail"].desk-level-standing .section-title,
   .workbench-rail .desk-level-standing .section-title { font-size: 1rem; }
 }
@@ -4515,7 +4655,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 @keyframes part-is-made { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 /* Reading alone (F): at every width the parts and the rail step aside, and the work reads in
    one column, until F, Escape or the Show everything button brings them back. */
-body[data-focus="reading"] :is(.page, .stack) > :is([data-zone="parts"], [data-zone="rail"], .workbench-parts, .workbench-rail) { display: none; }
+body[data-focus="reading"] :is(.page, .stack) > :is([data-zone="parts"], [data-zone="rail"], .workbench-rail) { display: none; }
 body[data-focus="reading"] { --foot-lift: 3.6rem; }
 @media (min-width: 72rem) {
   body[data-focus="reading"] :is(.page, .stack):has(> [data-zone="work"]) { grid-template-columns: [parts work rail] minmax(0, 52rem); justify-content: center; }

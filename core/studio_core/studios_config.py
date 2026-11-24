@@ -17,6 +17,9 @@ PRODUCT = globals().get("PRODUCT", "Studio")
 WorkspaceError = globals().get("WorkspaceError", ValueError)
 ADDRESS_CHECK = globals().get("ADDRESS_CHECK")
 STRICT_GROUPS = globals().get("STRICT_GROUPS", False)
+# A product that takes the lock beside the file its own reentrant way, and may already hold
+# it when it writes, gives the context manager that takes it; otherwise `_locked` takes it.
+LOCK = globals().get("LOCK")
 
 SCHEMA = 1
 PATH = Path.home() / '.config' / 'studios-config.json'
@@ -247,7 +250,7 @@ def update(changes, guard=None) -> dict:
     raising. Nothing to change is no write at all."""
     if not callable(changes):
         _check(changes)
-    with _locked():
+    with (LOCK() if LOCK is not None else _locked()):
         return _update(changes, guard)
 
 
@@ -298,44 +301,7 @@ def _update(changes: dict, guard) -> dict:
     return json.loads(written)
 
 
-def for_product(name, product, error, address_check, strict_groups=False):
+def for_product(name, product, error, address_check, strict_groups=False, lock=None):
     return fresh_module(__file__, name, {"PRODUCT": product, "WorkspaceError": error,
-                        "ADDRESS_CHECK": address_check, "STRICT_GROUPS": strict_groups})
-
-
-def patch_json(raw, keys, value):
-    """Replace only a selected JSON value; unrelated bytes, including formatting, survive."""
-    decoder = json.JSONDecoder()
-    start = len(raw) - len(raw.lstrip())
-    _, end = decoder.raw_decode(raw, start)
-    at = start + 1
-    while at < end:
-        while raw[at].isspace() or raw[at] == ',':
-            at += 1
-        if raw[at] == '}':
-            break
-        key, after = decoder.raw_decode(raw, at)
-        at = after
-        while raw[at].isspace() or raw[at] == ':':
-            at += 1
-        found, after = decoder.raw_decode(raw, at)
-        if key == keys[0]:
-            replacement = (
-                patch_json(raw[at:after], keys[1:], value)
-                if len(keys) > 1
-                else json.dumps(value, ensure_ascii=False)
-            )
-            return raw[:at] + replacement + raw[after:]
-        at = after
-    nested = value
-    for key in reversed(keys[1:]):
-        nested = {key: nested}
-    prefix = ',' if json.loads(raw).keys() else ''
-    return (
-        raw[: end - 1]
-        + prefix
-        + json.dumps(keys[0])
-        + ': '
-        + json.dumps(nested, ensure_ascii=False)
-        + raw[end - 1 :]
-    )
+                        "ADDRESS_CHECK": address_check, "STRICT_GROUPS": strict_groups,
+                        "LOCK": lock})

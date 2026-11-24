@@ -220,8 +220,10 @@ class EveryRealGateTests(unittest.TestCase):
 
     def test_every_presentation_gate(self):
         gates = presentation_gates()
+        # gate:redesign is the priced step an upgraded Selected changes deck waits at; only a
+        # desk deck reaches it, and a desk deck keeps no review level.
         self.assertEqual(gates, {'gate:story', 'gate:classify', 'gate:research-plan', 'gate:research',
-                                 'gate:outline', 'gate:look', 'gate:build'})
+                                 'gate:outline', 'gate:look', 'gate:build', 'gate:redesign'})
         for mode, stops in self.PRESENTATION.items():
             run = {'review_policy': {'schema': 1, 'level': mode}}
             for gate in gates:

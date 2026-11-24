@@ -27,6 +27,7 @@ import zlib
 import studio
 from hub_store import HubError, MAX_TEXT, MAX_BINARY, encoded, sha, record_path, validate_files
 from studio_core.research_sites import fetchable
+from studio_core import source_documents
 
 MAX_POSTS = 500
 MAX_BATCH = 25
@@ -784,17 +785,10 @@ def pdf_text(content):
         path = Path(temp) / 'upload.pdf'
         path.write_bytes(content)
         try:
-            done = subprocess.run(
-                [program, '-layout', str(path), '-'],
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                timeout=60,
-            )
-        except (OSError, subprocess.TimeoutExpired):
+            data = source_documents.pdftotext(path, program=program, timeout=60)
+        except (OSError, subprocess.SubprocessError):
             return None, UNREADABLE_PDF
-    if done.returncode != 0:
-        return None, UNREADABLE_PDF
-    text = done.stdout.decode('utf-8', 'replace').replace('\f', '\n').strip()
+    text = data.decode('utf-8', 'replace').replace('\f', '\n').strip()
     if not text:
         return None, EMPTY_PDF
     return text, ''
@@ -826,12 +820,17 @@ def _extract(root, content, suffix):
                     or sum(v.file_size for v in archive.infolist()) > MAX_IMPORT_BYTES
                 ):
                     raise ValueError('DOCX expands beyond the extraction limit.')
-                tree = ET.fromstring(archive.read(info))
+                document = archive.read(info)
+            # Each paragraph's own text (runs, tabs, line breaks), read by the shared
+            # Word reader in the transitional Word namespace.
+            paragraphs = source_documents.word_xml(
+                document, style='paragraphs', spaces=(source_documents.WORD,)
+            ).result()
         except (
             zipfile.BadZipFile,
             zipfile.LargeZipFile,
             KeyError,
-            ET.ParseError,
+            source_documents.WordUnreadable,
             EOFError,
             RuntimeError,
             NotImplementedError,
@@ -839,20 +838,7 @@ def _extract(root, content, suffix):
         ) as exc:
             # Not a DOCX, a damaged or protected one, or malformed document.xml.
             raise ValueError(UNREADABLE_DOCX) from exc
-        namespace = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
-        text = '\n\n'.join(
-            ''.join(
-                node.text or ''
-                if node.tag == namespace + 't'
-                else '\t'
-                if node.tag == namespace + 'tab'
-                else '\n'
-                if node.tag == namespace + 'br'
-                else ''
-                for node in p.iter()
-            )
-            for p in tree.iter(namespace + 'p')
-        )
+        text = '\n\n'.join(paragraphs)
         return text, 'ready' if text.strip() else 'pending'
     if suffix not in ('.md', '.txt', '.html', '.htm'):
         return None, 'pending'

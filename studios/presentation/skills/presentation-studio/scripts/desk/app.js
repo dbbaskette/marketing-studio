@@ -6,6 +6,16 @@
 // picture, and the deck itself, are fetched as bytes and held in memory, never at an address.
 'use strict';
 
+// The parts this page draws and speaks with that both deck studios share, from the shared
+// core (deck_web/desk-base.js, loaded before this script).
+const { byId, main, make, add, count, list, series, ago, when, megabytes, pathInto, button,
+  capsule, submitButton, pageForm, card, bullets, callout, segmented, slide, alertLine, narrow,
+  money, lasted, lower, capital, spoken, given, cell, saidBy, notify, copyBySelection, copy,
+  ordered, pageHead, focusKey, placeAsking, sheetTitle, problemLine, askedFrom, alerts, about,
+  placeAsked, forgetFound, createStep, base64Of, slideName, slidesNamed, shortNote, keptPart,
+  nameOf, lastLine, queued, spentSays, wantedCompanions, updating, upgradeOf, brandOf, wantedRows,
+  releasesLine, linkToken, forgetLibraryLink, libraryFromLink } = window.StudioDesk;
+
 const EDITED_LOOKS = 'You edited the outline, so the looks will be drawn again from it. You pick from the new ones before the deck is built.';
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 // The shell kit saves the appearance through this page's own key.
@@ -308,72 +318,7 @@ const PARTS = new WeakMap();
 // Each place a picture goes, and which picture that is.
 const PLACES = new WeakMap();
 
-const byId = (id) => document.getElementById(id);
-const main = () => byId('main');
-
 // --- small builders ---------------------------------------------------------------
-
-function make(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined && text !== null) node.textContent = String(text);
-  return node;
-}
-
-function add(parent, ...children) {
-  for (const child of children) {
-    if (child) parent.append(child);
-  }
-  return parent;
-}
-
-function count(number, one, many) {
-  return number + ' ' + (number === 1 ? one : many);
-}
-
-function list(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-// Several things named in a row: "one, two and three".
-function series(items) {
-  return items.length < 2 ? items.join('')
-    : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
-}
-
-function ago(then) {
-  const minutes = Math.round((Date.now() - then) / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return count(minutes, 'minute', 'minutes') + ' ago';
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return count(hours, 'hour', 'hours') + ' ago';
-  const days = Math.round(hours / 24);
-  if (days < 30) return count(days, 'day', 'days') + ' ago';
-  return new Date(then).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function when(stamp) {
-  const then = Date.parse(stamp);
-  if (Number.isNaN(then)) return make('span', 'quiet', 'not recorded');
-  const node = make('time', '', ago(then));
-  node.dateTime = new Date(then).toISOString();
-  node.title = new Date(then).toLocaleString();
-  return node;
-}
-
-// A limit, in the round numbers a limit is set in: 8,000,000 bytes is 8 MB.
-function megabytes(bytes) {
-  return String(Math.round(bytes / 100000) / 10) + ' MB';
-}
-
-function pathInto(node, path) {
-  String(path).split('/').forEach((part, index) => {
-    if (index) add(node, '/', document.createElement('wbr'));
-    add(node, part);
-  });
-  return node;
-}
 
 function icon(name) {
   const node = document.createElementNS(DRAWING, 'svg');
@@ -386,39 +331,6 @@ function icon(name) {
     path.setAttribute('d', line);
     node.append(path);
   }
-  return node;
-}
-
-function button(label, className, action, key) {
-  const node = make('button', className, label);
-  node.type = 'button';
-  if (key) node.dataset.key = key;
-  node.addEventListener('click', action);
-  return node;
-}
-
-// A capsule of glass. The highlight on it follows the pointer.
-function capsule(label, kind, action, key) {
-  return button(label, 'button shine' + (kind ? ' button-' + kind : ''), action, key);
-}
-
-// The filled button of a form. Pressing it, or Enter in one of the form's boxes, sends it.
-function submitButton(label, key) {
-  const node = make('button', 'button shine button-filled', label);
-  node.type = 'submit';
-  node.dataset.key = key;
-  return node;
-}
-
-// A form in the page's narrow column. The browser checks nothing in it: `sent` does, and
-// says what is wrong beside each box.
-function pageForm(sent) {
-  const node = make('form', 'narrow');
-  node.noValidate = true;
-  node.addEventListener('submit', (event) => {
-    event.preventDefault();
-    sent();
-  });
   return node;
 }
 
@@ -445,59 +357,6 @@ function bead(kind) {
 
 function state(kind, text) {
   return add(make('span', 'state'), bead(kind), make('span', '', text));
-}
-
-function card(title, className) {
-  const node = make('section', 'card shine' + (className ? ' ' + className : ''));
-  return add(node, make('h2', 'card-title', title));
-}
-
-function bullets(items, className) {
-  const node = make('ul', className || 'plain');
-  for (const item of items) node.append(make('li', '', item));
-  return node;
-}
-
-function callout(kind, ...children) {
-  const node = make('div', 'paper callout');
-  if (kind) node.dataset.kind = kind;
-  return add(node, ...children);
-}
-
-// A control with two answers, or three. Its glass thumb slides to the one that is chosen.
-function segmented(label, options, at, choose, key) {
-  const node = make('div', 'segmented');
-  node.setAttribute('role', 'group');
-  node.setAttribute('aria-label', label);
-  node.dataset.at = String(at);
-  node.dataset.count = String(options.length);
-  const thumb = make('span', 'seg-thumb');
-  thumb.setAttribute('aria-hidden', 'true');
-  node.append(thumb);
-  options.forEach((text, index) => {
-    const option = button(text, 'seg-option', () => {
-      if (index !== Number(node.dataset.at)) choose(index, node);
-    }, key + ' ' + index);
-    option.setAttribute('aria-pressed', String(index === at));
-    node.append(option);
-  });
-  return node;
-}
-
-function slide(node, at) {
-  node.dataset.at = String(at);
-  node.querySelectorAll('.seg-option').forEach((option, index) => {
-    option.setAttribute('aria-pressed', String(index === at));
-  });
-}
-
-// A line beside a control that says why it was refused. It is read out when it appears.
-function alertLine(id) {
-  const node = make('p', 'problem');
-  node.id = id;
-  node.setAttribute('role', 'alert');
-  node.hidden = true;
-  return node;
 }
 
 function say(problem, text) {
@@ -633,11 +492,6 @@ function settingsAddress() {
 const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
   step_by_step: 'Step by step' };
 
-// A phone: the page's own width query for the narrow layout matches.
-function narrow() {
-  return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
-}
-
 function moreMenu(label, items, key) {
   const menu = make('details', 'menu');
   menu.dataset.key = key + '-menu';
@@ -645,42 +499,6 @@ function moreMenu(label, items, key) {
   opener.dataset.key = key;
   opener.setAttribute('aria-label', label);
   return add(menu, add(opener, icon('more')), add(make('div', 'menu-list'), ...items));
-}
-
-function money(dollars) {
-  return '$' + Number(dollars).toFixed(2);
-}
-
-function lasted(seconds) {
-  const whole = Math.round(Number(seconds));
-  if (whole < 60) return count(whole, 'second', 'seconds');
-  const minutes = Math.round(whole / 60);
-  if (minutes < 60) return count(minutes, 'minute', 'minutes');
-  return count(Math.floor(minutes / 60), 'hour', 'hours') + ' '
-    + count(minutes % 60, 'minute', 'minutes');
-}
-
-function lower(text) {
-  return String(text).charAt(0).toLowerCase() + String(text).slice(1);
-}
-
-function capital(text) {
-  return String(text).charAt(0).toUpperCase() + String(text).slice(1);
-}
-
-// A word the runner uses for a kind or a state, as a person would write it.
-function spoken(word) {
-  return capital(String(word).replace(/[-_]+/g, ' '));
-}
-
-function given(value) {
-  return value !== null && value !== undefined;
-}
-
-function cell(label, ...children) {
-  const node = make('td');
-  node.dataset.label = label;
-  return add(node, ...children);
 }
 
 // --- talking to the server ---------------------------------------------------------
@@ -702,15 +520,7 @@ async function reach(endpoint, options) {
   }
 }
 
-// What an answer says, where it can be read, and the refusal an answer that says no makes.
-async function saidBy(response) {
-  try {
-    return await response.json();
-  } catch (failure) {
-    return null;
-  }
-}
-
+// The refusal an answer that says no makes. What an answer says is read by saidBy.
 function refusal(response, body) {
   const said = body && body.error ? String(body.error)
     : 'Presentation Studio gave no answer this page can read.';
@@ -768,11 +578,6 @@ function send(endpoint, body) {
   });
 }
 
-function notify(text) {
-  byId('notice').textContent = text;
-  byId('notice').hidden = !text;
-}
-
 function calm() {
   return Boolean(window.matchMedia
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -814,32 +619,6 @@ function dropToast(key) {
 }
 
 // --- copying ----------------------------------------------------------------------
-
-function copyBySelection(text) {
-  const holder = make('textarea', 'offscreen');
-  holder.value = text;
-  holder.readOnly = true;
-  holder.setAttribute('aria-hidden', 'true');
-  document.body.append(holder);
-  holder.select();
-  let copied = false;
-  try {
-    copied = document.execCommand('copy');
-  } catch (failure) {
-    copied = false;
-  }
-  holder.remove();
-  return copied;
-}
-
-async function copy(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (failure) {
-    return copyBySelection(text);
-  }
-}
 
 function copyButton(label, done, text, key) {
   return capsule(label, '', async () => {
@@ -1012,7 +791,9 @@ function show(screen, where, replace) {
 
 function back() {
   if (view.pushed > 0) {
-    window.history.back();
+    // Back leaves the screen, past the parts of a deck chosen on it (deck-desk.js address).
+    const parts = Number(window.history.state?.deskStep) || 0;
+    if (parts) window.history.go(-1 - parts); else window.history.back();
     return;
   }
   const up = { new: 'home', setup: 'settings', published: 'decks' };
@@ -1093,29 +874,6 @@ function toolbar(spec) {
   else byId('toolbar').classList.remove('toolbar-compact');
 }
 
-// A toolbar's actions: the one filled action first, then the rest, each quiet. A screen
-// passes at most one filled action. On a phone they wrap under the title.
-function ordered(actions) {
-  actions = list(actions).filter(Boolean);
-  const filled = (node) => Boolean(node.classList && node.classList.contains('button-filled'));
-  const lead = actions.filter(filled);
-  const rest = actions.filter((node) => !filled(node));
-  for (const node of rest) {
-    const control = node.tagName === 'DETAILS' ? node.querySelector('summary') : node;
-    if (control && control.classList && control.classList.contains('button')
-        && !control.classList.contains('button-danger')) control.classList.add('button-quiet');
-  }
-  return [...lead, ...rest];
-}
-
-// A screen's header: the one sentence that says what the screen is for, and the view's own
-// actions in a bar beside it.
-function pageHead(lede, beside) {
-  const actions = list(beside).filter(Boolean);
-  return add(make('div', 'page-head'), typeof lede === 'string' ? make('p', 'lede', lede) : lede,
-    actions.length ? add(make('div', 'bar'), ...actions) : null);
-}
-
 // Put a screen in place. A screen drawn again, because something changed, keeps the
 // reader's place: what had the focus has it again, and what was open stays open.
 function place(spec, nodes, fresh) {
@@ -1136,16 +894,6 @@ function place(spec, nodes, fresh) {
     return;
   }
   if (focused) focusKey(focused);
-}
-
-function focusKey(key) {
-  for (const node of document.querySelectorAll('[data-key]')) {
-    if (node.dataset.key === key && !node.disabled) {
-      node.focus({ preventScroll: true });
-      return true;
-    }
-  }
-  return false;
 }
 
 // The tab's title leads with how many decks need the person, so it shows from another tab.
@@ -1192,16 +940,6 @@ function questionsIn(holder) {
 }
 function partName(node) {
   return String(PARTS.get(node) || '').split('\n')[0];
-}
-// Puts each held question back among `nodes`, in place. One whose part has gone goes too;
-// Drafting.confirmInPlace then answers it with its way out, so nothing is discarded.
-function placeAsking(nodes, pending) {
-  for (const [node, after] of pending) {
-    if (after === null) { nodes.unshift(node); continue; }
-    const at = nodes.indexOf(after);
-    if (at < 0) node.remove();
-    else nodes.splice(at + 1, 0, node);
-  }
 }
 
 // Put parts in a holder in order. A part is [name, what it is drawn from, how it is built],
@@ -1306,12 +1044,6 @@ function unopened(failure, shown, fresh, about) {
 
 // --- the sheet: it drops from the toolbar, and a decision is confirmed in it ---------------
 
-function sheetTitle(text) {
-  const node = make('h2', 'sheet-title', text);
-  node.id = 'sheet-title';
-  return node;
-}
-
 function openSheet(kind, opener) {
   return () => {
     view.sheet = kind;
@@ -1341,14 +1073,6 @@ function closeSheet() {
   if (view.screen === 'deck' && view.run) paintDeck(false);
   else if (['home', 'decks'].includes(view.screen) && view.decks) draw(false);
   if (!focusKey(opener)) byId('title').focus({ preventScroll: true });
-}
-
-function problemLine() {
-  const node = make('p', 'problem');
-  node.id = 'sheet-problem';
-  node.setAttribute('role', 'alert');
-  node.hidden = true;
-  return node;
 }
 
 // A note is kept for the deck, its gate and the decision it was typed for.
@@ -1520,12 +1244,6 @@ async function restoreIntake() {
   return saved;
 }
 
-// A question asked in place (Drafting.confirmInPlace): beside the control that asked; under
-// its row where it sits in a list row, which lays its parts out in a line; or at the top of
-// the page where the control is in the toolbar or there is none. `ask(place)` asks it.
-function askedFrom(control) {
-  return control && control.closest && control.closest('main') ? null : main();
-}
 async function askedBeside(control, ask) {
   const row = control && control.closest ? control.closest('li.row') : null;
   const holder = row ? make('li', '') : null;
@@ -1651,10 +1369,6 @@ function invitation() {
     add(make('div', 'bar'), newButton(view.sheet ? '' : 'filled')),
     make('p', 'quiet', 'Starting takes three short steps, and this page tells you when it '
       + 'needs you.'));
-}
-
-function alerts() {
-  return typeof Notification === 'undefined' ? 'none' : Notification.permission;
 }
 
 function computerLine() {
@@ -2158,14 +1872,6 @@ async function shareNow() {
   if (!focusKey('share')) byId('title').focus({ preventScroll: true });
 }
 
-function about(pairs) {
-  const node = make('dl', 'about');
-  for (const [name, value] of pairs) {
-    if (given(value) && value !== '') add(node, make('dt', '', name), make('dd', '', value));
-  }
-  return node;
-}
-
 function limitsSays(limits) {
   const says = [];
   if (limits.parallel) {
@@ -2305,27 +2011,6 @@ function setupForm() {
     check: null, checked: '', checking: false, unchecked: '', existing: false, turn: 0,
     saving: false,
   });
-}
-
-// What is asked of the check: exactly where the decks would be kept, and nothing else.
-// A folder or a branch that nobody has chosen is not asked about: the check says what it found.
-function placeAsked(form) {
-  const text = (value) => String(value).trim() || null;
-  const chosen = (name) => (form.touched[name] || form.existing ? text(form[name]) : null);
-  return { repository: form.where ? null : text(form.repository),
-    path: form.where ? text(form.path) : null,
-    folder: chosen('folder'), branch: chosen('branch') };
-}
-
-// A different place was named. What was found in the last one says nothing about this one.
-function forgetFound(form) {
-  for (const name of ['folder', 'branch', 'name']) {
-    if (!form.existing && form.touched[name]) continue;
-    form[name] = '';
-    form.touched[name] = false;
-  }
-  form.existing = false;
-  form.check = null;
 }
 
 function checkItem(found) {
@@ -3011,12 +2696,6 @@ function sourceKind(draft) {
   return (kinds[draft.source] || kinds[0] || [''])[0];
 }
 
-// A numbered step of a sheet that makes something: "2. What it is about", then its parts.
-function createStep(number, title, ...nodes) {
-  return add(make('section', 'create-step'), make('h3', 'sheet-part', number + '. ' + title),
-    ...nodes);
-}
-
 // Why a file cannot be used, or nothing when it can.
 function unfit(file, draft) {
   const at = String(file.name).lastIndexOf('.');
@@ -3033,21 +2712,6 @@ function unfit(file, draft) {
   }
   if (!file.size) return file.name + ' is empty. Choose another file.';
   return '';
-}
-
-// A file as the runner takes it, in base64. The browser reads it, and puts a few words about
-// its kind in front, up to a comma, which are left off.
-function base64Of(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const read = String(reader.result);
-      const at = read.indexOf(',');
-      resolve(at < 0 ? '' : read.slice(at + 1));
-    };
-    reader.onerror = () => reject(new Error('This browser could not read it.'));
-    reader.readAsDataURL(file);
-  });
 }
 
 // A file was chosen. It is read here at once, so that nothing waits on it when the deck
@@ -3728,20 +3392,6 @@ function slideMarks(one, held, repaint, saying) {
   return parts;
 }
 
-function slideName(slide) {
-  return 'Slide ' + slide.number + (slide.title ? ': ' + slide.title : '');
-}
-
-// Slides by their numbers: "slide 3", "slides 3 to 5", or "slides 3, 5 and 8".
-function slidesNamed(numbers) {
-  const held = list(numbers);
-  if (held.length < 2) return held.length ? 'slide ' + held[0] : 'no slide';
-  const row = held.length > 2 && held.every((number, index) => !index
-    || number === held[index - 1] + 1);
-  return 'slides ' + (row ? held[0] + ' to ' + held[held.length - 1]
-    : series(held.map(String)));
-}
-
 // A deck someone else's computer runs, or nobody does, is read here and never changed.
 function theirs(run) {
   return run.mine === false;
@@ -3942,12 +3592,6 @@ function notePart(run) {
     () => sendNote(run, box, problem, go), 'send-note');
   go.disabled = Boolean(view.busy);
   return add(make('div', 'answer'), label, box, hint, problem, add(make('div', 'bar'), go));
-}
-
-// A note as the hint repeats it: the first line and a half, at most.
-function shortNote(text) {
-  const flat = String(text || '').replace(/\s+/g, ' ').trim();
-  return flat.length > 160 ? flat.slice(0, 159).trimEnd() + '…' : flat;
 }
 
 async function sendNote(run, box, problem, pressed) {
@@ -4151,15 +3795,6 @@ function moreTime(found, thing) {
   return 'Give it more time and try again lets each step of this ' + thing + ' take up to '
     + lasted(2 * found.seconds) + ', and runs this step again from the start. Raising the '
     + 'limit in Settings, under Limits, is the other way on, for every ' + thing + '.';
-}
-
-// What a stop kept: a sentence and, where it names things one a line, those as a list.
-function keptPart(text) {
-  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
-  const items = lines.filter((line) => line.startsWith('- ')).map((line) => line.slice(2));
-  const said = lines.filter((line) => !line.startsWith('- ')).join(' ');
-  return add(make('div', 'kept'), add(make('p', ''), make('strong', '', 'What was kept: '), said),
-    items.length ? bullets(items, 'plain kept-list') : null);
 }
 
 // A question from a worker, with a box to answer in. What is typed is kept as it is typed.
@@ -6228,6 +5863,9 @@ function paintDeck(fresh) {
     return;
   }
   const run = view.run;
+  // A deck the earlier gated flow saved, whose record the runner cannot read, is a read-only
+  // record: what it is, why, its saved files, and one way on.
+  if (run.saved_record) return paintSavedRecord(run, fresh);
   // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
   // desk, and the desk from then on. Every other deck keeps the screen below.
   if (window.deckDesk.opens(run)) {
@@ -6300,6 +5938,65 @@ function paintDeck(fresh) {
   tidyPictures();
 }
 
+// --- a read-only record ------------------------------------------------------------------
+// A deck saved by the earlier gated flow whose record the runner refuses. Nothing on this
+// screen continues it or opens it on the desk: it is read, and new work starts from it.
+const SAVED_FILES = { 'README.md': 'Read the deck’s summary', 'intake.md': 'Read intake',
+  'classify.md': 'Read source classification', 'outline.md': 'Read saved outline',
+  'look.md': 'Read the look', 'research/plan.md': 'Read research plan',
+  'research/report.md': 'Read research report', 'research/review.md': 'Read research review' };
+
+function paintSavedRecord(run, fresh) {
+  const saved = run.saved_record;
+  const title = run.title || 'Untitled';
+  placeParts({ title, above: [make('span', '', [routeWords(run), 'Read-only'].filter(Boolean)
+    .join(' · '))], back: true, actions: [], mark: [title, saved.why, saved.next] }, [
+    ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
+    ['saved-why', [saved.why], () => add(card('Why it cannot be continued'),
+      make('p', '', saved.why),
+      make('p', 'quiet', 'Nothing here changes it. Restore its saved record from your workspace '
+        + 'history to continue it, or start new work from it.'))],
+    ['saved-files', [saved.files], () => savedFilesPart(run)],
+  ], fresh);
+}
+
+function savedRecordIntro(run) {
+  const saved = run.saved_record;
+  const copying = saved.next === 'copy';
+  const go = capsule(copying ? 'Start new work from this' : 'Start a new deck', 'filled',
+    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
+      : openNew(undefined, false, go)), 'saved-next');
+  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
+    state('off', 'Read-only: it is not continued and not opened on the desk'),
+    make('p', 'quiet', copying ? 'Start new work from this opens the start form with its '
+      + 'setup and material. This saved deck is kept as it is.'
+      : 'Its start form cannot be read, so a new deck starts from an empty form. This saved '
+        + 'deck is kept as it is.'));
+}
+
+function savedFilesPart(run) {
+  const files = list(run.saved_record.files);
+  const node = card('Saved files');
+  if (!files.length) return add(node, make('p', 'quiet', 'It holds no saved files to read.'));
+  const holder = make('div', 'card-part'), problem = problemLine();
+  const bar = make('div', 'bar');
+  for (const name of files) {
+    const label = SAVED_FILES[name] || 'Read ' + name;
+    const go = capsule(label, 'quiet', async () => {
+      go.disabled = true; say(problem, '');
+      try {
+        const found = await ask('file', { path: run.path, name });
+        holder.replaceChildren(documentPart(label, found.text),
+          ...(found.truncated ? [make('p', 'quiet', 'This is a shortened preview. The full file remains in your workspace.')] : []));
+      } catch (failure) { say(problem, failure.message); }
+      finally { go.disabled = false; }
+    }, 'saved-read ' + name);
+    add(bar, go);
+  }
+  return add(node, make('p', 'quiet', 'Each file stays in the deck’s folder in your workspace.'),
+    bar, problem, holder);
+}
+
 async function drawDeck(fresh) {
   const turn = view.turn;
   if (fresh) {
@@ -6332,10 +6029,6 @@ async function drawDeck(fresh) {
 // reads. The runner names the driver; where it names none, which is every workspace that is
 // a folder on one computer, none of this is ever shown.
 
-function nameOf(driver) {
-  return String((driver && driver.name) || '').trim() || 'A teammate';
-}
-
 // A deck that someone else's computer runs.
 function elsewhere(brief) {
   return Boolean(brief && brief.mine === false && brief.driver && brief.driver.here === false);
@@ -6363,16 +6056,6 @@ function whoLine(brief) {
   return brief && brief.driver ? whoSays(brief.driver, 'quiet who') : null;
 }
 
-// What this computer knows of a deck a teammate runs: when it was last shared and where it
-// stood then. It never says what is happening now, because that is not known here.
-function lastLine(last, className) {
-  if (!last) return null;
-  const node = make('p', className);
-  if (!Number.isNaN(Date.parse(last.at))) add(node, 'Last shared ', when(last.at), '. ');
-  return add(node, (last.says ? String(last.says).trim() + ' ' : '')
-    + 'It may have moved on since: this computer knows only what was shared.');
-}
-
 // What the runner says about who has a deck: that it was taken from this computer, or that
 // it was changed on two computers at once.
 function noticeLine(brief) {
@@ -6390,11 +6073,6 @@ function keptLine(names) {
     + ', where git keeps it under the name' + (kept.length > 1 ? 's ' : ' '));
   kept.forEach((name, index) => add(node, index ? ', ' : '', pathInto(make('code'), name)));
   return add(node, '. It is on this computer only, and is never sent to your team.');
-}
-
-// A deck that waits for its turn, and how many are ahead of it.
-function queued(run) {
-  return Boolean(run && run.queue && given(run.queue.ahead));
 }
 
 function queueSays(queue) {
@@ -6941,15 +6619,6 @@ async function readStatus() {
   }
 }
 
-function spentSays(spent) {
-  // A cost of nothing is never said as $0.00.
-  if (given(spent.dollars) && Number(spent.dollars) > 0) {
-    return Number(spent.dollars) < 0.005 ? 'less than $0.01' : money(spent.dollars);
-  }
-  return given(spent.tokens) ? Number(spent.tokens).toLocaleString() + ' tokens'
-    : 'Not reported yet';
-}
-
 // Every deck on this computer: what each is doing, and what it has cost.
 function runsCard() {
   if (!view.status) return null;
@@ -7078,15 +6747,6 @@ function upkeepOf() {
   return view.setup ? view.setup.upkeep || null : null;
 }
 
-function wantedCompanions(found) {
-  return list(found && found.companions).filter((one) => ['missing', 'older']
-    .includes(one.state));
-}
-
-function updating(found) {
-  return Boolean(found && found.update && found.update.state === 'running');
-}
-
 // What the update in hand is doing, or how the last one went. None before there was one.
 function updateLine(found) {
   const update = (found && found.update) || {};
@@ -7115,15 +6775,6 @@ function versionsOf() {
   return found && found.versions ? found.versions : null;
 }
 
-function upgradeOf(found) {
-  return (found && found.upgrade) || {};
-}
-
-// The brand skill's install: what it would install, from where, and how the last one went.
-function brandOf(found) {
-  return (found && found.brand) || {};
-}
-
 // Whether Home tells of the versions: an upgrade or a brand install in hand or how it went,
 // an upgrade waiting for a restart, or something newer or missing, until it is dismissed.
 function versionsNotice() {
@@ -7132,10 +6783,6 @@ function versionsNotice() {
   if (['running', 'restart', 'restarting', 'failed'].includes(upgradeOf(found).state)) return true;
   if (['running', 'failed', 'changed'].includes(brandOf(found).state)) return true;
   return Boolean(found.key && !found.dismissed);
-}
-
-function wantedRows(found) {
-  return list(found && found.rows).filter((row) => ['update', 'missing'].includes(row.state));
 }
 
 // The companions among what is wanted: what comes with a newer Presentation Studio.
@@ -7482,19 +7129,6 @@ function linkWords(link) {
 }
 
 const COMPANION_BEADS = { ok: 'done', missing: 'late', older: 'late', unread: 'none' };
-
-function releasesLine(found) {
-  const releases = (found && found.releases) || {};
-  if (releases.on === false) {
-    return make('p', 'quiet', 'Looking online for updates is turned off, in Settings.');
-  }
-  if (releases.problem) return make('p', 'fix', releases.problem);
-  if (!releases.at || Number.isNaN(Date.parse(releases.at))) {
-    return make('p', 'quiet', 'Updates have not been looked for yet.');
-  }
-  return add(make('p', 'quiet'), 'Updates were last looked for ', when(releases.at),
-    list(releases.newer).length ? '.' : '. Nothing newer was found.');
-}
 
 // Status: everything that was found, what was put back, and the update.
 function skillsCard() {
@@ -7970,36 +7604,11 @@ function suitePort(port, here) {
     ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
 }
 
-function linkToken() {
-  const found = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(window.location.hash);
-  return found ? found[1] : '';
-}
-
 // Continue in another studio: Marketing Studio opens this page with `library=<id>@<revision>`
 // in its fragment. It is read once, as the page begins, and checked here again: a Document
 // Library ID and a revision from 1 to 1000, or nothing.
 // This page load, to tell a refusal said now from one kept with a saved form.
 const PAGE_LOAD = String(Date.now()) + '-' + String(Math.random()).slice(2);
-
-function forgetLibraryLink() {
-  try {
-    const params = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
-    if (!params.has('library')) return;
-    params.delete('library');
-    const kept = params.toString();
-    window.history.replaceState(window.history.state, '', (window.location.pathname || '')
-      + (window.location.search || '') + (kept ? '#' + kept : ''));
-  } catch (failure) {
-    // A browser that cannot change its address keeps it: the sheet opens once per load.
-  }
-}
-
-function libraryFromLink(hash) {
-  const given = new URLSearchParams(String(hash || '').replace(/^#/, '')).get('library') || '';
-  const found = /^([a-z0-9][a-z0-9-]{0,63})@([1-9][0-9]{0,3})$/.exec(given);
-  if (!found || Number(found[2]) > 1000) return null;
-  return { id: found[1], revision: Number(found[2]) };
-}
 
 // The New deck sheet opened from a Document Library item: a deck from an idea, researched,
 // with that revision picked as a source (the library's documents go with a researched deck),
@@ -8118,6 +7727,9 @@ function begin() {
     suite.hidden = false;
   }
   window.addEventListener('popstate', (event) => {
+    // Back or Forward between two parts of the deck on screen shows that part, no more.
+    if (view.screen === 'deck' && event.state && event.state.screen === 'deck'
+        && window.deckDesk && window.deckDesk.returnTo(event.state)) return;
     view.pushed = Math.max(0, view.pushed - 1);
     open(event.state || { screen: 'home' });
   });

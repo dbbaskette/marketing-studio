@@ -12,6 +12,13 @@ What a caller needs to know
     existing.keep_patch(root, handed)                           # keep the plan: work/patch.json
     out  = existing.apply_patch(root, run, slides)              # work/patched.pptx, compared
     rows = existing.pairs(root, run)                            # before and after, by number
+    deck = existing.given_deck(root, run)                       # what Before is drawn from
+
+- A Selected changes deck upgraded to Redesign, keep content keeps the deck as it was when it
+  was upgraded at UPGRADED (sources/redesign-from.pptx, never shared). Once its redesign
+  starts, `read_deck(root, slides, deck)` and `draw_original(..., deck)` read that file in
+  place of sources/original.pptx, and `write_inventory` keeps what was read with no gate.
+  Every other deck reads sources/original.pptx as before.
 
 - `source` is the form's: {'kind': 'upload', 'name', 'data': bytes} or {'kind': 'google',
   'link'} (a Slides URL or a bare ID). The deck is kept as sources/original.pptx, which is
@@ -71,6 +78,10 @@ PATCH = 'work/patch.json'
 PLAN = 'work/patch-plan.json'
 ALLOW = 'work/patch-allow.json'
 PATCHED = 'work/patched.pptx'
+# A Selected changes deck upgraded to Redesign, keep content: the deck as it was when it was
+# upgraded, every change made so far in it, kept beside the deck given (never changed) as
+# the redesign's own input. Like the deck given, it is never shared.
+UPGRADED = 'sources/redesign-from.pptx'
 NAME = 'patch'
 GATE = 'gate:classify'
 SIGNATURE = b'PK\x03\x04'
@@ -175,14 +186,29 @@ def _build():
     return build
 
 
-def draw_original(root, run: dict, slides, renderer) -> None:
+def given_name(run: dict) -> str:
+    """The deck folder's own path of the deck the inventory and the Before pictures are read
+    from: the deck given, or for a deck upgraded from Selected changes whose redesign has
+    started, the deck as it was when it was upgraded (UPGRADED)."""
+    upgraded = run.get('upgraded') if isinstance(run, dict) else None
+    began = ((run.get('steps') or {}).get('reinventory') or {}).get('done') \
+        if isinstance(run, dict) else False
+    return UPGRADED if isinstance(upgraded, dict) and began else SOURCE
+
+
+def given_deck(root, run: dict) -> Path:
+    """`given_name` as a path in the deck's folder."""
+    return Path(root) / given_name(run)
+
+
+def draw_original(root, run: dict, slides, renderer, deck=None) -> None:
     """Draw the fetched deck's slides into work/original/, with its shots.json, as the
     build's previews are drawn: under the computer's one turn at the renderer and through
     the deck's one preview file in Drive (`build.picture_deck`); `renderer` is what
     `build.how` takes. Only work/ is written, so it may be done while the deck's shared
-    files are being read or shared."""
+    files are being read or shared. `deck` is the file drawn, the deck given unless named."""
     root = Path(root)
-    deck = root / SOURCE
+    deck = Path(deck) if deck is not None else root / SOURCE
     if not deck.is_file():
         raise WorkspaceError('The deck has not been brought in yet.')
     folder = root / ORIGINAL_SHOTS
@@ -194,21 +220,28 @@ def draw_original(root, run: dict, slides, renderer) -> None:
     write_atomic(folder / SHOTS, json.dumps({'slides': shots}, indent=2) + '\n')
 
 
-def read_deck(root, slides) -> dict:
-    """What `inventory` keeps of the fetched deck, read and not yet written."""
+def read_deck(root, slides, deck=None) -> dict:
+    """What `inventory` keeps of the fetched deck, read and not yet written. `deck` is the
+    file read, the deck given unless named; the inventory keeps the given deck's name."""
     root = Path(root)
-    deck = root / SOURCE
+    deck = Path(deck) if deck is not None else root / SOURCE
     if not deck.is_file():
         raise WorkspaceError('The deck has not been brought in yet.')
     return _shared(slides.pptx_inspect(deck), _source_name(root))
+
+
+def write_inventory(root, shared: dict) -> None:
+    """Write classify.json and classify.md from `read_deck`, and nothing else."""
+    root = Path(root)
+    write_atomic(root / INVENTORY, json.dumps(shared, indent=2, ensure_ascii=False) + '\n')
+    write_atomic(root / INVENTORY_MD, _table(shared))
 
 
 def keep_inventory(root, run: dict, shared: dict) -> dict:
     """Write classify.json and classify.md from `read_deck`, and put the inventory in front
     of the person. Returns the run."""
     root = Path(root)
-    write_atomic(root / INVENTORY, json.dumps(shared, indent=2, ensure_ascii=False) + '\n')
-    write_atomic(root / INVENTORY_MD, _table(shared))
+    write_inventory(root, shared)
     gate = (run.setdefault('gates', {})).get(GATE) or {}
     run['gates'][GATE] = {'state': 'waiting', 'round': int(gate.get('round') or 0) + 1}
     decks.write_run(root, run)

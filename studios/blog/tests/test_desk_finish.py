@@ -2597,7 +2597,7 @@ class ReviewFixTests(ToolCase):
         self.assertIn(
             waiting, names, 'an open older set waits a day for a page that still shows it'
         )
-        with patch('desk_finish.sets', side_effect=AssertionError('read every set')):
+        with patch('desk_proposals.sets', side_effect=AssertionError('read every set')):
             shown = desk_jobs.view(self.root, self.ident)['finishing']
         self.assertEqual(shown['humanize']['job'], newest)
 
@@ -2890,7 +2890,7 @@ class GooglePairingTests(unittest.TestCase):
 
         case = ('Keep it short.\n', 'Keep it **short**.\n')
         first = desk_finish.google_changes(*case)[0][0]['id']
-        with patch.object(desk_finish, '_restyle', return_value='Embolden “short”.'):
+        with patch('desk_google_changes._restyle', return_value='Embolden “short”.'):
             again = desk_finish.google_changes(*case)[0]
         self.assertEqual((again[0]['id'], again[0]['reason']), (first, 'Embolden “short”.'))
 
@@ -4650,7 +4650,7 @@ class PolishVoiceTests(ToolCase):
         from unittest import mock
 
         job = self.check(voice_guide=self.guide, humanize='light')
-        with mock.patch.object(desk_finish, '_guide', side_effect=ValueError('Catalog changed')):
+        with mock.patch('desk_finishing._guide', side_effect=ValueError('Catalog changed')):
             self.ready(job, {'suggestions': []})
         second = desk_jobs.jobs(self.root, self.ident)[-1]
         self.assertEqual(second['kind'], 'finish-humanize')

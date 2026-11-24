@@ -29,8 +29,9 @@ entry point. It forwards options to the same installer as
 launcher `installer/Install Marketing Studio.command` remains available.
 
 From a consolidated checkout, install a particular studio with
-`bash install.sh --studios blog`, `bash install.sh --studios presentation`, or
-`bash install.sh --studios training`. Each independent `studios/<name>/`
+`bash install.sh --studios blog`, `bash install.sh --studios presentation`,
+`bash install.sh --studios training` or `bash install.sh --studios infographic`.
+Each independent `studios/<name>/`
 directory also has its own `install.sh` for its native installer.
 
 Platform downloads include private Python and Node runtimes, Harness Research and
@@ -134,9 +135,10 @@ dependencies with lifecycle scripts disabled, and includes dependency license no
 Private runtime checksums are in `pins/runtimes.json`. The companions are named in
 `pins/companions.json`.
 
-Marketing Studio and its four studios share release 4.17.0. Harness Research, Harness
-Slides, and Harness Brand share release 1.5.0. The Broadcom, Tanzu, and TrueSource
-brand shortcuts also report 1.5.0 in their skill metadata.
+Marketing Studio and its four studios share one version, the one in
+[`VERSION`](../VERSION). The companion releases this version was tested with are the
+`tested` values in [`pins/companions.json`](../pins/companions.json); each companion's
+`version` there is the oldest it works with.
 
 **Companions come from `main`.** There are no release tags to choose and nothing is
 locked. Each companion names its repository, its `main` branch and the oldest version
@@ -242,8 +244,10 @@ workspace's hooks, signing setup, identity, or repository permissions.
 
 Infographic Studio is the fourth native selection (`--studios infographic`, `--is`
 for start/stop/restart, or `open infographic`). Its standalone launch opens shared
-setup when needed and preserves existing workspaces. It uses local supplied-information
-storage in this release, even when the other studios share a team repository.
+setup when needed and preserves existing workspaces. Its supplied information, images,
+jobs and exports stay in its own local workspace. When a team repository is set in
+shared settings, its **Team library** shares only the reviewed files you choose there,
+through a clone of its own.
 Prepared supported-platform packages include its pinned renderer. Its own pipeline
 installs no image SDK or Research/Slides companion; an explicitly selected brand
 add-on can have separate prerequisites. See its [setup and usage guide](../studios/infographic/README.md).

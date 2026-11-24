@@ -22,7 +22,6 @@ import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
 SKILL = REPO / 'skills/blog-studio'
-TOOLKIT = REPO / 'skills/blog-writing-toolkit'
 TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 INSTALLER_FILES = (
     'install.sh',
@@ -38,7 +37,7 @@ EXECUTABLE = {
     'installer/install.sh',
 }
 BUNDLED_DOCS = ('docs/installation.md', 'docs/troubleshooting.md')
-ARCHIVES = ('blog-studio-installer.zip', 'blog-studio.zip', 'blog-writing-toolkit.zip')
+ARCHIVES = ('blog-studio-installer.zip', 'blog-studio.zip')
 
 
 def load_installer():
@@ -59,15 +58,11 @@ def contents():
     skill[installer.MANIFEST] = (json.dumps(manifest, indent=2) + '\n').encode()
     setup = {name: (REPO / name).read_bytes() for name in INSTALLER_FILES + BUNDLED_DOCS}
     setup.update({'skills/blog-studio/' + name: data for name, data in skill.items()})
-    toolkit = {name: (TOOLKIT / name).read_bytes() for name in installer.inventory(TOOLKIT)}
     return manifest['version'], {
         'blog-studio-installer.zip': {
             'blog-studio-setup/' + name: data for name, data in setup.items()
         },
         'blog-studio.zip': {'blog-studio/' + name: data for name, data in skill.items()},
-        'blog-writing-toolkit.zip': {
-            'blog-writing-toolkit/' + name: data for name, data in toolkit.items()
-        },
     }
 
 
@@ -83,10 +78,10 @@ def write_archive(path, entries):
 
 
 def validate_sources():
-    for script in (SKILL / 'scripts/validate_package.py', TOOLKIT / 'scripts/validate_package.py'):
-        result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True)
-        if result.returncode:
-            raise SystemExit(result.stderr.strip() or 'Source validation failed: ' + str(script))
+    script = SKILL / 'scripts/validate_package.py'
+    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True)
+    if result.returncode:
+        raise SystemExit(result.stderr.strip() or 'Source validation failed: ' + str(script))
     for name in BUNDLED_DOCS:
         # Bundled guides travel without the repository, so their relative links must stay inside the bundle.
         source = REPO / name

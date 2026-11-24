@@ -266,6 +266,9 @@ class InstalledAddressTests(SyncCase):
         (version / 'runner').mkdir()
         for script in ('sync_guidance.py', 'home.py'):
             shutil.copy2(helpers.SCRIPTS / script, version / 'scripts' / script)
+        # The shared core both scripts take their parts from, which the installer copies
+        # with the rest of the scripts folder.
+        (version / 'scripts' / 'studio_core').symlink_to((helpers.SCRIPTS / 'studio_core').resolve())
         shutil.copy2(helpers.SKILL / 'VERSION', version / 'VERSION')
         (version / 'guidance' / 'SKILL.md').write_text(f'Guidance installed with {name}.\n')
         (version / 'runner' / 'studio.py').write_text('')

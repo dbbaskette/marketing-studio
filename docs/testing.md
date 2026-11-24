@@ -1,7 +1,7 @@
 # Testing
 
 The record of the first implementation's checks is in
-[Initial implementation verification](verification.md); this guide is the current one.
+[Initial implementation verification](archive/verification.md); this guide is the current one.
 
 Infographic Studio has its own disposable native suite, also included in the root
 check and the four-studio setup/launch/distribution matrix. From the repository root:
@@ -80,6 +80,8 @@ provider job or reads this computer's studio settings:
 | Training Studio, a deck that stopped | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --stopped-deck` |
 | A deck's slides, in either deck studio | `python3 tests/slide_review_fixture.py training --rendered` or `presentation` |
 | Presentation Studio, an empty workspace | `python3 studios/presentation/tests/ui/intake_fixture.py` |
+| Presentation Studio, a saved gated deck to open on the desk, or a saved record it cannot read | `python3 studios/presentation/tests/ui/intake_fixture.py --saved` or `--saved-read-only` |
+| Presentation Studio, a Selected changes deck on the desk, to upgrade to Redesign, keep content and start its priced step with stand-in jobs | `python3 studios/presentation/tests/ui/intake_fixture.py --selected`, or `--selected-again` after one deck has been upgraded and redrawn, so the priced step says how long it took |
 | Blog Studio, a draft on the desk | `python3 tests/blog_browsing_fixture.py` |
 | Infographic Studio | `python3 studios/infographic/tests/ui/fixture_server.py --renderer <headless renderer>` |
 
@@ -216,7 +218,7 @@ The Week 1 audit changes use the existing Activity log and its disposable tests.
 calls, counts same-second results once, and leaves unknown timings unestimated.
 Presentation Studio’s `WordsTests` includes first-edit/autosave focus preservation;
 its DOM harness models focus loss when a connected subtree is moved. See
-[the companion compatibility check](research-responsiveness-contracts.md).
+[the companion compatibility check](archive/research-responsiveness-contracts.md).
 
 ## Training outcomes
 

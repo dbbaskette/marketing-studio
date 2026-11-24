@@ -6,6 +6,7 @@ What a caller needs to know
     made = deliver.upload(root, run, slides)                   # the same in two: the upload,
     record = deliver.record(root, run, made, space)            #   then what is written
     run = deliver.again(root, run, slides, note)               # reopen gate:build with a note
+    deliver.set_aside(root, run, space)                        # a new revision, nothing reopened
 
 - Output 'google' puts the rendered deck into Google Drive as Google Slides, always as a
   new file: an earlier revision's file is never written over, so one that is gone is no
@@ -186,6 +187,15 @@ def record(root, run: dict, made: dict, space=None) -> dict:
     decks.write_run(root, run)
     _rewrite(root, run, record, space)
     return record
+
+
+def set_aside(root, run: dict, space=None) -> None:
+    """The delivery is set aside for a new revision with nothing reopened, as a deck upgraded
+    from Selected changes is: deliver.json goes, so the deck is no longer finished, and every
+    revision delivered stays in run['revisions'] with its receipt file where it is."""
+    root = Path(root)
+    (root / decks.DELIVER).unlink(missing_ok=True)
+    _rewrite(root, run, None, space)
 
 
 def again(root, run: dict, slides, note: str, space=None, sections=None) -> dict:

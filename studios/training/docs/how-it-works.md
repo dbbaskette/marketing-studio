@@ -1,6 +1,6 @@
 # How it works
 
-This page explains what Training Studio does behind the conversation. [The runner](runner.md) describes a training made on the page as it is now. The first [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) is kept as history.
+This page explains what Training Studio does behind the conversation. [The runner](runner.md) describes a training made on the page as it is now. The first [design](archive/superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) is kept as history.
 
 ## The desk
 
@@ -115,7 +115,7 @@ What your assistant follows is guidance: instructions, templates and the Yoodli 
 - A training in progress needs no network to resume.
 - If guidance cannot be fetched, the guidance installed with the scripts is used, and you are told it may be older.
 
-See the [phase 2 design](superpowers/specs/2026-10-12-phase-2-packaging.md).
+See the [phase 2 design](archive/superpowers/specs/2026-10-12-phase-2-packaging.md).
 
 ## The helper
 

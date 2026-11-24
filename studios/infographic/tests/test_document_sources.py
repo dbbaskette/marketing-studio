@@ -8,8 +8,9 @@ from unittest import mock
 import zipfile
 
 from helpers import Isolated
-from runner import documents, intake, sources
-from runner.contracts import Invalid
+from runner import intake, sources
+from runner.contracts import MAX_SOURCE_BYTES, Invalid
+from studio_core import source_documents
 from runner.workspace import Store
 
 PDF_READER = os.environ.get('INFOGRAPHIC_STUDIO_TEST_PDF_READER')
@@ -17,7 +18,7 @@ PDF_READER = os.environ.get('INFOGRAPHIC_STUDIO_TEST_PDF_READER')
 def docx(body='Synthetic document.', extra=''):
     output = io.BytesIO()
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('word/document.xml', '<w:document xmlns:w="' + documents.WORD
+        archive.writestr('word/document.xml', '<w:document xmlns:w="' + source_documents.WORD
                          + '"><w:body><w:p><w:r><w:t>' + body + '</w:t></w:r></w:p>'
                          + extra + '</w:body></w:document>')
     return output.getvalue()
@@ -58,7 +59,7 @@ class DocumentSourceTests(Isolated):
 
     def test_unreadable_elements_require_explicit_readable_only_acknowledgment(self):
         raw = docx(extra='<w:p><w:r><w:drawing/></w:r></w:p>')
-        preview = documents.extract(raw, 'docx')
+        preview = sources.extract_document(raw, 'docx')
         self.assertTrue(preview['warnings'])
         with self.assertRaisesRegex(Invalid, 'extraction gaps'):
             sources.capture(self.store, self.project['id'], raw, kind='docx', expected_revision=0)
@@ -70,46 +71,57 @@ class DocumentSourceTests(Isolated):
         for name, body in [('../word/document.xml', b'<x/>'),
                            ('word/document.xml', b'<!DOCTYPE x [<!ENTITY a "private">]><x>&a;</x>'),
                            ('word/document.xml', '<!DOCTYPE x [<!ENTITY a "private">]><x>&a;</x>'.encode('utf-16')),
-                           ('word/document.xml', b'x' * (documents.XML_LIMIT + 1))]:
+                           ('word/document.xml', b'x' * (source_documents.XML_LIMIT + 1))]:
             output = io.BytesIO()
             with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive: archive.writestr(name, body)
-            with self.subTest(name=name), self.assertRaises(ValueError): documents.extract(output.getvalue(), 'docx')
+            with self.subTest(name=name), self.assertRaises(ValueError): sources.extract_document(output.getvalue(), 'docx')
 
     def test_pdf_pages_keep_locations_and_name_scanned_gaps_without_ocr(self):
-        with mock.patch.object(documents, 'pdf_text', return_value='Readable first page.\f\fReadable third page.\f'):
-            value = documents.extract(b'%PDF-synthetic', 'pdf')
+        with mock.patch.object(source_documents, 'pdf_text', return_value='Readable first page.\f\fReadable third page.\f'):
+            value = sources.extract_document(b'%PDF-synthetic', 'pdf')
         self.assertEqual([p['label'] for p in value['locations']], ['Page 1', 'Page 3'])
         self.assertIn('Page 2', value['warnings'][0])
-        with mock.patch.object(documents, 'pdf_text', return_value='\f'):
-            self.assertFalse(documents.extract(b'%PDF-synthetic', 'pdf')['readable'])
+        with mock.patch.object(source_documents, 'pdf_text', return_value='\f'):
+            self.assertFalse(sources.extract_document(b'%PDF-synthetic', 'pdf')['readable'])
 
     def test_missing_pdf_reader_never_installs_or_starts_a_provider(self):
-        with mock.patch.object(documents.shutil, 'which', return_value=None), \
-                mock.patch.object(documents.subprocess, 'Popen', side_effect=AssertionError('No execution')):
-            with self.assertRaisesRegex(Invalid, 'installed pdftotext'): documents.extract(b'%PDF-synthetic', 'pdf')
+        with mock.patch.object(source_documents.shutil, 'which', return_value=None), \
+                mock.patch.object(source_documents.subprocess, 'Popen', side_effect=AssertionError('No execution')):
+            with self.assertRaisesRegex(Invalid, 'installed pdftotext'): sources.extract_document(b'%PDF-synthetic', 'pdf')
 
     def test_pdf_timeout_stops_its_owned_reader_process(self):
         reader = self.temp / 'synthetic-reader'
         reader.write_text('#!/bin/sh\nsleep 60\n')
         reader.chmod(0o700)
-        actual = documents.subprocess.Popen
-        with mock.patch.object(documents.subprocess, 'Popen', wraps=actual) as spawned:
+        actual = source_documents.subprocess.Popen
+        with mock.patch.object(source_documents.subprocess, 'Popen', wraps=actual) as spawned:
             with self.assertRaisesRegex(Invalid, 'timed out'):
-                documents.pdf_text(b'%PDF-synthetic', executable=reader, timeout=.1)
+                source_documents.pdf_text(b'%PDF-synthetic', executable=reader, timeout=.1,
+                                          limit=MAX_SOURCE_BYTES, error=Invalid)
         self.assertEqual(spawned.call_count, 1)
         self.assertEqual(spawned.call_args.kwargs['env']['PATH'], os.defpath)
 
     def test_html_never_executes_scripts_or_fetches_linked_resources(self):
         with mock.patch('urllib.request.urlopen', side_effect=AssertionError('No fetch')):
-            value = documents.extract(b'<p>Supplied &amp; readable.</p><script>private()</script><img src="http://127.0.0.1/secret">', 'html')
+            value = sources.extract_document(b'<p>Supplied &amp; readable.</p><script>private()</script><img src="http://127.0.0.1/secret">', 'html')
         self.assertEqual(value['text'], 'Supplied & readable.\n')
         self.assertTrue(value['warnings'])
+
+    def test_documents_keep_the_studio_limit_and_its_own_error(self):
+        # Infographic Studio reads up to 16 MB and reports its own Invalid; the shared default is 8 MB.
+        with self.assertRaisesRegex(Invalid, 'no larger than 16 MB'):
+            sources.extract_document(b'', 'html')
+        value = sources.extract_document(b'<p>' + b'a' * 8_500_000 + b'</p>', 'html')
+        self.assertEqual(len(value['text']), 8_500_001)
+        with self.assertRaisesRegex(ValueError, 'no larger than 8 MB') as raised:
+            source_documents.extract(b'', 'html')
+        self.assertNotIsInstance(raised.exception, Invalid)
 
     def test_preview_import_uses_one_immutable_capture_and_refuses_tampering(self):
         raw = docx('Preview exactly this revision.')
         preview = intake.prepare(raw, kind='docx', name='synthetic.docx')
         self.assertEqual(self.store.read(self.project['id'])['revision'], 0)
-        with mock.patch.object(documents, 'extract', side_effect=AssertionError('Do not extract or fetch again')):
+        with mock.patch.object(source_documents, 'extract', side_effect=AssertionError('Do not extract or fetch again')):
             p = intake.adopt(self.store, self.project['id'], preview['id'], expected_revision=0)
         self.assertEqual(sources.read(self.store, p, p['sources'][0]), 'Preview exactly this revision.\n')
         changed = self.data / 'jobs' / ('intake_' + preview['id']) / 'original.raw'
@@ -129,5 +141,5 @@ class DocumentSourceTests(Isolated):
     def test_actual_installed_reader_extracts_a_synthetic_pdf(self):
         reader = Path(PDF_READER)
         self.assertTrue(reader.is_file())
-        value = documents.pdf_text(simple_pdf(), executable=reader)
+        value = source_documents.pdf_text(simple_pdf(), executable=reader)
         self.assertIn('Synthetic PDF text.', value)

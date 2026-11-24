@@ -18,8 +18,6 @@ The main README is for authors. This page collects repository and maintenance de
   [PACKAGE](../PACKAGE.md).
 - `preview/blog-studio.html`: optional local prompt generator for beginners. It
   does not write articles or store content.
-- `skills/blog-writing-toolkit/`: the original module collection, kept for
-  provenance.
 
 The writing desk's text-keeping rules are shared with the other studios, in the
 monorepo's `core/studio_core/drafting/` (parts and their Markdown reading, the
@@ -138,7 +136,7 @@ To release:
 2. Merge to `main`.
 3. From a clean checkout of the current `main`, run `bash scripts/release.sh`.
    It refuses if tag `v<version>` already exists; otherwise it runs the checks,
-   builds, and publishes the GitHub Release with the three archives, their
+   builds, and publishes the GitHub Release with the two archives, their
    checksums and that changelog section. `--dry-run` does everything except
    publish.
 
@@ -153,13 +151,13 @@ layout compatibility is tracked separately by the `minimum_runtime` values in
 
 ## Validation records
 
-[Desk usability validation](desk-usability-validation.md) covers memory/access
+[Desk usability validation](archive/desk-usability-validation.md) covers memory/access
 handling, responsive layouts and article/finding continuation.
 
-[Desk concurrency validation](desk-concurrency-validation.md) records the
+[Desk concurrency validation](archive/desk-concurrency-validation.md) records the
 verified request-ordering and source-conflict fixes.
 
-[Current backlog and verification](remaining-acceptance.md) records the planned
+[Current backlog and verification](archive/remaining-acceptance.md) records the planned
 implementation sets and separates current work from historical acceptance. [Google capabilities](google-capabilities.md)
 records the team contract and actual connection boundaries.
 
@@ -169,16 +167,15 @@ implementation gates; new defects should be tracked against the current app.
 
 ## Architecture, history, and attribution
 
-[October 4 implementation and issue review](implementation-review-2026-10-04.md)
+[October 4 implementation and issue review](archive/implementation-review-2026-10-04.md)
 prioritizes correctness, desk usability, deterministic operations, progressive
 loading, and measured performance follow-ups.
 
 - [Progressive disclosure roadmap](progressive-disclosure-roadmap.md) and [guidance inventory](estimates/blog-studio-token-inventory.json).
 - [Team Hub](team-hub.md), [Google Docs](google-docs.md), and [Google roadmap](google-docs-roadmap.md).
-- [Entry-flow validation](m1-entry-validation.md), [focused guidance](m2-m3-validation.md), and [Google fixtures](g0-g3-validation.md).
-- [Usability validation](usability-validation.md) and [privacy review](privacy-review.md).
+- [Entry-flow validation](archive/m1-entry-validation.md), [focused guidance](archive/m2-m3-validation.md), and [Google fixtures](archive/g0-g3-validation.md).
+- [Usability validation](archive/usability-validation.md) and [privacy review](archive/privacy-review.md).
 - [Package notes and licenses](../skills/blog-studio/references/package-notes.md), [source lock](../skills/blog-studio/sources.lock.json), and [BlogForge asset lock](../skills/blog-studio/blogforge.lock.json).
-- Original collection: [blog-writing-toolkit](../skills/blog-writing-toolkit/SKILL.md).
 
 The skill repository and private writing Hub remain separate. Diagnostic caches
 are disposable local data and must not be imported as team memories.
