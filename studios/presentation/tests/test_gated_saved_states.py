@@ -14,20 +14,18 @@ import runner_support
 import test_runner_page
 from runner import decks, desk_chat, desk_migration
 from studio_core.sync_guard import SYNC_WAIT
-from studio_core import research_session
+from studio_core import research_session, sync_guard
 from test_flow_routes import DECK
+import test_running_check_records as running_check
 
 PASTE = {'kind': 'paste', 'text': 'Notes on rolling restarts.'}
 UPLOAD = {'kind': 'upload', 'name': 'old.pptx'}
-# The shared worker scan's refusal of the whole workspace (core/studio_core/sync_guard.py). It
-# is never a deck's own reason: one record the scan does not accept stops the preview of every
-# deck in the workspace. A known limit, tracked by GitHub issue #541.
-WORKSPACE_REFUSAL = ('The repository could not be checked for running Studio steps. Check its '
-                     'saved worker records and folder permissions, then share again.')
 LEVELS = ('brand-only', 'polish', 'redesign', 'rework', 'selected')
 
 
 class GatedSavedStateTests(runner_support.DeskCase):
+    scanner = running_check.RunningCheckTests.scanner
+
     def snapshot(self, root):
         return {p.relative_to(root).as_posix(): p.read_bytes()
                 for p in root.rglob('*') if p.is_file()}
@@ -37,6 +35,13 @@ class GatedSavedStateTests(runner_support.DeskCase):
         found = desk_chat.migration_preview(self.engine, root)
         self.assertEqual(self.snapshot(self.space.root), before, 'a preview wrote')
         return found
+
+    def refused(self, root):
+        """The shared running-step check's refusal (core/studio_core/sync_guard.py) over a
+        deck record Presentation Studio does not write: it names that deck's folder, and it
+        stops every preview in the workspace until the record is restored."""
+        return sync_guard.unchecked(root.relative_to(self.space.repo).as_posix(),
+                                    sync_guard.UNKNOWN_DECK)
 
     def waits_at(self, root, gate):
         self.assertEqual((self.view(root)['gate'] or {}).get('name'), gate)
@@ -149,19 +154,26 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.assertFalse(shown['desk']['ready'])
         self.assertFalse((root / 'deliver.json').exists())
 
-    def test_known_limit_issue_541_one_refused_record_stops_every_preview_in_its_workspace(self):
-        # Known limit, tracked by GitHub issue #541: one record the shared worker scan does not
-        # accept stops the preview of every other deck in the workspace with its generic
-        # refusal. The fix in core must change this assertion on purpose.
+    def test_a_desk_deck_started_with_research_never_stops_a_preview(self):
+        # GitHub issue #541: a desk deck started with research under the engine's production
+        # options (record schema 6) is a deck the shared running-step check knows, so a
+        # saved deck beside it previews with no blockers.
         ready = self.saved_start(title='Ready to open')
         self.waits_at(ready, 'gate:outline')
+        engine = self.make(**running_check.PRODUCTION)
+        self.workers.then('scan', self.scanner)
+        with mock.patch.object(research_session, 'execution', return_value=running_check.COLLECTION):
+            researched = self.start_desk(title='Researched', research=True, engine=engine)
+        self.assertEqual(self.record(researched)['schema'], 6)
         self.assertEqual(self.preview(ready)['blockers'], [])
+        # A record Presentation Studio does not write still stops every preview, and now
+        # says which deck's folder holds it.
         refused = self.saved_start(title='No review level')
         record = self.record(refused)
         record['schema'] = 2
         record.pop('review_policy', None)
         decks.write_run(refused, record)
-        self.assertEqual(self.preview(ready)['blockers'], [WORKSPACE_REFUSAL])
+        self.assertEqual(self.preview(ready)['blockers'], [self.refused(refused)])
         self.waits_at(ready, 'gate:outline')    # it still continues in its saved flow
 
     def test_parallel_research_records_keep_their_saved_flow(self):
@@ -176,9 +188,10 @@ class GatedSavedStateTests(runner_support.DeskCase):
         files = self.snapshot(root)
         self.assertEqual(desk_chat.prepare_migration(record, files)['blockers'],
                          ['This saved run format is not supported. Keep using its saved flow.'])
-        # What the preview says is not that reason but the workspace-wide refusal: the shared
-        # worker scan does not accept the record. Known limit, GitHub issue #541.
-        self.assertEqual(self.preview(root)['blockers'], [WORKSPACE_REFUSAL])
+        # The engine writes schema 4, so the shared running-step check knows the deck and the
+        # preview gives that reason alone (GitHub issue #541).
+        self.assertEqual(self.preview(root)['blockers'],
+                         ['This saved run format is not supported. Keep using its saved flow.'])
         self.waits_at(root, 'gate:research-plan')
 
     def test_a_missing_pinned_research_bundle_keeps_its_saved_flow(self):
@@ -207,11 +220,11 @@ class GatedSavedStateTests(runner_support.DeskCase):
         (corrupt / 'run.json').write_text('{not json')
         unleveled = self.unleveled()
         # What the preview says of each: the record that cannot be parsed, its parser's
-        # words; the one with no review level, the workspace-wide refusal (issue #541), as
-        # its own reason, the unsupported format, comes after the shared scan.
+        # words; the one with no review level, the shared running-step check's refusal
+        # naming its folder, as its own reason, the unsupported format, comes after it.
         self.assertEqual(self.preview(corrupt)['blockers'],
                          ['Expecting property name enclosed in double quotes: line 1 column 2 (char 1)'])
-        self.assertEqual(self.preview(unleveled)['blockers'], [WORKSPACE_REFUSAL])
+        self.assertEqual(self.preview(unleveled)['blockers'], [self.refused(unleveled)])
         self.assertEqual(desk_chat.prepare_migration(self.record(unleveled), self.snapshot(unleveled))['blockers'],
                          ['This saved run format is not supported. Keep using its saved flow.'])
         for root, title, sentence, why, after in (
