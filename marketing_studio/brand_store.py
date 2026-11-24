@@ -33,6 +33,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import json
 import os
@@ -75,7 +76,40 @@ MEDIA = {'.png': 'image/png', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.j
 PREVIEW_HELP = ('Previews need LibreOffice and Poppler on this computer (brew install --cask '
                 'libreoffice; brew install poppler). The layouts are measured all the same.')
 LOCK = threading.RLock()        # every record read and write in this process
+# The background task running for a working copy: (its thread, its stop). The task's own
+# thread removes its entry once its last lines and how it ended are in work.json, which is
+# all the page needs to show the outcome; Discard and a finished Save remove what is left.
 TASKS: dict[str, tuple[threading.Thread, threading.Event]] = {}
+# A running task's lines, by working copy: {'lines', 'kept' (when work.json was last
+# written), 'waiting' (lines not yet in it)}. record() always shows these. A burst of lines
+# is written to work.json at most once every LINE_WRITES seconds, and always on a change
+# of state and when the task ends, so the last lines are never lost.
+LIVE: dict[str, dict] = {}
+LINE_WRITES = 0.25
+# Working copies being saved. Save takes its working copy's mark under LOCK and holds it
+# while Harness Brand checks and seals the pack, without LOCK; another Save, an edit, a new
+# task or Discard of that working copy is refused meanwhile. Other brands are not held up.
+SAVING: set[str] = set()
+# Lock order, the same everywhere: a brands repository's lock in this process (repo_lock),
+# then the repository's lock shared with other processes and Get brands (write_lock), then
+# LOCK. None of them is held while Harness Brand's Node.js commands run. The first makes a
+# second Save or Push in this process wait for the one before it, however long that takes,
+# instead of giving up on write_lock's timeout.
+_REPOS: dict[str, threading.Lock] = {}
+_REPOS_GUARD = threading.Lock()
+# Brands folders this process made a repository in with its own git init (a first Save).
+# Another Save that began before it may commit there; any other repository that appears
+# is refused, as before.
+INITIALIZED: set[str] = set()
+
+
+def repo_lock(folder: Path) -> threading.Lock:
+    with _REPOS_GUARD:
+        return _REPOS.setdefault(str(Path(folder).resolve()), threading.Lock())
+
+
+def _clock() -> float:
+    return time.monotonic()
 
 
 # --- storage ---------------------------------------------------------------------------
@@ -167,27 +201,96 @@ def no_links(path: Path) -> Path:
     return path
 
 
-def tree_files(folder: Path):
-    """Validate every copied path, including hidden entries, before following or writing it."""
+LINKED = 'Brand files cannot use symbolic links. Copy the actual file into the brands folder.'
+FOLDER = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0)
+NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
+
+
+def open_folder(name, dir_fd=None, expected=None) -> int | None:
+    """A descriptor of the folder `name` (inside `dir_fd` when given), opened without
+    following a link; None when it is gone or cannot be listed, as os.walk passed such a
+    folder over. `expected` is (st_dev, st_ino) of the entry as it was listed: a folder
+    that is not that one any more (swapped for a link, or for another folder) is refused,
+    which also holds where the platform has no O_NOFOLLOW."""
+    try:
+        handle = os.open(name, FOLDER | NOFOLLOW, dir_fd=dir_fd)
+    except OSError as failure:
+        if failure.errno == errno.ELOOP:
+            raise WorkspaceError(LINKED) from None
+        if failure.errno == errno.ENOTDIR:
+            # macOS says ENOTDIR, not ELOOP, for a link opened as a folder without following.
+            try:
+                if stat.S_ISLNK(os.lstat(name, dir_fd=dir_fd).st_mode):
+                    raise WorkspaceError(LINKED) from None
+            except FileNotFoundError:
+                pass
+            return None
+        if failure.errno in (errno.ENOENT, errno.EACCES):
+            return None
+        raise
+    seen = os.fstat(handle)
+    if not stat.S_ISDIR(seen.st_mode) or (expected is not None
+                                         and (seen.st_dev, seen.st_ino) != expected):
+        os.close(handle)
+        raise WorkspaceError(LINKED)
+    return handle
+
+
+def walk(folder: Path) -> list[tuple[Path, int]]:
+    """Every file in `folder` with its size, sorted, each path validated before it is
+    followed or written. The folder and its ancestors are checked for links once. Inside
+    it, each folder is opened from its parent's descriptor without following a link and
+    checked to be the very folder that was listed, so a folder swapped for a link while
+    the walk runs is refused and nothing outside the brand folder is ever listed. A file
+    that is gone by the time it is looked at (one a running command just renamed) is
+    passed over."""
     folder = no_links(folder)
     if not folder.exists():
         return []
     if not folder.is_dir():
         raise WorkspaceError('A brand or library must be a folder.')
-    files, total = [], 0
-    for base, dirs, names in os.walk(folder, followlinks=False):
-        for name in (*dirs, *names):
-            path = no_links(Path(base) / name)
-            mode = path.lstat().st_mode
-            if name == '.git' or not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+    files: list[tuple[Path, int]] = []
+    total = 0
+
+    def scan(handle: int, base: Path) -> None:
+        nonlocal total
+        with os.scandir(handle) as listing:
+            entries = list(listing)
+        for entry in entries:
+            if entry.is_symlink():
+                raise WorkspaceError(LINKED)
+            try:
+                found = entry.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            if entry.name == '.git' or not (stat.S_ISREG(found.st_mode) or stat.S_ISDIR(found.st_mode)):
                 raise WorkspaceError('Brand folders cannot contain Git metadata or special files.')
-            if stat.S_ISREG(mode):
-                size = path.stat().st_size
-                total += size
-                files.append(path)
-                if size > SOURCE_LIMIT or total > TREE_LIMIT or len(files) > FILE_LIMIT:
-                    raise WorkspaceError('This brand exceeds the file or working-copy size limit.')
+            if stat.S_ISDIR(found.st_mode):
+                inner = open_folder(entry.name, handle, (found.st_dev, found.st_ino))
+                if inner is not None:
+                    try:
+                        scan(inner, base / entry.name)
+                    finally:
+                        os.close(inner)
+                continue
+            total += found.st_size
+            files.append((base / entry.name, found.st_size))
+            if found.st_size > SOURCE_LIMIT or total > TREE_LIMIT or len(files) > FILE_LIMIT:
+                raise WorkspaceError('This brand exceeds the file or working-copy size limit.')
+
+    top = open_folder(str(folder))
+    if top is None:
+        return []
+    try:
+        scan(top, folder)
+    finally:
+        os.close(top)
     return sorted(files)
+
+
+def tree_files(folder: Path):
+    """Validate every copied path, including hidden entries, before following or writing it."""
+    return [path for path, _ in walk(folder)]
 
 
 def read_json(path: Path, default=None):
@@ -216,7 +319,10 @@ def put(path: Path, data: bytes) -> None:
         Path(name).unlink(missing_ok=True)
 
 
-def fingerprint(folder: Path) -> str:
+def fingerprint(folder: Path, digests: dict | None = None) -> str:
+    """One hash of every file in `folder`, by path and content. `digests`, when given, is
+    {path: (its stat, its hash)} from an earlier fingerprint of the same folder: a file whose
+    size, times and inode are as they were then is not read again, and one that changed is."""
     folder = no_links(folder)
     if not folder.exists():
         return 'none'
@@ -225,17 +331,34 @@ def fingerprint(folder: Path) -> str:
         if path.name == '.DS_Store':
             continue
         digest.update(path.relative_to(folder).as_posix().encode('utf-8') + b'\0')
-        with path.open('rb') as stream:
-            file_hash = hashlib.file_digest(stream, 'sha256')
-        digest.update(file_hash.digest())
+        seen = path.stat()
+        mark = (seen.st_size, seen.st_mtime_ns, seen.st_ctime_ns, seen.st_ino)
+        held = digests.get(path) if digests is not None else None
+        if held is not None and held[0] == mark:
+            file_hash = held[1]
+        else:
+            with path.open('rb') as stream:
+                file_hash = hashlib.file_digest(stream, 'sha256').digest()
+            if digests is not None:
+                digests[path] = (mark, file_hash)
+        digest.update(file_hash)
     return digest.hexdigest()
 
 
-def files_in(folder: Path) -> list[dict]:
-    folder = Path(folder)
-    return [{'name': path.relative_to(folder).as_posix(), 'size': path.stat().st_size}
-            for path in tree_files(folder)
-            if not any(part.startswith('.') for part in path.relative_to(folder).parts)]
+def files_in(folder: Path, walked=None) -> list[dict]:
+    """The files in `folder` a person added, with their sizes. `walked` is a walk() of a
+    folder that holds this one, when one was just made: it is not walked again."""
+    folder = no_links(folder)
+    if walked is None:
+        walked = walk(folder)
+    shown = []
+    for path, size in walked:
+        if folder not in path.parents:
+            continue
+        relative = path.relative_to(folder)
+        if not any(part.startswith('.') for part in relative.parts):
+            shown.append({'name': relative.as_posix(), 'size': size})
+    return shown
 
 
 def checked(found, folder, env=None) -> dict:
@@ -265,17 +388,13 @@ def library_summary(archive: Path) -> dict:
 
 # --- the listing -----------------------------------------------------------------------
 
-def unshared(place: Storage, path: str) -> int:
-    """Commits on this checkout touching `path` not present on the configured remote branch."""
-    if not place.team or place.repo is None:
-        return 0
-    done = git(place.repo, 'rev-list', '--count', '@{u}..HEAD', '--', path)
-    return int(done.stdout.strip() or 0) if done.returncode == 0 else 0
-
-
 def listing(found, place: Storage) -> dict:
     folder = place.folder
     packs, libraries = [], []
+    # Each pack's and library's unshared commits (on this checkout, not on its upstream),
+    # counted for all of them at once: the upstream's commit, then one Git log.
+    push = outgoing_commits(place) if place.team else None
+    unshared = unshared_counts(place) if place.team else {}
     if folder.is_dir():
         for entry in sorted(folder.iterdir()):
             no_links(entry)
@@ -290,7 +409,7 @@ def listing(found, place: Storage) -> dict:
                 'slides': any(isinstance(v, dict) and v.get('slides') for v in variants.values()),
                 'libraries': [str(each.get('library')) for each in brand.get('icons') or []
                               if isinstance(each, dict)],
-                'check': {'ok': None, 'problems': []}, 'unshared': unshared(place, f'{entry.name}')})
+                'check': {'ok': None, 'problems': []}, 'unshared': unshared.get(entry.name, 0)})
         shelf = folder / LIBRARIES
         for entry in sorted(shelf.iterdir()) if shelf.is_dir() else ():
             if entry.name.startswith('.') or not (entry / 'library.zip').is_file():
@@ -298,9 +417,9 @@ def listing(found, place: Storage) -> dict:
             libraries.append({'id': entry.name, **library_summary(entry / 'library.zip'),
                               'usedBy': [pack['name'] for pack in packs if entry.name in pack['libraries']],
                               'check': {'ok': None, 'problems': []},
-                              'unshared': unshared(place, f'{LIBRARIES}/{entry.name}')})
+                              'unshared': unshared.get(f'{LIBRARIES}/{entry.name}', 0)})
     return {'packs': packs, 'libraries': libraries, 'work': working_copies(),
-            'where': place.where, 'team': place.team, 'push': outgoing_commits(place) if place.team else None, 'skill': {'name': found.name, 'version': found.version}}
+            'where': place.where, 'team': place.team, 'push': push, 'skill': {'name': found.name, 'version': found.version}}
 
 
 # --- working copies --------------------------------------------------------------------
@@ -329,26 +448,51 @@ def target(place: Storage, work: dict) -> Path:
     return no_links(place.folder / work['id'] if work['kind'] == 'brand' else place.folder / LIBRARIES / work['id'])
 
 
-def record(key: str) -> dict:
+def _read(key: str) -> dict:
+    """The working copy's record with its identity checked, and a running task's newest
+    lines, without walking its files. Hold LOCK."""
+    work = read_json(folder_of(key) / 'work.json')
+    if not isinstance(work, dict) or work.get('schema') != SCHEMA:
+        raise WorkspaceError('That working copy is not there any more. Start it again from Brands.')
+    if work.get('key') != key or work.get('kind') not in KINDS or not isinstance(work.get('id'), str) or not SLUG.fullmatch(work['id']) or key_of(work['kind'], work['id']) != key:
+        raise WorkspaceError('That working copy has an invalid identity. Start it again from Brands.')
+    _with_lines(work)
+    return work
+
+
+def _with_lines(work: dict) -> None:
+    live, task = LIVE.get(work['key']), work.get('task')
+    if live is not None and isinstance(task, dict) and task.get('state') == 'running':
+        task['lines'] = list(live['lines'])
+
+
+def _record(key: str) -> tuple[dict, list[tuple[Path, int]]]:
+    """record(), and the walk of the working copy it checked."""
     with LOCK:
-        work = read_json(folder_of(key) / 'work.json')
-        if not isinstance(work, dict) or work.get('schema') != SCHEMA:
-            raise WorkspaceError('That working copy is not there any more. Start it again from Brands.')
-        if work.get('key') != key or work.get('kind') not in KINDS or not isinstance(work.get('id'), str) or not SLUG.fullmatch(work['id']) or key_of(work['kind'], work['id']) != key:
-            raise WorkspaceError('That working copy has an invalid identity. Start it again from Brands.')
-        tree_files(folder_of(key))
+        work = _read(key)
+        walked = walk(folder_of(key))
         task = work.get('task')
         alive = TASKS.get(key)
         if task and task.get('state') == 'running' and not (alive and alive[0].is_alive()):
             task.update(state='stopped', ended=time.time(),
                         detail='Marketing Studio was closed while this ran, so nothing was kept from it. Run it again.')
             keep(work)
-        return work
+        if alive and not alive[0].is_alive() and not (task and task.get('state') == 'running'):
+            TASKS.pop(key, None)
+        return work, walked
+
+
+def record(key: str) -> dict:
+    return _record(key)[0]
 
 
 def keep(work: dict) -> dict:
     with LOCK:
+        _with_lines(work)
         write_json(folder_of(work['key']) / 'work.json', work)
+        live = LIVE.get(work['key'])
+        if live is not None:
+            live.update(kept=_clock(), waiting=False)
     return work
 
 
@@ -356,13 +500,23 @@ def working_copies() -> list[dict]:
     found = []
     folder = root()
     for entry in sorted(folder.iterdir()) if folder.is_dir() else ():
+        key = entry.name
         try:
-            work = record(entry.name)
-        except WorkspaceError:
+            if key in SAVING:
+                # Harness Brand may be writing it: shown as it was last recorded, unwalked.
+                with LOCK:
+                    work = _read(key)
+            else:
+                try:
+                    work = record(key)
+                except OSError:
+                    with LOCK:      # it changed while it was walked: as last recorded
+                        work = _read(key)
+        except (WorkspaceError, OSError):
             continue
         found.append({'key': work['key'], 'kind': work['kind'], 'id': work['id'],
                       'name': work['name'], 'update': work['update'],
-                      'task': (work.get('task') or {}).get('state')})
+                      'task': (work.get('task') or {}).get('state'), 'saving': key in SAVING})
     return found
 
 
@@ -443,7 +597,11 @@ def discard(key: str) -> None:
         running = TASKS.get(key)
         if running and running[0].is_alive():
             raise WorkspaceError('Stop what is running first, then discard the working copy.')
+        if key in SAVING:
+            raise WorkspaceError('This working copy is being saved. Wait for the save to finish.')
         shutil.rmtree(folder_of(key), ignore_errors=True)
+        TASKS.pop(key, None)
+        LIVE.pop(key, None)
 
 
 # --- sources ---------------------------------------------------------------------------
@@ -459,6 +617,8 @@ def idle(key: str) -> None:
     running = TASKS.get(key)
     if running and running[0].is_alive():
         raise WorkspaceError('Wait for what is running to finish, or stop it, first.')
+    if key in SAVING:
+        raise WorkspaceError('This working copy is being saved. Wait for the save to finish.')
 
 
 def add_source(key: str, name, data: bytes) -> dict:
@@ -524,42 +684,62 @@ def begin(key: str, kind: str, job, part=None) -> dict:
         stop = threading.Event()
         work['task'] = {'kind': kind, 'part': part, 'state': 'running', 'lines': [],
                         'detail': '', 'started': time.time(), 'ended': None}
+        live = LIVE[key] = {'lines': [], 'kept': _clock(), 'waiting': False}
         keep(work)
 
         def line(text):
+            # Held in memory, where record() shows it at once, and written to work.json at
+            # most every LINE_WRITES seconds: no walk of the working copy for a line.
             text = ' '.join(str(text).split())[:300]
             if not text:
                 return
             with LOCK:
-                current = record(key)
-                lines = current['task']['lines']
+                if LIVE.get(key) is not live:
+                    return   # discarded meanwhile
+                lines = live['lines']
                 if not lines or lines[-1] != text:
                     lines.append(text)
                     del lines[:-LINES]
-                    keep(current)
+                    live['waiting'] = True
+                if live['waiting'] and _clock() - live['kept'] >= LINE_WRITES:
+                    try:
+                        keep(_read(key))
+                    except WorkspaceError:
+                        return
 
         def run():
-            ending, detail = 'done', ''
+            # Anything that ends the job, even SystemExit, still writes how it ended.
+            ending, detail = 'failed', 'It ended unexpectedly, so nothing was kept from it. Run it again.'
             try:
-                job(line, stop)
-            except brand_skill.Stopped:
-                ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
-            except WorkspaceError as failure:
-                ending, detail = 'failed', str(failure)
-            except Exception as failure:   # reported to the person, never lost
-                ending, detail = 'failed', f'{type(failure).__name__}: {failure}'
-            if stop.is_set() and ending == 'done':
-                ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
-            with LOCK:
                 try:
-                    current = record(key)
-                except WorkspaceError:
-                    return   # discarded meanwhile
-                current['task'].update(state=ending, detail=detail, ended=time.time())
-                keep(current)
+                    job(line, stop)
+                    ending, detail = 'done', ''
+                except brand_skill.Stopped:
+                    ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
+                except WorkspaceError as failure:
+                    ending, detail = 'failed', str(failure)
+                except Exception as failure:   # reported to the person, never lost
+                    ending, detail = 'failed', f'{type(failure).__name__}: {failure}'
+            finally:
+                if stop.is_set() and ending == 'done':
+                    ending, detail = 'stopped', 'It was stopped before it finished, so nothing was kept from it.'
+                with LOCK:
+                    try:
+                        # Every line is in it, as it was read while the task still ran.
+                        current = _read(key)
+                        if LIVE.get(key) is live and isinstance(current.get('task'), dict):
+                            current['task'].update(state=ending, detail=detail, ended=time.time())
+                            keep(current)
+                    except (WorkspaceError, OSError):
+                        pass   # discarded meanwhile
+                    finally:
+                        if LIVE.get(key) is live:
+                            del LIVE[key]
+                        if TASKS.get(key) is entry:
+                            del TASKS[key]
 
         thread = threading.Thread(target=run, daemon=True, name=f'brands-{key}')
-        TASKS[key] = (thread, stop)
+        entry = TASKS[key] = (thread, stop)
         thread.start()
         return work
 
@@ -860,11 +1040,13 @@ def accept(key: str, part: str) -> dict:
 # --- what the page shows ---------------------------------------------------------------
 
 def view(key: str) -> dict:
-    work = record(key)
+    """What the page shows of a working copy: its files walked once, and each part read
+    and hashed once."""
+    work, walked = _record(key)
     here = inside(work)
     shown = {k: work.get(k) for k in ('key', 'kind', 'id', 'name', 'update', 'libraryKind',
                                       'task', 'extracted', 'notes', 'clashes', 'checked')}
-    sources = files_in(here / 'sources')
+    sources = files_in(here / 'sources', walked)
     shown['sources'] = sources
     if work['kind'] == 'library':
         sheet = here / 'contact-sheet.svg'
@@ -897,7 +1079,7 @@ def view(key: str) -> dict:
                       for s in sources if s['name'].lower().endswith('.pptx')],
         'libraries': sorted(path.name for path in (folder_of(key) / 'brands' / LIBRARIES).glob('*')
                             if (path / 'library.zip').is_file())}
-    shown['ready'] = save_ready(work)
+    shown['ready'] = save_ready(work, shown['parts'])
     return shown
 
 
@@ -918,8 +1100,9 @@ def roles(brand: dict, tokens: dict) -> dict:
     return shown
 
 
-def save_ready(work: dict) -> str | None:
-    """Why Save cannot run yet, or None."""
+def save_ready(work: dict, shown_parts: list[dict] | None = None) -> str | None:
+    """Why Save cannot run yet, or None. `shown_parts` is parts(work) when the caller has
+    just read them."""
     task = work.get('task') or {}
     if task.get('state') == 'running':
         return 'Wait for what is running to finish.'
@@ -928,7 +1111,8 @@ def save_ready(work: dict) -> str | None:
     if not work.get('extracted') and (work['kind'] == 'library' or not work['update']):
         return 'Extract first.'
     if work['kind'] == 'brand':
-        waiting = [p['title'] for p in parts(work) if p['state'] == 'review']
+        waiting = [p['title'] for p in (parts(work) if shown_parts is None else shown_parts)
+                   if p['state'] == 'review']
         if waiting:
             return 'Accept or edit each part first: ' + ', '.join(waiting) + '.'
     return None
@@ -964,8 +1148,14 @@ def identity(repo: Path) -> None:
 
 def save(found, place: Storage, key: str) -> dict:
     """Check and seal the working copy, put it in storage and commit it there. Nothing in
-    storage changes unless every check passed; the working copy is removed after."""
+    storage changes unless every check passed; the working copy is removed after.
+
+    Harness Brand's checks and seal run without LOCK, so the page and other brands carry
+    on meanwhile. This working copy is marked as saving (SAVING) for the whole Save: a
+    second Save of it is refused at once, as are an edit, a new task and Discard."""
     with LOCK:
+        if key in SAVING:
+            raise WorkspaceError('This working copy is already being saved. Wait for that save to finish.')
         work = record(key)
         idle(key)
         why = save_ready(work)
@@ -980,28 +1170,46 @@ def save(found, place: Storage, key: str) -> dict:
             brand = read_json(folder / 'brand.json', {})
             if isinstance(brand, dict) and any(field in brand for field in SEALS):
                 write_json(folder / 'brand.json', {k: v for k, v in brand.items() if k not in SEALS})
-        result = checked(found, folder, env=brand_skill.environment(folder_of(key) / 'brands'))
+        SAVING.add(key)
+    try:
+        return _save(found, place, key, work, here, folder)
+    finally:
+        with LOCK:
+            SAVING.discard(key)
+
+
+def _save(found, place: Storage, key: str, work: dict, here: Path, folder: Path) -> dict:
+    """Save after its first checks, with `key` in SAVING and without LOCK."""
+    env = brand_skill.environment(folder_of(key) / 'brands')
+    result = checked(found, folder, env=env)
+    with LOCK:
+        work = _read(key)
         work['checked'] = result
         keep(work)
-        if not result['ok']:
-            refused = WorkspaceError('pack check does not pass yet, so nothing was saved: '
-                                     + ' '.join(result['problems'][:3]))
-            refused.details = {'problems': result['problems']}
-            raise refused
-        if work['kind'] == 'brand':
-            code, sealed = brand_skill.answer(found, ['pack', 'seal', str(folder), '--json'], env=brand_skill.environment(folder_of(key) / 'brands'))
-            if code != 0:
-                raise WorkspaceError('pack seal did not seal the pack: ' + brand_skill.said(json.dumps(sealed), code))
-            again = checked(found, folder, env=brand_skill.environment(folder_of(key) / 'brands'))
-            if not again['ok']:
-                raise WorkspaceError('The sealed pack does not pass pack check: ' + ' '.join(again['problems'][:3]))
+    if not result['ok']:
+        refused = WorkspaceError('pack check does not pass yet, so nothing was saved: '
+                                 + ' '.join(result['problems'][:3]))
+        refused.details = {'problems': result['problems']}
+        raise refused
+    if work['kind'] == 'brand':
+        code, sealed = brand_skill.answer(found, ['pack', 'seal', str(folder), '--json'], env=env)
+        if code != 0:
+            raise WorkspaceError('pack seal did not seal the pack: ' + brand_skill.said(json.dumps(sealed), code))
+        again = checked(found, folder, env=env)
+        if not again['ok']:
+            raise WorkspaceError('The sealed pack does not pass pack check: ' + ' '.join(again['problems'][:3]))
+    # Each file is read and hashed once, here; under the locks below, a file whose stat is
+    # unchanged keeps its hash and only a changed one is read again.
+    digests: dict = {}
+    verified = fingerprint(here, digests)
     # The entire Save owns the repository lock; task files remain available after a failure.
-        verified = fingerprint(here)
     repo = place.folder
-    with write_lock(Storage(place.folder, place.team, repo, place.address)), LOCK:
+    with repo_lock(repo), write_lock(Storage(place.folder, place.team, repo, place.address)), LOCK:
         work = record(key)
-        idle(key)
-        if fingerprint(here) != verified:
+        running = TASKS.get(key)
+        if running and running[0].is_alive():
+            raise WorkspaceError('Wait for what is running to finish, or stop it, first.')
+        if fingerprint(here, digests) != verified:
             raise WorkspaceError('The working copy changed during validation. Review it and save again.')
         stored = target(place, work)
         if fingerprint(stored) != work['base']:
@@ -1010,10 +1218,19 @@ def save(found, place: Storage, key: str) -> dict:
             place.folder.mkdir(parents=True, exist_ok=True)
             parent = git(repo, 'rev-parse', '--show-toplevel')
             if parent.returncode == 0:
-                raise WorkspaceError('The brands folder is now inside another repository. Review Shared settings, Brand.')
-            made = git(repo, 'init', '--quiet', '-b', 'main')
-            if made.returncode:
-                raise WorkspaceError(f'Could not initialize the brands repository ({reason(made)}).')
+                # Only a repository this process made here with its own git init, during a
+                # Save that began alongside this one, and with no remote, is taken; any
+                # other is refused, as before.
+                ours = (Path(parent.stdout.strip()).resolve() == place.folder.resolve()
+                        and str(place.folder.resolve()) in INITIALIZED
+                        and not git(repo, 'remote').stdout.strip())
+                if not ours:
+                    raise WorkspaceError('The brands folder is now inside another repository. Review Shared settings, Brand.')
+            else:
+                made = git(repo, 'init', '--quiet', '-b', 'main')
+                if made.returncode:
+                    raise WorkspaceError(f'Could not initialize the brands repository ({reason(made)}).')
+                INITIALIZED.add(str(place.folder.resolve()))
             place = Storage(repo, False, repo, None)
         identity(repo)
         scope = [stored.relative_to(repo).as_posix()]
@@ -1061,6 +1278,8 @@ def save(found, place: Storage, key: str) -> dict:
                 if refreshed.returncode:
                     raise WorkspaceError('The brand was committed, but Git could not refresh its index. Review the repository before continuing.')
             shutil.rmtree(folder_of(key))
+            TASKS.pop(key, None)
+            LIVE.pop(key, None)
         except BaseException:
             if not committed and moved:
                 shutil.rmtree(stored, ignore_errors=True)
@@ -1076,6 +1295,98 @@ def save(found, place: Storage, key: str) -> dict:
     if place.team:
         answer['push'] = outgoing_commits(place)
     return answer
+
+
+def _owner(path: str) -> str:
+    """What `git rev-list -- <pack id>` or `-- icon-libraries/<id>` would match a path by."""
+    if path.startswith('"'):        # a quoted unusual name: its first folder is plain
+        path = path[1:]
+    bits = path.split('/')
+    return '/'.join(bits[:2]) if bits[0] == LIBRARIES and len(bits) >= 2 else bits[0]
+
+
+def unshared_counts(place: Storage) -> dict[str, int]:
+    """{pack id or icon-libraries/<id>: what `git rev-list --count @{u}..HEAD -- <it>`
+    says}, for every pack and library at once, from one Git run.
+
+    `git log -m --boundary` gives each commit's changed paths against each parent (a parent
+    with the same tree prints no block) and each commit's and boundary commit's tree. The
+    path-limited walk is then followed as rev-list's default history simplification does it:
+    a commit is counted when it changes the path against its parent; a merge the same as an
+    interesting parent for the path is not counted and only that parent is followed; a merge
+    whose parents are all upstream is counted when it differs from one of them. The
+    upstream's own commit counts as interesting there, as rev-list's "bottom" does, so it is
+    resolved first: two Git runs for the whole listing, whatever the number of packs. No
+    upstream, or a Git failure, counts nothing, as before."""
+    if not place.team or place.repo is None:
+        return {}
+    upstream = git(place.repo, 'rev-parse', '--verify', '--quiet', '@{u}^{commit}')
+    bottom = upstream.stdout.strip()
+    if upstream.returncode or not bottom:
+        return {}
+    done = git(place.repo, '-c', 'core.quotePath=false', 'log', '-m', '--boundary', '--no-renames',
+               '--name-only', '--format=%x01%m %H %T %P', f'{bottom}..HEAD')
+    if done.returncode:
+        return {}
+    trees, parents, blocks, head = {}, {}, {}, None
+    for block in done.stdout.split('\x01')[1:]:
+        line, _, paths = block.partition('\n')
+        fields = line.split()
+        if len(fields) < 3:
+            return {}
+        mark, commit, tree, its = fields[0], fields[1], fields[2], fields[3:]
+        trees[commit] = tree
+        if mark == '-':
+            continue
+        head = head or commit
+        parents[commit] = its
+        owners = {_owner(path) for path in paths.splitlines() if path.strip()}
+        if owners:
+            blocks.setdefault(commit, []).append(owners)
+    against = {}
+    for commit, its in parents.items():
+        given = blocks.get(commit, [])
+        if not its:
+            against[commit] = [given[0] if given else set()]
+            continue
+        differing = [p for p in its if trees.get(p) != trees[commit]]
+        if len(given) == len(differing):
+            placed = dict(zip(differing, given))
+            against[commit] = [placed.get(p, set()) for p in its]
+        else:   # not expected from Git: take the merge as changing all it shows against each
+            every = set().union(*given) if given else set()
+            against[commit] = [every for _ in its]
+    counts = {}
+    for name in set().union(*(o for each in against.values() for o in each)) if against else ():
+        seen, shown, todo = set(), 0, [head]
+        while todo:
+            commit = todo.pop()
+            if commit in seen or commit not in parents:
+                continue
+            seen.add(commit)
+            its, diffs = parents[commit], against[commit]
+            if not its:
+                shown += name in diffs[0]
+                continue
+            relevant = changed = irrelevant = False
+            same = None
+            for parent, diff in zip(its, diffs):
+                if parent in parents or parent == bottom:
+                    relevant = True
+                    if name not in diff:
+                        same = parent
+                        break
+                    changed = True
+                elif name in diff:
+                    irrelevant = True
+            if same is not None:
+                todo.append(same)
+                continue
+            shown += changed if relevant else irrelevant
+            todo.extend(its)
+        if shown:
+            counts[name] = shown
+    return counts
 
 
 def outgoing_commits(place: Storage) -> dict:
@@ -1132,7 +1443,7 @@ def outgoing_commits(place: Storage) -> dict:
 def push(place: Storage, expected=None) -> dict:
     if not place.team:
         raise WorkspaceError('This local brands repository has no configured remote push. The commit is the save.')
-    with write_lock(place):
+    with repo_lock(place.folder), write_lock(place):
         preview = outgoing_commits(place)
         if not isinstance(expected, str) or expected != preview['expected']:
             raise WorkspaceError('The push preview changed. Review the saved commits and say yes again.')
