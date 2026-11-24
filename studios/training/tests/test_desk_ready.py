@@ -297,20 +297,24 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
         sheet = result['snapshots']['sheet']
         self.assertIn('Mark every material ready?', sheet['sheet'])
         self.assertIn('Ready is your approval of the version you read.', sheet['sheet'])
-        # The plan is shown when the desk opens; the guide and brief are not.
+        # The plan is shown when the desk opens; the guide and brief are not, so only the
+        # plan is marked, and the guide and brief are left with a way to open each.
         for words in ('Plan\nOpened', 'Guide\nNot opened yet', 'Brief\nNot opened yet',
-                      'Not opened yet: Guide and Brief.',
-                      'Guide and Brief are kept in the Document Library as Markdown'):
+                      'Not opened yet: Guide and Brief.', '2. Left as they are',
+                      'Nothing here goes to the Document Library'):
             self.assertIn(words, sheet['sheet'])
-        self.assertEqual(sheet['filled'], ['Mark 3 materials ready'])
+        self.assertEqual(sheet['filled'], ['Mark 1 material ready'])
+        self.assertIn('Open Guide', sheet['buttons'])
         buttons = sheet['buttons']
-        self.assertEqual(buttons[buttons.index('Mark 3 materials ready') + 1], 'Cancel')
+        self.assertEqual(buttons[buttons.index('Mark 1 material ready') + 1], 'Cancel')
         cancelled = result['snapshots']['cancelled']
         self.assertEqual(cancelled['sheet'], '')
         self.assertEqual(cancelled['focus'], 'Mark every material ready')
         read = result['snapshots']['read']['sheet']
-        for words in ('Guide\nOpened', 'Not opened yet: Brief.'):
+        for words in ('Guide\nOpened', 'Not opened yet: Brief.',
+                      'Guide is kept in the Document Library as Markdown'):
             self.assertIn(words, read)
+        self.assertEqual(result['snapshots']['read']['filled'], ['Mark 2 materials ready'])
         self.assertEqual(result['snapshots']['escaped']['sheet'], '')
         self.assertEqual(result['snapshots']['escaped']['focus'], 'Mark every material ready')
         self.assertEqual(self.posts(result), [])
@@ -319,20 +323,22 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
     def test_row_201_confirm_then_undo_restores_everything_and_keeps_the_library(self):
         before, names = self.approvals(), self.drafted()
         seen = self.seen(*names)
-        sent = {'path': self.path, 'level': '', 'seen': seen}
+        sent = {'path': self.path, 'level': '', 'scope': 'level', 'seen': seen}
         # What the runner answers to exactly what the page sends, made before it runs.
         answers = self.shell()
-        answers['POST /api/drafts/level-ready'] = [self.read_post('drafts/level-ready', sent)]
+        answers['POST /api/drafts/reviewed-ready'] = [self.read_post('drafts/reviewed-ready', sent)]
         kept = self.shelf()
         answers['POST /api/drafts/draft'] = [self.read_post('drafts/draft',
                                                             {'path': self.path, 'seen': seen})]
         # On a phone the toolbar's words are short, and the name says what it marks.
+        # Each is read first: only what was opened is marked.
         result = self.journey(answers, [
+            {'click': 'Guide · Draft'}, {'click': 'Brief · Draft'},
             {'click': 'Mark all ready'}, {'click': 'Mark 3 materials ready'},
             {'snapshot': 'marked'}, {'click': 'Undo'}, {'snapshot': 'undone'},
             # The toast's leaving, later, never takes the focus Undo put back.
             {'timer': 'gone'}, {'snapshot': 'gone'}], narrow=True)
-        self.assertEqual(self.posts(result), [('/api/drafts/level-ready', sent),
+        self.assertEqual(self.posts(result), [('/api/drafts/reviewed-ready', sent),
                                               ('/api/drafts/draft', {'path': self.path,
                                                                      'seen': seen})])
         shot = result['snapshots']['marked']
@@ -354,16 +360,18 @@ class ReadyJourneyTests(RunnerAnswers, ReadyCase):
     def test_row_201_undo_leaves_with_its_desk(self):
         seen = self.seen(*self.drafted())
         answers = self.shell()
-        answers['POST /api/drafts/level-ready'] = [self.read_post(
-            'drafts/level-ready', {'path': self.path, 'level': '', 'seen': seen})]
+        answers['POST /api/drafts/reviewed-ready'] = [self.read_post(
+            'drafts/reviewed-ready', {'path': self.path, 'level': '', 'scope': 'level',
+                                      'seen': seen})]
         result = self.journey(answers, [
+            {'click': 'Guide · Draft'}, {'click': 'Brief · Draft'},
             {'click': 'Mark every material ready'}, {'click': 'Mark 3 materials ready'},
             {'snapshot': 'marked'}, {'click': 'Home'}, {'snapshot': 'home'}])
         self.assertIn('Undo', result['snapshots']['marked']['buttons'])
         self.assertNotIn('Undo', result['snapshots']['home']['buttons'])
         # Leaving the desk shares what was typed, as always; nothing returns to draft.
         self.assertEqual([address for address, _ in self.posts(result)],
-                         ['/api/drafts/level-ready', '/api/drafts/share'])
+                         ['/api/drafts/reviewed-ready', '/api/drafts/share'])
 
     def test_row_202_return_to_draft_on_a_card_says_what_the_library_keeps(self):
         guide = self.guide()
@@ -469,14 +477,16 @@ class ReadyTogetherJourneyTests(RunnerAnswers, PageCase):
         for card in after['body']['cards']:
             if card['kind'] == 'scenario':
                 card['state'] = 'ready'
-        after['body'].update(marked=[first['name'], second['name']], stopped=None)
-        answers['POST /api/drafts/level-ready'] = [after]
+        after['body'].update(marked=[first['name'], second['name']], left=[])
+        answers['POST /api/drafts/reviewed-ready'] = [after]
+        # Each is opened in turn before both are marked together.
         result = self.run_page(self.screens(**answers), [
-            {'click': 'Practice · 2'}, {'click': 'Mark all 2 Practice drafts ready'}, {'snapshot': 'sheet'},
+            {'click': 'Practice · 2'}, {'fill': 'Practice to review', 'value': second['name']},
+            {'click': 'Mark all 2 Practice drafts ready'}, {'snapshot': 'sheet'},
             {'click': 'Mark 2 materials ready'}], state={'screen': 'run', 'path': path})
         self.assertIn('Mark every practice scenario ready?', result['snapshots']['sheet']['sheet'])
         self.assertEqual([(request['address'], request['body']) for request in result['requests']
                           if request['method'] == 'POST'],
-                         [('/api/drafts/level-ready', {
-                             'path': path, 'level': '', 'kind': 'scenario',
+                         [('/api/drafts/reviewed-ready', {
+                             'path': path, 'level': '', 'kind': 'scenario', 'scope': 'level',
                              'seen': {first['name']: first['seen'], second['name']: first['seen']}})])

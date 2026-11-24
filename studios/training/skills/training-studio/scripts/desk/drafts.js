@@ -60,9 +60,22 @@ globalThis.matchMedia?.('(max-width: 52rem)').addEventListener?.('change', () =>
 function deskHeld(path) {
   if (!DESK.held[path]) {
     DESK.held[path] = { view: null, level: null, sources: false, material: {}, said: '', unsent: null,
-      drawn: '', materials: {}, recovery: readDeskRecovery(path) };
+      drawn: '', materials: {}, recovery: readDeskRecovery(path), opened: readOpened(path) };
   }
   return DESK.held[path];
+}
+
+// The version of each material the person opened on this desk, kept for the browser tab so
+// that a reload still knows what was reviewed. Mark reviewed materials ready sends only these.
+const OPENED_KEY = 'training-studio-opened:';
+function readOpened(path) {
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(OPENED_KEY + path) || '{}');
+    return kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : {};
+  } catch (failure) { return {}; }
+}
+function keepOpened(path, opened) {
+  try { sessionStorage.setItem(OPENED_KEY + path, JSON.stringify(opened)); } catch (failure) { /* kept in memory alone */ }
 }
 
 // The way to the person's next action from another screen or from the needs line: its
@@ -1811,7 +1824,7 @@ function levelStanding(found, level) {
   const left = remaining.length ? add(make('details', 'desk-level-left'),
     make('summary', '', 'What is left'),
     make('p', 'quiet', 'Still to write: ' + remaining.map(one => cardTitle(one) + ' (' + (DESK_WORDS.tabs[one.state] || 'Queued').toLowerCase() + ')').join(', ') + '.'),
-    make('p', 'quiet', 'Read each finished draft and mark it ready now. Marking the whole level at once comes when every material in it has a draft.')) : null;
+    make('p', 'quiet', 'Read each finished draft and mark it ready now, on its card or together with the others you have read.')) : null;
   if (left) {
     left.dataset.key = 'desk-level-left ' + (level || '');
     left.querySelector('summary').dataset.key = 'desk-level-left-toggle ' + (level || '');
@@ -3896,11 +3909,13 @@ function paintDesk(fresh, fromPoll = false) {
   const actions = [];
   // Offered only while something of the level waits for it, and confirmed in a sheet that
   // names each material, whether it was opened, and what the Document Library keeps.
+  // It marks only what was opened in its current version; the sheet says what it leaves.
+  // Offered once the level's materials are all written, or while two or more drafts wait.
   const waiting = levelWaiting(shown);
   if (ours && !conversation && lead !== 'slide-text' && !preparingPlan && !waitingPlan
-      && levelCanBeReviewed(shown) && waiting.length) {
+      && (levelCanBeReviewed(shown) || waiting.length > 1) && waiting.length) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
-      lead === 'ready' ? 'filled' : '', () => confirmLevel(level, waiting), 'desk-level-ready');
+      lead === 'ready' ? 'filled' : '', () => confirmLevel(level), 'desk-level-ready');
     // A phone's toolbar has one row: shorter words that still say the whole level is marked,
     // apart from a card's own Mark ready, with the level in its name.
     if (narrow()) {
@@ -3941,7 +3956,10 @@ function paintDesk(fresh, fromPoll = false) {
   const opened = !held.sources && !preparingPlan && !waitingPlan
     && available.find((one) => one.name === selected);
   if (opened?.seen && (opened.kind === 'deck' || held.materials[opened.name]?.loadedSeen === opened.seen)) {
-    (held.opened ||= {})[opened.name] = opened.seen;
+    if ((held.opened ||= {})[opened.name] !== opened.seen) {
+      held.opened[opened.name] = opened.seen;
+      keepOpened(view.path, held.opened);
+    }
   }
   const groups = {};
   for (const kind of ['scenario', 'yoodli']) {
@@ -3997,7 +4015,7 @@ function paintDesk(fresh, fromPoll = false) {
       const together = levelWaiting(items);
       if (ours && !conversation && together.length > 1) {
         const all = capsule('Mark all ' + together.length + ' ready', '',
-          () => confirmLevel(level, together, selectedCard.kind), 'desk-group-ready');
+          () => confirmLevel(level, selectedCard.kind), 'desk-group-ready');
         all.setAttribute('aria-label', 'Mark all ' + together.length + ' '
           + DESK_WORDS.kinds[selectedCard.kind] + ' drafts ready');
         column.prepend(add(make('div', 'desk-reading-tools'), picker,
@@ -4095,7 +4113,7 @@ async function deskDecide(route, sent, pressed, { flush = true, path: at = null 
     if (sent.seen && typeof sent.seen === 'string' && held.materials[sent.name]) {
       sent = { ...sent, seen: held.materials[sent.name].view.seen };
     }
-    if (route === 'level-ready' || (route === 'draft' && !sent.undo)) {
+    if (route === 'level-ready' || route === 'reviewed-ready' || (route === 'draft' && !sent.undo)) {
       sent = { ...sent, seen: { ...sent.seen } };
       for (const name of Object.keys(sent.seen)) {
         if (held.materials[name]) sent.seen[name] = held.materials[name].view.seen;
@@ -4114,6 +4132,12 @@ async function deskDecide(route, sent, pressed, { flush = true, path: at = null 
     if (answer.stopped) held.said = answer.stopped.said;
     if (list(answer.marked).length) readyToast(answer, answer.marked);
     else if (!answer.stopped) toast('Nothing here was waiting to be marked ready.');
+  } else if (answer && route === 'reviewed-ready') {
+    // What the runner refused of what was sent (a version changed since): said on the desk.
+    const refused = list(answer.left).filter((one) => one.why === 'refused');
+    if (refused.length) held.said = refused.map((one) => one.said).join(' ');
+    if (list(answer.marked).length) readyToast(answer, answer.marked);
+    else if (!refused.length) toast('Nothing you opened was waiting to be marked ready.');
   } else if (answer && route === 'ready') {
     readyToast(answer, [sent.name]);
   } else if (answer && route === 'draft') {
@@ -4155,57 +4179,102 @@ async function deskDecide(route, sent, pressed, { flush = true, path: at = null 
   return answer;
 }
 
-// Mark this level ready: the drafts the sheet named, each with the version shown on it.
-function markLevel(level, shown, pressed, kind) {
-  const seen = {};
-  for (const one of shown) if (one.seen) seen[one.name] = one.seen;
-  return deskDecide('level-ready', { level, seen, ...(kind ? { kind } : {}) }, pressed);
+// Mark reviewed materials ready: what the sheet would mark and what it leaves, and why. A
+// material is marked only when it is a draft the person opened in the version it is now.
+// `every` takes the whole training's levels; `kind` only its scenarios or Yoodli layouts.
+const LEFT_WORDS = {
+  unopened: 'Not opened yet', changed: 'Changed since you opened it',
+  held: 'Held: update it or keep it as it is first', needs: 'Needs your decision first',
+  writing: 'Still being written',
+};
+function reviewedBatch(found, opened, level, kind, every) {
+  const mark = [], left = [];
+  for (const one of list(found && found.cards)) {
+    if (!every && (one.level || '') !== (level || '')) continue;
+    if (kind && one.kind !== kind) continue;
+    if (['ready', 'left-out'].includes(one.state)) continue;
+    let why = null;
+    if (one.state === 'held') why = 'held';
+    else if (['needs', 'decide'].includes(one.state)) why = 'needs';
+    else if (one.state !== 'draft' || !one.seen) why = 'writing';
+    else if (opened[one.name] !== one.seen) why = opened[one.name] ? 'changed' : 'unopened';
+    if (why) left.push({ one, why }); else mark.push(one);
+  }
+  return { mark, left };
 }
 
-// The confirmation before Mark this level ready: each material it marks, whether it was
-// opened here in the version shown, and which are kept in the Document Library. Nothing is
-// sent until the person confirms; Cancel changes nothing and returns to the button.
-function confirmLevel(level, waiting, kind) {
+function markReviewed(level, mark, pressed, kind, every) {
+  const seen = {};
+  for (const one of mark) seen[one.name] = one.seen;
+  return deskDecide('reviewed-ready', { level, scope: every ? 'training' : 'level', seen,
+    ...(kind ? { kind } : {}) }, pressed);
+}
+
+// The confirmation before Mark this level ready (or every level, or every scenario): what it
+// marks, and what it leaves with why, with a way to open what was not read. Nothing is sent
+// until the person confirms; Cancel changes nothing and returns to the button.
+function confirmLevel(level, kind, every = false) {
   const held = deskHeld(view.path);
+  const found = held.view;
   const opened = held.opened || {};
-  const rows = make('ul', 'rows');
-  const unread = [];
-  for (const one of waiting) {
-    const read = opened[one.name] === one.seen;
-    if (!read) unread.push(cardTitle(one));
-    const open = read ? null : capsule('Open ' + cardTitle(one), 'quiet', () => {
-      closeSheet();
-      held.sources = false;
-      held.material[level] = one.name;
-      paintDesk(true);
-      const heading = byId(headingId(one.name));
-      if (heading) heading.focus();
-    }, 'desk-level-open ' + one.name);
-    rows.append(add(make('li', 'row step'), add(make('div', 'row-text'),
-      make('p', 'step-name', cardTitle(one)), make('p', 'quiet', read ? 'Opened'
-        : opened[one.name] ? 'Changed since you opened it' : 'Not opened yet')), open));
+  const named = list(found && found.levels).filter(Boolean);
+  const { mark, left } = reviewedBatch(found, opened, level, kind, every);
+  const where = (one) => every && one.level ? ' · Level ' + one.level : '';
+  const open = (one) => capsule('Open ' + cardTitle(one), 'quiet', () => {
+    closeSheet();
+    held.sources = false;
+    held.level = one.level || '';
+    held.material[held.level] = one.name;
+    paintDesk(true);
+    const heading = byId(headingId(one.name));
+    if (heading) heading.focus();
+  }, 'desk-level-open ' + one.name);
+  const marked = make('ul', 'rows');
+  for (const one of mark) {
+    marked.append(add(make('li', 'row step'), add(make('div', 'row-text'),
+      make('p', 'step-name', cardTitle(one) + where(one)), make('p', 'quiet', 'Opened'))));
   }
-  const kept = waiting.filter((one) => ['document', 'brief'].includes(one.kind)).map(cardTitle);
-  const go = capsule('Mark ' + count(waiting.length, 'material', 'materials') + ' ready', 'filled',
-    async () => {
-      const answer = await markLevel(level, waiting, go, kind);
+  const leftRows = make('ul', 'rows');
+  for (const { one, why } of left) {
+    leftRows.append(add(make('li', 'row step'), add(make('div', 'row-text'),
+      make('p', 'step-name', cardTitle(one) + where(one)), make('p', 'quiet', LEFT_WORDS[why])),
+      ['unopened', 'changed', 'held', 'needs'].includes(why) ? open(one) : null));
+  }
+  const kept = mark.filter((one) => ['document', 'brief'].includes(one.kind)).map(cardTitle);
+  const go = mark.length ? capsule('Mark ' + count(mark.length, 'material', 'materials') + ' ready',
+    'filled', async () => {
+      const answer = await markReviewed(level, mark, go, kind, every);
       if (view.sheet === 'desk-kit') closeSheet();
       // The button is gone once nothing waits: the toast's Undo is the way back.
       if (answer && !focusKey(kind ? 'desk-group-ready' : 'desk-level-ready')) focusKey('desk-undo');
-    }, 'desk-level-ready-confirm');
-  const every = kind === 'yoodli' ? 'every Yoodli layout' : 'every practice scenario';
-  DESK.kitSheet = [sheetTitle(kind ? 'Mark ' + every + (level ? ' of level ' + level : '') + ' ready?'
-    : level ? 'Mark level ' + level + ' ready?' : 'Mark every material ready?'),
-    make('p', '', 'Ready is your approval of the version you read.' + (unread.length
-      ? ' Not opened yet: ' + series(unread) + '.' : ' You opened each of them.')),
-    make('h3', 'sheet-part', '1. Materials to mark ready'), rows,
-    make('h3', 'sheet-part', '2. The Document Library'),
+    }, 'desk-level-ready-confirm') : null;
+  // A training with levels can be marked level by level or all at once.
+  const scope = !kind && named.length > 1 ? segmented('Mark',
+    ['Level ' + level, 'Every level'], every ? 1 : 0, (index) => {
+      confirmLevel(level, kind, index === 1);
+      focusKey('desk-level-scope ' + index);
+    }, 'desk-level-scope') : null;
+  const unread = left.filter(({ why }) => why === 'unopened').map(({ one }) => cardTitle(one) + where(one));
+  const lede = 'Ready is your approval of the version you read. Only what you opened as it is now is marked.'
+    + (unread.length ? ' Not opened yet: ' + series(unread) + '.' : mark.length && !left.length ? ' You opened each of them.' : '');
+  const every_ = kind === 'yoodli' ? 'every Yoodli layout' : 'every practice scenario';
+  DESK.kitSheet = [sheetTitle(kind ? 'Mark ' + every_ + (level ? ' of level ' + level : '') + ' ready?'
+    : every ? 'Mark every level ready?' : level ? 'Mark level ' + level + ' ready?' : 'Mark every material ready?'),
+    scope,
+    make('p', '', lede),
+    make('h3', 'sheet-part', '1. Materials to mark ready'),
+    mark.length ? marked : make('p', 'quiet', 'Nothing yet: open a material to read it, then mark it ready here or on its card.'),
+    left.length ? make('h3', 'sheet-part', '2. Left as they are') : null,
+    left.length ? leftRows : null,
+    make('h3', 'sheet-part', (left.length ? '3' : '2') + '. The Document Library'),
     make('p', '', kept.length ? series(kept) + (kept.length === 1 ? ' is' : ' are')
       + ' kept in the Document Library as Markdown, as learners read '
       + (kept.length === 1 ? 'it.' : 'them.')
       : 'Nothing here goes to the Document Library: only a guide or a brief does.'),
-    add(make('div', 'bar'), go, capsule('Cancel', 'quiet', () => closeSheet(), 'cancel'))];
-  openSheet('desk-kit', kind ? 'desk-group-ready' : 'desk-level-ready')();
+    add(make('div', 'bar'), go, capsule(go ? 'Cancel' : 'Close', 'quiet', () => closeSheet(), 'cancel'))]
+    .filter(Boolean);
+  if (view.sheet === 'desk-kit') drawSheet();
+  else openSheet('desk-kit', kind ? 'desk-group-ready' : 'desk-level-ready')();
 }
 
 // What Mark ready did, said with Undo while each version is the one marked: Undo returns

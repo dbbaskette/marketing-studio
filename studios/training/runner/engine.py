@@ -6252,6 +6252,51 @@ class Engine(Reviewing):
             self.carry_on(root)
         return {'marked': marked, 'stopped': stopped}
 
+    def mark_reviewed_ready(self, path, level, seen, kind=None, every=False) -> dict:
+        """Mark ready, in one batch the person confirmed, every material of one level (or of
+        the whole training, `every`) that they opened in the version it is now (`seen`, by
+        name: the hash shown when it was opened) and that is not held. Nothing the person
+        did not open in its current form is marked: a material missing from `seen` is left
+        as not opened, a held one as held, one still being written or updated as such, and
+        one the core refuses (a changed version, a deck that needs the person) with the
+        sentence it was refused with. Each is checked as Mark ready checks it, and the batch
+        commits once. With `kind`, 'scenario' or 'yoodli', only cards of that kind. Returns
+        {'marked': [names], 'left': [{'name', 'why', 'said'}]}, `why` one of
+        drafts.LEFT_WHY."""
+        marked, left = [], []
+        with self.files:
+            # A training worked on in conversation is refused here, before anything is read.
+            root = self._on_desk(path, decided=True)[0]
+            session = workspace.load(root)
+            if not every:
+                if session['levels'] and level is None:
+                    raise WorkspaceError('Choose a level.')
+                if session['levels'] and level not in session['levels'] \
+                        or not session['levels'] and level is not None:
+                    raise WorkspaceError(f'This training has no level {level}.')
+            seen = seen if isinstance(seen, dict) else {}
+            for name, why in drafts.reviewed_batch(root, session, self._load(root), None if every
+                                                   else (level,), seen, kind):
+                if why is None:
+                    try:
+                        self._mark(root, self._load(root), name, seen[name])
+                    except WorkspaceError as refusal:
+                        left.append({'name': name, 'why': 'refused', 'said': str(refusal)})
+                        continue
+                    marked.append(name)
+                else:
+                    left.append({'name': name, 'why': why,
+                                 'said': drafts.left_said(name, why)})
+            if marked:
+                which = drafts.batch_words(level, kind, every, len(marked))
+                self._ready_again(root)
+                self._remember_decision(root, self._load(root), which, 'approve')
+                self._commit(root, f'mark {which} ready')
+                library.keep_marked(root, marked)
+        if marked:
+            self.carry_on(root)
+        return {'marked': marked, 'left': left}
+
     def return_to_draft(self, path, seen) -> dict:
         """Return materials the person marked ready to drafts, as they asked on the desk:
         Return to draft on a card, or Undo on the Mark ready toast. Each is bound to the

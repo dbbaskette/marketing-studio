@@ -9173,19 +9173,46 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/drafts/keep', {
             'path': str(self.root), 'name': 'deck@101', 'seen': seen_of('deck@101')})])
 
-    def test_mark_this_level_ready_names_where_it_stopped(self):
+    def test_mark_this_level_ready_marks_only_what_was_opened_and_says_what_was_left(self):
         said = 'Settle what needs you on the level 101 slide deck before marking it ready.'
-        answered = a_desk(marked=['blueprint@101'], stopped={'name': 'deck@101', 'said': said})
+        answered = a_desk(marked=[], left=[{'name': 'deck@101', 'why': 'refused', 'said': said}])
         result = self.open_desk(self.on_desk(a_desk(), **{
-            'POST /api/drafts/level-ready': [answered]}),
-            [{'click': 'Mark this level ready'}, {'click': 'Mark 5 materials ready'},
-             {'snapshot': 'stopped'}])
-        self.assertEqual(self.posts(result), [('/api/drafts/level-ready', {
-            'path': str(self.root), 'level': '101',
-            'seen': {f'{base}@101': seen_of(f'{base}@101') for base, _ in DESK_KINDS}})])
+            'POST /api/drafts/reviewed-ready': [answered]}),
+            [{'click': 'Deck · Draft'}, {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
+             {'click': 'Mark 1 material ready'}, {'snapshot': 'stopped'}])
+        sheet = result['snapshots']['sheet']
+        # The deck was opened here; nothing else of the level was, so nothing else is sent.
+        self.assertIn('Mark level 101 ready?', sheet['sheet'])
+        self.assertIn('Deck\nOpened', sheet['sheet'])
+        self.assertIn('2. Left as they are', sheet['sheet'])
+        self.assertIn('Guide\nNot opened yet', sheet['sheet'])
+        self.assertIn('Open Guide', sheet['buttons'])
+        self.assertEqual(sheet['filled'], ['Mark 1 material ready'])
+        self.assertEqual(self.posts(result), [('/api/drafts/reviewed-ready', {
+            'path': str(self.root), 'level': '101', 'scope': 'level',
+            'seen': {'deck@101': seen_of('deck@101')}})])
         shot = result['snapshots']['stopped']
-        self.assertIn(said, shot['text'])
         self.assertIn(said, [line.strip() for line in shot['text'].split('\n')])
+
+    def test_every_level_is_one_choice_in_the_same_sheet(self):
+        answered = a_desk(marked=['deck@101', 'deck@201'], left=[])
+        result = self.open_desk(self.on_desk(a_desk(), **{
+            'POST /api/drafts/reviewed-ready': [answered]}),
+            [{'click': 'Deck · Draft'}, {'click': '201'}, {'click': 'Deck · Draft'},
+             {'click': 'Mark this level ready'}, {'snapshot': 'level'},
+             {'click': 'Every level'}, {'snapshot': 'every'},
+             {'click': 'Mark 2 materials ready'}])
+        self.assertIn('Mark level 201 ready?', result['snapshots']['level']['sheet'])
+        self.assertEqual(result['snapshots']['level']['filled'], ['Mark 1 material ready'])
+        every = result['snapshots']['every']
+        self.assertIn('Mark every level ready?', every['sheet'])
+        for words in ('Deck · Level 101\nOpened', 'Deck · Level 201\nOpened',
+                      'Guide · Level 101\nNot opened yet'):
+            self.assertIn(words, every['sheet'])
+        self.assertEqual(every['filled'], ['Mark 2 materials ready'])
+        self.assertEqual(self.posts(result), [('/api/drafts/reviewed-ready', {
+            'path': str(self.root), 'level': '201', 'scope': 'training',
+            'seen': {'deck@101': seen_of('deck@101'), 'deck@201': seen_of('deck@201')}})])
 
     def test_a_complete_level_offers_no_mark_ready_and_sends_nothing(self):
         cards = [a_card(f'{base}@101', 'ready', 'Ready. You marked it ready.',
@@ -9203,16 +9230,19 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                         ('draft', 'download')) for base, _ in DESK_KINDS]
         cards[1] = a_card('document@101')
         result = self.open_desk(self.on_desk(a_desk(*cards, levels=('101',), running=False)), [
-            {'click': 'Mark this level ready'}, {'snapshot': 'sheet'},
-            {'click': 'Mark 1 material ready'}])
-        sheet = result['snapshots']['sheet']['sheet']
+            {'click': 'Mark this level ready'}, {'snapshot': 'sheet'}, {'click': 'Close'},
+            {'snapshot': 'closed'}])
+        shot = result['snapshots']['sheet']
+        sheet = shot['sheet']
         self.assertIn('Mark level 101 ready?', sheet)
+        # Not opened, so not marked: the sheet says how to read it, and offers no Mark.
         self.assertIn('Guide\nNot opened yet', sheet)
+        self.assertIn('Nothing yet: open a material to read it', sheet)
         self.assertNotIn('Plan\n', sheet)
-        self.assertIn('Guide is kept in the Document Library as Markdown', sheet)
-        self.assertEqual(self.posts(result), [('/api/drafts/level-ready', {
-            'path': str(self.root), 'level': '101',
-            'seen': {'document@101': seen_of('document@101')}})])
+        self.assertEqual(shot['filled'], [])
+        self.assertIn('Open Guide', shot['buttons'])
+        self.assertEqual(result['snapshots']['closed']['sheet'], '')
+        self.assertEqual(self.posts(result), [])
 
     def test_a_copy_google_refused_is_said_not_called_sent(self):
         said = 'Google did not answer. Send it again in a few minutes.'
