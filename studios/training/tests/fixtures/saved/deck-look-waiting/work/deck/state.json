@@ -1,0 +1,67 @@
+{
+  "brand": {
+    "at": "2026-11-24T22:36:17Z",
+    "brand": "example-co",
+    "changed": null,
+    "contract": "brand-ad9940/brand-contract.json",
+    "folder": "brand-ad9940",
+    "guidance": {
+      "problem": "This brand skill is not the entry to slide building yet, so the deck's workers read the installed slides tool's own guidance."
+    },
+    "sha256": "1b546a819f0722a77f0b418b678a6411ac8ae73d0591f3b5a45c46f529c0aa66",
+    "told": "told-ad9940",
+    "variant": "light",
+    "voice": "brand-ad9940/VOICE.md"
+  },
+  "look": {
+    "at": "2026-11-24T22:36:18Z",
+    "brand": "1b546a819f0722a77f0b418b678a6411ac8ae73d0591f3b5a45c46f529c0aa66",
+    "default": "example-contrast",
+    "folder": "looks-db0bc9",
+    "house": [
+      "Fill cards.",
+      "Icons."
+    ],
+    "looks": [
+      {
+        "direction": {
+          "focal": "headingPrimary",
+          "meanings": {
+            "accentAqua": "Example"
+          },
+          "motif": "A strip says whose side a card is on.",
+          "neutral": "canvasSecondary"
+        },
+        "id": "example-contrast",
+        "layouts": {
+          "closing": "Closing with title",
+          "cover": "Title slide",
+          "section": "Section divider"
+        },
+        "name": "Example against an alternative",
+        "number": 1,
+        "useWhen": "Comparisons."
+      },
+      {
+        "direction": {
+          "focal": "accentAqua",
+          "motif": "Quiet panels.",
+          "neutral": "canvasSecondary"
+        },
+        "id": "example-calm",
+        "layouts": {
+          "closing": "Closing words",
+          "cover": "Title slide"
+        },
+        "name": "Calm",
+        "number": 2,
+        "useWhen": "Explanations."
+      }
+    ],
+    "outline": "665fb5b943755fd25d064f20e63a4adc25510d782ad8aa106fe2a63d6e99bfcf",
+    "route": "google",
+    "says": "Rendered through Google Slides, the way this computer renders every preview.",
+    "sheet": true,
+    "slide": "what-it-does"
+  }
+}

@@ -1,0 +1,590 @@
+{
+  "agent": "claude",
+  "answers": {},
+  "copies": {
+    "problems": {},
+    "tried": {}
+  },
+  "deck": {
+    "": {
+      "approved": {
+        "at": "2026-11-24T22:36:33Z",
+        "by": "page",
+        "note": null,
+        "sha256": "665fb5b943755fd25d064f20e63a4adc25510d782ad8aa106fe2a63d6e99bfcf"
+      },
+      "asked": null,
+      "outline": {
+        "answers": null,
+        "at": "2026-11-24T22:36:32Z",
+        "because": null,
+        "checks": [
+          {
+            "check": "outline.tool",
+            "problems": [],
+            "status": "passed"
+          },
+          {
+            "check": "outline.rules",
+            "problems": [],
+            "status": "passed"
+          }
+        ],
+        "design": null,
+        "from": {
+          "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+          "document": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+        },
+        "notes": "Six slides. The check slide is the one I am least sure of.",
+        "sha256": "665fb5b943755fd25d064f20e63a4adc25510d782ad8aa106fe2a63d6e99bfcf",
+        "warnings": []
+      },
+      "presented": null,
+      "saved": {
+        "at": "2026-11-24T22:36:34Z",
+        "deck": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f",
+        "sha256": "2233662c5af93dfc9e537211f25596db8717036d712218c5d6d8c87f43801abe"
+      },
+      "waiting": null
+    }
+  },
+  "documents": null,
+  "drafted": [],
+  "driver": null,
+  "effort": null,
+  "halt": null,
+  "last_decision": {
+    "at": "2026-11-24T22:36:32Z",
+    "decision": "approve",
+    "label": "the brief",
+    "next": "Writing what the slide deck says now."
+  },
+  "last_decision_stop": "2026-11-24T22:36:33Z",
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model": null,
+  "model_jobs": [
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research-plan",
+      "source": "inherit",
+      "step": "research-plan"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:availability"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:instance-min"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:health-checks"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "research",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research",
+      "source": "inherit",
+      "step": "research:zero-downtime"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "blueprint",
+      "source": "inherit",
+      "step": "blueprint"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "document",
+      "source": "inherit",
+      "step": "document"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "brief",
+      "source": "inherit",
+      "step": "brief"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "deck-outline",
+      "source": "inherit",
+      "step": "deck-outline"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "deck-sections",
+      "source": "inherit",
+      "step": "deck-sections:2"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "writing",
+      "purpose": "deck-sections",
+      "source": "inherit",
+      "step": "deck-sections:1"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "checking",
+      "purpose": "review",
+      "source": "inherit",
+      "step": "deck-review"
+    }
+  ],
+  "model_profiles": {
+    "agent": "claude",
+    "mode": "single",
+    "policy": 3,
+    "profiles": {
+      "checking": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "quick": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "research": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      }
+    },
+    "schema": 1
+  },
+  "problem": null,
+  "question": null,
+  "research": {
+    "plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce",
+    "run": "ff9756cae86d84f6e6672ea4"
+  },
+  "research_from": {
+    "documents": false,
+    "sites": [],
+    "web": true
+  },
+  "research_questions": [],
+  "review_layout": 2,
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "started_at": "2026-11-24T22:36:29Z",
+  "steps": {
+    "blueprint": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:31Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:31Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "brief": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:32Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:32Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-brand": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:32Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:32Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-handoff": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:32Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:32Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-look": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:33Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.1,
+          "started_at": "2026-11-24T22:36:33Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-outline": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:32Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:32Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-review": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:34Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:34Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-save": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:34Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:34Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-sections:1": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:33Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.1,
+          "started_at": "2026-11-24T22:36:33Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-sections:2": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:33Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:33Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-start": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:33Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.1,
+          "started_at": "2026-11-24T22:36:33Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "deck-whole": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:33Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:33Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "document": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:31Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:31Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "intake": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:29Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:29Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-plan": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:29Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:29Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-report": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:30Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:30Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-start": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:30Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:30Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:availability": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:30Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:30Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:health-checks": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:30Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:30Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:instance-min": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:30Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:30Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research:zero-downtime": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:30Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:30Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    }
+  }
+}

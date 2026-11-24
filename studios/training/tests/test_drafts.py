@@ -11,6 +11,7 @@ from unittest import mock
 
 import helpers  # noqa: F401
 import home
+import saved_fixtures
 import workspace
 from runner_support import FORM, fails
 from studio_core import research_contract, review_policy
@@ -1019,14 +1020,9 @@ class DeskTypingTests(DeckCase):
 
 class OpenSavedTrainingTests(DeckCase):
     def finished(self, mode='step_by_step'):
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
-            root = self.saved_start(levels=['101'], title='Training ' + mode)
-        if mode == 'step_by_step':
-            self.to_end(root)
-        else:
-            shown = self.view(root)
-            if shown.get('review'):
-                self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        """A training the saved flow finished at that review level (a stored fixture, see
+        saved_fixtures.py)."""
+        root = saved_fixtures.load(self, 'finished-level-' + mode.replace('_', '-'))
         self.assertEqual(self.state(root), 'done')
         return root
 
@@ -1078,8 +1074,8 @@ class OpenSavedTrainingTests(DeckCase):
         self.assertEqual(str(caught.exception), drafts.NOT_BROUGHT_IN)
 
     def test_a_training_still_waiting_cannot_be_opened(self):
-        root = self.saved_start(levels=['101'])
-        self.to_gate(root, 'document@101')
+        root = saved_fixtures.load(self, 'level-document-gate')
+        self.assertEqual(workspace.status(root)['gate'], 'document@101')
         file = root / '.training-studio/run.json'
         before = file.read_bytes()
         with self.assertRaises(WorkspaceError) as caught:

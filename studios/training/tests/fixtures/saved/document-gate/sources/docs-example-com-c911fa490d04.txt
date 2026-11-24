@@ -1,0 +1,7 @@
+Rolling restarts
+
+A rolling restart replaces instances one batch at a time, so the app keeps serving
+traffic while it restarts.
+
+Capacity holds only when more than one instance is running. The platform’s health
+check decides when the next batch starts.

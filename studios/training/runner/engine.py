@@ -443,6 +443,14 @@ WAITS = ('It is gone from this computer. Your team sees it gone the next time th
 # How what a deck says was kept, when the person did not approve it, as the slides tool is told.
 CONTINUED = {'review-policy': 'Continued under the saved review level',
              'desk': 'Continued on the desk'}
+SAVED_RECORD = ('This training was saved by the earlier step-by-step flow, and its saved '
+                'records cannot be read as they are, so it can be neither continued nor opened '
+                'on the desk. Its saved files are kept as they are.')
+SAVED_BRIEF = ('Read-only: its saved records cannot be read, so it can be neither continued '
+               'nor opened on the desk.')
+# The shared files a read-only record may list and read, by name (`Engine._saved_files`).
+SAVED_FILES = ('intake.md', 'research-report.md', 'blueprint.md', 'document.md',
+               'product-brief.md', 'competitive-brief.md', 'scenario.md', 'deck-link.md')
 DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
          'doc': 'Google Doc'}
 
@@ -7664,6 +7672,12 @@ class Engine(Reviewing):
         try:
             record = self._load(root)
         except (WorkspaceError, OSError) as failure:
+            shown = self.saved_record(root, failure)
+            if shown is not None:
+                # A read-only record: nothing waits for the person and nothing runs.
+                return {'state': 'saved', 'sentence': SAVED_BRIEF, 'needs': False,
+                        'question': None, 'mine': True, 'driver': None, 'last_shared': None,
+                        'notice': None, 'busy_since': None, 'read_only': True}
             return self._unread(failure)
         return self._brief(root, record)
 
@@ -7787,15 +7801,75 @@ class Engine(Reviewing):
             row.insert(at, item)
         return row
 
+    @staticmethod
+    def _saved_files(root: Path) -> list[str]:
+        """The shared files a read-only record lists: each of SAVED_FILES, at the top or in
+        a level's folder, that is an ordinary file inside the training's folder, so
+        `/api/saved-file` serves every name listed and nothing else."""
+        inside = root.resolve()
+        found = []
+        for level in ('', *(name + '/' for name in ('101', '201', '301', '401'))):
+            for name in SAVED_FILES:
+                if level and name in ('intake.md', 'research-report.md'):
+                    continue
+                path = root / (level + name)
+                try:
+                    real = path.resolve()
+                except (OSError, RuntimeError):
+                    continue
+                if not path.is_symlink() and not path.parent.is_symlink() \
+                        and inside in real.parents and real.is_file():
+                    found.append(level + name)
+        return found
+
+    def saved_record(self, root: Path, refusal: Exception | None = None) -> dict | None:
+        """What the page shows of a training the earlier gated flow saved, whose saved
+        records the runner refuses: a read-only record. It says what it is and why it can be
+        neither continued nor opened on the desk, lists the saved files it holds (read
+        through `/api/saved-file`), and offers one next action: start new work from it, or,
+        where its start form cannot be read, a new training. None for any other training,
+        and for one whose records the runner reads (it keeps its own screen). Writes
+        nothing."""
+        from runner import desk_migration
+        if (root / drafts.RECORD).is_symlink():
+            return None
+        try:
+            read_record(root)
+            workspace.load(root)
+            return None   # its records are read: the refusal is about something else
+        except (WorkspaceError, OSError, ValueError) as failure:
+            refusal = refusal or failure
+        found = desk_migration.outcome(self, root)
+        if not found or found['outcome'] != 'read-only':
+            return None
+        try:
+            title = json.loads((root / workspace.STATE_DIR / 'session.json').read_bytes()).get('title')
+        except (OSError, ValueError, AttributeError):
+            title = None
+        title = title if isinstance(title, str) and title.strip() else root.name
+        return {'path': str(root), 'title': title, 'state': 'saved', 'flow': None,
+                'execution': 'saved', 'mine': True,
+                'sentence': SAVED_RECORD, 'can_open_desk': False, 'can_migrate_desk': False,
+                'saved_record': {'why': found['reason'], 'refusal': str(refusal),
+                                 'files': self._saved_files(root), 'next': found['next']}}
+
     def view(self, path) -> dict | None:
-        """Everything the page shows for one run. None when no run is driving it."""
+        """Everything the page shows for one run. None when no run is driving it. A
+        training the earlier gated flow saved, whose records the runner refuses to read, is
+        shown as a read-only record (`saved_record`)."""
         root = self.driven(path)
         if root is None:
             return None
-        record = self._load(root)
-        copies = self._wanted(root, record)
-        supplied = self._document_entries(root, record) if record.get('documents') else ()
-        found = self._survey(root, record, copies, supplied=supplied)
+        try:
+            record = self._load(root)
+            copies = self._wanted(root, record)
+            supplied = self._document_entries(root, record) if record.get('documents') else ()
+            found = self._survey(root, record, copies, supplied=supplied)
+        except WorkspaceError as refusal:
+            shown = self.saved_record(root, refusal)
+            if shown is None:
+                raise
+            return shown
         run, ending = self._run(root), found.next.kind
         resting = self._resting(record)
         report = self.index.readiness(root, copies) if ending == 'done' else None

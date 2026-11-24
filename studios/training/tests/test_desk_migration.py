@@ -7,6 +7,7 @@ from unittest import mock
 
 import helpers
 import home
+import saved_fixtures
 import workspace
 from runner import desk_chat, engine as engines, gitstate, pipeline, settings, studio, team
 from runner_support import StudioCase, TeamCase, FORM, BLUEPRINT
@@ -552,7 +553,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         self.assertTrue(engines.read_record(root)['migration_scope_released'])
         self.assertEqual((root / RUN).read_bytes(), original)
 
-    def test_known_halts_preserve_history_but_failures_questions_and_jobs_block(self):
+    def test_known_halts_failures_and_questions_preserve_history_but_unknown_halts_and_jobs_block(self):
         for halt in ('paused', 'stopped'):
             root = self.saved('Halt ' + halt, halt)
             original = (root / RUN).read_bytes()
@@ -560,8 +561,21 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
             self.assertEqual(engines.read_record(root)['migration_saved_status']['halt'], halt)
             self.assertIsNone(engines.read_record(root)['halt'])
             self.assertEqual((root / RUN).read_bytes(), original)
-        for key, value in (('halt', 'unknown'), ('problem', {'state': 'failed', 'what': 'Failed material'}),
-                           ('question', {'text': 'A real question'}), ('drafts', {'jobs': [{'status': 'queued'}]})):
+        # Once a plan exists, a saved failure or worker question opens on the desk as History.
+        for key, value in (('problem', {'state': 'failed', 'what': 'Failed material'}),
+                           ('question', {'id': 'q1', 'text': 'A real question', 'from': 'document'})):
+            root = self.saved('History ' + key)
+            record = self.record(root)
+            record[key] = value
+            (root / RUN).write_text(json.dumps(record))
+            original = (root / RUN).read_bytes()
+            self.apply(root)
+            effective = engines.read_record(root)
+            self.assertEqual(effective['migration_saved_status'], {key: value})
+            self.assertIsNone(effective[key])
+            self.assertEqual((root / RUN).read_bytes(), original)
+            self.assertEqual(self.workers.jobs, [])
+        for key, value in (('halt', 'unknown'), ('drafts', {'jobs': [{'status': 'queued'}]})):
             root = self.saved('Block ' + key)
             record = self.record(root)
             record[key] = value
@@ -1005,8 +1019,8 @@ class MigrationGoogleTests(DeckCase):
         return engines.read_record(root)
 
     def test_checked_conversation_repeated_local_edits_preserve_delivered_state(self):
-        root = self.saved_begin(deck_target='google')
-        self.drawn(root)
+        # A Google deck the saved flow drew (a stored fixture, see saved_fixtures.py).
+        root = saved_fixtures.load(self, 'google-deck-drawn')
         self.assertNotEqual(workspace.load(root)['stage'], 'done')
         (root / '.training-studio/google-baseline.json').write_text('{"revision":"synthetic-existing-google-revision"}\n')
         original = self.snapshot(root)
@@ -1257,6 +1271,25 @@ class MigrationPageTests(ScriptedPage, PageCase):
             self.assertEqual(result['snapshots']['preview']['filled'], ['Apply'])
             self.assertEqual(result['snapshots']['returned']['filled'], [review])
             self.assertEqual([request for request in result['requests'] if request['method'] == 'POST'], [])
+
+    def test_saved_failure_and_question_are_history_on_the_desk(self):
+        fixture = self.fixture()
+        desk = {**fixture['desk'], 'saved_status': {
+            'problem': {'what': 'Writing the learner guide failed three times.'},
+            'question': {'text': 'Which platform is this about?'}}}
+        opened = {**fixture['opened']}
+        for narrow in (False, True):
+            result = self.run_page(self.answers(fixture, **{
+                'GET /api/drafts': [ok(desk)], 'GET /api/run': [ok(opened)]}),
+                [{'snapshot': 'desk'}], state={'screen': 'run', 'path': fixture['path']}, narrow=narrow)
+            text = result['snapshots']['desk']['text']
+            self.assertIn('Saved runner history', text)
+            self.assertIn('Writing the learner guide failed three times. That step stays unfinished', text)
+            self.assertIn('Which platform is this about?', text)
+            self.assertIn('no work was resumed', text)
+            for word in ('Try again', 'Answer'):
+                self.assertNotIn(word, result['snapshots']['desk']['buttons'])
+            self.assertEqual([r for r in result['requests'] if r['method'] == 'POST'], [])
 
     def test_blocker_and_changed_preview_keep_sheet_and_saved_work(self):
         fixture = self.fixture()

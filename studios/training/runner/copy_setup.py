@@ -36,6 +36,9 @@ SOURCES_LEFT = ('What its research read could not be copied ({why}). Add the doc
 DOCUMENT_LEFT = '“{name}” could not be copied ({why}). Add it again in step 2.'
 FULL = ('A training takes at most {most} files and pasted texts, so {count} of its documents '
         'were not copied.')
+UNREAD_FORM = 'This training’s start form cannot be read. Start a new training instead.'
+SAVED_LOOKS = ('Where its research looked could not be read from its saved record. Choose it '
+               'again in step 2.')
 
 
 def _store(engine) -> research_sources.Sources:
@@ -71,18 +74,47 @@ def _documents(engine, root: Path, store, made: dict, left: list[str]) -> dict:
     return made
 
 
+def _saved_start(shown: dict, root: Path, left: list[str]) -> tuple[dict, dict]:
+    """The start form of a read-only record (`Engine.saved_record`) whose start form can be
+    read: its session record and intake as they were saved, and of its run record only what
+    the start form asked (its research questions and where research looked). Only reads."""
+    import json
+    if shown['saved_record']['next'] != 'copy':
+        raise WorkspaceError(UNREAD_FORM)
+    session = json.loads((root / workspace.STATE_DIR / 'session.json').read_bytes())
+    raw = json.loads((root / workspace.STATE_DIR / 'run.json').read_bytes())
+    record = {}
+    questions = raw.get('research_questions')
+    if isinstance(questions, list) and all(isinstance(item, str) for item in questions):
+        record['research_questions'] = questions
+    try:
+        if raw.get('research_from') is not None or raw.get('documents') is not None:
+            pipeline.research_of(raw)
+            record.update({key: raw[key] for key in ('research_from', 'documents') if key in raw})
+    except (TypeError, ValueError, KeyError, AttributeError):
+        left.append(SAVED_LOOKS)
+    return record, session
+
+
 def of(engine, path) -> dict:
     """What the start form is filled in with to make a training like this one."""
     root = engine.driven(path)
     if root is None:
         raise WorkspaceError('No run is driving this training.')
+    left = []
     with engine.files:
-        record = engine._load(root)
-        session = workspace.load(root)
+        try:
+            record = engine._load(root)
+            session = workspace.load(root)
+        except WorkspaceError:
+            shown = engine.saved_record(root)
+            if shown is None:
+                raise
+            record, session = _saved_start(shown, root, left)
         values = settings_change.values(root, session, record)
     from studio_core import studios_config
     shared, _ = studios_config.read()
-    store, left = _store(engine), []
+    store = _store(engine)
     looks = pipeline.research_of(record)
     sites = research_sites.defaults(shared)
     try:

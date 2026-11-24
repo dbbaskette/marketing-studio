@@ -1,0 +1,81 @@
+{
+  "artifacts": {
+    "intake": {
+      "approved": {
+        "at": "2026-11-24T22:36:25Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "init"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "skip",
+      "reason": "No deck was chosen when this training was started.",
+      "stage": "deck"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:25Z",
+      "event": "save",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    }
+  ],
+  "exports": {},
+  "findings": null,
+  "gate": null,
+  "id": "asked-early",
+  "level": null,
+  "levels": [],
+  "next_step": "Draft the research plan",
+  "pending_question": null,
+  "pins": {},
+  "requests": [],
+  "research": null,
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "settings": {
+    "approval": "page",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "reading",
+    "stages": [
+      "document",
+      "brief",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {},
+  "stage": "research-plan",
+  "title": "Asked early",
+  "unavailable": {}
+}

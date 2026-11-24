@@ -3448,6 +3448,8 @@ function deckLeft(training) {
 // Where a training stands, as a shape and words. A run knows more than the list does about
 // one that is working, paused or stopped.
 function standingOf(training) {
+  // A read-only record is neither working nor waiting: it is only read.
+  if (training.run && training.run.read_only) return ['off', 'Read-only'];
   // What a teammate runs is never said to be working or waiting: that is not known here.
   if (elsewhere(training)) return ['none', 'Run by ' + nameOf(training.driver)];
   if (unclaimed(training)) return ['off', 'Nobody is running it'];
@@ -7044,8 +7046,75 @@ function combinedReview(run, leads) {
   return node;
 }
 
+// --- a read-only record ------------------------------------------------------------------
+// A training the earlier gated flow saved whose records the runner refuses. Nothing on this
+// screen continues it or opens it on the desk: it is read, and new work starts from it.
+const SAVED_FILES = { 'intake.md': 'Read intake', 'research-report.md': 'Read research report',
+  'blueprint.md': 'Read teaching plan', 'document.md': 'Read learner guide',
+  'product-brief.md': 'Read product brief', 'competitive-brief.md': 'Read competitive brief',
+  'scenario.md': 'Read practice scenario', 'deck-link.md': 'Read deck link' };
+
+function paintSavedRecord(run, fresh) {
+  const saved = run.saved_record;
+  const title = run.title || 'Untitled';
+  placeParts({ title, above: [make('span', '', 'Read-only')], back: true, actions: [],
+    mark: [title, saved.why, saved.next] }, [
+    ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
+    ['saved-why', [saved.why, saved.refusal], () => add(card('Why it cannot be continued'),
+      make('p', '', saved.why),
+      saved.refusal && saved.refusal !== saved.why ? make('p', 'quiet', saved.refusal) : null,
+      make('p', 'quiet', 'Nothing here changes it. Restore its saved records from your '
+        + 'workspace history to continue it, or start new work from it.'))],
+    ['saved-files', [saved.files], () => savedFilesPart(run)],
+  ], fresh);
+}
+
+function savedRecordIntro(run) {
+  const saved = run.saved_record;
+  const copying = saved.next === 'copy';
+  const go = capsule(copying ? 'Start new work from this' : 'Start a new training', 'filled',
+    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
+      : openNew('saved-next', false, go)), 'saved-next');
+  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
+    state('off', 'Read-only: it is not continued and not opened on the desk'),
+    make('p', 'quiet', copying ? 'Start new work from this opens the start form with its '
+      + 'setup and documents. This saved training is kept as it is.'
+      : 'Its start form cannot be read, so a new training starts from an empty form. This '
+        + 'saved training is kept as it is.'));
+}
+
+function savedFilesPart(run) {
+  const files = list(run.saved_record.files);
+  const node = card('Saved files');
+  if (!files.length) return add(node, make('p', 'quiet', 'It holds no saved files to read.'));
+  const holder = make('div', 'card-part'), problem = problemLine();
+  const bar = make('div', 'bar');
+  for (const name of files) {
+    const [level, file] = name.includes('/') ? name.split('/') : ['', name];
+    const label = (SAVED_FILES[file] || 'Read ' + file) + (level ? ' (' + level + ')' : '');
+    const go = capsule(label, 'quiet', async () => {
+      go.disabled = true; say(problem, '');
+      try {
+        const found = await ask('saved-file', { path: run.path, name });
+        holder.replaceChildren(add(make('article', 'paper doc'),
+          make('h2', 'doc-title', label.replace(/^Read (.)/, (_, first) => first.toUpperCase())),
+          window.StudioMarkdown.render(found.text || ''),
+          found.truncated ? make('p', 'quiet', 'This is a shortened preview. The full file '
+            + 'remains in your workspace.') : null));
+      } catch (failure) { say(problem, failure.message); }
+      finally { go.disabled = false; }
+    }, 'saved-read ' + name);
+    add(bar, go);
+  }
+  return add(node, make('p', 'quiet', 'Each file stays in the training’s folder in your '
+    + 'workspace.'), bar, problem, holder);
+}
+
 function paintRun(fresh) {
   const run = view.run;
+  // A training the earlier flow saved, whose records the runner cannot read, is a read-only
+  // record: what it is, why, its saved files, and one way on.
+  if (run.saved_record) return paintSavedRecord(run, fresh);
   // A training started on the desk is drawn by drafts.js. Every other run keeps this screen.
   if (onTheDesk(run)) {
     paintDesk(fresh);
@@ -7958,7 +8027,8 @@ const COPY_REPLACES = 'This studio keeps one unfinished form. Discard it and cop
 
 // Offered for a training a run drives here, which is one the runner can read the setup of.
 function copyAsNewButton(training) {
-  if (!view.runner || training.error || !training.run) return null;
+  // A read-only record offers its own way on, on its screen.
+  if (!view.runner || training.error || !training.run || training.run.read_only) return null;
   const key = 'copy ' + training.path;
   const node = capsule('Copy as new', 'quiet', () => copyAsNew(training, key, node), key);
   node.setAttribute('aria-label', 'Copy as new: ' + (training.title || 'Untitled')

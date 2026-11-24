@@ -1,0 +1,16 @@
+{
+  "brand": {
+    "at": "2026-11-24T22:36:21Z",
+    "brand": "example-co",
+    "changed": null,
+    "contract": "brand-5ca0aa/brand-contract.json",
+    "folder": "brand-5ca0aa",
+    "guidance": {
+      "problem": "This brand skill is not the entry to slide building yet, so the deck's workers read the installed slides tool's own guidance."
+    },
+    "sha256": "1b546a819f0722a77f0b418b678a6411ac8ae73d0591f3b5a45c46f529c0aa66",
+    "told": "told-5ca0aa",
+    "variant": "light",
+    "voice": "brand-5ca0aa/VOICE.md"
+  }
+}

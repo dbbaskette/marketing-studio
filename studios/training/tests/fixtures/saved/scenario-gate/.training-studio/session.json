@@ -1,0 +1,289 @@
+{
+  "artifacts": {
+    "blueprint": {
+      "approved": {
+        "at": "2026-11-24T22:36:29Z",
+        "by": "page",
+        "inputs": {
+          "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec",
+          "research": "5d4276e4886e2376efa3acd4802d6e00509f2f099aa27ad6c44b54749ce8c605"
+        },
+        "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+      },
+      "built_from": {
+        "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec",
+        "research": "5d4276e4886e2376efa3acd4802d6e00509f2f099aa27ad6c44b54749ce8c605"
+      },
+      "file": "blueprint.md",
+      "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+    },
+    "brief": {
+      "approved": {
+        "at": "2026-11-24T22:36:29Z",
+        "by": "page",
+        "inputs": {
+          "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+          "research": "5d4276e4886e2376efa3acd4802d6e00509f2f099aa27ad6c44b54749ce8c605",
+          "setting:brief_kind": "product"
+        },
+        "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+      },
+      "built_from": {
+        "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+        "research": "5d4276e4886e2376efa3acd4802d6e00509f2f099aa27ad6c44b54749ce8c605",
+        "setting:brief_kind": "product"
+      },
+      "file": "product-brief.md",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    "document": {
+      "approved": {
+        "at": "2026-11-24T22:36:29Z",
+        "by": "page",
+        "inputs": {
+          "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+        },
+        "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+      },
+      "built_from": {
+        "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+      },
+      "file": "document.md",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    "intake": {
+      "approved": {
+        "at": "2026-11-24T22:36:27Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    "research": {
+      "approved": {
+        "at": "2026-11-24T22:36:28Z",
+        "by": "page",
+        "inputs": {
+          "research-plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+        },
+        "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+      },
+      "built_from": {
+        "research-plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+      },
+      "file": ".harness-research/research-report.md",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    "research-plan": {
+      "approved": {
+        "at": "2026-11-24T22:36:27Z",
+        "by": "page",
+        "inputs": {
+          "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+        },
+        "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+      },
+      "built_from": {
+        "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "file": ".training-studio/research-plan.json",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    "scenario:main": {
+      "built_from": {},
+      "file": "scenario.md",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "event": "init"
+    },
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "by": "page",
+      "event": "skip",
+      "reason": "No deck was chosen when this training was started.",
+      "stage": "deck"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:27Z",
+      "event": "save",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:27Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-24T22:36:27Z",
+      "event": "save",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-24T22:36:27Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-24T22:36:28Z",
+      "event": "save",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    {
+      "at": "2026-11-24T22:36:28Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-24T22:36:28Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    {
+      "artifact": "blueprint",
+      "at": "2026-11-24T22:36:28Z",
+      "event": "save",
+      "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+    },
+    {
+      "at": "2026-11-24T22:36:28Z",
+      "event": "checkpoint",
+      "stage": "blueprint"
+    },
+    {
+      "artifact": "blueprint",
+      "at": "2026-11-24T22:36:29Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+    },
+    {
+      "artifact": "document",
+      "at": "2026-11-24T22:36:29Z",
+      "event": "save",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    {
+      "at": "2026-11-24T22:36:29Z",
+      "event": "checkpoint",
+      "stage": "document"
+    },
+    {
+      "artifact": "document",
+      "at": "2026-11-24T22:36:29Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    {
+      "artifact": "brief",
+      "at": "2026-11-24T22:36:29Z",
+      "event": "save",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    {
+      "at": "2026-11-24T22:36:29Z",
+      "event": "checkpoint",
+      "stage": "brief"
+    },
+    {
+      "artifact": "brief",
+      "at": "2026-11-24T22:36:29Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    {
+      "artifact": "scenario:main",
+      "at": "2026-11-24T22:36:30Z",
+      "event": "save",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    },
+    {
+      "at": "2026-11-24T22:36:30Z",
+      "event": "checkpoint",
+      "stage": "scenario"
+    }
+  ],
+  "exports": {},
+  "findings": {
+    "availability": "supported",
+    "health-checks": "supported",
+    "instance-min": "supported",
+    "zero-downtime": "contradicted"
+  },
+  "gate": "scenario:main",
+  "id": "stop-scenario-main",
+  "level": null,
+  "levels": [],
+  "next_step": "Waiting for your review of the practice scenario",
+  "pending_question": "Approve the practice scenario?",
+  "pins": {},
+  "requests": [],
+  "research": {
+    "record_sha256": "8aeef636d006ff9ef563ba21139713546489d4cb77ab1894c09eb3cfeb3d8256",
+    "report_sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f",
+    "run": "ff9756cae86d84f6e6672ea4"
+  },
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "settings": {
+    "approval": "page",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "reading",
+    "stages": [
+      "document",
+      "brief",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {
+    "": {
+      "modules": [
+        "m1"
+      ],
+      "size": "lesson"
+    }
+  },
+  "stage": "scenario",
+  "title": "Stop scenario main",
+  "unavailable": {}
+}

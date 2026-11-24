@@ -1,0 +1,28 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:35Z"}
+{"id":"3fe7fe3ee0b9","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:35Z","ended_at":"2026-11-24T22:36:35Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:35Z","text":"Handing back research-plan"},{"at":"2026-11-24T22:36:35Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:35Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"output-saved","unit":"research-start","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"working","unit":"research:availability","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"working","unit":"research:instance-min","at":"2026-11-24T22:36:35Z"}
+{"id":"e7301314491b","label":"Researching the question availability","step":"research:availability","started_at":"2026-11-24T22:36:35Z","ended_at":"2026-11-24T22:36:35Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:35Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:35Z","text":"Handing back the finding for availability"},{"at":"2026-11-24T22:36:35Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"working","unit":"research:health-checks","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"output-saved","unit":"research:availability","at":"2026-11-24T22:36:35Z"}
+{"id":"e7e9cd44c484","label":"Researching the question instance-min","step":"research:instance-min","started_at":"2026-11-24T22:36:35Z","ended_at":"2026-11-24T22:36:35Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:35Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:35Z","text":"Handing back the finding for instance-min"},{"at":"2026-11-24T22:36:35Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:instance-min","at":"2026-11-24T22:36:35Z"}
+{"id":"9beaa0c13cf9","label":"Researching the question health-checks","step":"research:health-checks","started_at":"2026-11-24T22:36:35Z","ended_at":"2026-11-24T22:36:35Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:35Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:35Z","text":"Handing back the finding for health-checks"},{"at":"2026-11-24T22:36:35Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:health-checks","at":"2026-11-24T22:36:35Z"}
+{"checkpoint":"working","unit":"research:zero-downtime","at":"2026-11-24T22:36:35Z"}
+{"id":"b72d815ff44a","label":"Researching the question zero-downtime","step":"research:zero-downtime","started_at":"2026-11-24T22:36:35Z","ended_at":"2026-11-24T22:36:36Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:36Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T22:36:36Z","text":"Handing back the finding for zero-downtime"},{"at":"2026-11-24T22:36:36Z","text":"The finding was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:zero-downtime","at":"2026-11-24T22:36:36Z"}
+{"checkpoint":"output-saved","unit":"research-report","at":"2026-11-24T22:36:36Z"}
+{"checkpoint":"ready","unit":"gate:research","at":"2026-11-24T22:36:36Z"}
+{"checkpoint":"working","unit":"blueprint@101","at":"2026-11-24T22:36:36Z"}
+{"id":"47f8f198b4a1","label":"Drafting the level 101 blueprint","step":"blueprint@101","started_at":"2026-11-24T22:36:36Z","ended_at":"2026-11-24T22:36:36Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:36Z","text":"Handing back blueprint"},{"at":"2026-11-24T22:36:36Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:36Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"blueprint@101","at":"2026-11-24T22:36:36Z"}
+{"checkpoint":"ready","unit":"gate:blueprint@101","at":"2026-11-24T22:36:36Z"}
+{"checkpoint":"working","unit":"document@101","at":"2026-11-24T22:36:36Z"}
+{"id":"51c6e9727eac","label":"Writing the level 101 learner guide","step":"document@101","started_at":"2026-11-24T22:36:36Z","ended_at":"2026-11-24T22:36:36Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:36Z","text":"Handing back document"},{"at":"2026-11-24T22:36:36Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:36Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"document@101","at":"2026-11-24T22:36:36Z"}
+{"checkpoint":"ready","unit":"gate:document@101","at":"2026-11-24T22:36:37Z"}

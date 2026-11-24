@@ -1,0 +1,309 @@
+{
+  "artifacts": {
+    "blueprint@101": {
+      "approved": {
+        "at": "2026-11-24T22:36:27Z",
+        "by": "page",
+        "inputs": {
+          "intake": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634",
+          "research": "1462244d5fd4d25b42c222eaf39e23d19ce943e6004464131e9e8a3299aec38d"
+        },
+        "sha256": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce"
+      },
+      "built_from": {
+        "intake": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634",
+        "research": "1462244d5fd4d25b42c222eaf39e23d19ce943e6004464131e9e8a3299aec38d"
+      },
+      "file": "101/blueprint.md",
+      "sha256": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce"
+    },
+    "brief@101": {
+      "approved": {
+        "at": "2026-11-24T22:36:28Z",
+        "by": "page",
+        "inputs": {
+          "blueprint@101": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce",
+          "research": "1462244d5fd4d25b42c222eaf39e23d19ce943e6004464131e9e8a3299aec38d",
+          "setting:brief_kind": "product"
+        },
+        "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+      },
+      "built_from": {
+        "blueprint@101": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce",
+        "research": "1462244d5fd4d25b42c222eaf39e23d19ce943e6004464131e9e8a3299aec38d",
+        "setting:brief_kind": "product"
+      },
+      "file": "101/product-brief.md",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    "document@101": {
+      "approved": {
+        "at": "2026-11-24T22:36:27Z",
+        "by": "page",
+        "inputs": {
+          "blueprint@101": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce"
+        },
+        "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+      },
+      "built_from": {
+        "blueprint@101": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce"
+      },
+      "file": "101/document.md",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    "intake": {
+      "approved": {
+        "at": "2026-11-24T22:36:25Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634"
+    },
+    "research": {
+      "approved": {
+        "at": "2026-11-24T22:36:27Z",
+        "by": "page",
+        "inputs": {
+          "research-plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+        },
+        "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+      },
+      "built_from": {
+        "research-plan": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+      },
+      "file": ".harness-research/research-report.md",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    "research-plan": {
+      "approved": {
+        "at": "2026-11-24T22:36:26Z",
+        "by": "page",
+        "inputs": {
+          "intake": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634"
+        },
+        "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+      },
+      "built_from": {
+        "intake": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634"
+      },
+      "file": ".training-studio/research-plan.json",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    "scenario:main@101": {
+      "approved": {
+        "at": "2026-11-24T22:36:28Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+      },
+      "built_from": {},
+      "file": "101/scenario.md",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "init"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "skip",
+      "reason": "No deck was chosen when this training was started.",
+      "stage": "deck"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:25Z",
+      "event": "save",
+      "sha256": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-24T22:36:25Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "f68bfeefa21119931c93c16bafe401f4a176a82e7ce9e6f3b2e6d4c4f7744634"
+    },
+    {
+      "at": "2026-11-24T22:36:25Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-24T22:36:25Z",
+      "event": "save",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    {
+      "at": "2026-11-24T22:36:26Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-24T22:36:26Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "2e689b88ec9abc30ad1e943bedc69c5ae6fc5302cae2dfbf67db878e322ab3ce"
+    },
+    {
+      "at": "2026-11-24T22:36:26Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-24T22:36:26Z",
+      "event": "save",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    {
+      "at": "2026-11-24T22:36:26Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-24T22:36:27Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f"
+    },
+    {
+      "artifact": "blueprint@101",
+      "at": "2026-11-24T22:36:27Z",
+      "event": "save",
+      "sha256": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce"
+    },
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "event": "checkpoint",
+      "stage": "blueprint"
+    },
+    {
+      "artifact": "blueprint@101",
+      "at": "2026-11-24T22:36:27Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "cc2ee3151c78386eb7811a329169e7d8014e5cc780e453c00d90690c441915ce"
+    },
+    {
+      "artifact": "document@101",
+      "at": "2026-11-24T22:36:27Z",
+      "event": "save",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    {
+      "at": "2026-11-24T22:36:27Z",
+      "event": "checkpoint",
+      "stage": "document"
+    },
+    {
+      "artifact": "document@101",
+      "at": "2026-11-24T22:36:27Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    {
+      "artifact": "brief@101",
+      "at": "2026-11-24T22:36:28Z",
+      "event": "save",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    {
+      "at": "2026-11-24T22:36:28Z",
+      "event": "checkpoint",
+      "stage": "brief"
+    },
+    {
+      "artifact": "brief@101",
+      "at": "2026-11-24T22:36:28Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    {
+      "artifact": "scenario:main@101",
+      "at": "2026-11-24T22:36:28Z",
+      "event": "save",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    },
+    {
+      "at": "2026-11-24T22:36:28Z",
+      "event": "checkpoint",
+      "stage": "scenario"
+    },
+    {
+      "artifact": "scenario:main@101",
+      "at": "2026-11-24T22:36:28Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    },
+    {
+      "at": "2026-11-24T22:36:29Z",
+      "event": "checkpoint",
+      "stage": "done"
+    }
+  ],
+  "exports": {},
+  "findings": {
+    "availability": "supported",
+    "health-checks": "supported",
+    "instance-min": "supported",
+    "zero-downtime": "contradicted"
+  },
+  "gate": null,
+  "id": "training-step-by-step",
+  "level": "101",
+  "levels": [
+    "101"
+  ],
+  "next_step": "This training is finished, with 1 thing left out or limited.",
+  "pending_question": null,
+  "pins": {},
+  "requests": [],
+  "research": {
+    "record_sha256": "31e34ed0fbd21dd9a179fd1b7ed16faab6d00c84c2a78e48a561c61d868189da",
+    "report_sha256": "289203ef5d8cbd1129cbe750bd218c4fdc8a35ed582df8e740162326b94bd35f",
+    "run": "ff9756cae86d84f6e6672ea4"
+  },
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "settings": {
+    "approval": "page",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "reading",
+    "stages": [
+      "document",
+      "brief",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {
+    "101": {
+      "modules": [
+        "m1"
+      ],
+      "size": "lesson"
+    }
+  },
+  "stage": "done",
+  "title": "Training step_by_step",
+  "unavailable": {}
+}
