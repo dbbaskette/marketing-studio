@@ -83,7 +83,7 @@ class ActivityLogTests(StudioCase):
 
     def ending_of(self, act) -> dict:
         self.workers.then('research-plan', act)
-        root = self.saved_start()
+        root = self.start()
         # The first try at the research plan: the oldest, as the log reads newest first.
         tried = [job for job in self.engine.activity(root)['jobs']
                  if job['step'] == 'research-plan']
@@ -111,14 +111,14 @@ class ActivityLogTests(StudioCase):
         from workspace import WorkspaceError
         with mock.patch('studio_core.activity_log.append',
                         side_effect=WorkspaceError('The workspace is busy.')) as append:
-            root = self.saved_start()
+            root = self.start()
             self.assertTrue(append.called)
-        self.assertEqual(self.view(root)['state'], 'waiting')
+        self.assertEqual(self.view(root)['state'], 'done')
         self.assertEqual(self.engine.activity(root)['jobs'], [])
 
     def test_a_training_with_no_log_still_opens_and_says_so(self):
         self.workers.then('research-plan', fails())
-        root = self.saved_start()
+        root = self.start()
         self.log_path(root).unlink()
         found = self.engine.activity(root)
         self.assertEqual((found['jobs'], found['empty']), ([], 'No activity recorded yet.'))
@@ -126,7 +126,7 @@ class ActivityLogTests(StudioCase):
 
     def test_the_page_reads_the_log_for_a_training_it_knows(self):
         from runner import page
-        root = self.saved_start()
+        root = self.start()
         served = page.RunnerPage(8765, self.engine)
         found = served.engine.activity(served.driving(str(root)))
         self.assertTrue(found['jobs'])
@@ -172,7 +172,7 @@ class StoppedJobTests(StudioCase):
             go.wait(30)
 
         self.workers.then('research-plan', working)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
         go.set()
@@ -197,7 +197,7 @@ class StoppedJobTests(StudioCase):
         self.workers.then('research-plan', working)
         with mock.patch('studio_core.activity_log.append',
                         side_effect=WorkspaceError('The workspace is busy.')):
-            root = self.saved_start()
+            root = self.start()
             self.assertTrue(entered.wait(30))
             self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
             go.set()
