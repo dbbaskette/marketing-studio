@@ -420,7 +420,9 @@ class SyncGuardTests(unittest.TestCase):
         self.assertIn("In the repository's top folder, private cannot be read.", said)
         self.assertNotIn(str(self.repo), said)
 
-    def test_a_shaped_record_is_written_but_only_schemas_1_to_3_may_migrate(self):
+    def test_a_shaped_record_is_written_but_only_schemas_1_to_4_may_migrate(self):
+        # Schemas 1 to 4 may be opened on the desk by the explicit migration when shaped;
+        # 5 and 6 exist only on the desk and never migrate (GitHub issue #542).
         from studio_core import presentation_migration as migration, research_session
         base = json.loads((self.presentation_item() / 'run.json').read_text())
         contract = {'schema': 2, 'version': '1.0.0', 'digest': '1' * 64}
@@ -436,7 +438,7 @@ class SyncGuardTests(unittest.TestCase):
         for record in (base, {**base, 'schema': 3, 'research_contract': contract}, four, five, six):
             with self.subTest(schema=record['schema']):
                 self.assertTrue(migration.written(record))
-                self.assertEqual(migration.supported(record), record['schema'] <= 3)
+                self.assertEqual(migration.supported(record), record['schema'] <= 4)
         for name, record in (('four without contract', {**four, 'research_contract': None}),
                              ('four without protocol', {**four, 'research_execution': {}}),
                              ('five off the desk', {**five, 'flow': None}),

@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import sys
@@ -228,36 +229,123 @@ def existing_rework(case):
     return _waits(case, _existing(case, 'rework'), 'gate:classify')
 
 
+RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+def _author(tools, job):
+    """A research author: saves the case's synthetic page and hands in a dossier of it."""
+    from runner_support import URL
+    from synthesis_fixture import dossier
+    payload = json.loads(tools.read_input('research-task')[1])
+    assert tools.save_source(URL)[0]
+    source = tools._index()[0]
+    accepted = tools.submit_artifact('research-result', json.dumps(
+        dossier(payload['worker'], source['file'], source['url'])))
+    assert accepted[0], accepted
+
+
+def _checker(tools, job):
+    """The independent research reviewer: reads the source and accepts the dossier."""
+    from synthesis_fixture import review
+    payload = json.loads(tools.read_input('research-task')[1])
+    assert tools.read_source('s1')[0]
+    accepted = tools.submit_artifact('research-result', json.dumps(review(payload['review_template'])))
+    assert accepted[0], accepted
+
+
+def _collector(tools, job):
+    """A parallel research worker: investigates, combines or reviews, as its task says."""
+    import copy
+    from runner_support import URL
+    from synthesis_fixture import dossier, review
+    payload = json.loads(tools.read_input('research-task')[1])
+    if 'questions' in payload:
+        assert tools.save_source(URL)[0]
+        source = tools._index()[0]
+        value = dossier(payload['worker'], source['file'], source['url'])
+        value = {**{key: value[key] for key in ('schema', 'sources', 'facts')}, 'gaps': []}
+    elif 'evidence' in payload and 'review_template' not in payload:
+        first = payload['evidence']['facts'][0]['id']
+        value = dossier(payload['worker'])
+        value['findings'] = [{**copy.deepcopy(value['findings'][0]), 'id': question['id'],
+                              'summary': {'text': 'More than one instance keeps capacity.',
+                                          'kind': 'summary', 'refs': [first]},
+                              'support': [first], 'conditions': []}
+                             for question in payload['task']['planning_questions']]
+        value['sections'][0]['blocks'][0]['refs'] = [first]
+        value['brief'][0]['blocks'][0]['refs'] = [value['findings'][0]['id']]
+        value = {key: value[key] for key in ('schema', 'findings', 'sections', 'brief')}
+    else:
+        for source in tools._index():
+            assert tools.read_source(source['id'])[0]
+        value = review(payload['review_template'])
+    accepted = tools.submit_artifact('research-result', json.dumps(value))
+    assert accepted[0], accepted
+
+
+def _researching(case):
+    """The case's research is the pinned Harness Research stand-in the suites name in
+    STUDIO_TEST_RESEARCH_RUNTIME, reading the case's synthetic page."""
+    from runner import research as research_cli
+    from runner_support import URL
+    from synthesis_fixture import TEXT
+    assert RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME to capture a researched state.'
+    case.research = research_cli.Research(Path(RUNTIME))
+    case.web.page(URL, TEXT, 'text/plain')
+
+
+def researched(case):
+    """Schema 3: research asked for at the start, its plan and findings approved at their
+    stops, the research run by the pinned helper, the deck waiting at its drafted outline."""
+    from studio_core import research_contract
+    _researching(case)
+    case.workers.then('research-result', _author, _checker)
+    root = case.saved_start(title='Researched', research=True,
+                            saved_contract=research_contract.snapshot(case.research))
+    _waits(case, root, 'gate:research-plan')
+    case.decide(root, 'gate:research-plan')
+    _waits(case, root, 'gate:research')
+    case.decide(root, 'gate:research')
+    return _waits(case, root, 'gate:outline')
+
+
+def _parallel_start(case, title):
+    """A saved start of schema 4: as `researched`'s, with the parallel research collection
+    the engine pins when its helper offers one. `saved_start` builds a saved record of
+    schema 1 to 3, so the record is given the execution pin the engine writes
+    (`research_session.execution`) before the saved flow is woken for it."""
+    from unittest import mock
+    from runner import decks
+    from studio_core import research_contract, research_session
+    _researching(case)
+    case.engine.parallel_research = True
+    case.workers.then('research-result', *[_collector] * 12)
+    with mock.patch.object(case.engine, 'wake'):
+        root = case.saved_start(title=title, research=True,
+                                saved_contract=research_contract.snapshot(case.research))
+    record = decks.read_run(root)
+    execution = research_session.execution(case.research.runtime)
+    assert execution, 'The pinned helper offers no parallel research collection.'
+    record.update(schema=4, research_execution=execution)
+    decks.write_run(root, record)
+    case.engine._commit(root, 'pin its parallel research collection')
+    case.engine.wake(root)
+    return _waits(case, root, 'gate:research-plan')
+
+
 def parallel_research(case):
-    """EDITED: a deck at its research plan, its record then given the parallel research
-    collection schema 4 writes (the saved start the stand-ins drive writes schema 1 to 3)."""
-    from runner import decks
-    from studio_core import research_session
-    root = research_plan(case)
-    record = case.record(root)
-    record.update(schema=4, research_contract={'schema': 2, 'version': '1.0.0', 'digest': '1' * 64},
-                  research_execution={'schema': 1, 'protocol': research_session.PROTOCOL,
-                                      'workers': 2, 'capability': {
-                                          'protocol': research_session.PROTOCOL}})
-    decks.write_run(root, record)
-    return root
+    """Schema 4 at its research plan: nothing researched or drafted yet."""
+    return _parallel_start(case, 'Parallel research plan')
 
 
-def parallel_outline(case):
-    """EDITED: a deck at its drafted outline, its record then given the parallel research
-    collection schema 4 writes, with the research contract and collection protocol the
-    runner requires of it, and no research done (as `parallel_research`)."""
-    from runner import decks
-    from studio_core import research_session
-    root = case.saved_start(title='Parallel outline')
-    _waits(case, root, 'gate:outline')
-    record = case.record(root)
-    record.update(schema=4, research_contract={'schema': 2, 'version': '1.0.0', 'digest': '1' * 64},
-                  research_execution={'schema': 1, 'protocol': research_session.PROTOCOL,
-                                      'workers': 2, 'capability': {
-                                          'protocol': research_session.PROTOCOL}})
-    decks.write_run(root, record)
-    return root
+def researched_parallel(case):
+    """Schema 4: its plan and findings approved, the research collected in parallel by the
+    pinned helper, the deck waiting at its drafted outline."""
+    root = _parallel_start(case, 'Researched in parallel')
+    case.decide(root, 'gate:research-plan')
+    _waits(case, root, 'gate:research')
+    case.decide(root, 'gate:research')
+    return _waits(case, root, 'gate:outline')
 
 
 def unleveled(case):
@@ -293,8 +381,12 @@ STATES = {name.replace('_', '-'): maker for name, maker in (
     ('document_classify', document_classify), ('existing_brand_only', existing_brand_only),
     ('existing_polish', existing_polish), ('existing_redesign', existing_redesign),
     ('existing_rework', existing_rework), ('parallel_research', parallel_research),
-    ('parallel_outline', parallel_outline), ('unleveled', unleveled), ('corrupt', corrupt))}
-EDITED = ('parallel-research', 'parallel-outline', 'unleveled', 'corrupt')
+    ('researched', researched),
+    ('researched_parallel', researched_parallel), ('unleveled', unleveled), ('corrupt', corrupt))}
+EDITED = ('unleveled', 'corrupt')
+# States made with the pinned Harness Research helper the suites name in
+# STUDIO_TEST_RESEARCH_RUNTIME: captured, and compared again, only where it is set.
+RESEARCHED = ('parallel-research', 'researched', 'researched-parallel')
 
 
 # --- capture, compare and load ----------------------------------------------------------------

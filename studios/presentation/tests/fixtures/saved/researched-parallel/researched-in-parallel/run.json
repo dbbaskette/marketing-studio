@@ -1,0 +1,394 @@
+{
+  "schema": 4,
+  "id": "researched-in-parallel",
+  "title": "Researched in parallel",
+  "route": "scratch",
+  "form": {
+    "route": "scratch",
+    "title": "Researched in parallel",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": true,
+    "delivery": "live",
+    "notes": "",
+    "research_from": {
+      "documents": false,
+      "sites": [],
+      "web": true
+    },
+    "research_questions": []
+  },
+  "created": "2026-11-24T23:35:38Z",
+  "driver": null,
+  "gates": {
+    "gate:research-plan": {
+      "state": "approved",
+      "round": 1,
+      "note": null,
+      "at": "2026-11-24T23:35:38Z",
+      "by": "Alex"
+    },
+    "gate:research": {
+      "state": "approved",
+      "round": 1,
+      "note": null,
+      "at": "2026-11-24T23:35:40Z",
+      "by": "Alex",
+      "again": null,
+      "added": null,
+      "free": null,
+      "refresh": null
+    },
+    "gate:outline": {
+      "state": "waiting",
+      "round": 1
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:38Z",
+          "ended_at": "2026-11-24T23:35:38Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:38Z"
+    },
+    "research-plan": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:38Z",
+          "ended_at": "2026-11-24T23:35:38Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:38Z"
+    },
+    "research:investigate-1-area1": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:39Z",
+          "ended_at": "2026-11-24T23:35:39Z",
+          "seconds": 0.2,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "research_attempt": "11be10192ffb49c366b14fbb3495c4c3",
+          "invocation": "research-invocation-9b393b8f70b9023448a3c871ca4e0dde"
+        }
+      ],
+      "done": false
+    },
+    "research:synthesize-1": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:39Z",
+          "ended_at": "2026-11-24T23:35:39Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "research_attempt": "11be10192ffb49c366b14fbb3495c4c3",
+          "invocation": "research-invocation-79704b24b94ea509044eab9ea97301c5"
+        }
+      ],
+      "done": false
+    },
+    "research:review-1": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:39Z",
+          "ended_at": "2026-11-24T23:35:39Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "research_attempt": "11be10192ffb49c366b14fbb3495c4c3",
+          "invocation": "research-invocation-4428b882e14dd66f047a32e669d5a870"
+        }
+      ],
+      "done": false
+    },
+    "research": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:39Z",
+          "ended_at": "2026-11-24T23:35:39Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "runner": true
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:39Z"
+    },
+    "research-report": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:40Z",
+          "ended_at": "2026-11-24T23:35:40Z",
+          "seconds": 0.1,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:40Z"
+    },
+    "outline": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:40Z",
+          "ended_at": "2026-11-24T23:35:40Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:40Z"
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "research_contract": {
+    "schema": 2,
+    "version": "1.5.1",
+    "digest": "0c0203c568b3256258ad7218750b13d7b1d2e0032f3a4b8c510a082a4e5f0d46"
+  },
+  "research_execution": {
+    "schema": 1,
+    "protocol": "harness-collection-v1",
+    "workers": 3,
+    "capability": {
+      "protocol": "harness-collection-v1",
+      "digest": "06e7ae1696dfa38c694f0cbb4b49d0037b19d9a6ecbbb4047ca4d5d0e2878f92"
+    },
+    "progress": {
+      "schema": 1,
+      "phase": "complete",
+      "round": 1,
+      "round_limit": 3,
+      "streams": [
+        {
+          "id": "area1",
+          "questions": [
+            "How many instances keep capacity during a restart?",
+            "What starts the next batch?"
+          ],
+          "status": "kept",
+          "evidence": {
+            "basis": "8b4973a6913159a8656ea2b78b39f1a4e5ead3f6da702bd98e93f2504df74f92",
+            "request_digest": "c61e7ce1e19296ef1cbf9020e9cef09b68f0f7545f3d650cffd720fefd77d1b6",
+            "generation": 1,
+            "attempt": 1,
+            "facts": [
+              {
+                "statement": "More than one instance keeps capacity.",
+                "citations": [
+                  {
+                    "source": "source-a",
+                    "quote": "More than one instance keeps capacity.",
+                    "locator": ""
+                  }
+                ]
+              }
+            ],
+            "sources": [
+              {
+                "id": "source-a",
+                "title": "Synthetic source",
+                "origin": "https://docs.example.com/restarts",
+                "permission": "public",
+                "context": "full",
+                "context_note": ""
+              }
+            ],
+            "limitations": [],
+            "truncated": false
+          }
+        }
+      ],
+      "agents": {
+        "count": 0,
+        "unconfirmed": 0,
+        "active": []
+      },
+      "timing": {
+        "active_seconds": 0.3,
+        "assistant_seconds": 0.3,
+        "elapsed_seconds": 0.9,
+        "not_working_seconds": 0.5,
+        "incomplete": false
+      },
+      "first_finding_seconds": 0.5,
+      "checked_result_seconds": 0.9
+    }
+  },
+  "answers": {},
+  "said": {
+    "research-plan": "Two questions.",
+    "outline": "Six slides. The check slide is the one I am least sure of."
+  },
+  "question": null,
+  "research": {
+    "plan_from": "assistant",
+    "contract": 2,
+    "digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a"
+  },
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research-plan",
+      "step": "research-plan",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research",
+      "step": "research:investigate-1-area1",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "research"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "combining",
+      "purpose": "research",
+      "step": "research:synthesize-1",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "checking",
+      "purpose": "research-review",
+      "step": "research:review-1",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "outline",
+      "step": "outline",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    }
+  ]
+}
