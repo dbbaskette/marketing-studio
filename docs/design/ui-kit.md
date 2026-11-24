@@ -138,7 +138,7 @@ shared setup, Blog Studio, Presentation Studio, Training Studio and Infographic 
 | Shell | `.backdrop`, `.window`, `.sidebar.glass`, `.content`, `.toolbar-wrap`, `.toolbar.glass`, `.page` |
 | Actions | `.button`, `.button-filled`, `.button-quiet`, `.button-danger`, `.button-round` |
 | Fields | `.field`, `.field-label`, `.input`, `.field-hint`, `label.field`, `.input-typed` |
-| Exclusive choices | `.segmented` with buttons or radio `label.seg-option`; five or six options wrap onto rows and fill the chosen one |
+| Exclusive choices | `.segmented` with buttons or radio `label.seg-option`; five or six options wrap onto rows and fill the chosen one. The same control is a tablist when the choice switches a panel: `role="tablist"` with `role="tab"` options, the chosen one `aria-selected="true"`, drawn as a pressed segment is |
 | Independent form choices | Native checkbox in `label.check`; use fieldset/legend for a group. A focus ring never substitutes for checked state. |
 | Compact marks outside forms | `.chips`, `.chip`, when an explicit pressed state and label explain the mark; use an action button for work that runs immediately. |
 | Object choices | `.pick-cards`, `.pick-card`, `.pick-title`, `.pick-says` |

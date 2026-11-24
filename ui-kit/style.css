@@ -812,8 +812,10 @@ details > summary {
   display: none;
 }
 
-.segmented[data-count="5"] > .seg-option[aria-pressed="true"],
-.segmented[data-count="6"] > .seg-option[aria-pressed="true"] {
+/* A segment is chosen as a button (aria-pressed) or, in a tablist, as a tab (aria-selected):
+   both are drawn the same, here, so no page draws its own. */
+.segmented[data-count="5"] > .seg-option:is([aria-pressed="true"], [aria-selected="true"]),
+.segmented[data-count="6"] > .seg-option:is([aria-pressed="true"], [aria-selected="true"]) {
   background: var(--selection);
   box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
 }
@@ -832,7 +834,7 @@ details > summary {
   cursor: pointer;
 }
 
-.seg-option[aria-pressed="true"] {
+.seg-option:is([aria-pressed="true"], [aria-selected="true"]) {
   color: var(--link);
 }
 
@@ -2862,21 +2864,21 @@ a.button {
     display: none;
   }
 
-  .segmented[data-count="4"] > .seg-option[aria-pressed="true"] {
+  .segmented[data-count="4"] > .seg-option:is([aria-pressed="true"], [aria-selected="true"]) {
     background: var(--selection);
     box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
   }
 }
 
 @media (max-width: 37.5rem) and (forced-colors: active) {
-  .segmented[data-count="4"] > .seg-option[aria-pressed="true"] {
+  .segmented[data-count="4"] > .seg-option:is([aria-pressed="true"], [aria-selected="true"]) {
     outline: 2px solid Highlight;
   }
 }
 
 @media (forced-colors: active) {
-  .segmented[data-count="5"] > .seg-option[aria-pressed="true"],
-  .segmented[data-count="6"] > .seg-option[aria-pressed="true"] {
+  .segmented[data-count="5"] > .seg-option:is([aria-pressed="true"], [aria-selected="true"]),
+  .segmented[data-count="6"] > .seg-option:is([aria-pressed="true"], [aria-selected="true"]) {
     outline: 2px solid Highlight;
   }
 }
