@@ -12,11 +12,11 @@ macOS system material.
 | --- | --- | --- | --- |
 | Training Studio new form | Levels/materials, Yoodli, optional slide-design review and copies were pill buttons, making focus look like a selection and commands look like settings. | Native checkboxes, explicit checked state, nearby dependency feedback; retain exclusive deck/delivery segments. | Implemented and browser-verified in the current change. |
 | Presentation Studio new form | `settingsStep` uses a chip for **Research first**. The choice rerenders the form but does not itself research; a command-looking control obscures its state. | Native checkbox with its existing explanation and preserved focus. | Implemented for #255: a native checkbox in `label.check`, and the source editor's search hint says what will happen. |
-| Presentation Studio research review | **Bring the evidence up to date** is a chip setting used only when the later change request is submitted. Its action-like label can suggest research starts immediately. | Native checkbox with cost explanation next to it. | P2 follow-up. |
-| Presentation Studio slide review | **Ask for changes to this slide** and **Change what it says** are marks for a later request. Selecting either clears the other; neither immediately submits the change. | An explicit **No change / Edit text / Redesign** exclusive choice per slide, with the relevant note and a separate submit action. | P2 follow-up. |
-| Presentation Studio document review | **That’s wrong** is a chip that changes the pending classification used by Approve. | Explicit correction choice naming the resulting document/deck type. | P2 follow-up. |
+| Presentation Studio research review | **Bring the evidence up to date** is a chip setting used only when the later change request is submitted. Its action-like label can suggest research starts immediately. | Native checkbox with cost explanation next to it. | Resolved for #510: a native checkbox (`StudioLists.tick`) with the cost line under it, off unless ticked. |
+| Presentation Studio slide review | **Ask for changes to this slide** and **Change what it says** are marks for a later request. Selecting either clears the other; neither immediately submits the change. | An explicit **No change / Edit text / Redesign** exclusive choice per slide, with the relevant note and a separate submit action. | Resolved for #510: one segmented choice per slide, **No change / Draw it again / Change what it says** (the last only where the deck has an outline), the note under Draw it again, and Ask for changes or Change what they say sending it. |
+| Presentation Studio document review | **That’s wrong** is a chip that changes the pending classification used by Approve. | Explicit correction choice naming the resulting document/deck type. | Resolved for #510: a **Take it as** segmented choice naming both kinds; Approve says which it takes. |
 | Presentation Studio start guidance | `startsSays` promises **no stops** (or only a look-choice stop), while new runs require slide-text approval before design. | Explain the text-approval checkpoint, then optional look selection. | P2 follow-up. |
-| Infographic Studio story selection | Every story has a filled **Use this story** button; the current story becomes another clickable **Selected** button without a programmatic selected-choice state. Multiple peers compete as primary actions. | Clearly marked single-choice story cards/radios and a separate Build action. Keep revision actions secondary. | P2 follow-up. |
+| Infographic Studio story selection | Every story has a filled **Use this story** button; the current story becomes another clickable **Selected** button without a programmatic selected-choice state. Multiple peers compete as primary actions. | Clearly marked single-choice story cards/radios and a separate Build action. Keep revision actions secondary. | Resolved for #510: the story in use is a **Selected** tag, every other card's **Use this story** is a quiet button named for its story, and the toolbar's next step stays the view's one filled action. |
 
 The Infographic Studio backend treats reselecting the same story as a no-op;
 this review did **not** find the destructive invalidation that an action-looking
@@ -48,9 +48,9 @@ Infographic Studio's story controls are in
 [`app.js`](../../studios/infographic/runner/web/app.js); same-story preservation
 is in [`contracts.py`](../../studios/infographic/runner/contracts.py) `advance`.
 
-Implement Presentation Studio's independent checkboxes and accurate checkpoint
-copy first. Treat slide edit modes as a separate interaction change with explicit
-selection/payload tests. Refine Infographic Studio's story selection afterward.
+The checkbox, slide-mark, classification and story-selection items were resolved
+for #510, with the slide marks' selection and payload covered by Presentation
+Studio's `test_desk.py`. What remains is the start guidance's checkpoint copy.
 Keep existing project state, source scope, research cost consent and delivery
 approval behavior intact. Verify keyboard, pointer, phone/desktop, selected versus
 focused states and reduced effects using disposable native-page fixtures.

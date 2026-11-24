@@ -402,14 +402,23 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_starting_fresh_requires_confirmation_to_replace_an_unfinished_deck_form(self):
+        # Asked in place (Drafting.confirmInPlace), never in a blocking window.confirm(),
+        # which the harness refuses.
         result = self.run_page(self.answers(), [
             {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Saved title'}, {'click': 'Cancel'},
-            {'click': 'New deck'}, {'snapshot': 'declined'},
-            {'click': 'New deck'}, {'click': 'An idea'}, {'click': 'Next'}, {'snapshot': 'fresh'}],
-            confirmations=[False, True])
+            {'click': 'New deck'}, {'snapshot': 'asked'},
+            {'click': 'Keep the saved form'}, {'snapshot': 'declined'},
+            {'click': 'New deck'}, {'click': 'Discard and start new'},
+            {'click': 'An idea'}, {'click': 'Next'}, {'snapshot': 'fresh'}])
+        asked = result['snapshots']['asked']
+        self.assertIn('This studio keeps one unfinished form. Discard it and start new?', asked['text'])
+        self.assertIn('Keep the saved form', asked['buttons'])
+        self.assertIn('Discard and start new', asked['buttons'])
+        self.assertNotIn('New deck', asked['buttons'], 'the control that asked waits behind it')
         self.assertIn('Resume draft', result['snapshots']['declined']['buttons'])
         self.assertIn('Saved title', result['snapshots']['declined']['text'])
+        self.assertNotIn('Discard and start new', result['snapshots']['declined']['buttons'])
         self.assertEqual(result['snapshots']['fresh']['fields']['A short title'], '')
         discards = [call for call in result['requests']
                     if call['address'] == '/api/intake-draft' and (call.get('body') or {}).get('action') == 'discard']

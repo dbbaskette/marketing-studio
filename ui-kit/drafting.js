@@ -220,15 +220,19 @@ const Drafting = (() => {
       return add(box,add(actions,resumeButton,start,discard),status);
     }
     // Start new over a saved form asks first, in place beside `control` (the button that
-    // started it), or at the top of `place` (Drafting.confirmInPlace). A caller that passes no
-    // control is still asked in a window.confirm() until it passes one.
+    // started it), or at the top of `place` (Drafting.confirmInPlace). A start with no control
+    // to sit beside, such as Search and jump's, asks at the top of the page's <main>, and
+    // Keep gives the focus to it. Never a blocking window.confirm(); with nowhere to ask,
+    // nothing is discarded.
     async startFresh(control = null, place = null){
       await this.load();
       if(this.saved){
         const message='This studio keeps one unfinished form. Discard it and start new? Existing projects and captured sources are kept.';
         const anchor=control&&control.tagName&&(control.parentNode||control.parent)?control:null;
-        const yes=anchor?await confirmInPlace(anchor,{message,action:'Discard and start new',place}):(typeof confirm==='function'?confirm(message):false);
-        if(!yes)return false;
+        const where=place||(anchor||typeof document==='undefined'||!document.querySelector?null:document.querySelector('main'));
+        if(!anchor&&!where)return false;
+        const yes=await confirmInPlace(anchor,{message,action:'Discard and start new',keep:'Keep the saved form',place:where});
+        if(!yes){if(!anchor&&where.focus)where.focus({preventScroll:true});return false;}
       }
       return !this.saved||this.discard();
     }

@@ -97,6 +97,14 @@ class FakeNode {
     const held = this.parentNode.childNodes;
     return held[held.indexOf(this) + 1] || null;
   }
+
+  // Where a question asked in place (Drafting.confirmInPlace) sits: just after its row.
+  after(...nodes) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    const next = this.nextSibling;
+    for (const node of nodes) parent.insertBefore(node, next);
+  }
 }
 
 class FakeText extends FakeNode {
@@ -790,9 +798,9 @@ async function app(file) {
   const window = {
     document,
     Notification,
+    // Every question is asked in place (Drafting.confirmInPlace): a blocking dialog fails.
     confirm(message) {
-      if (!plan.confirmations?.length) throw new Error('Unexpected confirmation: ' + message);
-      return plan.confirmations.shift();
+      throw new Error('A blocking window.confirm() was used: ' + message);
     },
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },

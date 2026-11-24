@@ -605,13 +605,14 @@ class ScreenTests(ScriptedPage, PageCase):
         self.engine._store(Path(path), record)
         result = self.deck_screen(path, [
             {'click': 'Ask for changes'}, {'snapshot': 'sheet'},
-            {'click': 'Bring the evidence up to date'}, {'click': 'Send for changes'}],
+            {'tick': 'Bring the evidence up to date'}, {'click': 'Send for changes'}],
             **{'POST /api/decide': [ok(self.run_of(path))]})
         sheet = result['snapshots']['sheet']
         self.assertIn('Bring the evidence up to date', sheet['sheet'])
         self.assertIn('Re-reads the sources and checks the report again: about as long and as '
                       'costly as the research was.', sheet['sheet'])
-        self.assertNotIn('Bring the evidence up to date', sheet['pressed'], 'off unless asked')
+        # A setting sent with the request, so a native checkbox, off unless asked.
+        self.assertNotIn('Bring the evidence up to date', sheet['ticked'], 'off unless asked')
         posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
         self.assertEqual(posted[-1]['decision'], 'changes')
         self.assertIs(posted[-1]['extra']['refresh'], True)
@@ -1341,7 +1342,7 @@ class ScreenTests(ScriptedPage, PageCase):
             if name == 'gate:outline':
                 steps += [{'fill': 'Title of slide 2', 'value': 'Batches, one at a time'}]
             if name == 'gate:build':
-                steps += [{'click': 'Next slide'}, {'click': 'Ask for changes to this slide'},
+                steps += [{'click': 'Next slide'}, {'click': 'Draw it again'},
                           {'click': 'Ask for changes'}, {'type': 'Make it shorter.'},
                           {'click': 'Send for changes'}]
             # One click approves: no second question.
@@ -2102,7 +2103,8 @@ class ScreenTests(ScriptedPage, PageCase):
                             source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['verdict']), ('gate:classify', 'material'))
-        result = self.deck_screen(path, [{'snapshot': 'gate'}, {'click': 'That’s wrong'},
+        result = self.deck_screen(path, [{'snapshot': 'gate'},
+                                         {'click': 'A finished script for the slides'},
                                          {'snapshot': 'wrong'},
                                          {'click': 'Take it as a finished script for the slides'}],
                                   **{'POST /api/decide': [ok(self.run_of(path))]})
@@ -2112,6 +2114,10 @@ class ScreenTests(ScriptedPage, PageCase):
                          ['Take it as a finished script for the slides'])
         self.assertIn('It reads as material to build from.',
                       result['snapshots']['gate']['text'])
+        # An explicit choice naming the kind Approve takes it as, not an action-like chip.
+        self.assertIn('Material to build from', result['snapshots']['gate']['pressed'])
+        self.assertIn('A finished script for the slides',
+                      result['snapshots']['wrong']['pressed'])
         self.assertIn('It will be taken as a finished script for the slides instead.',
                       result['snapshots']['wrong']['text'])
         (_, body), = self.posts(result)
@@ -2482,17 +2488,24 @@ class ScreenTests(ScriptedPage, PageCase):
         path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         result = self.deck_screen(path, [
-            {'click': 'Ask for changes to this slide'},
+            {'snapshot': 'unmarked'}, {'click': 'Draw it again'},
             {'fill': 'What should change on slide 1', 'value': 'Calmer.'},
             {'click': 'Change what it says'}, {'snapshot': 'saying'},
-            {'click': 'Ask for changes to this slide'}, {'snapshot': 'marked'}])
+            {'click': 'Draw it again'}, {'snapshot': 'marked'},
+            {'click': 'No change'}, {'snapshot': 'none'}])
+        # One exclusive choice per slide: no change, drawn again, or its words changed.
+        self.assertIn('No change', result['snapshots']['unmarked']['pressed'])
         saying = result['snapshots']['saying']
-        self.assertEqual(saying['chosen'], ['Change what it says'])
+        self.assertIn('Change what it says', saying['pressed'])
+        self.assertNotIn('Draw it again', saying['pressed'])
         self.assertIn('Words to change: slide 1.', saying['text'])
         self.assertNotIn('Marked for changes', saying['text'])
         self.assertNotIn('What should change on slide 1', saying['fields'])
         marked = result['snapshots']['marked']
-        self.assertEqual(marked['chosen'], ['Ask for changes to this slide'])
+        self.assertIn('Draw it again', marked['pressed'])
+        self.assertNotIn('Change what it says', marked['pressed'])
+        self.assertNotIn('Marked for changes', result['snapshots']['none']['text'])
+        self.assertNotIn('Words to change', result['snapshots']['none']['text'])
         self.assertNotIn('Words to change', marked['text'])
         self.assertEqual(marked['fields']['What should change on slide 1'], '')
         self.assertEqual(self.posts(result), [])
@@ -2506,7 +2519,7 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}),
                                [{'click': 'Review Rolling restarts'}, {'snapshot': 'build'}])
         shot = result['snapshots']['build']
-        self.assertIn('Ask for changes to this slide', shot['buttons'])
+        self.assertIn('Draw it again', shot['buttons'])
         self.assertNotIn('Change what it says', shot['buttons'])
 
     def test_a_delivered_deck_marks_slides_and_says_what_a_whole_build_costs(self):
@@ -2515,13 +2528,13 @@ class ScreenTests(ScriptedPage, PageCase):
         self.to_end(Path(path))
         result = self.deck_screen(path, [
             {'snapshot': 'delivered'}, {'click': 'Ask for changes'}, {'snapshot': 'whole'},
-            {'click': 'Cancel'}, {'click': 'Ask for changes to this slide'},
+            {'click': 'Cancel'}, {'click': 'Draw it again'},
             {'click': 'Ask for changes'}, {'snapshot': 'marked'}, {'type': 'Tighter.'},
             {'click': 'Send for changes'}],
             **{'POST /api/decide': [ok(self.run_of(path))]})
         shot = result['snapshots']['delivered']
         self.assertIn('Slide 1 of 6', shot['text'])
-        for name in ('Ask for changes to this slide', 'Change what it says', 'Ask for changes'):
+        for name in ('No change', 'Draw it again', 'Change what it says', 'Ask for changes'):
             self.assertIn(name, shot['buttons'])
         self.assertIn('No slides marked: the whole deck is drawn again (about $0.50 and '
                       '1 minute, as the last build took).', result['snapshots']['whole']['sheet'])
@@ -2620,14 +2633,14 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [
             {'click': 'Next slide'}, {'click': 'Next slide'}, {'snapshot': 'third'},
             {'fill': 'What should change on slide 3', 'value': 'Name the batch size, in words.'},
-            {'click': 'Previous slide'}, {'click': 'Ask for changes to this slide'},
+            {'click': 'Previous slide'}, {'click': 'Draw it again'},
             {'fill': 'What should change on slide 2', 'value': 'More room.'},
             {'click': 'Ask for changes'}, {'snapshot': 'sheet'}, {'type': 'Calmer overall.'},
             {'click': 'Send for changes'}],
             **{'POST /api/decide': [ok(self.run_of(path))]})
         third = result['snapshots']['third']
         self.assertIn('Your feedback on it: Name the batch size.', third['text'])
-        self.assertIn('Ask for changes to this slide', third['chosen'])
+        self.assertIn('Draw it again', third['pressed'])
         self.assertEqual(third['fields']['What should change on slide 3'], 'Name the batch size.')
         self.assertIn('slides 2 and 3, which you marked', result['snapshots']['sheet']['sheet'])
         (_, body), = self.posts(result)

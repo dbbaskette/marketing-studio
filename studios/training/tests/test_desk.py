@@ -2736,6 +2736,28 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Confirm discard', result['snapshots']['confirm']['buttons'])
         self.assertNotIn('Resume draft', result['snapshots']['cleared']['buttons'])
 
+    def test_start_new_over_a_saved_form_asks_in_place_and_keep_keeps_it(self):
+        # Asked beside Start new (Drafting.confirmInPlace), never in a blocking
+        # window.confirm(), which the harness refuses.
+        self.started()
+        result = self.run_page(self.answers(**{
+            'GET /api/intake-draft': [{'status': 200, 'body': {'revision': 1, 'draft': {'title': 'Unfinished synthetic form', 'step': 1, 'intakeOpen': False}}}],
+            'POST /api/intake-draft': [{'status': 200, 'body': {'revision': 2, 'draft': None}}]}),
+            [{'click': 'Start new'}, {'snapshot': 'asked'},
+             {'click': 'Keep the saved form'}, {'snapshot': 'kept'},
+             {'click': 'Start new'}, {'click': 'Discard and start new'}, {'snapshot': 'fresh'}])
+        asked = result['snapshots']['asked']
+        self.assertIn('This studio keeps one unfinished form. Discard it and start new?', asked['text'])
+        self.assertIn('Discard and start new', asked['buttons'])
+        self.assertNotIn('Start new', asked['buttons'], 'the control that asked waits behind it')
+        kept = result['snapshots']['kept']
+        self.assertIn('Start new', kept['buttons'])
+        self.assertIn('Unfinished synthetic form', kept['text'])
+        self.assertNotIn('Discard and start new', kept['buttons'])
+        discards = [call for call in result['requests'] if call['address'] == '/api/intake-draft'
+                    and (call.get('body') or {}).get('action') == 'discard']
+        self.assertEqual(len(discards), 1)
+
     def test_yoodli_fields_copy_from_the_final_review_and_done(self):
         self.started()
         text = test_cli.example('yoodli.md')

@@ -183,6 +183,25 @@ const groups = {
     await find(wrap,n=>n.dataset.key==='confirm-keep').fire('click');await pressing;
     assert.equal(result,false);assert(held.draft,'Keep it keeps the saved form');
     await answer(startNew);assert.equal(result,true);assert.equal(held.draft,null,'Discard and start new discards it');
+    // A start with no control (Search and jump) asks at the top of the page's <main>, never in
+    // a window.confirm(), and Keep gives the focus to <main>.
+    const pressNamed=(node,label)=>find(node,n=>n.tagName==='button'&&n.textContent===label);
+    held={revision:5,draft:{title:'Kept title',step:0}};
+    const third=new Drafting.Intake(async sent=>{if(sent.action==='read')return held;held={revision:held.revision+1,draft:null};return held;});third.status=()=>{};
+    const main=Drafting.make('main','page'),shown=Drafting.make('p','','Home');main.append(shown);
+    document.querySelector=selector=>selector==='main'?main:null;
+    const asking=third.startFresh();await settle();
+    assert.equal(main.children[0].dataset.key,'confirm-in-place','the question sits at the top of <main>');
+    assert.equal(pressNamed(main,'Discard and start new').className,'button button-danger');
+    await pressNamed(main,'Keep the saved form').fire('click');
+    assert.equal(await asking,false);assert(held.draft,'Keep keeps the saved form');
+    assert.equal(context.document.activeElement,main,'Keep gives the focus to <main>');
+    const yes=third.startFresh();await settle();await pressNamed(main,'Discard and start new').fire('click');
+    assert.equal(await yes,true);assert.equal(held.draft,null);
+    document.querySelector=()=>null;held={revision:8,draft:{title:'Kept title',step:0}};
+    const nowhere=new Drafting.Intake(async sent=>sent.action==='read'?held:(held={revision:9,draft:null}));nowhere.status=()=>{};
+    assert.equal(await nowhere.startFresh(),false,'with nowhere to ask, nothing is discarded');assert(held.draft);
+    delete document.querySelector;
   },
   // Intake.pages saves a press once: Back saves through its own step change, a summary that
   // only opens saves nothing, and any other press in a step saves at once.

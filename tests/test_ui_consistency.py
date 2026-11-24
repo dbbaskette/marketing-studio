@@ -535,5 +535,40 @@ class SharedLookTests(unittest.TestCase):
                             for selector, block in narrow.items()), narrow.keys())
 
 
+# Every folder a page's scripts are served from.
+PAGE_SCRIPTS = (ROOT / 'ui-kit', ROOT / 'core/studio_core/deck_web', *LINKED)
+BLOCKING_DIALOG = re.compile(r'(?<![\w$.])(?:(?:window|globalThis|self)\s*\.\s*)?'
+                             r'(?:confirm|alert|prompt)\s*\(')
+
+
+def code_only(source):
+    """A script without its comments, so prose that names window.confirm() is not code."""
+    source = re.sub(r'/\*.*?\*/', '', source, flags=re.S)
+    return re.sub(r'(?m)(^|[^:\\])//.*$', r'\1', source)
+
+
+class QuestionsInPlaceTests(unittest.TestCase):
+    """A question is asked in place (Drafting.confirmInPlace, ui-kit.md), never in a blocking
+    window.confirm(), alert() or prompt() that stops the page and hides what it is about."""
+
+    def test_no_page_script_opens_a_blocking_dialog(self):
+        found = []
+        scripts = sorted({path.resolve() for folder in PAGE_SCRIPTS for path in folder.glob('*.js')})
+        self.assertGreater(len(scripts), 10)
+        for path in scripts:
+            for number, line in enumerate(code_only(path.read_text()).splitlines(), 1):
+                if BLOCKING_DIALOG.search(line):
+                    found.append(f'{path.relative_to(ROOT)}:{number}: {line.strip()[:100]}')
+        self.assertEqual(found, [])
+
+    def test_the_guard_sees_each_form_of_a_blocking_dialog(self):
+        for code in ('if(!confirm("Sure?"))return;', 'window.confirm(message)',
+                     'x = globalThis.confirm (m)', 'alert("Saved")', 'prompt("Name")'):
+            self.assertRegex(code_only(code), BLOCKING_DIALOG, code)
+        for code in ('// instead of a blocking window.confirm()', 'Drafting.confirmInPlace(b, {})',
+                     'confirmed: true', 'view.confirm(x)', 'askConfirm(x)'):
+            self.assertNotRegex(code_only(code), BLOCKING_DIALOG, code)
+
+
 if __name__ == '__main__':
     unittest.main()

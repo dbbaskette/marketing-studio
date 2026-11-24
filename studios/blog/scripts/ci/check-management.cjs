@@ -36,7 +36,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const nodes=new Map();const get=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};
   const document={getElementById:get,createElement:t=>new Element(t),createElementNS:(_,t)=>new Element(t),createDocumentFragment:()=>new Element('fragment'),createTextNode:text=>{const node=new Element('#text');node.textContent=text;return node;},querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):null,querySelectorAll:s=>[...nodes.values()].flatMap(n=>n.querySelectorAll(s))};
   const stored=new Map();let intake={revision:0,draft:null};
-  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:()=>true,crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
+  const context=vm.createContext({document,location:{hash:'#fixture',pathname:'/'},sessionStorage:{getItem:key=>stored.get(key)||'',setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)},history:{replaceState:()=>{},pushState:()=>{}},window:{},URLSearchParams,AbortController,Uint8Array,TextEncoder,btoa,atob,clearTimeout:()=>{},FormData:class{constructor(form){this.values=descendants(form).filter(e=>e.name).map(e=>[e.name,e.value]);}[Symbol.iterator](){return this.values[Symbol.iterator]();}},confirm:message=>{throw Error('A blocking window.confirm() was used: '+message);},crypto:{getRandomValues:values=>require('node:crypto').webcrypto.getRandomValues(values)},setInterval:()=>0,setTimeout:()=>0,fetch:async(url,options)=>{if(url==='/api/intake-draft'){const sent=JSON.parse(options.body);if(sent.action!=='read'&&sent.expected!==intake.revision)return {ok:false,status:409,json:async()=>({error:'This intake changed in another tab.'})};if(sent.action==='save')intake={revision:intake.revision+1,draft:{...(intake.draft||{}),...sent.patch}};if(sent.action==='discard')intake={revision:intake.revision+1,draft:null};return {ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(intake))};}const result=await responder(url,options);return result&&result.__http?{ok:false,status:result.__http,json:async()=>result}:{ok:true,status:200,json:async()=>result};},console});
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
@@ -593,7 +593,11 @@ async function curationConflict(){
   assert.equal(writes.length,2);assert.equal(writes[1].expected,'new-token');
   assert.equal(writes[1].note,'My proposed note');assert.equal(f.get('detail-dialog').open,false);
 }
-check().catch(e=>{console.error(e);process.exitCode=1;});
+// A question left unanswered (a promise that never settles) would let Node end quietly with
+// nothing failed: the check has to reach its end.
+let finished=false;
+check().then(()=>{finished=true;}).catch(e=>{console.error(e);process.exitCode=1;});
+process.on('exit',()=>{if(!finished&&!process.exitCode){console.error('The check stopped before its end: something it awaited never settled.');process.exitCode=1;}});
 
 async function capabilityAndMemory(){
   const f=fixture(()=>({status:'read-only',message:'Read-only Hub access.',actions:{edit:false,memory:false,refresh:true}}));
@@ -743,6 +747,7 @@ async function diffOnlyForms(){
     if(url==='/api/curate'){curations.push(JSON.parse(options.body));return {receipts:[]};}
     return empty();
   });
+  c.run(fs.readFileSync('skills/blog-studio/assets/management/drafting.js','utf8'));
   c.set('item',{id:'source',location:'local',title:'Reference'});await c.run('curate(item)');
   let form=descendants(c.get('detail-content')).find(e=>e.tagName==='form');
   let fields=Object.fromEntries(descendants(form).filter(e=>e.name).map(e=>[e.name,e]));
@@ -754,7 +759,16 @@ async function diffOnlyForms(){
   await c.run('curate(item)');
   form=descendants(c.get('detail-content')).find(e=>e.tagName==='form');
   fields=Object.fromEntries(descendants(form).filter(e=>e.name).map(e=>[e.name,e]));
-  fields.curation.value='retired';await form.listeners.submit({preventDefault(){}});
+  // Retiring is asked in place beside Save (Drafting.confirmInPlace), never in a blocking
+  // window.confirm(): Keep it active sends nothing; Retire reference sends the decision.
+  const asked=()=>descendants(form).find(e=>e.dataset&&e.dataset.key==='confirm-in-place');
+  const press=label=>descendants(asked()).find(e=>e.tagName==='button'&&e.textContent===label).listeners.click();
+  fields.curation.value='retired';let saving=form.listeners.submit({preventDefault(){}});await new Promise(r=>setImmediate(r));
+  assert.match(descendants(asked()).map(e=>e.textContent).join(' '),/Retire this reference from active search\?/);
+  assert.equal(descendants(asked()).find(e=>e.textContent==='Retire reference').className,'button button-danger');
+  press('Keep it active');await saving;assert.equal(curations.length,0);assert.equal(asked(),undefined);
+  saving=form.listeners.submit({preventDefault(){}});await new Promise(r=>setImmediate(r));
+  press('Retire reference');await saving;
   assert.deepEqual(curations.pop(),{id:'source',location:'local',expected:'token',curation:'retired',confirmed:true});
 
   // Memory edit: only the changed field travels; an untouched (possibly truncated) body is never resent.
@@ -2168,7 +2182,13 @@ async function libraryScreen(){
   rows.pop();
   rows.push({...rows[0],id:'h',title:'Shared post',location:'hub'});await f.run('load()');
   const shared=results().find(e=>e.attributes?.['aria-label']==='Select Shared post');shared.checked=true;shared.listeners.change();
-  await f.run("sLibrarySelection('blog',[...librarySelection.values()])");
+  // The unfinished form from the blog above is replaced only once that is answered, in place at
+  // the top of the saved form (Drafting.confirmInPlace), never in a blocking dialog.
+  const starting=f.run("sLibrarySelection('blog',[...librarySelection.values()])");
+  let question;for(let n=0;n<50&&!question;n++){await new Promise(r=>setImmediate(r));question=descendants(f.get('studio-page')).find(e=>e.dataset&&e.dataset.key==='confirm-in-place');}
+  assert.ok(question,'replacing the unfinished form asks in place');assert.equal(f.get('studio-page').children[0],question,'at the top of the saved form');
+  assert.match(descendants(question).map(e=>e.textContent).join(' '),/Replace the unfinished blog form with this new starting point\?/);
+  descendants(question).find(e=>e.dataset&&e.dataset.key==='confirm-yes').listeners.click();await starting;
   assert.deepEqual(requests.filter(r=>r.url==='/api/library-selection').at(-1).data.ids,[{id:'h',location:'hub'}]);
 }
 
@@ -2234,7 +2254,7 @@ async function libraryPicker(){
 // not offered for a draft you bring.
 async function deskLength(){
   const t=deskStartFixture();
-  await t.f.run("sDeskBegin({have:'topic'})");
+  await t.replacing("sDeskBegin({have:'topic'})");
   /* Default post type follows the supplied idea. */
   assert.equal(t.byId('desk-length'),undefined,'Length waits for what you have');
   t.type('desk-title','A topic');t.type('desk-point','A point.');await t.submit();
@@ -3081,7 +3101,12 @@ function deskStartFixture(answer=()=>null){
   const type=(id,value)=>{const field=byId(id)||sheet().find(n=>n.id===id);field.value=value;field.listeners[field.tagName==='select'?'change':'input']();};
   const submit=()=>nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
   const click=async label=>{const found=nodes().find(n=>n.textContent===label&&n.listeners.click)||sheet().find(n=>n.textContent===label&&n.listeners.click)||descendants(f.get('actions')).find(n=>n.textContent===label&&n.listeners.click);assert.ok(found,'no '+label+' in '+nodes().map(n=>n.textContent).filter(Boolean).join('|'));await found.listeners.click();};
-  return {f,requests,timers,nodes,tick,sheet,byId,type,submit,click};
+  // A start over an unfinished form asks in place (Drafting.confirmInPlace); `replacing` runs
+  // one and answers Replace with the new start where it is asked.
+  const replacing=async code=>{const started=f.run(code);let settled=false;started.then(()=>{settled=true;},()=>{settled=true;});
+    for(let n=0;n<50&&!settled;n++){await new Promise(r=>setImmediate(r));const asked=nodes().find(e=>e.dataset&&e.dataset.key==='confirm-in-place');if(asked){descendants(asked).find(e=>e.dataset&&e.dataset.key==='confirm-yes').listeners.click();break;}}
+    return started;};
+  return {f,requests,timers,nodes,tick,sheet,byId,type,submit,click,replacing};
 }
 function startView(extra={}){return deskView({id:'started',sections:[],opening:'',start:{way:'topic',steps:['research','outline','draft'],step:'research',job:'r1',started_at:new Date().toISOString(),ended_at:null,problem:'',open:'draft',minutes:14,phase:'',busy:true,status:'working',doing:'Researching'},working:{id:'r1',kind:'desk-research',status:'working',busy:true,part:'research'},...extra});}
 async function deskIntakePersistence(){
@@ -3106,7 +3131,17 @@ async function deskIntakePersistence(){
   const edited=deskStartFixture();await edited.f.run('sDeskBegin()');await edited.f.run('sDeskKeep(studio.deskStart)');
   edited.f.run("studio.deskStart.title='Later edit';studio.deskStart._dirty=true");await edited.f.run('sDeskConsumed(studio.deskStart,sBlogIntake().revision)');
   assert.equal(edited.f.run('studio.deskStart.title'),'Later edit');
-  const clean=deskStartFixture();await clean.f.run('sDeskBegin()');await clean.click('Discard draft');
+  // Discard draft asks in place beside itself (Drafting.confirmInPlace): Keep the form keeps it.
+  const clean=deskStartFixture();await clean.f.run('sDeskBegin()');
+  const settle=async()=>{for(let n=0;n<20;n++)await Promise.resolve();};
+  const asked=()=>clean.nodes().find(n=>n.dataset&&n.dataset.key==='confirm-in-place');
+  const answer=key=>descendants(asked()).find(n=>n.dataset&&n.dataset.key===key).listeners.click();
+  let discarding=clean.click('Discard draft');await settle();
+  assert.ok(asked(),'Discard draft asks in place');
+  assert.match(descendants(asked()).map(n=>n.textContent).join(' '),/Discard this unfinished blog form\?/);
+  answer('confirm-keep');await discarding;
+  assert.notEqual(clean.f.run('studio.deskStart'),null,'Keep the form keeps it');assert.equal(asked(),undefined);
+  discarding=clean.click('Discard draft');await settle();answer('confirm-yes');await discarding;
   assert.equal(clean.f.run('studio.deskStart'),null);assert.equal(clean.f.run('sBlogIntake().saved'),null);
 }
 // A solution brief: Home's card opens the desk start with nothing to choose but what it is about
@@ -3206,7 +3241,7 @@ async function deskTopicStart(){
 async function deskOutlineStarts(){
   const t=deskStartFixture((url)=>{if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};if(url.startsWith('/api/desk?'))return startView();return null;});
   for(const [way,label] of [['outline','Write from my outline'],['shape','Shape an outline with me first']]){
-    await t.f.run("sDeskBegin({have:'outline'})");
+    await t.replacing("sDeskBegin({have:'outline'})");
     /* Default post type follows the supplied idea. */
     assert.ok(t.nodes().some(n=>n.textContent==='Write from my outline')&&t.nodes().some(n=>n.textContent==='Shape an outline with me first'),'both co-author choices');
     t.type('desk-outline','# A synthetic outline\n\n## One\n\nBrief one.\n\n## Two\n');
@@ -3216,7 +3251,7 @@ async function deskOutlineStarts(){
     assert.equal(made.way,way);assert.equal(made.outline,'# A synthetic outline\n\n## One\n\nBrief one.\n\n## Two\n');assert.equal(made.style,'');assert.equal(made.research_from,undefined,'no research unless ticked');
   }
   // An outline with neither a title nor a # line is stopped on the page.
-  await t.f.run("sDeskBegin({have:'outline'})");
+  await t.replacing("sDeskBegin({have:'outline'})");
   /* Default post type follows the supplied idea. */
   t.type('desk-outline','Some notes.');await t.submit();
   assert.ok(t.nodes().some(n=>n.className==='problem'&&/# title line/.test(n.textContent)));
@@ -3251,7 +3286,7 @@ async function deskOtherWaysIn(){
   await t.f.run("openBlogRun('desk-blog')");
   assert.equal(t.f.run('studio.screen'),'desk');assert.equal(t.f.run('studio.id'),'desk-blog');
   // A saved draft comes to the desk start as the draft to bring, in the same blog.
-  await t.f.run("openBlogRun('saved')");
+  await t.replacing("openBlogRun('saved')");
   assert.equal(t.f.run('studio.screen'),'desk-start');
   assert.equal(t.byId('desk-saved').checked,true,'the saved draft is chosen');
   assert.equal(t.byId('desk-manuscript'),undefined,'nothing to paste');
@@ -3263,10 +3298,10 @@ async function deskOtherWaysIn(){
   made=t.requests.filter(r=>r.url==='/api/desk-create').at(-1).data;
   assert.equal(made.article,'saved');assert.equal(made.manuscript,undefined);assert.equal(made.title,'A saved blog');assert.equal(made.first_pass,'leave');
   // Paste text still works from there, and the saved draft is not offered on a fresh start.
-  await t.f.run("sDeskBegin({have:'draft'})");
+  await t.replacing("sDeskBegin({have:'draft'})");
   assert.equal(t.byId('desk-saved'),undefined);
   // A blog with no draft yet starts on the desk with its title.
-  await t.f.run("openBlogRun('empty')");
+  await t.replacing("openBlogRun('empty')");
   assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.title'),'An empty blog');assert.equal(t.f.run('studio.deskStart.have'),'topic');
   // The old wizard's address opens a fresh desk start.
   await t.f.run("studioNavigate('new')");
@@ -3365,7 +3400,7 @@ async function geoReportJourney(){
   await t.f.run("sRoute('blogs')");
   assert.ok(t.nodes().some(n=>n.className==='badge geo-report-badge'&&n.textContent==='GEO report'));
   // New blog offers it too.
-  await t.f.run("sDeskBegin({have:'topic'})");
+  await t.replacing("sDeskBegin({have:'topic'})");
   assert.ok(t.nodes().some(n=>n.textContent==='Only want recommendations for a published post? Get a GEO report'));
   await t.click('Only want recommendations for a published post? Get a GEO report');
   assert.equal(t.f.run('studio.screen'),'geo-start');
@@ -3488,7 +3523,7 @@ async function findTextJourney(){
   assert.equal(t.f.run('studio.id'),'s'.repeat(32));
   // The start form's published link: the Read the page button and the start button both offer it.
   state.found=false;state.next='working';
-  await t.f.run("sDeskBegin({have:'draft'})");await t.click('Link to a published post');
+  await t.replacing("sDeskBegin({have:'draft'})");await t.click('Link to a published post');
   t.type('desk-link',LINK);await t.click('Read the page');
   assert.ok(t.nodes().some(n=>n.className==='problem'&&n.textContent===NO_TEXT));assert.ok(askFocused(),'focus goes to the offer after Read the page');
   assert.ok(inBox().some(n=>n.tagName==='button'&&n.textContent==='Ask Codex to find the post’s text'));
@@ -3501,7 +3536,7 @@ async function findTextJourney(){
   assert.equal(t.nodes().find(n=>n.tagName==='button'&&n.type==='submit').textContent,'Start');
   assert.ok(!t.requests.some(r=>r.url==='/api/desk-create'),'nothing starts by itself');
   // Someone who may only read sees the offer, but cannot press it.
-  state.found=false;await t.f.run("sDeskBegin({have:'draft'})");await t.click('Link to a published post');t.type('desk-link',LINK);await t.click('Read the page');
+  state.found=false;await t.replacing("sDeskBegin({have:'draft'})");await t.click('Link to a published post');t.type('desk-link',LINK);await t.click('Read the page');
   t.f.run('access.actions.edit=false');await t.f.run('sDeskStart()');
   assert.equal(inBox().find(n=>n.tagName==='button').disabled,true);
   t.f.run('access.actions.edit=true');
@@ -3558,14 +3593,14 @@ async function deskPolishStart(){
   assert.deepEqual(sent.sources,[],'no sources needed');
   assert.equal(t.f.run('studio.screen'),'desk');assert.equal(t.f.run('studio.desk.mode'),'review','it lands in Review mode');assert.equal(t.f.run('studio.stage'),'review','kept in the address');
   // Just give feedback: Finishing's feedback is queued as the desk opens; nothing is rewritten.
-  await t.f.run("sDeskBegin({have:'draft'})");paste();
+  await t.replacing("sDeskBegin({have:'draft'})");paste();
   await t.click('Just give feedback');
   assert.ok(t.nodes().some(n=>n.textContent==='Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.'));
   await t.submit();
   sent=made();assert.equal(sent.first_pass,'feedback');assert.equal(sent.style,'');assert.equal(t.f.run('studio.desk.mode'),null,'feedback opens the full desk');assert.equal(t.f.run('studio.stage'),null);
   // Review for AI search: the GEO review is queued as the desk opens, and Finishing opens at
   // it; its proposals wait there. Nothing in the text changes.
-  await t.f.run("sDeskBegin({have:'draft'})");paste();
+  await t.replacing("sDeskBegin({have:'draft'})");paste();
   await t.click('Review for AI search (GEO)');
   assert.ok(t.nodes().some(n=>n.textContent===t.f.run('DESK_POLISH_SAYS.geo')));
   assert.match(t.f.run('DESK_POLISH_SAYS.geo'),/clearer answers, consistent names, cited evidence and passages that stand on their own/);
@@ -3573,7 +3608,7 @@ async function deskPolishStart(){
   await t.submit();
   sent=made();assert.equal(sent.first_pass,'geo');assert.equal(t.f.run('studio.desk.mode'),null,'the full desk');assert.equal(t.f.run('studio.desk.finish?.tool'),'geo','Finishing opens at the GEO review');
   // Link to a published post: read once on a press, shown, then started on a copy.
-  await t.f.run("sDeskBegin({have:'draft'})");
+  await t.replacing("sDeskBegin({have:'draft'})");
   await t.click('Link to a published post');
   await t.click('Review for AI search (GEO)');
   assert.equal(t.nodes().find(n=>n.tagName==='button'&&n.type==='submit').textContent,'Read the page and start');
@@ -3602,7 +3637,7 @@ async function deskPolishStart(){
   await t.submit();
   sent=made();assert.equal(sent.published.preview,'p'.repeat(32));assert.equal(sent.first_pass,'geo');
   // Reshape reveals the kind of post, the same catalog, and needs one.
-  await t.f.run("sDeskBegin({have:'draft'})");paste();
+  await t.replacing("sDeskBegin({have:'draft'})");paste();
   await t.click('Reshape to fit a kind of post');
   assert.deepEqual(t.byId('desk-kind').children.map(n=>[n.value,n.textContent]),[['','Choose a kind of post'],['how-to','How-to and tutorial']],'retired kinds are not offered');
   const before=creates().length;await t.submit();
@@ -3611,7 +3646,7 @@ async function deskPolishStart(){
   t.type('desk-kind','how-to');await t.submit();
   sent=made();assert.equal(sent.first_pass,'reshape');assert.equal(sent.style,'how-to');
   // A kind picked and then let go is not sent; sources from the fold go with the blog.
-  await t.f.run("sDeskBegin({have:'draft'})");paste();
+  await t.replacing("sDeskBegin({have:'draft'})");paste();
   await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');
   await t.click('Leave it as it is');
   assert.equal(t.byId('desk-kind'),undefined);
@@ -3621,7 +3656,7 @@ async function deskPolishStart(){
   await t.submit();
   sent=made();assert.equal(sent.first_pass,'leave');assert.equal(sent.style,'');assert.deepEqual(sent.sources,['s1']);assert.equal(sent.keep,undefined,'kept only if ticked');
   // From the stepped start, choosing A draft switches to the one screen.
-  await t.f.run("sDeskBegin({have:'topic'})");
+  await t.replacing("sDeskBegin({have:'topic'})");
   t.f.run("studio.deskStart.kind='how-to'");
   assert.equal(t.f.run('studio.deskStart.step'),0,'the task comes first');
   await t.click('A draft');
@@ -3629,11 +3664,11 @@ async function deskPolishStart(){
   paste();await t.submit();
   sent=made();assert.equal(sent.first_pass,'copyedit');assert.equal(sent.style,'','the kind chosen earlier is not needed to proofread');
   // And back: something new returns to the steps, with the kind already chosen.
-  await t.f.run("sDeskBegin({have:'draft'})");
+  await t.replacing("sDeskBegin({have:'draft'})");
   await t.click('Writing something new? Start from a topic or an outline');
   assert.ok(t.nodes().some(n=>n.className==='intake-progress intake-guided'));assert.equal(t.f.run('studio.deskStart.have'),'topic');
   // A kind picked to reshape, then let go, is the kind for the new writing.
-  await t.f.run("sDeskBegin({have:'draft'})");await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');await t.click('Leave it as it is');
+  await t.replacing("sDeskBegin({have:'draft'})");await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');await t.click('Leave it as it is');
   assert.equal(t.f.run('studio.deskStart.style'),'');
   await t.click('Writing something new? Start from a topic or an outline');
   assert.equal(t.f.run('studio.deskStart.style'),'how-to');
@@ -3649,7 +3684,7 @@ async function deskResearchSites(){
     if(url.startsWith('/api/desk?'))return startView();
     return null;});
   const text=()=>t.nodes().map(n=>n.textContent),add=()=>t.byId('desk-research-add');
-  await t.f.run("sDeskBegin({have:'topic'})");
+  await t.replacing("sDeskBegin({have:'topic'})");
   /* Default post type follows the supplied idea. */
   t.type('desk-title','Sites');t.type('desk-point','Read only what is ours.');
   t.byId('desk-sites').checked=true;t.byId('desk-sites').listeners.change();
@@ -3686,7 +3721,7 @@ async function deskResearchDefault(){
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return startView();
     return null;});
-  const begin=async()=>{t.f.run('studio.options=null');await t.f.run("sDeskBegin({have:'topic'})");/* Default post type follows the supplied idea. */t.type('desk-title','Defaults');t.type('desk-point','Start where Settings says.');};
+  const begin=async()=>{t.f.run('studio.options=null');await t.replacing("sDeskBegin({have:'topic'})");/* Default post type follows the supplied idea. */t.type('desk-title','Defaults');t.type('desk-point','Start where Settings says.');};
   const ticks=()=>[t.byId('desk-sites').checked,t.byId('desk-web').checked];
   await begin();
   assert.deepEqual(ticks(),[true,true],'both ticked as in Settings');
@@ -4193,7 +4228,7 @@ async function deskReviewMode(){
   const head=()=>nodes().find(n=>n.className==='review-head');
   const words=node=>descendants(node).map(n=>n.textContent).join(' ');
   // 1. Polishing with the default lands in Review mode while Copy edit checks the draft.
-  await t.f.run("sDeskBegin({have:'draft'})");t.type('desk-manuscript','# A synthetic agentic post\n\n### **Building synthetic workflows**\n\nA workflow coordinate agents.');await t.submit();
+  await t.replacing("sDeskBegin({have:'draft'})");t.type('desk-manuscript','# A synthetic agentic post\n\n### **Building synthetic workflows**\n\nA workflow coordinate agents.');await t.submit();
   assert.equal(last('/api/desk-create').first_pass,'copyedit');assert.equal(last('/api/desk-create').humanize,null,'no human-sounding wording unless ticked');
   assert.equal(f.run('studio.desk.mode'),'review');
   const checking=nodes().find(n=>n.textContent==='Checking spelling and grammar…');
@@ -4834,7 +4869,7 @@ async function deskFinishing(){
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='Applied. The earlier text is in History.'));
   await inItem('p2','Edit').listeners.click();
   const box=descendants(item('p2')).find(n=>n.tagName==='textarea');assert.equal(box.value,'The second text.');
-  box.value='My second text.';box.listeners.input();
+  box.value='My second text.';box.listeners.input();await t.tick();  // the After side is compared once typing pauses (DIFF_WAIT)
   assert.ok(descendants(item('p2')).some(n=>n.tagName==='ins'&&/My/.test(n.textContent)),'the After side follows the edit');
   // A poll while the person types in the panel leaves it as it is.
   f.set('focused',box);f.run('document.activeElement=focused');const shownPanel=panel();
@@ -5117,7 +5152,7 @@ async function deskAddSource(){
   assert.equal(t.f.get('sheet').hidden,true);
   assert.ok(t.nodes().some(n=>n.textContent==='Notes'),'the sources panel names the new source');
   // On a phone the start still runs in its three steps.
-  t.f.run("window.matchMedia=()=>({matches:true})");await t.f.run("sDeskBegin()");
+  t.f.run("window.matchMedia=()=>({matches:true})");await t.replacing("sDeskBegin()");
   assert.ok(t.byId('files-input'),'phone starts with the single source inventory');
 }
 // A desk blog another computer drives: read only, with Take over; nobody driving offers
@@ -5237,7 +5272,7 @@ async function deskGoogleDoc(){
   await t.f.run("sDeskFinishOpen(studio.desk,'publish')");
   assert.ok(descendants(panel()).some(n=>n.textContent==='Check what would be sent'),'suggestions go to the new Doc');
   // A Doc an older run already links: the desk start offers its run.
-  await t.f.run("sDeskBegin({have:'draft'})");
+  await t.replacing("sDeskBegin({have:'draft'})");
   await t.nodes().find(n=>n.textContent==='Google Doc').listeners.click();
   t.type('desk-google','https://docs.google.com/document/d/older/edit');
   await t.submit();
@@ -5259,7 +5294,7 @@ async function deskStartReopensALinkedDoc(){
       if(asked.startsWith('/api/desk?'))return {__http:400,error:'This blog is not on the desk.'};
       return null;
     });
-    await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+    await t.replacing("sDeskBegin({have:'draft',source:'google'})");
     t.type('desk-google',url);
     await t.submit();
     if(response!==linked){
@@ -5291,7 +5326,7 @@ async function deskViewOnlyGoogleCopy(){
       if(url==='/api/desk-create'||url.startsWith('/api/desk?'))return deskView({google:{url:copy}});
       return null;
     });
-    await t.f.run("sDeskBegin({have:'draft',source:'google'})");t.type('desk-google',original);await t.submit();
+    await t.replacing("sDeskBegin({have:'draft',source:'google'})");t.type('desk-google',original);await t.submit();
     assert.ok(t.sheet().some(n=>n.textContent==='View-only Google Doc'));
     assert.ok(t.sheet().some(n=>n.textContent==='Google account: author@example.invalid'));
     assert.equal(attempts,0,'opening the warning creates nothing');
@@ -5327,7 +5362,7 @@ async function deskStartShowsTheSelectedGoogleTab(){
   const preview={status:'preview',preview:'d'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Only the selected blog.',summary:{excluded_approval_blocks:2,structure:{paragraphs:1},selected_tab:{id:'t.focus',title:'Blog draft'}}};
   const made=deskView({opening:preview.content,google:{url},google_suggestions:true});
   const t=deskStartFixture(asked=>asked==='/api/google-preview'?preview:asked==='/api/google-start'?{id:'desk-blog'}:asked==='/api/desk-create'||asked.startsWith('/api/desk?')?made:null);
-  await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+  await t.replacing("sDeskBegin({have:'draft',source:'google'})");
   t.type('desk-google',url);
   await t.submit();
   assert.equal(t.requests.find(r=>r.url==='/api/google-preview').data.url,url);
@@ -5345,7 +5380,7 @@ async function deskStartReadsAGoogleDocAgainAfterAFailure(){
   const answers=[{__http:400,error:'The Doc holds a drawing this reader cannot take.'},{__http:400,error:'The Doc holds a drawing this reader cannot take.'},preview];
   const made=deskView({opening:preview.content});
   const t=deskStartFixture(asked=>asked==='/api/google-preview'?answers.shift():asked==='/api/google-start'?{id:'desk-blog'}:asked==='/api/desk-create'||asked.startsWith('/api/desk?')?made:null);
-  await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+  await t.replacing("sDeskBegin({have:'draft',source:'google'})");
   t.type('desk-google',url);
   const problem=()=>t.nodes().find(n=>n.className==='problem'&&n.textContent)?.textContent||'';
   await t.submit();
@@ -5375,7 +5410,7 @@ async function deskGoogleStartIsOneActionAndRetrySafe(){
     if(asked.startsWith('/api/desk?'))return made;
     return null;
   });
-  await t.f.run("sDeskBegin({have:'draft',source:'google'})");t.type('desk-google',url);
+  await t.replacing("sDeskBegin({have:'draft',source:'google'})");t.type('desk-google',url);
   const first=t.submit();await t.submit();
   assert.equal(t.requests.filter(r=>r.url==='/api/google-preview').length,1,'rapid submits share one capture');
   assert.equal(t.byId('desk-google').disabled,true,'source and options are frozen while starting');
@@ -5450,7 +5485,7 @@ async function deskPasteAndUpload(){
     if(url.startsWith('/api/desk?'))return deskView({id:'uploaded',title:'Uploaded post'});
     return null;
   });
-  await t.f.run("sDeskBegin({have:'draft'})");
+  await t.replacing("sDeskBegin({have:'draft'})");
   // Image data in a pasted draft is kept beside its text and not counted, so the field says
   // the text limit the server keeps and leaves room for the images.
   const paste=t.byId('desk-manuscript');assert.equal(paste.maxLength,1000000);
@@ -5462,7 +5497,7 @@ async function deskPasteAndUpload(){
   const submit=new Element('button');submit.textContent='Upload and save';t.f.set('submit',submit);
   t.f.get('upload-file').files=[{name:'post.md',size:31,arrayBuffer:async()=>new TextEncoder().encode('# Uploaded post\n\n## One\n\nFile text.').buffer}];
   t.f.get('upload-title').value='Uploaded post';t.f.get('upload-blog').checked=true;
-  await t.f.run('saveUpload(submit)');
+  await t.replacing('saveUpload(submit)');
   const sent=t.requests.find(r=>r.url==='/api/upload').data;
   assert.equal('as_blog' in sent,false,'the upload no longer makes a manuscript-editor blog');
   assert.equal(t.f.run('studio.screen'),'desk-start');
@@ -5476,7 +5511,7 @@ async function deskPasteAndUpload(){
   assert.equal(t.f.run('studio.screen'),'desk');
   // Unticked, the upload stays in the library only.
   t.f.run("studio.screen='library'");t.f.get('upload-blog').checked=false;t.requests.length=0;
-  await t.f.run('saveUpload(submit)');
+  await t.replacing('saveUpload(submit)');
   assert.equal(t.f.run('studio.screen'),'library');
   // The library's own sheet says so.
   await t.f.run('sLibraryAdd()');
@@ -5846,7 +5881,7 @@ async function blogReadingAndUnifiedSources(){
   assert.equal(t.f.run('studio.desk.activePart'),'aaaaaaaa');
   assert.equal(t.nodes().filter(n=>n.dataset.part).length,1);
   assert.ok(t.nodes().some(n=>n.tagName==='textarea'&&n.value==='Give this section an example.'));
-  await t.f.run("sDeskBegin({files:[{id:'ref1',filename:'Reference tab',state:'ready',role:'material'}]})");
+  await t.replacing("sDeskBegin({files:[{id:'ref1',filename:'Reference tab',state:'ready',role:'material'}]})");
   assert.equal(t.nodes().filter(n=>n.type==='file'&&n.id==='files-input').length,1);
   await t.nodes().find(n=>n.attributes['aria-label']==='Preview Reference tab').listeners.click();
   assert.ok(t.nodes().some(n=>n.textContent==='The captured source text.'));
@@ -5887,7 +5922,7 @@ async function polishVoiceChoice(){
     if(url==='/api/desk-create'||url.startsWith('/api/desk?'))return made;
     return null;
   });
-  await t.f.run("sDeskBegin({have:'draft'})");t.type('desk-manuscript','# Synthetic draft\n\nA paragraph to polish.');
+  await t.replacing("sDeskBegin({have:'draft'})");t.type('desk-manuscript','# Synthetic draft\n\nA paragraph to polish.');
   assert.equal(t.requests.some(r=>r.url==='/api/voice-guides'),false,'disabled voice choice loads no guide');
   const toggle=t.byId('polish-voice');toggle.checked=true;toggle.listeners.change();
   for(let n=0;n<20;n++)await Promise.resolve();
@@ -5898,7 +5933,7 @@ async function polishVoiceChoice(){
   assert.equal(t.requests.find(r=>r.url==='/api/desk-create').data.voice_guide,'plain');
   assert.ok(t.nodes().some(n=>n.textContent.includes('Voice guide: Plain')));
   assert.equal(t.requests.some(r=>r.url==='/api/desk-finish'),false,'voice uses the polish pass, not another assistant job');
-  await t.f.run("sDeskBegin({have:'draft'})");t.type('desk-manuscript','A second synthetic draft.');await t.submit();
+  await t.replacing("sDeskBegin({have:'draft'})");t.type('desk-manuscript','A second synthetic draft.');await t.submit();
   assert.equal(t.requests.filter(r=>r.url==='/api/desk-create').at(-1).data.voice_guide,undefined,'voice is opt-in for each new draft');
 }
 
@@ -5911,7 +5946,7 @@ async function polishVoiceInFirstReviewAndLinkedDoc(){
     if(url.startsWith('/api/desk?'))return shown;
     return null;
   });
-  await t.f.run("sDeskBegin({have:'draft',source:'google',url:'https://docs.google.com/document/d/synthetic/edit'})");
+  await t.replacing("sDeskBegin({have:'draft',source:'google',url:'https://docs.google.com/document/d/synthetic/edit'})");
   t.byId('polish-voice').checked=true;t.byId('polish-voice').listeners.change();
   for(let n=0;n<20;n++)await Promise.resolve();t.type('polish-voice-guide','plain');
   await t.submit();

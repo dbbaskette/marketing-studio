@@ -54,7 +54,7 @@ See the
 | Need | Component |
 | --- | --- |
 | A project's stages | `.track`, `.track-stage[data-state]` (`done`, `current`, `yours`, `todo`, `skipped`), `.track-compact` in a list |
-| Search and jump | `.shell-palette`, opened by `StudioShell.palette()`. Each studio hands it the work its own page lists with `StudioShell.commands(() => [{title, group, hint, keywords, run}])`, asked again each time it opens: group Blogs, Decks, Trainings or Infographics, the state as the hint, `run` opening the work as its card does, and a Start command for new work. Put away, it gives the focus back to its opener; a pointer marks a row without scrolling; past 40 results it says how many more there are (`.shell-palette-more`) |
+| Search and jump | `.shell-palette`, opened by `StudioShell.palette()`. Each studio, and Marketing Studio's Home, hands it the work its own page lists with `StudioShell.commands(() => [{title, group, hint, keywords, run}])`, asked again each time it opens: group Blogs, Decks, Trainings or Infographics (on Home, the studio's name, with what each row's button says as the hint), the state as the hint, `run` opening the work as its card does, and a Start command for new work. Nothing crosses studios. Put away, it gives the focus back to its opener; a pointer marks a row without scrolling; past 40 results it says how many more there are (`.shell-palette-more`) |
 | Appearance | `.appearance-switch` in `.shell-foot`; never a second copy of a token |
 | A desk as a workbench | A page part says its zone in `data-zone`: `top`, `parts`, `work-top`, `work`, `rail` or `foot`. From 72rem the page is three columns, the work in the middle, and a part with no zone joins the rail. Narrower, parts follow one another |
 | A rail as tall as its own parts | `.workbench-rail` and `.workbench-parts` gather a zone's parts into one. The work and its parts then share a row, `foot` parts follow directly under them, and the rail runs beside all of it (Training Studio) |
@@ -96,7 +96,9 @@ as F and Escape do. Toasts and the finish card rise over it (`--foot-lift`).
   the studio's colour too.
 - **A slow read says so at once.** Bringing in a Google Doc or a page opens a sheet naming
   the steps before the request is sent, and closes itself when the desk opens.
-- **A state is not a filled button.** The story in use is a "Selected" tag, and Polish on
+- **A state is not a filled button.** The story in use is a "Selected" tag, each other
+  story's **Use this story** is a quiet button that names its story (a choice among peers,
+  never a filled one), and Polish on
   Blog Studio's desk is a plain button beside the move.
 - **On a phone** the sidebar is the bar of screens, so **Search and jump** and the
   appearance close each page under its content (`.shell-foot-page`).
@@ -120,6 +122,7 @@ shared setup, Blog Studio, Presentation Studio, Training Studio and Infographic 
 | Headings | `.large-title`, `.lede`, `.card-title`, `.sheet-part` |
 | Status | `.state` with `.bead`, `.tag`, `.toasts`/`.toast`, `.notice` |
 | Transient | `.sheet`, `.dialog`, `.menu` |
+| A question before an action | `Drafting.confirmInPlace(control, {message, action, keep, danger, place})`: asked beside the control (hidden meanwhile), or at the top of `place` or the page's `<main>` where it has no row; the way out has the focus and gives it back, and a destructive action takes `.button-danger`. Never a blocking `window.confirm()`, `alert()` or `prompt()` (`tests/test_ui_consistency.py`) |
 | Studio mark | `.studio-symbol`, the rounded tile that carries a studio's drawing in its accent colour |
 | Studio identity | `[data-studio]` sets `--studio-color` and `--studio-wash`; `.card[data-studio]` takes that studio's colour for its accent, link, focus and hover border |
 | Way back | `.suite-link`, the "Marketing Studio" sidebar item a studio shows when Marketing Studio opened it |

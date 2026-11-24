@@ -2,7 +2,6 @@
 const $ = selector => document.querySelector(selector);
 const standalone = document.body.dataset.standalone === 'true';
 const product = document.body.dataset.product;
-if (['Marketing Studio', 'Infographic Studio'].includes(product)) document.body.dataset.pilot = 'liquid';
 const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
@@ -24,6 +23,14 @@ if (tokenInLink) { sessionStorage.setItem(sessionKey, tokenInLink); history.repl
 const token = tokenInLink || sessionStorage.getItem(sessionKey) || '';
 // The shell kit saves the appearance through this page's own key.
 if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: tokenHeader, token, home: standalone ? '/onboarding/api/' : '/api/' });
+// Search and jump finds the work Home lists (#work-overview) by its name, in its studio's
+// group with what its row's button says, and opens it as that button does. Nothing else.
+function homeCommands() {
+  return [...document.querySelectorAll('#work-overview .work-summary')].filter(row => row.resumeItem && row.resumeStudio)
+    .map(row => ({ title: row.resumeItem.title, group: row.resumeStudio.name, hint: row.resumeItem.action,
+      keywords: 'work project ' + (row.dataset.state || ''), run: () => row.querySelector('button')?.click() }));
+}
+if (typeof StudioShell !== 'undefined') StudioShell.commands(homeCommands);
 // A new link opened in a tab that already shows this page changes only the fragment, which
 // does not reload it: after a restart the page would keep the old key. Start again with the new one.
 window.addEventListener('hashchange', () => {

@@ -527,7 +527,8 @@ async function curate(item) {
         note:(result.record.note||'').replace(/\r\n?/g,'\n')});
       if(!Object.keys(changes).length){notice('No changes to save.');return;}
       if(changes.curation==='retired'){
-        if(!confirm('Retire this reference from active search? Earlier snapshots remain in Git history.'))return;
+        // Asked in place beside Save (Drafting.confirmInPlace), never in a blocking dialog.
+        if(!await Drafting.confirmInPlace(save,{message:'Retire this reference from active search? Earlier snapshots remain in Git history.',action:'Retire reference',keep:'Keep it active'}))return;
         changes.confirmed=true;
       }
       const saved=await api('curate',{id:result.id,location:result.location,expected:result.expected,...changes});

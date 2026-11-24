@@ -2070,7 +2070,7 @@ function drawHome(fresh) {
   const said = greeting();
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
     ['head', [], () => pageHead(HOME_LEDE)]];
-  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:()=>openNew(),discarded:()=>{view.draft=null;drawHome(true);}})]);
+  if(privateIntake?.saved)parts.push(['intake',[privateIntake.revision],()=>intakeStore().resumeCard({resume:()=>openNew(undefined,true),fresh:(event)=>openNew(undefined,false,event?.currentTarget),discarded:()=>{view.draft=null;drawHome(true);}})]);
   const setup = [['updates', [upkeepOf()], updatesCard],
     ['studios', studiosMark(), studiosHomeCard]];
   if (!all.length) {
@@ -3746,7 +3746,8 @@ function standingOf(training) {
 }
 
 function newButton(kind, key) {
-  return capsule('New training', kind, () => openNew(key || 'new'), key || 'new');
+  return capsule('New training', kind, (event) => openNew(key || 'new', false, event?.currentTarget),
+    key || 'new');
 }
 
 // The new-training sheet, over the screen it was asked from. What was filled in before is
@@ -3762,9 +3763,26 @@ async function restoreIntake() {
   return saved;
 }
 
-async function openNew(opener, resume=false) {
+// A question asked in place (Drafting.confirmInPlace): beside the control that asked; under
+// its row where it sits in a list row, which lays its parts out in a line; or at the top of
+// the page where the control is in the toolbar or there is none. `ask(place)` asks it.
+function askedFrom(control) {
+  return control && control.closest && control.closest('main') ? null : main();
+}
+async function askedBeside(control, ask) {
+  const row = control && control.closest ? control.closest('li.row') : null;
+  const holder = row ? make('li', '') : null;
+  if (holder) row.after(holder);
+  try {
+    return await ask(holder || askedFrom(control));
+  } finally {
+    if (holder) holder.remove();
+  }
+}
+
+async function openNew(opener, resume=false, control=null) {
   await restoreIntake();
-  if(!resume&&intakeStore().saved){if(!await intakeStore().startFresh())return;view.draft=null;}
+  if(!resume&&intakeStore().saved){if(!await askedBeside(control, (place) => intakeStore().startFresh(control, place)))return;view.draft=null;}
   if (!view.draft) view.draft = newDraft();
   openSheet('new', opener || 'new')();
   readAgents();
@@ -8330,7 +8348,9 @@ async function copyAsNew(training, key, pressed) {
   const turn = view.turn;
   const store = intakeStore();
   await restoreIntake();
-  if (store.saved && !confirm(COPY_REPLACES)) return;
+  if (store.saved && !await askedBeside(pressed, (place) => Drafting.confirmInPlace(pressed,
+    { message: COPY_REPLACES, action: 'Discard and copy', keep: 'Keep the saved form', place }))) return;
+  if (turn !== view.turn) return;
   pressed.disabled = true;
   let found;
   try {
