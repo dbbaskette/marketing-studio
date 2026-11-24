@@ -275,37 +275,28 @@ class StartFormTests(SharedSitesCase):
                 'goal': 'Explain',
                 'sources': [source['id']],
             }
-            if args.research_from is not None or args.site:
-                data['research_from'] = runner.research_from_words(
-                    args.research_from or 'sites', args.site
-                )
             if args.research is not None:
                 data['research'] = args.research
             found = runner.create(self.root, data)
             return runner.load(self.root, found['id'])[1]
 
-        record = create('--research-from', 'documents,sites')
-        self.assertEqual(record['research_from'], {'documents': True, 'sites': SITES, 'web': False})
-        record = create('--research-from', 'sites,web', '--site', 'docs.example.com/guide')
-        self.assertEqual(
-            record['research_from'],
-            {'documents': False, 'sites': ['https://docs.example.com/guide'], 'web': True},
-        )
         record = create('--research', 'web-allowed')
         self.assertEqual(record['research_from'], {'documents': True, 'sites': [], 'web': True})
         record = create('--research', 'supplied-only')
         self.assertEqual(record['research_from'], {'documents': True, 'sites': [], 'web': False})
         record = create('--research', 'none')
         self.assertIsNone(record['research_from'])
-        with self.assertRaisesRegex(ValueError, 'documents, sites or web'):
-            create('--research-from', 'documents,intranet')
         with self.assertRaisesRegex(ValueError, 'not both'):
-            create('--research-from', 'web', '--research', 'none')
-        held = json.loads(self.config.read_text())
-        held['research'] = {'sites': []}
-        self.config.write_text(json.dumps(held))
-        with self.assertRaisesRegex(ValueError, research_sites.NO_SITES):
-            create('--research-from', 'sites')
+            runner.create(
+                self.root,
+                {
+                    'title': 'Synthetic',
+                    'audience': 'Authors',
+                    'goal': 'Explain',
+                    'research_from': {'documents': False, 'sites': [], 'web': True},
+                    'research': 'none',
+                },
+            )
 
 
 class OldRunTests(SharedSitesCase):
