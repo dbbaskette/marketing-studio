@@ -27,7 +27,8 @@ launch the page's planning assistant again for work you are already doing.
    documents the person chooses from the shared Document Library (`library-browse`,
    then `library`; never choose for them).
    Review readable coverage and acknowledge extraction gaps before importing. Capture audience, desired takeaway, must-show ideas, locked
-   wording, exclusions and A4, Letter or digital portrait size. Preview CSV and ask
+   wording, exclusions and the page size: A4, Letter or digital portrait, or widescreen
+   16:9 or social landscape. Preview CSV and ask
    for exact rows/columns/types/units before capture; never infer numeric types.
 2. Choose direct (one user-directed story), suggest (one to three distinct stories)
    or hybrid (preserve every must-show idea). Extract only located supplied claims;

@@ -13,12 +13,29 @@ MAX_SOURCE_BYTES = 16_000_000
 MAX_ASSET_BYTES = 32_000_000
 MAX_ASSET_EDGE = 20_000
 MAX_ASSET_PIXELS = 40_000_000
+# Every page size, in one table: the scene's own units (`width`, `height`, `unit`), the PNG in
+# pixels and the PDF page in points (render.dimensions), and how the page names it. Digital
+# sizes print at the CSS ratio of 0.75 pt to a pixel. The two landscape sizes are laid out
+# across the page (scene.py, visual_scene.py), not as a squeezed portrait stack.
 PRESETS = {
     'a4': {'width': 210 * 72 / 25.4, 'height': 297 * 72 / 25.4, 'unit': 'pt',
-           'width_px': 2480, 'height_px': 3508},
-    'letter': {'width': 612, 'height': 792, 'unit': 'pt', 'width_px': 2550, 'height_px': 3300},
-    'digital': {'width': 1080, 'height': 1350, 'unit': 'px', 'width_px': 1080, 'height_px': 1350},
+           'width_px': 2480, 'height_px': 3508, 'width_pt': 210 * 72 / 25.4, 'height_pt': 297 * 72 / 25.4,
+           'label': 'A4 portrait', 'detail': '210 × 297 mm'},
+    'letter': {'width': 612, 'height': 792, 'unit': 'pt', 'width_px': 2550, 'height_px': 3300,
+               'width_pt': 612, 'height_pt': 792, 'label': 'US Letter portrait', 'detail': '8.5 × 11 in'},
+    'digital': {'width': 1080, 'height': 1350, 'unit': 'px', 'width_px': 1080, 'height_px': 1350,
+                'width_pt': 810, 'height_pt': 1012.5, 'label': 'Digital portrait', 'detail': '1080 × 1350 px'},
+    'widescreen': {'width': 1920, 'height': 1080, 'unit': 'px', 'width_px': 1920, 'height_px': 1080,
+                   'width_pt': 1440, 'height_pt': 810, 'label': 'Widescreen 16:9', 'detail': '1920 × 1080 px'},
+    'social': {'width': 1200, 'height': 628, 'unit': 'px', 'width_px': 1200, 'height_px': 628,
+               'width_pt': 900, 'height_pt': 471, 'label': 'Social landscape', 'detail': '1200 × 628 px'},
 }
+
+
+def landscape(preset: str) -> bool:
+    """Whether a page size is wider than it is tall."""
+    size = PRESETS[preset]
+    return size['width'] > size['height']
 COLLECTIONS = ('sources', 'facts', 'stories', 'assets', 'image_briefs', 'attempts', 'checks', 'exports')
 BASIS_FIELDS = ('brief', 'sources', 'facts', 'stories', 'selected_story', 'brand', 'scene', 'assets')
 EDITABLE = ('brief', 'sources', 'facts', 'stories', 'selected_story', 'brand', 'scene',

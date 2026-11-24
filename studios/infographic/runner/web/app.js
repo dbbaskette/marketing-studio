@@ -72,6 +72,9 @@ const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
 // The open infographic's toolbar primary action: the page shows that control at most once more.
 let primary = '';
+// The page sizes, as contracts.PRESETS names them: three portrait, two landscape.
+const PAGE_SIZES=[['a4','A4 portrait','210 × 297 mm'],['letter','US Letter portrait','8.5 × 11 in'],['digital','Digital portrait','1080 × 1350 px'],
+  ['widescreen','Widescreen 16:9','1920 × 1080 px'],['social','Social landscape','1200 × 628 px']];
 const emptyIntake = () => ({research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'});
 const draft = emptyIntake();
 let intakeLoaded=false, missingCaptures=[];
@@ -508,7 +511,7 @@ async function newSheet() {
   // The same guided step row as the other studios' starts: what each step holds so far, and a
   // press that opens it. Going on to the second step is checked as Continue checks it.
   const says=index=>index===0?(draft.title.trim()||'Title and information')
-    :({a4:'A4 portrait',letter:'US Letter portrait',digital:'Digital portrait'}[draft.preset]||'Page')+(draft.audience.trim()?' · '+draft.audience.trim():'');
+    :(PAGE_SIZES.find(([value])=>value===draft.preset)?.[1]||'Page')+(draft.audience.trim()?' · '+draft.audience.trim():'');
   const stepRow=make('ol','intake-progress intake-guided');stepRow.setAttribute('aria-label','Creation progress');
   stepRow.append(...Drafting.Intake.steps(['Information','Direction and page'],draft.step,new Set(draft.step?[0]:[]),says,async index=>{
     if(index===draft.step)return;
@@ -582,7 +585,7 @@ async function newSheet() {
     for(const [value,label] of [['direct','I know what to show'],['suggest','Suggest the story'],['hybrid','Build on my ideas']]) { const option=make('option','',label); option.value=value; direction.input.append(option); } direction.input.value=draft.direction; retain(direction.input,'direction'); add(form,direction.wrap);
     for(const [key,label] of [['audience','Audience and prior knowledge'],['purpose','Desired takeaway or purpose'],['must','Must-show ideas — one per line']]) { const f=field(label,draft[key],key==='must'?'textarea':'input');retain(f.input,key);add(form,f.wrap); }
     const locked=field('Exact wording to preserve — one phrase per line',draft.locked,'textarea'), excluded=field('Leave out — one item per line',draft.exclusions,'textarea'); retain(locked.input,'locked');retain(excluded.input,'exclusions'); add(form,detail('Wording and exclusions',locked.wrap,excluded.wrap));
-    const preset=field('Page size',draft.preset,'select');for(const [value,label] of [['a4','A4 portrait — 210 × 297 mm'],['letter','US Letter portrait — 8.5 × 11 in'],['digital','Digital portrait — 1080 × 1350 px']]) { const option=make('option','',label);option.value=value;preset.input.append(option); }preset.input.value=draft.preset;retain(preset.input,'preset');add(form,preset.wrap);
+    const preset=field('Page size',draft.preset,'select');for(const [value,label,size] of PAGE_SIZES) { const option=make('option','',label+' — '+size);option.value=value;preset.input.append(option); }preset.input.value=draft.preset;retain(preset.input,'preset');add(form,preset.wrap);
     try { preferences=await request('/api/preferences'); const capability=await request('/api/computer'); add(form,make('p','',capability.disclosure),make('p','quiet','Brand: '+(preferences.brand.brand || 'Choose in shared settings before composing.')),make('p','quiet','Saving this brief starts no assistant, image generation or installation.')); } catch(failure) {problem.textContent=failure.message;}
   }
   const go=button(draft.step===1?'Save brief':'Continue',()=>{},true);go.type='submit';

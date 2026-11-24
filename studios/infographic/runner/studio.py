@@ -15,7 +15,7 @@ from pathlib import Path
 import signal
 import threading
 
-from runner.contracts import PRODUCT, Invalid
+from runner.contracts import PRESETS, PRODUCT, Invalid
 from runner.workspace import Store, data_root, file_lock
 
 
@@ -31,7 +31,7 @@ def parser():
             command.add_argument('--open', action='store_true', help='Open the foundation page in your default browser.')
     create = commands.add_parser('create', help='Save a new brief in an already configured workspace.')
     create.add_argument('title')
-    create.add_argument('--preset', choices=('a4', 'letter', 'digital'), default='a4')
+    create.add_argument('--preset', choices=tuple(PRESETS), default='a4')
     create.add_argument('--direction', choices=('direct', 'suggest', 'hybrid'), default='suggest')
     show = commands.add_parser('show')
     show.add_argument('id')
