@@ -13,6 +13,103 @@ SYNC_WAIT = ('A Studio step is still in progress in this repository. Stop it or 
              'to finish, then share again. A stopped or interrupted step can leave a marker; '
              'if sharing still waits, reopen the Studio to recover the saved work first.')
 
+# The refusal when the repository cannot be checked, in one place: `unchecked` adds the
+# folder (relative to the repository) and the reason. Callers and tests match its first
+# sentence.
+UNCHECKED = 'The repository could not be checked for running Studio steps.'
+UNCHECKED_NEXT = 'Check its saved worker records and folder permissions, then share again.'
+# Why a folder could not be checked, each completing "In the folder <folder>, ...".
+UNKNOWN_DECK = 'its Presentation Studio run record cannot be understood'
+UNREADABLE = '{name} cannot be read'
+LINKED_RECORDS = 'its Blog Studio worker records are linked'
+ODD_RECORD = 'a Blog Studio worker record is linked or too large'
+NO_STATUS = 'a Blog Studio worker record has no readable status'
+BLOG_MIGRATION = 'a Blog Studio desk migration is incomplete'
+BLOG_DEPENDENCY = 'a file a Blog Studio desk migration needs is missing'
+BLOG_UNFINISHED = 'a Blog Studio draft is marked as migrating but has no migration record'
+LINKED_CACHE = 'its work or sources folder is a link'
+LARGE_CACHE = 'its work or sources folder holds too many folders to check'
+TRAINING_CHAIN = 'the Training Studio update record cannot be understood'
+PRESENTATION_MIGRATION = 'the Presentation Studio desk migration record cannot be verified'
+TRAINING_MIGRATION = 'the Training Studio desk migration record cannot be verified'
+
+# Training Studio's material scheduling pin (studios/training/runner/material_flow.py PIN).
+MATERIAL_FLOW = {'schema': 1, 'order': 'readable-first'}
+
+
+def unchecked(folder=None, reason=None) -> str:
+    """The refusal sentence: what failed, the folder relative to the repository ('.' for its
+    top folder) and why, when known, then what to do."""
+    if folder is None or reason is None:
+        return f'{UNCHECKED} {UNCHECKED_NEXT}'
+    place = "the repository's top folder" if folder in ('', '.') else f'the folder {folder}'
+    return f'{UNCHECKED} In {place}, {reason}. {UNCHECKED_NEXT}'
+
+
+def training_written(record) -> bool:
+    """Whether this is a run record the Training Studio engine writes (schemas 1 to 8, from
+    its runner and conversation starts), checked as its reader (`runner/engine.py`
+    `read_record`) checks each schema. It only recognises a training for the running-step
+    check; it never makes a record eligible to migrate."""
+    if not isinstance(record, dict) or type(record.get('schema')) is not int \
+            or record['schema'] not in range(1, 9) or not isinstance(record.get('steps'), dict):
+        return False
+    schema, desk = record['schema'], record.get('flow') == 'desk'
+    if schema == 2:
+        policy = record.get('review_policy')
+        if not isinstance(policy, dict) or policy.get('schema') != 1 \
+                or policy.get('level') not in ('balanced', 'automatic', 'step_by_step'):
+            return False
+    outline = record.get('outline_first')
+    outline_on = schema in (7, 8) and isinstance(outline, dict) and outline.get('schema') == 1
+    if 'material_flow' in record and not (record['material_flow'] == MATERIAL_FLOW
+                                         and desk and outline_on):
+        return False
+    # Imported here: research_session's own imports are heavy, and the shared runner
+    # imports this module while it is itself being imported.
+    from studio_core import research_sections, research_session
+    if schema == 8 and not research_sections.enabled(record):
+        return False
+    if schema in (6, 7, 8) and not (desk and _training_plan(record, outline_on)):
+        return False
+    contract = record.get('research_contract')
+    contracted = isinstance(contract, dict) and contract.get('schema') == 2
+    if schema == 4:
+        # Runner desk records need a contract; a conversation may start without one.
+        contracted = desk and (contracted or record.get('execution') == 'conversation')
+    parallel = schema in (5, 7, 8) or (schema == 6 and 'research_execution' in record)
+    if parallel and not research_session.protocol(record):
+        return False
+    return schema < 3 or contracted
+
+
+def _training_plan(record, outline_on):
+    """Training Studio's saved plan (and outline-first) workflow, as its
+    `training_plan.enabled` reads it."""
+    value = record.get('training_plan')
+    if not isinstance(value, dict) or (record['schema'] in (7, 8) and not outline_on) \
+            or (record['schema'] == 6 and 'outline_first' in record):
+        return False
+    if type(value.get('schema')) is not int or value['schema'] != 1:
+        return False
+    if 'outline_first' in record:
+        from studio_core import research_quality, scope_scan
+        pin = record['outline_first']
+        if not isinstance(pin, dict) or type(pin.get('schema')) is not int or pin['schema'] != 1:
+            return False
+        if 'research_policy' in pin and not research_quality.valid_policy(pin['research_policy']):
+            return False
+        try:
+            if pin.get('outline') is not None:
+                scope_scan.checked(pin['outline'])
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return False
+    revision, approval = value.get('revision', 0), value.get('approved')
+    return (type(revision) is int and revision >= 0 and (approval is None or
+        isinstance(approval, dict) and isinstance(approval.get('signature'), str)
+        and re.fullmatch(r'[0-9a-f]{64}', approval['signature']) is not None
+        and approval.get('by') == 'page' and isinstance(approval.get('at'), str)))
+
 
 def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentation=None, recovering_training=None) -> bool:
     """Check known canonical worker records without following directory links.
@@ -21,10 +118,21 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
     record is unknown and refuses replay. Output caches and Git internals are not
     candidates. Leftover markers remain busy until the existing recovery runs.
     """
-    def unknown(error):
-        raise refusal('The repository could not be checked for running Studio steps. '
-                      'Check its saved worker records and folder permissions, then '
-                      'share again.') from error
+    def where(path):
+        # Only ever a path relative to the repository; anything else is left unnamed.
+        try:
+            return Path(os.path.relpath(path, repo)).as_posix() \
+                if Path(path).is_relative_to(repo) else None
+        except (TypeError, ValueError):
+            return None
+
+    def unknown(error, folder=None, reason=None):
+        if folder is None and isinstance(error, OSError) and error.filename is not None:
+            # A folder or file the walk or a check could not read names itself.
+            path = Path(os.fsdecode(error.filename))
+            folder, reason = path.parent, UNREADABLE.format(name=path.name)
+        named = where(folder) if folder is not None else None
+        raise refusal(unchecked(named, reason if named is not None else None)) from error
 
     def present(path):
         try:
@@ -33,28 +141,31 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         except FileNotFoundError:
             return False
         except OSError as error:
-            unknown(error)
+            unknown(error, path.parent, UNREADABLE.format(name=path.name))
 
     def blog_busy(folder):
         for directory in (folder, folder / 'tools'):
             if not present(directory):
                 continue
             if directory.is_symlink():
-                unknown(ValueError('Linked worker records'))
+                unknown(ValueError('Linked worker records'), folder.parent, LINKED_RECORDS)
             try:
                 for path in directory.iterdir():
                     if path.suffix != '.json' or (directory == folder and path.stem in (
                             'voice-guides', 'desk-step-times')):
                         continue
                     if path.is_symlink() or path.stat().st_size > 1_000_000:
-                        unknown(ValueError('Unsupported worker record'))
-                    value = json.loads(path.read_text(encoding='utf-8'))
+                        unknown(ValueError('Unsupported worker record'), folder.parent, ODD_RECORD)
+                    try:
+                        value = json.loads(path.read_text(encoding='utf-8'))
+                    except ValueError as error:
+                        unknown(error, folder.parent, NO_STATUS)
                     if not isinstance(value, dict) or not isinstance(value.get('status'), str):
-                        unknown(ValueError('Unreadable worker status'))
+                        unknown(ValueError('Unreadable worker status'), folder.parent, NO_STATUS)
                     if value['status'] == 'working':
                         return True
-            except (OSError, ValueError) as error:
-                unknown(error)
+            except OSError as error:
+                unknown(error, folder.parent, UNREADABLE.format(name=directory.name))
         return False
 
     def small_bytes(path, limit=1_000_000):
@@ -105,8 +216,11 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         # or an unknown/partial record, never proves an output/source cache.
         deck = small_record(folder / 'run.json')
         if isinstance(deck, dict) and deck.get('route') in ('scratch', 'document', 'existing'):
-            if not presentation_migration.supported(deck):
-                unknown(ValueError('Unsupported Presentation Studio worker metadata'))
+            # Every record the Presentation Studio engine writes is a known deck; whether
+            # it may migrate is a separate question (presentation_migration.supported).
+            if not presentation_migration.written(deck):
+                unknown(ValueError('Unsupported Presentation Studio worker metadata'),
+                        folder, UNKNOWN_DECK)
             return True
         if named_record(deck, (1, 2, 3)) and known_run(deck, (1, 2, 3)) \
                 and isinstance(deck.get('form'), dict) \
@@ -114,7 +228,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
             return True
         run = small_record(folder / '.training-studio/run.json')
         session = small_record(folder / '.training-studio/session.json')
-        if not known_run(run, (1, 2, 3, 4)) or not isinstance(run.get('agent'), str) \
+        if not training_written(run) or not isinstance(run.get('agent'), str) \
                 or not run['agent'].strip() or not named_record(session, (1,)):
             return False
         shape = {'levels': list, 'sizing': dict, 'stage': str, 'settings': dict,
@@ -137,15 +251,15 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
             draft = small_record(desk / 'draft.json')
             if not migration_supported(value, small_bytes(folder / 'session.json'),
                                        small_bytes(folder / 'derived/blog-run.json'), draft, folder.name):
-                unknown(ValueError('Incomplete Blog Studio migration'))
+                unknown(ValueError('Incomplete Blog Studio migration'), folder, BLOG_MIGRATION)
             for name in dependencies(value, draft):
                 path = folder / name
                 if not present(path) or path.is_symlink() or path.parent.is_symlink() or not path.is_file():
-                    unknown(ValueError('Missing Blog Studio migration dependency'))
+                    unknown(ValueError('Missing Blog Studio migration dependency'), folder, BLOG_DEPENDENCY)
         elif present(desk / 'draft.json'):
             draft = small_record(desk / 'draft.json')
             if isinstance(draft, dict) and draft.get('unfinished_migration'):
-                unknown(ValueError('Missing Blog Studio migration record'))
+                unknown(ValueError('Missing Blog Studio migration record'), folder, BLOG_UNFINISHED)
         return False
 
     def migration_in_cache(cache):
@@ -156,9 +270,9 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         except FileNotFoundError:
             return False
         except OSError as error:
-            unknown(error)
+            unknown(error, cache.parent, UNREADABLE.format(name=cache.name))
         if stat.S_ISLNK(info.st_mode):
-            unknown(ValueError('Linked Studio cache'))
+            unknown(ValueError('Linked Studio cache'), cache.parent, LINKED_CACHE)
         if not stat.S_ISDIR(info.st_mode):
             return False
         # Only Blog Studio's fixed migration records override structural cache
@@ -167,12 +281,12 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         if not present(cache):
             return False
         if cache.is_symlink():
-            unknown(ValueError('Linked Studio cache'))
+            unknown(ValueError('Linked Studio cache'), cache.parent, LINKED_CACHE)
         count = 0
         for folder, directories, _ in os.walk(cache, followlinks=False, onerror=unknown):
             count += 1
             if count > 2000:
-                unknown(ValueError('Migration scope too large'))
+                unknown(ValueError('Migration scope too large'), cache.parent, LARGE_CACHE)
             if blog_migration(Path(folder)):
                 return True
             if training_busy(Path(folder)):
@@ -246,7 +360,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                         stream.read(1)
                     presentation_migration.shared_material(name, small_bytes(path))
             except (ValueError, TypeError, KeyError, OSError) as error:
-                unknown(error)
+                unknown(error, folder, PRESENTATION_MIGRATION)
         return False
 
     def training_busy(folder):
@@ -255,7 +369,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         if isinstance(record, dict):
             drafts = record.get('drafts', {})
             if not isinstance(drafts, dict) or not training_migration.update_chain_supported(drafts.get('update_chain', {})):
-                unknown(ValueError('Unknown Training Studio update chain'))
+                unknown(ValueError('Unknown Training Studio update chain'), folder, TRAINING_CHAIN)
             if drafts.get('update_chain', {}).get('status') == 'working':
                 return True
         if pending == recovering_presentation and present(folder / 'run.json'):
@@ -280,7 +394,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                 if record.get('drafts', {}).get('update_chain', {}).get('status') == 'working':
                     return True
             except (ValueError, TypeError, KeyError, OSError) as error:
-                unknown(error)
+                unknown(error, folder, TRAINING_MIGRATION)
         return False
 
     for folder, directories, _ in os.walk(repo, followlinks=False, onerror=unknown):

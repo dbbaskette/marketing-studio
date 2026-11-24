@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 import marketing_studio  # noqa: F401
+from studio_core import sync_guard
 from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 
@@ -380,3 +381,118 @@ class SyncGuardTests(unittest.TestCase):
                     worker_in_progress(self.repo)
             else:
                 self.assertEqual(worker_in_progress(self.repo), chain['status'] == 'working')
+
+    # --- GitHub issue #541: a refusal names its folder; recognition is not migration -------
+
+    def test_the_refusal_names_the_folder_relative_to_the_repository_and_why(self):
+        self.assertEqual(sync_guard.unchecked(), sync_guard.UNCHECKED + ' ' + sync_guard.UNCHECKED_NEXT)
+        record = json.loads((self.presentation_item() / 'run.json').read_text())
+        deck = self.repo / 'decks/odd deck'
+        deck.mkdir(parents=True)
+        for schema in (0, 7, '6'):
+            with self.subTest(schema=schema):
+                (deck / 'run.json').write_text(json.dumps({**record, 'id': deck.name, 'schema': schema}))
+                with self.assertRaises(ValueError) as caught:
+                    worker_in_progress(self.repo)
+                said = str(caught.exception)
+                self.assertEqual(said, sync_guard.unchecked('decks/odd deck', sync_guard.UNKNOWN_DECK))
+                self.assertTrue(said.startswith(sync_guard.UNCHECKED))
+                self.assertIn('In the folder decks/odd deck, its Presentation Studio run record', said)
+                self.assertNotIn(str(self.repo), said)
+        # A worker record the check cannot read names its item's folder too.
+        (deck / 'run.json').unlink()
+        status = self.repo / 'blogs/.blog-runs/one.json'
+        status.parent.mkdir(parents=True)
+        status.write_text('{"status": 1}')
+        with self.assertRaises(ValueError) as caught:
+            worker_in_progress(self.repo)
+        self.assertEqual(str(caught.exception), sync_guard.unchecked('blogs', sync_guard.NO_STATUS))
+
+    def test_an_unreadable_folder_is_named_and_the_top_folder_is_said_in_words(self):
+        def unreadable(top, *args, **kwargs):
+            kwargs['onerror'](PermissionError(13, 'Permission denied', str(Path(top) / 'private')))
+            return iter(())
+        with mock.patch('studio_core.sync_guard.os.walk', side_effect=unreadable):
+            with self.assertRaises(ValueError) as caught:
+                worker_in_progress(self.repo)
+        said = str(caught.exception)
+        self.assertEqual(said, sync_guard.unchecked('.', sync_guard.UNREADABLE.format(name='private')))
+        self.assertIn("In the repository's top folder, private cannot be read.", said)
+        self.assertNotIn(str(self.repo), said)
+
+    def test_a_shaped_record_is_written_but_only_schemas_1_to_3_may_migrate(self):
+        from studio_core import presentation_migration as migration, research_session
+        base = json.loads((self.presentation_item() / 'run.json').read_text())
+        contract = {'schema': 2, 'version': '1.0.0', 'digest': '1' * 64}
+        execution = {'schema': 1, 'protocol': research_session.PROTOCOL, 'workers': 3,
+                     'capability': {'protocol': research_session.PROTOCOL}}
+        story = {'schema': 1, 'revision': 0, 'outline': None,
+                 'limits': {'seconds': 270, 'input_chars': 48000}}
+        sections = {'schema': 1, 'protocol': 'studio-section-combining-v1', 'seconds': 450,
+                    'more_time': {}, 'reuse': None}
+        four = {**base, 'schema': 4, 'research_contract': contract, 'research_execution': execution}
+        five = {**four, 'schema': 5, 'flow': 'desk', 'slide_story': story}
+        six = {**five, 'schema': 6, 'section_synthesis': sections}
+        for record in (base, {**base, 'schema': 3, 'research_contract': contract}, four, five, six):
+            with self.subTest(schema=record['schema']):
+                self.assertTrue(migration.written(record))
+                self.assertEqual(migration.supported(record), record['schema'] <= 3)
+        for name, record in (('four without contract', {**four, 'research_contract': None}),
+                             ('four without protocol', {**four, 'research_execution': {}}),
+                             ('five off the desk', {**five, 'flow': None}),
+                             ('five without story', {**five, 'slide_story': None}),
+                             ('five with a bad outline', {**five, 'slide_story': {**story, 'outline': {}}}),
+                             ('six without section combining', {**six, 'section_synthesis': {}}),
+                             ('seven', {**six, 'schema': 7}),
+                             ('two without review level', {**base, 'schema': 2})):
+            with self.subTest(name):
+                self.assertFalse(migration.written(record))
+                self.assertFalse(migration.supported(record))
+
+    def test_an_unrecognised_training_folder_is_walked_and_a_recognised_one_skipped(self):
+        from studio_core import research_session
+        item = self.repo / 'training'
+        (item / '.training-studio').mkdir(parents=True)
+        (item / '.training-studio/session.json').write_text(json.dumps({
+            'schema': 1, 'id': 'training', 'title': 'Synthetic training',
+            'levels': [], 'stage': 'intake', 'sizing': {}, 'settings': {
+                'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+            'unavailable': {}, 'pins': {}, 'artifacts': {}, 'exports': {},
+            'decisions': [], 'events': []}))
+        execution = {'schema': 1, 'protocol': research_session.PROTOCOL, 'workers': 3,
+                     'capability': {'protocol': research_session.PROTOCOL}}
+        five = {'schema': 5, 'agent': 'test', 'steps': {}, 'flow': 'desk',
+                'research_contract': {'schema': 2}, 'research_execution': execution}
+        conversation = {'schema': 4, 'agent': 'test', 'steps': {}, 'flow': 'desk',
+                        'execution': 'conversation'}
+        odd = item / 'work/kept/.blog-runs/odd.json'
+        odd.parent.mkdir(parents=True)
+        odd.write_text('{"status":"working"}')
+        for name, record, known in (
+                ('five', five, True), ('five without protocol', {**five, 'research_execution': None}, False),
+                ('nine', {**five, 'schema': 9}, False), ('conversation four', conversation, True),
+                ('runner four without contract', {**conversation, 'execution': 'runner'}, False)):
+            with self.subTest(name):
+                (item / '.training-studio/run.json').write_text(json.dumps(record))
+                self.assertEqual(sync_guard.training_written(record), known)
+                # Skipped when known; walked, where the working-looking record counts, when not.
+                self.assertEqual(worker_in_progress(self.repo), not known)
+
+    def test_a_blog_run_saved_with_a_research_execution_record_is_never_refused(self):
+        # Blog Studio's run record is read only through a desk migration's own markers, which
+        # a saved schema 4 run never gets, so the check has no refusal path for it.
+        from studio_core import research_session
+        blog = self.repo / 'blogs/synthetic-post'
+        (blog / 'derived').mkdir(parents=True)
+        (blog / 'session.json').write_text(json.dumps({'schema': 1, 'id': blog.name, 'title': 'Synthetic post'}))
+        (blog / 'derived/blog-run.json').write_text(json.dumps({
+            'schema': 4, 'approval': 'page', 'engine': 'claude', 'pipeline': ['outline', 'draft'],
+            'stages': {}, 'review_policy': {'schema': 1, 'level': 'step_by_step'},
+            'research_contract': {'schema': 2, 'version': '1.0.0', 'digest': '1' * 64},
+            'research_execution': {'schema': 1, 'protocol': research_session.PROTOCOL, 'workers': 3,
+                                   'capability': {'protocol': research_session.PROTOCOL, 'digest': '0' * 64}}}))
+        status = self.repo / 'blogs/.blog-runs/synthetic-post.json'
+        status.parent.mkdir()
+        for value, busy in (('paused', False), ('working', True)):
+            status.write_text(json.dumps({'enabled': False, 'status': value}))
+            self.assertEqual(worker_in_progress(self.repo), busy)
