@@ -72,3 +72,97 @@ class ResearchJobsTests(Isolated):
         self.assertEqual(result['state'],'complete',result)
         self.assertEqual(self.calls,['investigate','synthesize','review'])
         self.assertEqual(self.store.read(self.p['id'])['revision'],self.p['revision'])
+
+    def run_job(self, during=None):
+        """Start research, call `during(project)` while its investigation runs, and wait."""
+        import threading
+        reached, release = threading.Event(), threading.Event()
+        author = self.jobs.author
+        original = type(author).research
+        def research(this, phase, payload, guidance, **options):
+            if phase == 'investigate' and not reached.is_set():
+                reached.set()
+                release.wait(10)
+            return original(this, phase, payload, guidance, **options)
+        ref = {'id': self.draft['id'], 'expected': self.draft['revision']}
+        with patch.object(type(author), 'research', research), \
+                patch.object(research_jobs.settings, 'snapshot', return_value={'assistant': {'agent': 'codex'}}):
+            self.jobs.start(self.p['id'], self.store.read(self.p['id'])['revision'], ref)
+            self.assertTrue(reached.wait(10))
+            if during:
+                during(self.store.read(self.p['id']))
+            release.set()
+            deadline = time.monotonic() + 25
+            while self.jobs.active and time.monotonic() < deadline: time.sleep(.025)
+        return self.jobs.read(self.p['id'])
+
+    def test_a_rename_does_not_stop_running_research_and_verified_research_is_kept(self):
+        renamed = []
+        def rename(project):
+            renamed.append(self.store.edit_brief(project['id'], {**project['brief'], 'title': 'Renamed research'},
+                                                 expected_revision=project['revision']))
+        state = self.run_job(rename)
+        self.assertEqual(renamed[0]['revision'], 1)
+        self.assertEqual(state['state'], 'complete', state)
+        # Kept in the (disposable) Document Library as soon as it was verified.
+        self.assertEqual(state['kept']['state'], 'kept', state)
+        from studio_core.document_library.store import opened
+        kept = opened().describe(state['kept']['document'])
+        self.assertEqual(kept['kind'], 'research')
+        # Use research adds the findings as a source in one step.
+        used = self.jobs.control(self.p['id'], 'use')
+        self.assertEqual(used['project']['sources'][-1]['kind'], 'research')
+
+    def test_an_edit_to_what_research_reads_still_stops_it(self):
+        def audience(project):
+            self.store.edit_brief(project['id'], {**project['brief'], 'audience': 'Another audience'},
+                                  expected_revision=project['revision'])
+        state = self.run_job(audience)
+        self.assertEqual(state['state'], 'failed', state)
+        self.assertNotIn('kept', state)
+
+    def test_research_from_the_library_made_for_something_else_is_imported_and_says_so(self):
+        from runner import research, sources
+        state = self.run_job()
+        self.assertEqual(state['kept']['state'], 'kept', state)
+        other = self.store.create('Another infographic')
+        other = self.store.edit_brief(other['id'], {**other['brief'], 'audience': 'Finance leads',
+                                                    'purpose': 'Explain a budget'}, expected_revision=0)
+        task = research.task(other)
+        # The character-for-character check still stands for a research case folder.
+        case = research_jobs.research_session.case_for(self.jobs.folder(self.p['id']) / state['request'])
+        with self.assertRaisesRegex(Exception, 'differs from this infographic task'):
+            research.prepare(case, expected_task=task, runtime=RUNTIME)
+        preview = research.from_library(state['kept']['document'], state['kept']['revision'], expected_task=task)
+        self.assertTrue(preview['different'])
+        self.assertEqual(preview['made_for']['audience'], 'General readers; explain unfamiliar terminology.')
+        self.assertEqual(preview['provenance']['task'], preview['made_for'], 'The bundle’s own task is recorded.')
+        self.assertEqual(preview['provenance']['library'], {'id': state['kept']['document'],
+                                                           'revision': state['kept']['revision']})
+        adopted = intake.adopt(self.store, other['id'], preview['id'], expected_revision=other['revision'])
+        source = adopted['sources'][-1]
+        self.assertEqual(source['kind'], 'research')
+        self.assertTrue(sources.read(self.store, adopted, source).strip())
+
+    def test_research_is_retried_after_a_rename_against_the_current_revision(self):
+        self.assertEqual(self.run_job()['state'], 'complete')
+        project = self.store.read(self.p['id'])
+        self.store.edit_brief(project['id'], {**project['brief'], 'title': 'Renamed before retry'},
+                              expected_revision=project['revision'])
+        with patch.object(research_jobs.settings, 'snapshot', return_value={'assistant': {'agent': 'codex'}}):
+            self.jobs.control(self.p['id'], 'retry')
+            deadline = time.monotonic() + 25
+            while self.jobs.active and time.monotonic() < deadline: time.sleep(.025)
+        self.assertEqual(self.jobs.read(self.p['id'])['state'], 'complete')
+
+    def test_use_research_asks_before_acknowledging_its_gaps(self):
+        from runner import research
+        self.assertEqual(self.run_job()['state'], 'complete')
+        prepare = research.prepare
+        with patch.object(research, 'prepare', side_effect=lambda *a, **k: {**prepare(*a, **k), 'warnings': ['Synthetic gap.']}):
+            asked = self.jobs.control(self.p['id'], 'use')
+            self.assertTrue(asked['needs_acknowledgement'])
+            self.assertEqual(asked['warnings'], ['Synthetic gap.'])
+            self.assertEqual(self.store.read(self.p['id'])['sources'], [], 'Nothing is added until the person acknowledges.')
+            used = self.jobs.control(self.p['id'], 'use', acknowledge_warnings=True)
+        self.assertEqual(used['project']['sources'][-1]['kind'], 'research')

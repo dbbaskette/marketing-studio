@@ -23,9 +23,8 @@ TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name 
                  (('marketing', 'Marketing'), ('blog', 'Blog'),
                   ('presentation', 'Presentation'), ('training', 'Training'), ('infographic', 'Infographic'))}
 UPSTREAM_TIMEOUT = 100
-# Native infographic actions can include two renders, a seven-and-a-half-minute author
-# call and a ten-minute image call. Keep the bridge alive across those bounded stages.
-INFOGRAPHIC_ACTION_TIMEOUT = 1350
+# Infographic Studio's long actions (finding the story, building the page, artwork) answer at
+# once and run in the background, so its actions take the ordinary bridge time limit.
 # Google previews may perform account/token lookup and several fixed API reads.
 INFOGRAPHIC_REMOTE_TIMEOUT = 240
 # Blog Studio's Google sends make several Google calls of up to a minute each, and a library
@@ -35,8 +34,8 @@ BLOG_REMOTE = frozenset(('/api/desk-google-send', '/api/editor-google-send', '/a
                          '/api/google-start', '/api/library-add', '/api/library-add-preview',
                          '/api/desk-google-plan', '/api/desk-google-compare',
                          '/api/desk-google-take'))
-# The bridge says, in a header of its own, that a request reached Marketing Studio over the
-# network. A network caller cannot send it: only the headers named in forward() pass.
+# The bridge says, in a header of its own, that a request reached Marketing Studio or a studio
+# over the network. A network caller cannot send it: only the headers named in forward() pass.
 VIA_HEADER = 'X-Marketing-Studio-Via'
 # The most bytes a POST may carry through the bridge, as each studio's own server allows it
 # (its `body_limit`, or Blog Studio's MAX_BODY). tests/test_network.py keeps them in step.
@@ -91,11 +90,8 @@ def upstream_timeout(identifier, method, path):
         return INFOGRAPHIC_REMOTE_TIMEOUT
     if identifier == 'blog' and method == 'POST' and path in BLOG_REMOTE:
         return BLOG_REMOTE_TIMEOUT
-    if identifier == 'infographic' and method == 'POST':
-        if path == '/api/action':
-            return INFOGRAPHIC_ACTION_TIMEOUT
-        if path == '/api/remote-preview':
-            return INFOGRAPHIC_REMOTE_TIMEOUT
+    if identifier == 'infographic' and method == 'POST' and path == '/api/remote-preview':
+        return INFOGRAPHIC_REMOTE_TIMEOUT
     return UPSTREAM_TIMEOUT
 
 
@@ -240,8 +236,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 headers[name] = values[0]
         if origins:
             headers['Origin'] = 'http://' + own.target
-        if own.identifier == 'marketing':
-            headers[VIA_HEADER] = 'network'
+        # Every studio is told the request came over the network, so a studio can refuse what
+        # only a person at the computer may do (reading a folder path there). A caller cannot
+        # forge or strip it: the headers above are the only ones passed on.
+        headers[VIA_HEADER] = 'network'
         connection = http.client.HTTPConnection(
             own.target, timeout=upstream_timeout(own.identifier, self.command, url.path))
         begun = False

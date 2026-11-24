@@ -13,9 +13,12 @@ from marketing_studio.network import BridgeServer
 
 class InfographicNetworkTests(unittest.TestCase):
     def test_long_waits_are_limited_to_the_native_infographic_operations(self):
-        self.assertEqual(network.upstream_timeout('infographic', 'POST', '/api/action'), 1350)
+        # Infographic Studio's long actions run in the background and answer at once, so its
+        # actions take the ordinary limit; only a Google preview waits longer.
+        self.assertFalse(hasattr(network, 'INFOGRAPHIC_ACTION_TIMEOUT'))
         self.assertEqual(network.upstream_timeout('infographic', 'POST', '/api/remote-preview'), 240)
         for studio, method, path in (
+                ('infographic', 'POST', '/api/action'), ('infographic', 'POST', '/api/action-control'),
                 ('marketing', 'POST', '/api/action'), ('blog', 'POST', '/api/action'),
                 ('infographic', 'GET', '/api/action'), ('infographic', 'GET', '/api/desk'),
                 ('infographic', 'POST', '/api/preferences'),
@@ -60,12 +63,11 @@ class InfographicNetworkTests(unittest.TestCase):
                 return response.status, json.loads(response.read())
 
         try:
-            # Ordinary requests expire first; both native long operations must
-            # still succeed after that threshold, through the real HTTP bridge.
+            # Ordinary requests expire first; the native Google preview must still
+            # succeed after that threshold, through the real HTTP bridge.
             with mock.patch.object(network, 'UPSTREAM_TIMEOUT', .05), \
-                    mock.patch.object(network, 'INFOGRAPHIC_ACTION_TIMEOUT', 2), \
                     mock.patch.object(network, 'INFOGRAPHIC_REMOTE_TIMEOUT', 2):
-                for path in ('/api/action', '/api/remote-preview'):
+                for path in ('/api/remote-preview',):
                     entered.clear(); release.clear(); finished.clear()
                     result = []
                     caller = threading.Thread(target=lambda: result.append(request(path)))
@@ -86,9 +88,34 @@ class InfographicNetworkTests(unittest.TestCase):
                 self.assertFalse(finished.is_set())
                 release.set()
                 self.assertTrue(finished.wait(2))
-                self.assertEqual(received, ['/api/action', '/api/remote-preview', '/api/preferences'])
+                self.assertEqual(received, ['/api/remote-preview', '/api/preferences'])
         finally:
             release.set()
+            bridge.shutdown(); bridge.server_close(); native.shutdown(); native.server_close()
+
+    def test_the_page_local_mark_never_crosses_the_bridge(self):
+        # Infographic Studio reads a folder path only for a request carrying its own local
+        # mark, which the bridge never passes on: a phone cannot claim to be this computer.
+        seen = []
+        class Echo(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                seen.append(self.headers.get('X-Infographic-Studio-Local'))
+                self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'{}')
+            def log_message(self, *args): pass
+        native = ThreadingHTTPServer(('127.0.0.1', 0), Echo)
+        threading.Thread(target=native.serve_forever, daemon=True).start()
+        bridge = BridgeServer(('127.0.0.1', 0), f'127.0.0.1:{native.server_port}', 'synthetic-key',
+                              'X-Infographic-Studio-Token', 'infographic')
+        threading.Thread(target=bridge.serve_forever, daemon=True).start()
+        try:
+            with contextlib.closing(http.client.HTTPConnection('127.0.0.1', bridge.server_port, timeout=5)) as client:
+                client.request('POST', '/api/source-folder', body='{}', headers={
+                    'Origin': 'http://' + bridge.authority, 'Content-Type': 'application/json',
+                    'X-Infographic-Studio-Token': 'synthetic-key', 'X-Infographic-Studio-Local': '1'})
+                self.assertEqual(client.getresponse().status, 200)
+            self.assertEqual(seen, [None])
+        finally:
             bridge.shutdown(); bridge.server_close(); native.shutdown(); native.server_close()
 
     def test_document_routes_accept_bounded_uploads_without_widening_other_routes(self):

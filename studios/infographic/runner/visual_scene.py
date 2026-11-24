@@ -35,6 +35,10 @@ def plan(project, *, body_size=None):
     )
     size = PRESETS[project["brief"]["preset"]]
     width, height, digital = size["width"], size["height"], size["unit"] == "px"
+    # A landscape page is laid out across (blocks side by side), with margins from its short
+    # side and type from its height, never below the brand's floors.
+    wide = width > height
+    scale = min(1, height / 1080) if digital and wide else 1
     body, foot = brand.type_floors(project["brand"], digital)
     if body_size is None:
         count = len(
@@ -49,11 +53,11 @@ def plan(project, *, body_size=None):
             ).split()
         )
         preferred = (
-            (40 if count < 80 else 32) if digital else (16 if count < 80 else 14)
+            round((40 if count < 80 else 32) * scale) if digital else (16 if count < 80 else 14)
         )
         failure = None
         for chosen in dict.fromkeys(
-            (max(body, preferred), max(body, 32 if digital else 14), body)
+            (max(body, preferred), max(body, round(32 * scale) if digital else 14), body)
         ):
             try:
                 return plan(project, body_size=chosen)
@@ -68,7 +72,7 @@ def plan(project, *, body_size=None):
         colors["canvasPrimary"],
     )
     surface = tint(accent, canvas)
-    margin, gap = width * 0.05, body * 0.85
+    margin, gap = (height if wide else width) * 0.05, body * 0.85
     usable = width - margin * 2
     elements, regions, reading = [], [], []
     facts = {f["id"]: f for f in project["facts"]}
@@ -287,8 +291,14 @@ def plan(project, *, body_size=None):
 
     candidates, over = [], None
     sequential = all(b["kind"] in ("process", "timeline") for b in blocks)
-    for cols in [2, 1] if len(blocks) >= 3 and not sequential else [1, 2]:
-        if cols == 2 and len(blocks) < 2:
+    if wide:
+        # Across a landscape page: every block in one row (up to four), else two rows.
+        most = len(blocks) if len(blocks) <= 4 else math.ceil(len(blocks) / 2)
+        order = list(range(most, 0, -1))
+    else:
+        order = [2, 1] if len(blocks) >= 3 and not sequential else [1, 2]
+    for cols in order:
+        if cols >= 2 and len(blocks) < 2:
             continue
         bw = (usable - gap * (cols - 1)) / cols
         try:

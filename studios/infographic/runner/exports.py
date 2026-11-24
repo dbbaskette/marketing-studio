@@ -68,6 +68,9 @@ def build(store, ident, *, expected_revision, executable, draft=False, renderer=
         project = store.read(ident)
         store.expect(project, expected_revision)
         validate_project(project)
+        if not draft:
+            from .contracts import require_current
+            require_current(project, 'Preparing the approved files')
         require(draft or project['approval'] is not None, 'Approve this exact checked page before creating final exports.')
         require(draft or visual_review.checked(store, project),
                 'The visual review changed. Run checks and approve the latest review before final export.')
@@ -137,6 +140,25 @@ def build(store, ident, *, expected_revision, executable, draft=False, renderer=
             store.write_blob(ident, pending + '/manifest.json', canonical(manifest))
             os.rename(store._project(ident) / pending, folder)
         return manifest
+
+
+def measure(store, ident, *, expected_revision, executable, renderer=None):
+    """Check the saved page's fonts, images and fit before image-provider usage is spent,
+    drawing and keeping no files (one renderer launch). An injected renderer (a test double)
+    draws into a temporary folder and its measurements are read instead."""
+    project = store.read(ident)
+    store.expect(project, expected_revision)
+    composed = svg.compose(store, project, draft=True)
+    fonts = [project['brand']['font']]
+    if renderer is None or renderer is render.render:
+        return render.measure(composed, preset=project['brief']['preset'], fonts=fonts, executable=executable)
+    with tempfile.TemporaryDirectory(prefix='infographic-measure-') as temp:
+        output = Path(temp) / 'page'
+        renderer(composed, preset=project['brief']['preset'], fonts=fonts, executable=executable, destination=output)
+        metrics = json.loads((output / 'measurements.json').read_bytes()[:100_000])
+    require(metrics.get('complete') is True and not any(metrics.get(k) for k in
+            ('missing_fonts', 'invalid_assets', 'overflow')), 'Resolve actual renderer findings before delivery.')
+    return metrics
 
 
 def read(store, ident, export_id, kind):

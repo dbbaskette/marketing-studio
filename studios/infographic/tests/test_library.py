@@ -131,8 +131,11 @@ class ContextTests(LibraryCase):
         # The upload's original bytes are kept beside its readable text.
         raw = (self.store._project(self.ident) / added[0]['file']).read_bytes()
         self.assertEqual(raw, b'Synthetic capacity: 4 instances, one restarts at a time.')
-        # A source change follows the existing input rules: what was built on the old sources goes.
-        self.assertEqual((project['facts'], project['scene'], project['approval']), ([], None, None))
+        # A source change keeps what was built on the old sources and marks it out of date.
+        self.assertEqual((project['facts'], project['scene'], project['approval']),
+                         (before['facts'], before['scene'], None))
+        self.assertEqual(set(project['stale']), {'facts', 'stories', 'page'})
+        self.assertTrue(all(v['because'] == 'sources' for v in project['stale'].values()))
         marked = self.engine.inspect(self.ident)['library']['sources']
         self.assertEqual(marked[added[1]['id']], {'id': self.blog['document'], 'revision': 1,
                                                   'head': 1, 'update': False, 'state': 'current',

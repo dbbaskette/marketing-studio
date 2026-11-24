@@ -82,6 +82,7 @@ FIELDS = {
     'compare': {'before', 'after'}, 'repair': {'request_id'}, 'revise-story': {'story_id', 'block_id', 'instruction'},
     'library': {'picks', 'acknowledge_warnings'}, 'library-update': {'document', 'revision', 'acknowledge_warnings'},
     'library-keep': {'export_id'},
+    'keep-stale': {'part'}, 'refresh-page': set(),
 }
 
 
@@ -90,13 +91,19 @@ def _then(sent, key):
     return sent.get(key, False)
 
 
-def action(found, sent):
+def shape(sent):
+    """An action's verb, infographic ID and expected revision, once its fields are checked."""
     require(isinstance(sent, dict), 'Supply one Infographic Studio action.')
     verb, ident, revision = sent.get('action'), sent.get('id'), sent.get('expected_revision')
     require(isinstance(verb, str) and verb in FIELDS
             and set(sent) <= {'action', 'id', 'expected_revision'} | FIELDS[verb],
             'Choose a supported action and only its listed fields.')
     require(isinstance(ident, str) and type(revision) is int, 'Every action needs an infographic ID and expected revision.')
+    return verb, ident, revision
+
+
+def action(found, sent):
+    verb, ident, revision = shape(sent)
     store = found.store
     # Validate the shared revision before costly or filesystem work.
     if verb == 'image-start':
@@ -154,6 +161,11 @@ def action(found, sent):
     if verb == 'revise-art': return found.revise_art(ident, sent.get('change'), sent.get('preserve'),
                             expected_revision=revision, request_id=sent.get('request_id'))
     if verb == 'compare': return history.compare(store, ident, sent.get('before'), sent.get('after'))
+    if verb in ('keep-stale', 'refresh-page'):
+        # Out-of-date work after a brief or source change: keep it as it is, or lay the page out again.
+        from . import stale
+        if verb == 'keep-stale': return stale.keep(store, ident, sent.get('part'), expected_revision=revision)
+        return stale.refresh_page(found, ident, expected_revision=revision)
     if verb == 'build': return found.build(ident, expected_revision=revision, request_id=sent.get('request_id'))
     if verb == 'image-brief': return found.image_direction(ident, sent.get('data'), edit=sent.get('edit'), expected_revision=revision)
     if verb == 'image-start':

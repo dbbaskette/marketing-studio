@@ -30,6 +30,8 @@ scene and export issues.
 | A4 portrait | 2480 × 3508 px, 300 dpi rounded | 210 × 297 mm |
 | US Letter portrait | 2550 × 3300 px, 300 dpi | 612 × 792 pt |
 | Digital portrait | 1080 × 1350 px | 810 × 1012.5 pt (96 dpi CSS interpretation) |
+| Widescreen 16:9 (landscape) | 1920 × 1080 px | 1440 × 810 pt (96 dpi CSS interpretation) |
+| Social landscape | 1200 × 628 px | 900 × 471 pt (96 dpi CSS interpretation) |
 
 Synthetic comparison, process, and conceptual pages exercise actual text, shapes,
 connectors, and an embedded PNG marker. Tests inspect raster headers, the generated

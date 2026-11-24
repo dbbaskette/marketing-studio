@@ -18,6 +18,9 @@ from ..validation import identifier, image_size, require, text
 MAX_RESPONSE = 64_000_000
 
 
+ASPECTS = ('2:3', '3:4', '4:5', '1:1', '5:4', '4:3', '3:2', '16:9', '21:9')
+
+
 def https(model, credential, payload, seconds):
     deadline = time.monotonic() + seconds
     connection = http.client.HTTPSConnection('generativelanguage.googleapis.com', timeout=seconds,
@@ -90,7 +93,8 @@ class Gemini:
             parts.append({'type': 'image', 'mime_type': reference['mime'], 'data': base64.b64encode(raw).decode()})
         canvas = brief.get('canvas') or {'width': 3, 'height': 4}
         ratio = canvas['width'] / canvas['height']
-        aspect = min(('2:3', '3:4', '4:5'), key=lambda v: abs(int(v[0]) / int(v[2]) - ratio))
+        # The closest ratio Gemini draws, portrait or landscape (widescreen 16:9, social ~1.91:1).
+        aspect = min(ASPECTS, key=lambda v: abs(int(v.split(':')[0]) / int(v.split(':')[1]) - ratio))
         payload = {'model': self.model, 'input': parts, 'store': False,
                    'response_format': {'type': 'image', 'mime_type': 'image/png', 'image_size': '2K', 'aspect_ratio': aspect}}
         try:

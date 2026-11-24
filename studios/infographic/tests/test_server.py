@@ -112,12 +112,34 @@ class NativeServerTests(Isolated):
         self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
 
     def test_status_and_static_page_are_honest_and_contain_no_keys(self):
-        status, headers, raw = self.request('GET', '/api/status')
+        from unittest import mock
+        import subprocess
+        from runner import computer, settings
+        # What provider_capabilities finds, from this computer alone: no provider is contacted
+        # and nothing is started (any child process fails this test).
+        refused = mock.patch.object(subprocess, 'Popen', side_effect=AssertionError('started a process'))
+        inspect, saved = computer.inspect, settings.snapshot()
+        # Gemini chosen, with no key or model saved in the disposable settings.
+        gemini = {**saved, 'assistant': {**saved['assistant'], 'agent': 'claude'}, 'image_provider': 'gemini',
+                  'image_model': None, 'native': {**saved['native'], 'gemini_model': None}}
+        with refused, mock.patch.object(computer, 'inspect', lambda: inspect(chosen=gemini, command=lambda name: '/synthetic/claude')):
+            status, headers, raw = self.request('GET', '/api/status')
         self.assertEqual(status, 200)
         value = json.loads(raw)
         self.assertFalse(value['generation_available'])
-        self.assertEqual(value['providers'], 'not-checked')
+        self.assertEqual(value['providers'], 'unavailable')
+        self.assertEqual(value['provider_problems'], ['gemini-key-required', 'gemini-model-required'])
         self.assertNotIn(self.desk.token.encode(), raw)
+        chosen = {**saved, 'assistant': {**saved['assistant'], 'agent': 'codex'}, 'image_provider': 'codex'}
+        with refused, mock.patch.object(computer, 'inspect', lambda: inspect(chosen=chosen, command=lambda name: None)):
+            value = json.loads(self.request('GET', '/api/status')[2])
+        self.assertEqual((value['providers'], value['provider_problems']), ('unavailable', ['assistant-missing']))
+        with refused, mock.patch.object(computer, 'inspect', lambda: inspect(chosen=chosen, command=lambda name: '/synthetic/codex')):
+            value = json.loads(self.request('GET', '/api/status')[2])
+        # Installed, never live-checked: generation may be tried, and the status says what is unknown.
+        self.assertEqual((value['providers'], value['generation_available']), ('unverified', True))
+        self.assertIn('generation-and-editing-not-live-verified', value['provider_unknown'])
+        self.assertEqual(value['image_provider'], 'Codex built-in image generation')
         status, _, raw = self.request('GET', '/', token=False)
         self.assertEqual(status, 200)
         self.assertIn(b'Infographic Studio', raw)

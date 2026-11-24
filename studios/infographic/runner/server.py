@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from copy import copy
+import threading
 from pathlib import Path
 
 from studio_core import server as core
 from studio_core.document_library import context as library_context
 
 from .contracts import PRODUCT, Invalid
-from . import activity, api, author, computer, exports, history, settings, sources
+from . import action_jobs, activity, api, author, computer, exports, history, settings, sources
 from .engine import Engine
 from .validation import identifier, require
 
@@ -22,10 +23,11 @@ shared = core.for_product(
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
      '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
-     '/activity.js': ('activity.js', 'text/javascript; charset=utf-8')},
+     '/activity.js': ('activity.js', 'text/javascript; charset=utf-8'),
+     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/intake-draft', '/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/intake-draft', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
+                         '/api/desk', '/api/activity', '/api/activity-log', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status', '/api/desk-show'),
+    writes=('/api/intake-draft', '/api/action-control', '/api/desk-context', '/api/desk-submit', '/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/source-folder', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/research-library-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -39,6 +41,32 @@ class Page(shared.Page):
                                           checkpoint=store.keep_activity if store is not None else None)
         from .research_jobs import Jobs
         self.research = Jobs(store) if store is not None else None
+        # Long actions run as background jobs, one at a time per infographic.
+        self.actions = action_jobs.Actions(store, self.activity) if store is not None else None
+
+    # Whether a request came from this computer. Marketing Studio's network bridge marks every
+    # request it carries `X-Marketing-Studio-Via: network`, which alone makes a caller remote; a
+    # caller cannot forge or strip it. As a second, stricter condition this page's own LOCAL
+    # header is required too (the bridge never passes it on). A folder path on this computer is
+    # read only for a local caller.
+    LOCAL = 'X-Infographic-Studio-Local'
+    VIA = 'X-Marketing-Studio-Via'
+
+    def answer(self, target, headers, method='GET', body=None):
+        caller = self.__dict__.setdefault('caller', threading.local())
+        caller.remote = headers.get(self.LOCAL) != '1' or headers.get(self.VIA) == 'network'
+        try:
+            return super().answer(target, headers, method, body)
+        finally:
+            caller.remote = True
+
+    def remote(self):
+        caller = self.__dict__.get('caller')
+        return getattr(caller, 'remote', True) if caller is not None else True
+
+    def doing(self, ident):
+        """What the activity panel shows for one infographic now."""
+        return self.actions.current(ident) if self.actions is not None else self.activity.snapshot(ident)
 
     def body_limit(self, target, headers):
         if target.partition('?')[0] == '/api/intake-draft':
@@ -68,6 +96,9 @@ class Page(shared.Page):
         if path == '/api/team':
             from . import team
             return shared.as_json(200,{**team.status(),'workspace_owner':self.store.owner})
+        if path == '/api/desk-show':
+            from . import desk_chat
+            return shared.as_json(200, desk_chat.show(self.store, one('id')))
         if path == '/api/research-status':
             return shared.as_json(200, self.research.read(one('id')))
         if path == '/api/research-task':
@@ -76,12 +107,12 @@ class Page(shared.Page):
         if path == '/api/desk':
             ident = one('id')
             return shared.as_json(HTTPStatus.OK, {**self.engine.inspect(ident),
-                                                  'activity': self.activity.snapshot(ident)})
+                                                  'activity': self.doing(ident)})
         if path == '/api/activity':
             ident = one('id')
             project = self.store.read(ident)
             from .image_jobs import Jobs
-            return shared.as_json(200, {'activity': self.activity.snapshot(ident),
+            return shared.as_json(200, {'activity': self.doing(ident),
                                        'revision': project['revision'],
                                        'recovery': Jobs(self.store, {}).recovery(ident)})
         if path == '/api/activity-log':
@@ -112,13 +143,30 @@ class Page(shared.Page):
             mime, raw = exports.read(self.store, one('id'), one('export'), one('format'))
             return HTTPStatus.OK, mime, raw
         if path == '/api/status':
+            # What provider_capabilities finds on this computer (computer.inspect): whether the
+            # chosen assistant is installed, a Gemini key saved, a model chosen. It contacts no
+            # provider and starts nothing, so it never claims account access or a live check.
+            try:
+                found = computer.inspect()
+                providers = {'providers': found['state'], 'provider_problems': found['problems'],
+                             'provider_unknown': found['unknown'], 'image_provider': found['image_provider'],
+                             'generation_available': found['state'] != 'unavailable',
+                             'renderer_available': found['renderer_available']}
+            except Exception:   # unreadable settings: say it was not checked, as before
+                providers = {'providers': 'not-checked', 'generation_available': False}
+            from .contracts import sizes
             return shared.as_json(HTTPStatus.OK, {'product': PRODUCT, 'foundation': False,
-                                  'configured': self.store is not None, 'providers': 'not-checked',
-                                  'generation_available': False})
+                                  'configured': self.store is not None, **providers,
+                                  'sizes': sizes()})
         if path == '/api/projects':
-            # Home shows the work each infographic is doing now; observing starts nothing.
+            # Home shows the work each infographic is doing now; observing starts nothing. A
+            # finished job's result and receipt are read for one infographic (/api/activity),
+            # never sent with every card.
+            def card(ident):
+                shown = self.doing(ident)
+                return {k: v for k, v in shown.items() if k not in ('result', 'recovery')} if shown else shown
             return shared.as_json(HTTPStatus.OK, {'projects': [
-                {**item, 'activity': self.activity.snapshot(item['id'])} for item in self.store.listing()]})
+                {**item, 'activity': card(item['id'])} for item in self.store.listing()]})
         if path == '/api/project':
             return shared.as_json(HTTPStatus.OK, {'project': self.store.read(one('id'))})
         if path == '/api/source':
@@ -155,9 +203,11 @@ class Page(shared.Page):
                 raise Invalid(str(error)) from None
             return shared.as_json(200, result)
         if path == '/api/research-control':
-            require(isinstance(sent, dict) and set(sent) == {'id', 'action'}, 'Choose one research control.')
+            require(isinstance(sent, dict) and {'id', 'action'} <= set(sent) <= {'id', 'action', 'acknowledge_warnings'}
+                    and type(sent.get('acknowledge_warnings', False)) is bool, 'Choose one research control.')
             try:
-                result = self.research.control(sent['id'], sent['action'])
+                result = self.research.control(sent['id'], sent['action'],
+                                               acknowledge_warnings=sent.get('acknowledge_warnings', False))
             except (ValueError, OSError) as error:
                 raise Invalid(str(error)) from None
             return shared.as_json(200, result)
@@ -168,10 +218,43 @@ class Page(shared.Page):
                     account=lambda: settings.snapshot()['google']['account']).dispatch(sent))
             except ValueError as error:
                 raise Invalid(str(error)) from None
+        if path in ('/api/desk-context', '/api/desk-submit'):
+            # The companion conversation's checked, bounded operations (desk_chat.py).
+            from . import desk_chat
+            if path == '/api/desk-context':
+                require(isinstance(sent, dict) and set(sent) == {'id', 'target'}, 'Name one infographic and one desk target.')
+                return shared.as_json(200, desk_chat.context(self.store, sent['id'], sent['target']))
+            require(isinstance(sent, dict) and set(sent) == {'id', 'kind', 'target', 'expected_basis', 'payload'},
+                    'Submit id, kind, target, expected_basis and payload together.')
+            ident = sent.pop('id')
+            self.store.read(ident)
+            # The same one-at-a-time slot as the page's own work: refused while anything runs.
+            item, _ = self.activity.begin(ident, 'desk-submit')
+            try:
+                shown = desk_chat.submit(copy(self.engine), ident, sent)
+            except BaseException as failure:
+                self.activity.end(ident, item, failure, problem=str(failure) if isinstance(failure, Invalid) else None)
+                raise
+            self.activity.end(ident, item)
+            return shared.as_json(200, shown)
+        if path == '/api/action-control':
+            require(self.actions is not None, 'Finish shared setup before creating infographic work.')
+            require(isinstance(sent, dict) and set(sent) == {'id', 'action'} and sent['action'] in ('stop', 'dismiss'),
+                    'Choose Stop for the running work of one infographic.')
+            self.store.read(sent['id'])
+            control = self.actions.stop if sent['action'] == 'stop' else self.actions.dismiss
+            return shared.as_json(HTTPStatus.OK, control(sent['id']))
         if path == '/api/action':
             try:
-                configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story', 'approve', 'review')
+                configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story', 'approve', 'review', 'refresh-page')
                 verb = sent.get('action') if isinstance(sent, dict) else None
+                if isinstance(verb, str) and verb in action_jobs.BACKGROUND:
+                    # Answered at once: the work runs on, and the page follows it in Activity.
+                    api.shape(sent)
+                    require(self.actions is not None, 'Finish shared setup before creating infographic work.')
+                    make = (lambda: api.engine(self.store)) if configured else (lambda: copy(self.engine))
+                    job = self.actions.start(sent, make, api.action)
+                    return shared.as_json(HTTPStatus.ACCEPTED, {'job': job})
                 if isinstance(verb, str) and verb in activity.LABELS:
                     self.store.read(sent.get('id'))
                     with self.activity.track(sent['id'], verb) as report, author.watching(report.said):
@@ -219,16 +302,36 @@ class Page(shared.Page):
             require(isinstance(sent,dict) and set(sent)=={'id','expected_revision','case','source_mode'},'Choose a research case for this exact infographic task.')
             project=self.store.read(sent['id']);self.store.expect(project,sent['expected_revision'])
             return shared.as_json(200,research.prepare(sent['case'],expected_task=research.task(project,sent['source_mode'])))
+        if path == '/api/research-library-preview':
+            # Research kept in the Document Library, chosen explicitly: it may have been made for
+            # another purpose; its own task is recorded and the preview says so.
+            from . import research
+            require(isinstance(sent, dict) and set(sent) == {'id', 'expected_revision', 'document', 'revision', 'source_mode'},
+                    'Choose one research item from the Document Library for this infographic.')
+            project = self.store.read(sent['id']); self.store.expect(project, sent['expected_revision'])
+            return shared.as_json(200, research.from_library(sent['document'], sent['revision'],
+                                                             expected_task=research.task(project, sent['source_mode'])))
         if path == '/api/remote-preview':
             from . import remote_sources
             require(isinstance(sent, dict) and set(sent) <= {'kind', 'url', 'account', 'tabs'}, 'Preview one explicitly selected remote source.')
             require(sent.get('kind') in ('google-doc', 'url'), 'Choose Google Doc or public URL.')
             result = remote_sources.google(sent.get('url'), account=sent.get('account') or settings.snapshot()['google']['account'], tabs=sent.get('tabs')) if sent['kind'] == 'google-doc' else remote_sources.public(sent.get('url'))
             return shared.as_json(200, result)
+        if path == '/api/source-folder':
+            # A folder on this computer (only for a caller here) or a Google Drive folder link.
+            from . import folder_intake
+            require(isinstance(sent, dict) and set(sent) <= {'folder', 'taken'}, 'Give one folder.')
+            return shared.as_json(200, folder_intake.folder(sent.get('folder'), local=not self.remote(),
+                                                            taken=sent.get('taken', [])))
         if path == '/api/source-preview':
             from . import intake
             require(isinstance(sent, dict) and set(sent) <= {'data', 'kind', 'name', 'selection'},
                     'Preview one supplied document and its explicit selection.')
+            if sent.get('kind') == 'xlsx':
+                # A spreadsheet: every sheet read into text under its name (source_intake).
+                from . import folder_intake
+                return shared.as_json(200, folder_intake.spreadsheet(
+                    sent.get('name'), api.source_bytes(sent.get('data')), local=not self.remote()))
             return shared.as_json(200, intake.prepare(api.source_bytes(sent.get('data')),
                 kind=sent.get('kind'), name=sent.get('name'), selection=sent.get('selection')))
         if path == '/api/csv-preview':
@@ -270,10 +373,13 @@ def desk(store, port=0, engine=None, *, standalone=False):
             self.page.engine = Engine(current)
             from .research_jobs import Jobs
             self.page.research = Jobs(current)
+            self.page.actions = action_jobs.Actions(current, self.page.activity)
 
         def stop(self):
             if self.page.research is not None:
                 self.page.research.stop()
+            if self.page.actions is not None:
+                self.page.actions.shutdown()
             from .images.codex import stop_owned
             from .workspace import data_root
             from .image_jobs import Jobs

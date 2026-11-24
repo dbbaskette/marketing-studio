@@ -21,6 +21,7 @@ def approved_words(approval, page=lambda revision: revision):
 
 # The toolbar's primary action for each stage; `needs` names it. Approve adds the revision.
 ACTIONS = {'story': 'Find the story', 'choose': 'Choose a story', 'build': 'Build page',
+           'updates': 'Update or keep',
            'preview': 'Update preview', 'review': 'Review page', 'check': 'Run checks',
            'approve': 'Approve revision', 'export': 'Prepare approved files',
            'deliver': 'Deliver approved page'}
@@ -45,7 +46,12 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
     checks = project['checks']
     passed = bool(checks) and all(c['status'] == 'passed' for c in checks) and review_checked
     story = project['selected_story'] is not None
-    if not project['stories']:
+    from .contracts import STALE_PARTS, STALE_WORDS, stale_parts
+    held = stale_parts(project)
+    if held and project['stories'] and project['approval'] is None:
+        # Work kept after a brief or source change waits for Update or Keep as it is.
+        stage = 'updates'
+    elif not project['stories']:
         stage = 'story'
     elif not story:
         stage = 'choose'
@@ -63,9 +69,9 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
         stage = 'check'
     else:
         stage = 'review'
-    order = ('story', 'choose', 'build', 'preview', 'review', 'check', 'approve', 'export', 'deliver')
+    order = ('story', 'choose', 'build', 'updates', 'preview', 'review', 'check', 'approve', 'export', 'deliver')
     position = order.index(stage)
-    step_of = {'story': 0, 'choose': 0, 'build': 1, 'preview': 1, 'review': 2, 'check': 2,
+    step_of = {'story': 0, 'choose': 0, 'build': 1, 'updates': 1, 'preview': 1, 'review': 2, 'check': 2,
                'approve': 3, 'export': 3, 'deliver': 4}[stage]
     steps = [{'id': key, 'label': label, 'state': 'done' if index < step_of else 'current' if index == step_of
               else 'upcoming'} for index, (key, label) in enumerate(STEPS)]
@@ -86,6 +92,8 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
         'story': 'Find the story: your assistant proposes source-backed explanations.',
         'choose': 'Choose a story from the proposals on this page.',
         'build': 'Build page: compose the chosen story with your brand.',
+        'updates': held and ('Update or keep ' + _listed([STALE_WORDS[part] for part in STALE_PARTS if part in held])
+                   + ': made before the ' + _because(held) + ' changed. Approval waits until each is updated or kept as it is.'),
         'preview': 'Update preview so it shows revision ' + str(revision) + '.' if deliveries else
                    'Create preview: render the page on this computer.',
         'review': 'Review page: look at the actual page and record what you checked. Checks then run on this computer.',
@@ -117,11 +125,22 @@ def roadmap(project, deliveries, *, review=None, review_checked=False, page=lamb
             'downloads': downloads}
 
 
+def _listed(words):
+    return words[0] if len(words) == 1 else ', '.join(words[:-1]) + ' and ' + words[-1]
+
+
+def _because(held):
+    found = {value['because'] for value in held.values()}
+    return 'brief and sources' if len(found) > 1 else found.pop()
+
+
 def readiness(project, recovery=None, deliveries=()):
     """A short working state for lists. Exact revision identity is reported beside it."""
     if recovery and recovery.get('current') and recovery.get('state') == 'failed' and recovery.get('step') in ('font-check', 'preview'):
         return {'state': 'review', 'summary': 'Preview failed: retry the saved preview'}
     checks = project['checks']
+    if project.get('stale') and project['approval'] is None:
+        return {'state': 'review', 'summary': 'Out of date after a change: update or keep'}
     if project['approval'] is not None:
         return {'state': 'done', 'summary': 'Approved: ready to export and deliver'}
     if checks and all(c['status'] == 'passed' for c in checks):

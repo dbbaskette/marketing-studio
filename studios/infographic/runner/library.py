@@ -22,8 +22,8 @@ Context
 - A source records where it came from in `provenance.library`; a newer revision in the
   library is offered as Update available and only the revision the person chose is taken. Choosing documents
   starts no research, grants no web access, sends nothing to an assistant and changes no
-  research setting; like any source change it clears the facts, story and page that were
-  built from the earlier sources, under the existing input rules.
+  research setting; like any source change it keeps the facts, story and page that were
+  built from the earlier sources and marks them out of date (stale.py).
 - This infographic's own kept export (the document under `key()`, see `own()`) is refused
   as a source for itself; the page shows it as unavailable.
 - Refused while the infographic is working: an action under way on the page, an image

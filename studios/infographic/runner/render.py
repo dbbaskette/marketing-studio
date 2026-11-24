@@ -1,8 +1,11 @@
-"""Disposable Chromium rendering spike; no browser download or provider work.
+"""Infographic Studio's local page renderer: headless Chromium, no browser download or provider work.
 
-This renders only a validated, self-contained SVG. The caller explicitly supplies
-an installed headless executable and a new output folder. Production scene and
-export orchestration remain later milestones.
+It renders only a validated, self-contained SVG, at any page size in contracts.PRESETS
+(portrait A4, US Letter and digital; landscape widescreen 16:9 and social), to a PNG and a
+one-page PDF. The caller supplies an installed headless executable and a new output folder.
+A full render launches the renderer three times (measurements, PNG, PDF); `measure` checks
+fonts, images and fit with one launch and draws nothing. exports.py turns a render into an
+immutable, revision-bound delivery.
 """
 from __future__ import annotations
 from .contracts import Invalid
@@ -82,14 +85,11 @@ def safe_svg(text: str) -> str:
 
 
 def dimensions(preset: str) -> dict:
-    if preset == 'a4':
-        return {'width_px': 2480, 'height_px': 3508, 'width_pt': 210 * 72 / 25.4,
-                'height_pt': 297 * 72 / 25.4}
-    if preset == 'letter':
-        return {'width_px': 2550, 'height_px': 3300, 'width_pt': 612, 'height_pt': 792}
-    if preset == 'digital':
-        return {'width_px': 1080, 'height_px': 1350, 'width_pt': 810, 'height_pt': 1012.5}
-    raise ValueError('Choose A4, US Letter, or digital portrait.')
+    """The PNG in pixels and the PDF page in points for a page size (contracts.PRESETS)."""
+    from .contracts import PRESETS
+    if preset not in PRESETS:
+        raise ValueError('Choose A4, US Letter, digital portrait, widescreen 16:9 or social landscape.')
+    return {key: PRESETS[preset][key] for key in ('width_px', 'height_px', 'width_pt', 'height_pt')}
 
 
 def document(svg: str, preset: str, fonts: list[str]) -> str:
@@ -237,15 +237,54 @@ def pdf_pages(path: Path) -> list[tuple[float, float]]:
     return sizes
 
 
-def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
-           destination: Path, timeout: int = 30) -> dict:
-    """Render into a new folder, publishing no partial result on failure."""
+def _executable(executable) -> Path:
     try:
         executable = Path(executable).resolve(strict=True)
     except OSError as failure:
         raise RenderError('renderer-unusable') from failure
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise RenderError('renderer-unusable')
+    return executable
+
+
+def _measured(executable: Path, work: Path, uri: str, timeout: int) -> dict:
+    """One renderer launch that reads the page's own measurements: fonts, images, fit."""
+    output = _run(executable, work, ['--virtual-time-budget=2000', '--dump-dom', uri], timeout)
+    match = re.search(r'<pre id="metrics">([^<]*)</pre>', output)
+    if match is None or not match[1].strip():
+        raise RenderError('invalid-output')
+    try:
+        metrics = json.loads(html.unescape(match[1]))
+    except ValueError as failure:
+        raise RenderError('invalid-output') from failure
+    if not isinstance(metrics, dict) or not metrics.get('complete'):
+        raise RenderError('invalid-output')
+    if metrics.get('missing_fonts'):
+        raise RenderError('missing-fonts')
+    if metrics.get('invalid_assets'):
+        raise RenderError('invalid-assets')
+    if metrics.get('overflow'):
+        raise RenderError('layout-overflow')
+    return metrics
+
+
+def measure(svg: str, *, preset: str, fonts: list[str], executable: Path, timeout: int = 30) -> dict:
+    """Check fonts, embedded images and fit with one renderer launch, drawing no files: the
+    check a build makes before it spends image-provider usage."""
+    executable = _executable(executable)
+    page = document(svg, preset, fonts)
+    with tempfile.TemporaryDirectory(prefix='.infographic-measure-') as name:
+        work = Path(name)
+        source = work / 'scene.html'
+        source.write_text(page, encoding='utf-8')
+        return _measured(executable, work, source.as_uri(), timeout)
+
+
+def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
+           destination: Path, timeout: int = 30) -> dict:
+    """Render into a new folder, publishing no partial result on failure. Three renderer
+    launches: the measurements, the PNG and the PDF."""
+    executable = _executable(executable)
     destination = Path(destination)
     if destination.exists() or destination.is_symlink():
         raise ValueError('The rendering attempt needs a new output folder.')
@@ -256,22 +295,7 @@ def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
         source = work / 'scene.html'
         source.write_text(page, encoding='utf-8')
         uri = source.as_uri()
-        output = _run(executable, work, ['--virtual-time-budget=2000', '--dump-dom', uri], timeout)
-        match = re.search(r'<pre id="metrics">([^<]*)</pre>', output)
-        if match is None or not match[1].strip():
-            raise RenderError('invalid-output')
-        try:
-            metrics = json.loads(html.unescape(match[1]))
-        except ValueError as failure:
-            raise RenderError('invalid-output') from failure
-        if not isinstance(metrics, dict) or not metrics.get('complete'):
-            raise RenderError('invalid-output')
-        if metrics.get('missing_fonts'):
-            raise RenderError('missing-fonts')
-        if metrics.get('invalid_assets'):
-            raise RenderError('invalid-assets')
-        if metrics.get('overflow'):
-            raise RenderError('layout-overflow')
+        metrics = _measured(executable, work, uri, timeout)
         png, pdf = work / 'page.png', work / 'page.pdf'
         _run(executable, work, [f"--window-size={d['width_px']},{d['height_px']}",
                                '--screenshot=' + str(png), uri], timeout)

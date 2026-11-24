@@ -140,7 +140,25 @@ def change(previous, current, earlier=(), fingerprint=None):
             'Edited the brief: ' + joined([words for key, words in _BRIEF
                                            if previous['brief'].get(key) != current['brief'].get(key)]
                                           or ['its details']))
-        gone = cleared(previous, current)
+        # Work held out of date by this change is named as such (contracts.advance): kept,
+        # with an Update and a Keep as it is on the page.
+        from .contracts import STALE_PARTS, _exists, lost as counted, stale_parts
+        before, after = stale_parts(previous), stale_parts(current)
+        # Facts whose source was replaced or removed are dropped, and the stories that used
+        # them removed; each is said by number (named on the page).
+        dropped = counted(after.get('facts') or {}, 'dropped') - counted(before.get('facts') or {}, 'dropped')
+        removed = counted(after.get('stories') or {}, 'removed') - counted(before.get('stories') or {}, 'removed')
+        if dropped > 0:
+            summary += '; dropped ' + (('1 fact' if dropped == 1 else str(dropped) + ' facts')
+                                       + ' whose source was replaced or removed')
+        if removed > 0:
+            summary += '; removed ' + ('1 story' if removed == 1 else str(removed) + ' stories') + ' that used them'
+        marked = [{'facts': 'facts', 'stories': 'story', 'page': 'page', 'artwork': 'artwork'}[part]
+                  for part in STALE_PARTS if part in after and after[part] != before.get(part)
+                  and _exists(current, part)]
+        if marked:
+            summary += '; kept the ' + joined(marked) + ' and marked ' + ('it' if len(marked) == 1 else 'them') + ' out of date'
+        gone = [word for word in cleared(previous, current) if not (word == 'facts' and dropped > 0)]
         if gone:
             summary += '; cleared the ' + joined(gone)
             lost = False

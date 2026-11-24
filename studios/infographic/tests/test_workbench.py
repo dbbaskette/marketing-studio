@@ -180,8 +180,10 @@ class WorkbenchTests(Isolated):
                                   expected_revision=edited['revision'])
         found = {c['what']: c for c in history.compare(self.store, self.ident, edited['revision'], sourced['revision'])['changes']}
         self.assertEqual(found['Source added']['after'], 'More notes')
-        self.assertEqual(found['Story choice'], {'what': 'Story choice', 'before': 'Restart one instance', 'after': 'None chosen'})
-        self.assertEqual(found['Page'], {'what': 'Page', 'before': 'Built page', 'after': 'No page'})
+        # The story and page are kept, marked out of date, rather than cleared.
+        self.assertNotIn('Story choice', found)
+        self.assertNotIn('Page', found)
+        self.assertEqual(set(sourced['stale']), {'facts', 'stories', 'page'})
 
     def test_history_fingerprints_each_revision_once_per_page(self):
         from unittest import mock

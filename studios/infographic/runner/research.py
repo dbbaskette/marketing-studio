@@ -9,7 +9,7 @@ import tempfile
 import zipfile
 from studio_core import research_contract as contract
 from . import intake
-from .contracts import digest
+from .contracts import Invalid, digest
 from .validation import require, relative_path
 from .workspace import _atomic, _read
 
@@ -161,6 +161,59 @@ def prepare(case, *, expected_task, runtime=None, verifier=None):
     )
 
 
+def from_library(document, revision, *, expected_task):
+    """Import one research item kept in the Document Library, chosen explicitly by the person.
+
+    The kept bundle is written out and checked (studio_core research_bundle: every file against
+    its manifest hash and its review), then captured as this infographic's research source. It
+    may have been made for another purpose, audience or scope: its own task is recorded as the
+    source's task, and the preview says so (`made_for`, `different`). Every other path still
+    takes only research made for this infographic's task, character for character (prepare)."""
+    from studio_core.document_library.research import research_bundle
+    from studio_core.document_library.store import LibraryError
+    require(
+        isinstance(expected_task, dict) and set(expected_task) == set(contract.TASK_FIELDS),
+        "Keep the explicit infographic research task and source mode.",
+    )
+    with tempfile.TemporaryDirectory(prefix="infographic-library-research-") as temporary:
+        folder = Path(temporary) / "bundle"
+        try:
+            found = research_bundle(None, document, revision, folder)
+            facts, manifest = contract.read_bundle(folder)
+        except (LibraryError, ValueError, KeyError, OSError) as failure:
+            raise Invalid(str(failure) or "The research in the Document Library could not be read.") from None
+        files = {}
+        for path in sorted(folder.rglob("*")):
+            if path.is_file() and not path.is_symlink():
+                files[path.relative_to(folder).as_posix()] = path.read_bytes()
+    require(sum(len(raw) for raw in files.values()) <= TOTAL, "Choose research within 16 MB.")
+    require(all(name in files for name in ("brief.md", "evidence.md", "report.md")),
+            "The research in the Document Library has no report to use.")
+    made_for = {key: facts.get(key) for key in contract.TASK_FIELDS}
+    out = BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, raw in files.items():
+            archive.writestr(name, raw)
+    text = "\n\n".join(files[n].decode("utf-8") for n in ("brief.md", "evidence.md", "report.md"))
+    title = str(found.get("title") or "Research from the Document Library")[:150]
+    prepared = intake.prepare(
+        out.getvalue(),
+        kind="research",
+        name=title.replace("/", " ").replace("\\", " ").strip() or "Research from the Document Library",
+        extracted={"text": text, "extractor": "document-library-research-schema2",
+                   "locations": [], "warnings": [], "readable": True},
+        provenance={
+            "task": made_for,
+            "review_digest": digest(facts["review"]),
+            "research_digest": manifest["digest"],
+            "verified_archive_sha256": hashlib.sha256(out.getvalue()).hexdigest(),
+            "library": {"id": document, "revision": revision},
+        },
+    )
+    return {**prepared, "made_for": made_for,
+            "different": made_for != {key: expected_task[key] for key in contract.TASK_FIELDS}}
+
+
 def validate_capture(raw, provenance):
     require(
         hashlib.sha256(raw).hexdigest() == provenance.get("verified_archive_sha256"),
@@ -169,6 +222,17 @@ def validate_capture(raw, provenance):
     with tempfile.TemporaryDirectory(prefix="infographic-research-read-") as temporary:
         root = Path(temporary)
         _unpack(raw, root)
+        if provenance.get("library"):
+            # Imported from the Document Library: the bundle itself, every file checked against
+            # its manifest hash and review, with the task it was made for.
+            facts, manifest = contract.read_bundle(root)
+            require(
+                manifest["digest"] == provenance.get("research_digest")
+                and digest(facts["review"]) == provenance.get("review_digest")
+                and all(facts.get(k) == v for k, v in provenance.get("task", {}).items()),
+                "Reviewed research metadata changed.",
+            )
+            return
         facts, manifest = contract.read_bundle(contract.output_root(root))
         require(
             manifest["digest"] == provenance.get("research_digest")
