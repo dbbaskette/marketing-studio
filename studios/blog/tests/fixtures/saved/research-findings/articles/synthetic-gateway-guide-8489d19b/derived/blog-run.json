@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "approval": "page",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "research-plan",
+    "research",
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "research-plan": {
+      "status": "approved",
+      "hash": "7276ceea677472afb1681b69c7b77ed9833a67eabc5752e87d514e790e9e666b",
+      "basis": "ebd51cc0e1f7fbb4f9ecc77bd0fd4ae3c95829e52b3ae21212bffca89c9e7c08",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "research-plan",
+      "accepted_by": "page"
+    },
+    "research": {
+      "status": "draft",
+      "hash": "381e35537aa809490678c35edc86cff423869b710dd54411a8609a015b5ec301",
+      "basis": "cd623b0cf2f28177c55b285375e10bc08df5069b4f3e383105e95b3fa6d5cb03",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "research"
+    }
+  },
+  "length": "style",
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from page",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted research-plan",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve research-plan",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted research",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "approved": {
+    "research-plan": "7276ceea677472afb1681b69c7b77ed9833a67eabc5752e87d514e790e9e666b"
+  }
+}

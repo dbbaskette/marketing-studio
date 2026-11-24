@@ -1,0 +1,26 @@
+{
+  "id": "material-31c39a6115cc425d",
+  "name": "notes",
+  "origin": "notes.md",
+  "original_filename": "notes.md",
+  "original_path": "original.md",
+  "original_sha256": "9b668e57e6741980af4b11167d964491ee5281bbb3791e0e0d41dcd08ae91c0f",
+  "content_sha256": "9b668e57e6741980af4b11167d964491ee5281bbb3791e0e0d41dcd08ae91c0f",
+  "purposes": [
+    "material"
+  ],
+  "author": null,
+  "status": "ready",
+  "note": "Uploaded through the local editorial desk.",
+  "revision": 1,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "retrieved_at": "2026-01-05T09:30:00+00:00",
+  "updated_at": "2026-01-05T09:30:00+00:00",
+  "analysis": {
+    "status": "needs-analysis",
+    "sha256": "9b668e57e6741980af4b11167d964491ee5281bbb3791e0e0d41dcd08ae91c0f",
+    "harness": null,
+    "at": "2026-01-05T09:30:00+00:00",
+    "message": "Select your writing CLI once, then retry analysis."
+  }
+}

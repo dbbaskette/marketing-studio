@@ -85,11 +85,15 @@ def session_supported(record, ident=None):
 
 
 def run_supported(run):
-    """The saved run shapes understood by this fixed migration format."""
+    """The saved run shapes understood by this fixed migration format.
+
+    Schema 4 is a schema 3 run that also pinned a research execution record (Harness Research
+    collected it in parallel). The migration keeps the run's bytes and interprets none of that
+    record, so it is accepted exactly when Blog Studio's own run reader accepts it."""
     if (
         not isinstance(run, dict)
         or type(run.get('schema')) is not int
-        or run['schema'] not in (1, 2, 3)
+        or run['schema'] not in (1, 2, 3, 4)
         or run.get('approval') not in ('page', 'conversation')
     ):
         return False
@@ -117,11 +121,15 @@ def run_supported(run):
             or policy.get('level') not in ('balanced', 'automatic', 'step_by_step')
         ):
             return False
-    if run['schema'] == 3 and (
+    if run['schema'] in (3, 4) and (
         not isinstance(run.get('research_contract'), dict)
         or run['research_contract'].get('schema') != 2
     ):
         return False
+    if run['schema'] == 4:
+        from .research_session import protocol  # Pure; imported here to keep this module light.
+
+        return protocol(run)
     return True
 
 

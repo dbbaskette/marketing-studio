@@ -18,26 +18,24 @@ the page does not hand it to the runner. Finished blogs keep their existing acti
 An outline-only saved request keeps outline scope; a manuscript review without a
 drafting step keeps part-edit scope. Moving it does not authorize a broader draft.
 
-Eligible unfinished work has readable supported `DRAFT.md` or `ORIGINAL.md`, or
-a Markdown `OUTLINE.md` with at least two heading sections whose complete text can
-round-trip through the desk without loss. Outline text becomes briefs, with empty
-prose and drafting still incomplete. Manuscripts are limited to 200,000 text
-characters and 60 sections; outline briefs to 4,000 characters each. Images retain
-the existing desk limits. The checked local scope is bounded to 2,000 files and
-32 MiB; original session/run and desk interpretation are each at most 1 MB.
+Eligible work has readable `DRAFT.md`, `ORIGINAL.md` or `OUTLINE.md`. An outline
+of two or more heading sections that round-trips becomes briefs with empty prose;
+other outline notes are kept whole as the start's notes, outline step still to do
+(notes holding image data refuse). Limits: 200,000 characters and 60 sections,
+4,000-character briefs, desk image limits, 2,000 files and 32 MiB checked, 1 MB
+records.
 
-This covers a waiting outline, draft, review or handoff, an approved outline before
-drafting, waiting ideas, an author's outline, a supplied manuscript's review or
-revision, a run continued without research, a paused, stopped or failed page run and
-a review the manuscript editor started. Finished outlines and ideas keep Develop.
+This covers waiting or finished outlines and ideas, a waiting draft, review or
+handoff, an author's outline, a supplied manuscript's review or revision, runs
+continued without research or saved with a research execution record, paused,
+stopped or failed page runs (nothing is retried) and editor reviews.
 
-Brief-only starts, early research or unchosen angles without usable materials,
-unstructured/list outlines, missing declared documents or pins, unreadable or
-unsupported records (including runs saved with a research execution record), links,
-active or unsettled jobs, older Team Hub contexts and oversized work refuse with the
-saved flow still available. Research, reviews and
-handoff stay as historical records; gaps remain unresolved. These early formats
-retain their saved-flow commands until a supported lossless transform is proven.
+Brief-only starts, early research or angles without materials, missing documents
+or pins, unreadable or unsupported records, links, active jobs, older Team Hub
+contexts and oversized work refuse; the saved flow stays. A blog with no run
+refuses; Edit manuscript brings its draft to the desk. Research, reviews and
+handoff stay historical; gaps stay unresolved. On the page, an unreadable saved
+blog is a read-only record: why, its files, and Start new work from this.
 
 Unknown worker formats, statuses or ownership refuse, even when disabled. Stop known
 work and wait for its process to end before previewing again; never edit records to

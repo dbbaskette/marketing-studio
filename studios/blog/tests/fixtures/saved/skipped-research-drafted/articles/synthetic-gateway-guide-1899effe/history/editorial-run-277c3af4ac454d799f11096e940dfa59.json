@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "approval": "page",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {},
+  "length": "style",
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from page",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Continued without research",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "research_skipped": {
+    "from": "research-plan",
+    "at": "2026-01-05T09:30:00+00:00"
+  }
+}

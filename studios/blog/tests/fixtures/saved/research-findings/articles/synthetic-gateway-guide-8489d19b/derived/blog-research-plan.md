@@ -1,0 +1,2 @@
+# research-plan
+Synthetic writing.

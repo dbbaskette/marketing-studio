@@ -1,0 +1,113 @@
+{
+  "schema": 2,
+  "approval": "conversation",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "outline": {
+      "status": "approved",
+      "hash": "4c7b68e265b568752f1b3aaae50ad5cbd065e6c84a80516087d3caf5a8733828",
+      "basis": "ef29a14de684c8f1d3bc4e7837426889a665fa246bd483ddd352119f36f8c8f3",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "outline",
+      "accepted_by": "conversation"
+    },
+    "draft": {
+      "status": "approved",
+      "hash": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+      "basis": "605226fa26047c377f3e4f22c12117619b303fe95698c43c15f2793f8b52599f",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "draft",
+      "accepted_by": "review-policy"
+    }
+  },
+  "length": "style",
+  "review_policy": {
+    "schema": 1,
+    "level": "balanced"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from conversation",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted draft",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "approved": {
+    "outline": "4c7b68e265b568752f1b3aaae50ad5cbd065e6c84a80516087d3caf5a8733828",
+    "draft": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a"
+  },
+  "review_events": [
+    {
+      "gate": "draft",
+      "by": "review-policy",
+      "level": "balanced",
+      "evidence": "90d46a1687ca1ed0d6a00f6a8aed7a738f237d88c0a51eb4a456e72afa7f6ee1",
+      "at": "2026-01-05T09:30:00+00:00",
+      "decision": "continued-automatically"
+    }
+  ]
+}

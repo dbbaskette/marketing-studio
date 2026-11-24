@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "status": "failed",
+  "error": "Synthetic failure.",
+  "reason": "cli"
+}

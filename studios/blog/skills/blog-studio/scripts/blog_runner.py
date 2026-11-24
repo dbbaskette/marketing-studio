@@ -2886,7 +2886,8 @@ def catalog(root):
                     'id': ident,
                     'title': ident,
                     'status': 'needs-attention',
-                    'error': 'Open this blog in chat to inspect its saved context.',
+                    # Its run screen says why: a read-only record, or the refusal itself.
+                    'error': 'Its saved records cannot be read here. Open it to see why.',
                 }
             )
     rows.sort(key=lambda row: row.get('touched') or '', reverse=True)

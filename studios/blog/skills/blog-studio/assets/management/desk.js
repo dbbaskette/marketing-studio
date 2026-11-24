@@ -1311,7 +1311,9 @@ function sRunOnDesk(found){
   const open=sButton('Open on the desk',()=>sRoute('desk',found.id),'filled');
   sFrame(found.title,[open],'Writing run',()=>sRoute('blogs'));
   const steps=sNode('ol','rows');for(const row of found.stages||[])steps.append(sAdd(sNode('li','row step'),sBead(row.status==='approved'?'done':'none'),sAdd(sNode('div','row-text'),sNode('h3','step-name',row.label),found.unfinished_migration?sNode('p','quiet',row.accepted_by==='review-policy'?'Continued automatically':STAGE_STATUSES[row.status]||row.status):null)));
-  sPage(sNode('p','lede','The saved run stays readable while you edit on the writing desk.'),sCard('This blog is on the writing desk',sNode('p','',found.unfinished_migration?'Its supported materials were opened on the desk as a Draft. Unfinished steps remain incomplete, and the original decisions and files are kept. No work was started.':'It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.')),disclosure('How it was written',steps));
+  // A step that stopped before the blog moved stays in its history, said as it was saved.
+  const stopped=found.unfinished_migration&&found.error?sNode('p','quiet','Before it was opened on the desk, its last step stopped: '+found.error):null;
+  sPage(sNode('p','lede','The saved run stays readable while you edit on the writing desk.'),sCard('This blog is on the writing desk',sNode('p','',found.unfinished_migration?'Its supported materials were opened on the desk as a Draft. Unfinished steps remain incomplete, and the original decisions and files are kept. No work was started.':'It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.'),stopped),disclosure('How it was written',steps));
 }
 
 // The Outline tab: each section's heading and brief, in order, saved as they are edited with

@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "approval": "page",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "outline": {
+      "status": "approved",
+      "hash": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+      "basis": "ef29a14de684c8f1d3bc4e7837426889a665fa246bd483ddd352119f36f8c8f3",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "outline",
+      "accepted_by": "page"
+    },
+    "draft": {
+      "status": "approved",
+      "hash": "15b46faf716717861f2962f02dc1431035149333e516faa78ce09231a11dfb5a",
+      "basis": "c8764a97849c021a0e1bb526f99b49f7d2b71f2cf4f7f068f3e0cf53a2f27474",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "draft",
+      "accepted_by": "page"
+    },
+    "review": {
+      "status": "approved",
+      "hash": "50e72369a374d44bbc97e9618d4c34c96321227c368ff9252ec4043f4689a115",
+      "basis": "584e97992a1861b80b1967c9895b9fc523ae5e38fabc4a3daf7a98b1ef67e8cd",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "review",
+      "accepted_by": "page"
+    }
+  },
+  "length": "style",
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from page",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted draft",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve draft",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted review",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve review",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "approved": {
+    "outline": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+    "draft": "15b46faf716717861f2962f02dc1431035149333e516faa78ce09231a11dfb5a",
+    "review": "50e72369a374d44bbc97e9618d4c34c96321227c368ff9252ec4043f4689a115"
+  }
+}

@@ -79,6 +79,7 @@ async function check(){
   await refreshWithNewSelection();
   await guidedRuns();
   await unfinishedMigration();
+  await savedReadOnlyRecord();
   await manuscriptEditing();
   await reviewInteractions();
   await editorTransitions();
@@ -6118,6 +6119,42 @@ async function unfinishedMigration(){
   t.f.run('sRunOnDesk(migrated)');
   assert.ok(t.nodes().some(n=>n.textContent.includes('Unfinished steps remain incomplete')));
   assert.ok(!t.nodes().some(n=>n.textContent.includes('It was finished here')));
+  assert.ok(!t.nodes().some(n=>n.textContent.includes('its last step stopped')),'a run that never stopped says nothing about a stop');
+  t.f.set('migrated',{...found,on_desk:true,unfinished_migration:true,next:null,error:'Synthetic failure.'});
+  t.f.run('sRunOnDesk(migrated)');
+  assert.ok(t.nodes().some(n=>n.textContent==='Before it was opened on the desk, its last step stopped: Synthetic failure.'),'a saved failure stays in the run’s history');
+}
+
+async function savedReadOnlyRecord(){
+  const record=(next,start)=>({id:'unreadable',title:'Synthetic saved blog',status:'read-only',sentence:'This blog was saved by the earlier step-by-step flow, and it can be neither continued nor opened on the desk. Its saved files are kept as they are.',saved_record:{why:'Its saved run record cannot be read.',files:['DRAFT.md','OUTLINE.md'],next,start}});
+  let shown=record('copy',{title:'Synthetic saved blog',point:'Explain a fixture',audience:'Authors'});
+  const t=deskStartFixture(url=>{
+    if(url.startsWith('/api/run?'))return shown;
+    if(url.startsWith('/api/saved-file?'))return new URLSearchParams(url.split('?')[1]).get('name')==='DRAFT.md'?{id:'unreadable',name:'DRAFT.md',text:'# Saved draft\n\nSaved words.',truncated:false}:{__http:400,error:'Choose a saved file this blog holds.'};
+    return null;
+  });
+  // A gate address for it opens the record too: there is no gate to read.
+  await t.f.run("sRoute('gate','unreadable','draft')");
+  assert.equal(t.f.run('studio.screen'),'run');
+  const actions=descendants(t.f.get('actions'));
+  assert.equal(actions.filter(n=>n.tagName==='button'&&n.className.split(' ').includes('button-filled')).length,1,'one main action');
+  assert.ok(actions.some(n=>n.textContent==='Start new work from this'));
+  assert.ok(t.nodes().some(n=>n.textContent==='Read-only: it is not continued and not opened on the desk'),'the record says it is read-only in words');
+  assert.ok(t.nodes().some(n=>n.textContent==='Its saved run record cannot be read.'),'it says why');
+  for(const gone of ['Resume','Try again','Continue','Open on the desk','Review Draft'])assert.ok(!t.nodes().concat(actions).some(n=>n.tagName==='button'&&n.textContent===gone),gone+' is not offered');
+  await t.click('Read the saved draft');
+  assert.ok(t.nodes().some(n=>n.textContent==='Saved words.'),'a saved file is read in place');
+  await t.click('Read the saved outline');
+  assert.ok(t.nodes().some(n=>n.textContent==='Choose a saved file this blog holds.'),'a file it cannot read is said');
+  assert.ok(!t.requests.some(r=>r.data),'the record writes nothing');
+  await descendants(t.f.get('actions')).find(n=>n.textContent==='Start new work from this').listeners.click();
+  assert.equal(t.f.run('studio.screen'),'desk-start');
+  assert.deepEqual(JSON.parse(t.f.run('JSON.stringify([studio.deskStart.title,studio.deskStart.point,studio.deskStart.audience])')),['Synthetic saved blog','Explain a fixture','Authors']);
+  assert.ok(!t.requests.some(r=>r.url==='/api/desk-create'),'starting new work makes nothing until the person starts');
+  shown={...record('new',null),title:'unreadable',sentence:'This blog’s saved record cannot be read, so it can be neither continued nor opened on the desk. Its saved files are kept as they are.'};
+  t.f.run('studio.deskStart=null');await t.f.run("sRoute('run','unreadable')");
+  assert.ok(descendants(t.f.get('actions')).some(n=>n.textContent==='Start a new blog'));
+  assert.ok(t.nodes().some(n=>n.textContent.startsWith('Its start form cannot be read')));
 }
 
 async function blogReadingAndUnifiedSources(){
