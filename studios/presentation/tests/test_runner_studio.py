@@ -219,11 +219,12 @@ class ServeTests(StudioCase):
 
     def test_starting_picks_every_deck_up_where_its_files_say_it_is(self):
         self.workers.then('outline', fails())
-        root = self.saved_start()
-        self.assertEqual(len(self.workers.jobs), 2)
+        root = self.start()
+        self.assertEqual(len(self.workers.of('outline')), 2)
         outline = (root / 'outline.md').read_text()
         self.workers.then('outline', fails(), fails(), fails())
-        failing = self.saved_start(title='Health checks')
+        failing = self.start(title='Health checks')
+        done = len(self.workers.jobs)
         self.engine.close()
         self.engine = self.make()
         self.serve(True)
@@ -231,10 +232,10 @@ class ServeTests(StudioCase):
                          ['waiting', 'failed'])
         self.assertEqual((root / 'outline.md').read_text(), outline,
                          'a deck at a gate is left be')
-        self.assertEqual(len(self.workers.jobs), 5, 'nothing is done twice')
+        self.assertEqual(len(self.workers.jobs), done, 'nothing is done twice')
 
     def test_the_page_answers_while_the_workspace_is_still_fetched(self):
-        root = self.saved_start()
+        root = self.start()
         (root / engines.IN_HAND).write_text('outline\n')
         self.engine.close()
         self.engine = self.make(background=True)
@@ -266,7 +267,7 @@ class ServeTests(StudioCase):
         self.assertEqual(woken, [root], 'picked up once the fetch is done')
 
     def test_what_goes_wrong_picking_decks_up_is_said_and_the_rest_still_carry_on(self):
-        first, second = self.saved_start(), self.saved_start(title='Health checks')
+        first, second = self.start(), self.start(title='Health checks')
         self.engine.close()
         self.engine = self.make(background=True)
         woken = []
@@ -350,8 +351,9 @@ class StatusTests(StudioCase):
 
     def test_status_is_json_for_a_script(self):
         self.workers.then('outline', fails(), fails(), fails())
-        failing = self.saved_start()
-        waiting = self.saved_start(title='Health checks')
+        failing = self.start()
+        waiting = self.start(title='Health checks')
+        jobs = len(self.workers.jobs)
         found = self.status()
         self.assertEqual(sorted(found), ['agent', 'brand', 'configured', 'decks', 'google', 'limits',
                                          'notify', 'output', 'person', 'previews', 'problem',
@@ -375,7 +377,7 @@ class StatusTests(StudioCase):
              'sentence': self.view(waiting)['sentence']},
             {'path': str(failing), 'id': 'rolling-restarts', 'state': 'failed',
              'sentence': self.view(failing)['sentence']}])
-        self.assertEqual(len(self.workers.jobs), 4, 'asking starts nothing')
+        self.assertEqual(len(self.workers.jobs), jobs, 'asking starts nothing')
 
     def test_status_says_in_one_sentence_when_the_studios_config_cannot_be_read(self):
         Path(os.environ['STUDIOS_CONFIG']).write_text('{"schema": ')
