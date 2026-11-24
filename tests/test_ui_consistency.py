@@ -433,8 +433,12 @@ class SharedLookTests(unittest.TestCase):
                 '.desk-finish-sheet', '.desk-finish-tools', '.desk-proposal', '.desk-sides',
                 '.desk-side', '.desk-quote', '.desk-edit', '.desk-comments', '.desk-comment',
                 '.diff-add', '.diff-remove')
+        # And the desk as a workbench beside its list of parts: until 90rem the draft keeps
+        # the width, its sources following it and Finishing first.
         placements = {'.review-checking>.desk-working-note', '.review-status>.desk-working-note', '.review-fix>.desk-sides',
-                      '.review-quick-list .desk-quote'}
+                      '.review-quick-list .desk-quote', '.desk-work[data-zone="work"]>.desk-layout',
+                      '.desk-work[data-zone="work"]>.desk-layout.desk-finishing',
+                      '.desk-work[data-zone="work"]>.desk-layout.desk-finishing>.desk-finish'}
 
         def named(css):
             found = {}

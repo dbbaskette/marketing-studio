@@ -199,6 +199,18 @@
 .desk-tools-fold[open]{flex-basis:100%}
 .desk-tools-list{display:grid;gap:.6rem;margin-top:.6rem}
 .desk-tools-list>.lede{margin:0}
+/* The desk as a workbench: the band on top, the list of the blog's parts down the left from the
+   kit's 72rem, and the work beside it. Until 90rem the draft keeps the width, so the sources
+   follow it and Finishing, when open, comes first; from 90rem both sit beside it again. */
+@media(min-width:72rem){
+  .desk-work[data-zone="work"]>.desk-layout{grid-template-columns:minmax(0,1fr)}
+  .desk-work[data-zone="work"]>.desk-layout.desk-finishing>.desk-finish{order:-1}
+}
+@media(min-width:90rem){
+  .desk-work[data-zone="work"]>.desk-layout{grid-template-columns:minmax(0,1fr) 20rem}
+  .desk-work[data-zone="work"]>.desk-layout.desk-finishing{grid-template-columns:minmax(0,1fr) minmax(22rem,28rem)}
+  .desk-work[data-zone="work"]>.desk-layout.desk-finishing>.desk-finish{order:0}
+}
 .desk-reading-part>.doc{line-height:1.7;max-width:72ch}
 .desk-reading-part+.desk-reading-part{border-top:1px solid var(--hair)}
 .desk-reading-part .doc img{max-width:100%;height:auto}
@@ -206,8 +218,6 @@
 .desk-reading-document{padding:.3rem}
 /* What the assistant is doing, at the top of the manuscript: inset as its parts are. */
 .desk-reading-document>.activity-holder{padding:1rem 1.2rem 0}
-.desk-suggestion-summary{padding:.7rem 1.2rem;border-bottom:1px solid var(--hair)}
-.desk-suggestion-summary>p{margin:0 0 .35rem}
 
 /* Reader aids and AI search: an FAQ or key takeaways chosen row by row (opaque, like any form), the
    post's Include a GEO review choice after the group's tools, and a kept meta description. */

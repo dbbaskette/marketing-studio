@@ -4595,8 +4595,8 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 }
 
 /* Parts gathered into one keep their own spacing at every width. */
-.workbench-rail, .workbench-parts { display: grid; gap: 0.9rem; align-content: start; min-width: 0; }
-.workbench-rail > *, .workbench-parts > * { margin: 0; min-width: 0; }
+.workbench-rail { display: grid; gap: 0.9rem; align-content: start; min-width: 0; }
+.workbench-rail > * { margin: 0; min-width: 0; }
 @media (min-width: 72rem) {
   :is(.page, .stack):has(> [data-zone="work"]) {
     display: grid;
@@ -4617,10 +4617,6 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
   /* One small part may sit above the work, such as its tabs or a selection bar. */
   :is(.page, .stack) > [data-zone="work-top"] { grid-column: work; grid-row: 2; }
   :is(.page, .stack):has(> [data-zone="work-top"]) > [data-zone="work"] { grid-row: 3 / -1; }
-  /* The list of parts runs to the foot of the work, so its height never opens a gap in the
-     rail. It starts under the level switch when there is one, and at the top otherwise. */
-  :is(.page, .stack) > [data-zone="parts"][role="tablist"] { grid-row: 2 / -1; }
-  :is(.page, .stack) > [data-zone="parts"] ~ [data-zone="parts"][role="tablist"] { grid-row: 3 / -1; }
   :is(.page, .stack) > [data-zone="rail"] { grid-column: rail; }
   :is(.page, .stack) > [data-zone="work"] { grid-column: work; grid-row: 2 / -1; }
   /* A desk that gathers its rail into one part: the work and its parts share one row, what
@@ -4629,7 +4625,6 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
      rail never opens a gap between the work and what follows it. */
   :is(.page, .stack):has(> .workbench-rail):has(> [data-zone="work"]) { grid-template-rows: repeat(5, min-content) 1fr; grid-auto-flow: row; }
   :is(.page, .stack):has(> .workbench-rail) > .workbench-rail { grid-column: rail; grid-row: 2 / -1; }
-  :is(.page, .stack):has(> .workbench-rail) > .workbench-parts { grid-column: parts; grid-row: 2; }
   :is(.page, .stack):has(> .workbench-rail) > [data-zone="work"] { grid-column: work; grid-row: 2; }
   :is(.page, .stack):has(> .workbench-rail) > [data-zone="foot"] { grid-column: parts / rail; }
   /* A desk whose work needs no rail (its band is on top) gives the rail's room to the work. */
@@ -4649,10 +4644,6 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
     overscroll-behavior: contain;
   }
   :is(.page, .stack):has(> .workbench-rail) > .parts[data-zone="parts"] { grid-row: 2; }
-  /* The work's parts read down the left, the one being made shimmering in the studio's colour. */
-  :is(.page, .stack) > [data-zone="parts"].desk-workspace-tabs,
-  :is(.page, .stack) > [data-zone="parts"] .desk-workspace-tabs { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  :is(.page, .stack) > [data-zone="parts"] [role="tab"] { justify-content: flex-start; width: 100%; }
   :is(.page, .stack) > [data-zone="rail"].desk-level-standing .section-title,
   .workbench-rail .desk-level-standing .section-title { font-size: 1rem; }
 }
@@ -4664,7 +4655,7 @@ body[data-product="Training Studio"] .cult-tab-rail > [role="tab"] {
 @keyframes part-is-made { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 /* Reading alone (F): at every width the parts and the rail step aside, and the work reads in
    one column, until F, Escape or the Show everything button brings them back. */
-body[data-focus="reading"] :is(.page, .stack) > :is([data-zone="parts"], [data-zone="rail"], .workbench-parts, .workbench-rail) { display: none; }
+body[data-focus="reading"] :is(.page, .stack) > :is([data-zone="parts"], [data-zone="rail"], .workbench-rail) { display: none; }
 body[data-focus="reading"] { --foot-lift: 3.6rem; }
 @media (min-width: 72rem) {
   body[data-focus="reading"] :is(.page, .stack):has(> [data-zone="work"]) { grid-template-columns: [parts work rail] minmax(0, 52rem); justify-content: center; }

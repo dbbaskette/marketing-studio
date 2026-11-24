@@ -1417,7 +1417,8 @@ document.querySelector('.skip').addEventListener('click',event=>{event.preventDe
 // A new link opened in a tab that already shows this page changes only the fragment, which does
 // not reload it. Start again with the new key.
 window.addEventListener('hashchange',()=>{const next=location.hash.slice(1).split('&')[0];if(next&&/^(token=)?[A-Za-z0-9_-]{32,128}$/.test(next)&&next.replace(/^token=/,'')!==token.replace(/^token=/,''))location.reload();});
-window.addEventListener('popstate',()=>{const query=new URLSearchParams(location.search);studioNavigate(query.get('screen')||'home',query.get('id'),query.get('stage'));});
+// Back and Forward between parts of the desk shown stay on the desk (desk.js sDeskReturnTo).
+window.addEventListener('popstate',()=>{const query=new URLSearchParams(location.search),held=studio.desk;if(query.get('screen')==='desk'&&!query.get('stage')&&held&&held.id===query.get('id')&&studio.screen==='desk'&&studio.id===held.id&&held.mode!=='review'&&held.view&&!sDeskStarting(held.view)&&typeof sDeskReturnTo==='function'){sDeskReturnTo(held);return;}studioNavigate(query.get('screen')||'home',query.get('id'),query.get('stage'));});
 document.addEventListener('keydown',event=>{if(!studio.sheet)return;if(event.key==='Escape'){event.preventDefault();sCloseSheet();return;}if(event.key==='Tab'){const nodes=[...$('sheet').querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(node=>!node.disabled);if(!nodes.length){event.preventDefault();return;}const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===$('sheet'))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 document.addEventListener('visibilitychange',sVisibilityChanged);
 setInterval(sPoll,3000);

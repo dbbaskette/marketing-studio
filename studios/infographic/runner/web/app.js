@@ -19,7 +19,7 @@ if(typeof StudioShell!=='undefined')StudioShell.connect({header:'X-Infographic-S
 let listedProjects=[];
 function infographicCommands(){
   return [...(screen==='home'?listedProjects:[]).map(p=>({title:p.title||'Unreadable infographic',group:'Infographics',hint:p.problem?'Needs attention':workingNow(p)?'Working now':p.readiness?.summary||'Saved',keywords:'infographic project work',run:()=>openProject(p.id)})),
-    {title:'New infographic',group:'Start',keywords:'create start new infographic',run:()=>startNewIntake(null,$('main'))}];
+    {title:'New infographic',group:'Start',keywords:'create start new infographic',run:()=>startNewIntake(null,$('ig-column')||$('main'))}];
 }
 if(typeof StudioShell!=='undefined')StudioShell.commands(infographicCommands);
 function requestId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');}
@@ -236,6 +236,7 @@ function paintWork() {
     surface.querySelector('[data-work-clock]').textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' elapsed';
   }
   paintDoing(work);
+  drawParts();
   guard();
 }
 // What the assistant is doing, with Show activity, in the page itself rather than the sticky
@@ -769,38 +770,38 @@ function renderProject() {
       button('Make this story visual',()=>reviseStorySheet(selected,true),true),
       nativeReady?button('Rebuild visual layout',()=>action('visual-layout')):make('p','quiet','This older plan uses sentence-length labels. Make a visual plan first so the diagrams remain readable.')));
   }
-  if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Advanced: author in your conversation',make('p','','Your assistant can save located facts and story proposals directly from a conversation, using Infographic Studio’s action JSON, without this page or a nested planning assistant. See docs/conversation.md.'))));
+  if(!p.stories.length)parts.push(partAt('story',savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Advanced: author in your conversation',make('p','','Your assistant can save located facts and story proposals directly from a conversation, using Infographic Studio’s action JSON, without this page or a nested planning assistant. See docs/conversation.md.')))));
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
   let chosenStory=null;
   if(p.stories.length){
     const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),s.id===p.selected_story?chosenMark():useStory(s))));
     const choices=add(make('section','stack'),make('h2','card-title','Choose the story'),add(make('div','ig-story-grid'),...stories));
-    choices.id='story-choice';if(!p.scene)parts.push(choices);else chosenStory=detail('Story: '+selected.headline,choices);
+    choices.id='story-choice';if(!p.scene){choices.dataset.igPart='story';parts.push(choices);}else{chosenStory=detail('Story: '+selected.headline,choices);chosenStory.dataset.igPart='story';}
   }
-  if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
+  if(selected && !p.scene)parts.push(partAt('page',card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose))));
   // With a page built, the page comes first and the chosen story waits below it.
-  if(delivery||p.scene){const page=workbench(p,delivery);if(page&&page.dataset)page.dataset.zone='work';parts.push(page);}
+  if(delivery||p.scene){const page=workbench(p,delivery);if(page&&page.dataset){page.dataset.zone='work';page.dataset.igPart='page';}parts.push(page);}
   parts.push(chosenStory);
   if(p.scene) {
     parts.push(detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
-    if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Advanced: write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
-    if(delivery?.current)parts.push(finishCard(p,delivery,checked,approved));
+    if(p.scene.art_regions?.length)parts.push(partAt('artwork',detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Advanced: write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b))))))));
+    if(delivery?.current)parts.push(partAt('review',finishCard(p,delivery,checked,approved)));
   }
   for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+pageOf(sent),sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
-  if(p.checks.length)parts.push(card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || [])))));
+  if(p.checks.length)parts.push(partAt(delivery?.current&&p.scene?'':'review',card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || []))))));
   const editBrief=button('Edit brief',()=>briefSheet());editBrief.dataset.key='ig-edit-brief';
   const updateSources=button('Add or update supplied information',()=>sourceSheet());updateSources.dataset.key='ig-source-update';
   const importMaterial=button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview,'','ig-source-material')));importMaterial.dataset.key='ig-source-material';
   const research=button('Research this topic',researchSheet);research.dataset.key='ig-research';
-  parts.push(detail('Brief and requirements',editBrief,make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
-  parts.push(detail('Sources and facts',updateSources,importMaterial,libraryAddButton(),make('p','quiet',LIBRARY_CLEARS),research,...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),...libraryNote(s),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
+  parts.push(partAt('brief',detail('Brief and requirements',editBrief,make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text)))));
+  parts.push(partAt('sources',detail('Sources and facts',updateSources,importMaterial,libraryAddButton(),make('p','quiet',LIBRARY_CLEARS),research,...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),...libraryNote(s),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||''))))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',usageWords(a)),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
-  if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
+  if(held.deliveries.length)parts.push(partAt('files',detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles))));
   // What the assistant did in each job, newest first, read only when it is opened.
   if(typeof StudioActivity!=='undefined')parts.push(StudioActivity.logCard({key:'activity-log '+p.id,load:()=>request('/api/activity-log?id='+encodeURIComponent(p.id)),
     entry:entry=>request('/api/activity-log?'+new URLSearchParams({id:p.id,entry}))}));
-  parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
+  parts.push(partAt('history',detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...historyGroups(held.history).map((g,i)=>historyGroup(g,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null)));
   // Where this stands is this studio's one status surface: the route, Needs you, the
   // revisions and the downloads. The shell adds only the line of light above it; the page
   // itself takes the middle and everything else the rail beside it. paintWork keeps the
@@ -810,10 +811,91 @@ function renderProject() {
     benchRest=finished?'still':'yours';
     const light=StudioShell.pulse(benchRest);light.id='ig-pulse';parts.unshift(light);
   }
-  $('main').replaceChildren(...parts.filter(Boolean));
-  paintWork();     // this infographic's running work, and its locked controls
+  const shown=parts.filter(Boolean),light=shown[0]?.id==='ig-pulse'?shown.shift():null;
+  const listed=typeof StudioShell!=='undefined'&&typeof StudioShell.parts==='function';
+  let column=shown;
+  if(listed&&!shown.some(node=>node.dataset?.zone==='work')){const work=add(make('div','stack ig-column'),...shown);work.id='ig-column';work.dataset.zone='work';column=[work];}
+  if(!partShown||partShown.project!==p.id){const kept=history.state?.infographicPart;partShown=kept&&kept.project===p.id&&typeof kept.part==='string'?{project:p.id,part:kept.part}:null;}
+  $('main').replaceChildren(...[light,...column].filter(Boolean));
+  partsSaid='';
+  paintWork();     // this infographic's running work, its list of parts and its locked controls
+  if(partShown)revealPart(partShown.part,{focus:false,scroll:false});   // the part marked stays open
   restoreBench();
 }
+// --- the parts of this infographic ------------------------------------------------------
+// Down the left of the page (StudioShell.parts; docs/design/ui-kit.md, "The parts of a
+// project"), one control above it narrower. The page stays one scrolling column: choosing a
+// part brings it into view, opened, with the focus on its heading, and marks it current. The
+// part chosen is kept in this tab's history state (`infographicPart`, beside the address,
+// never in its fragment), so Back returns to the part before and a reload marks it again.
+// A part says Writing while work on it runs, Out of date from the page's own stale marks,
+// Needs you while the story waits to be chosen or the page to be reviewed or approved, and
+// the page Draft or Ready (approved). Nothing else is said: no state is invented.
+function partAt(id,node){if(node&&id)node.dataset.igPart=id;return node;}
+const PART_NAMES={story:'Story',page:'Page',artwork:'Artwork',review:'Review and checks',files:'Saved files',brief:'Brief',sources:'Sources and facts',history:'History'};
+const WORK_PARTS={suggest:'story','revise-story':'story',build:'page',repair:'page',preview:'page','visual-layout':'page','refresh-page':'page','art-direct':'artwork','image-start':'artwork','revise-art':'artwork','image-recover':'artwork','inspect-images':'review',review:'review',approve:'files',export:'files','google-deliver':'files'};
+const STALE_PARTS={facts:'sources',stories:'story',page:'page',artwork:'artwork'};
+let partShown=null,partsSaid='';
+function partWorking(){const work=held&&running.get(held.project.id);if(!work)return '';const verb=Object.keys(workLabels).find(key=>workLabels[key]===work.label);return WORK_PARTS[verb]||'';}
+function partState(id){
+  const p=held.project,stage=held.roadmap?.stage;
+  if(partWorking()===id)return 'Writing';
+  if(Object.keys(STALE_PARTS).some(key=>STALE_PARTS[key]===id&&p.stale?.[key]))return 'Out of date';
+  if(id==='story'&&stage==='choose'||id==='review'&&['review','approve'].includes(stage))return 'Needs you';
+  if(id==='page'&&p.scene)return held.deliveries.some(d=>d.current&&d.approved_current)?'Ready':'Draft';
+  return '';
+}
+function partGroups(){
+  const p=held.project,here=new Set(Array.from($('main').querySelectorAll('[data-ig-part]'),node=>node.dataset.igPart));
+  const part=id=>here.has(id)?{id,name:PART_NAMES[id],state:partState(id),
+    count:id==='sources'?p.sources.length+(p.sources.length===1?' source':' sources'):id==='files'?held.deliveries.length+(held.deliveries.length===1?' revision':' revisions'):undefined}:null;
+  return [{title:'Infographic',parts:['story','page','artwork','review','files'].map(part).filter(Boolean)},
+    {title:'Behind it',parts:['brief','sources','history'].map(part).filter(Boolean)}];
+}
+// The list said again whenever what it says changes (paintWork asks on every change of work);
+// the part the person is on in it keeps the focus.
+function drawParts(){
+  if(screen!=='project'||!held||typeof StudioShell==='undefined'||typeof StudioShell.parts!=='function')return;
+  const main=$('main'),old=Array.from(main.children).find(node=>node.matches('nav.parts'));
+  const groups=partGroups(),chosen=partShown?.project===held.project.id?partShown.part:null,said=JSON.stringify([groups,chosen]);
+  if(old&&said===partsSaid)return;
+  partsSaid=said;
+  const nav=StudioShell.parts({label:'Parts of this infographic',key:'ig-parts',groups,chosen,choose:choosePart});
+  for(const control of nav.querySelectorAll('button'))free(control);   // a way around the page stays free while work runs
+  const focused=old&&old.contains(document.activeElement)?document.activeElement.dataset.key:'';
+  const light=$('ig-pulse');
+  if(old)old.replaceWith(nav);else if(light&&light.parentElement===main)light.after(nav);else main.prepend(nav);
+  if(focused)Array.from(nav.querySelectorAll('button')).find(node=>node.dataset.key===focused)?.focus({preventScroll:true});
+}
+// A part brought into view: every disclosure around it opened, and the focus on its heading
+// (a disclosure's own summary, or the card's title).
+function revealPart(id,{focus=true,scroll=true}={}){
+  const main=$('main'),node=main.querySelector('[data-ig-part="'+id+'"]');if(!node)return false;
+  for(let at=node;at&&at!==main;at=at.parentElement)if(at.tagName==='DETAILS')at.open=true;
+  const head=node.tagName==='DETAILS'?node.querySelector(':scope > summary'):node.querySelector('h2');
+  if(scroll)node.scrollIntoView({block:'start',behavior:calm()?'auto':'smooth'});
+  if(focus&&head){if(head.tagName!=='SUMMARY')head.tabIndex=-1;head.focus({preventScroll:true});}
+  return true;
+}
+function choosePart(id){
+  const project=held.project.id;
+  if(!(partShown?.project===project&&partShown.part===id)){
+    partShown={project,part:id};
+    try{history.pushState({...(history.state||{}),infographicPart:partShown},'');}catch(f){}
+  }
+  drawParts();revealPart(id);
+}
+// Back and Forward between parts: the part the entry names, on its infographic (opened again
+// when the person had left it); an entry before the first part chosen is the page's top.
+async function partsReturn(event){
+  const kept=event.state?.infographicPart,id=kept&&typeof kept.project==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(kept.project)?kept.project:'';
+  if(id&&(screen!=='project'||held?.project.id!==id)){await openProject(id);if(!here(id))return;}
+  if(screen!=='project'||!held)return;
+  partShown=id&&typeof kept.part==='string'?{project:id,part:kept.part}:null;
+  drawParts();
+  if(partShown)revealPart(partShown.part);else scrollTo({top:0,behavior:calm()?'auto':'smooth'});
+}
+window.addEventListener('popstate',partsReturn);
 // The visual editor keeps its place across saves, reloads and other actions in this tab:
 // the selected element, unsaved words for each element, and the last saved confirmation.
 let bench={project:'',element:'',drafts:{},saved:null,failed:'',unchanged:false,focus:false,scroll:null};
