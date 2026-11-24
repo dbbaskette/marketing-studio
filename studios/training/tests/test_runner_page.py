@@ -3537,3 +3537,38 @@ class PracticeOnlyFormTests(unittest.TestCase):
         self.assertIsNone(form['deck_target'])
         self.assertEqual((form['research_from']['documents'], form['research_from']['web']),
                          (True, False))
+
+
+
+class PollAfterSaveTests(PageCase):
+    """A save through the page is seen by the very next poll, although the idle cooldown
+    has not passed, and a plain read leaves the cooldown as it was. Counted, never timed."""
+
+    def walked(self):
+        for _ in range(50):
+            found = self.get('updates')
+            if found['complete']:
+                return found
+        self.fail('The poll never finished its walk')
+
+    def test_a_save_through_the_page_shows_at_the_next_poll(self):
+        first = self.walked()
+        self.assertFalse(first['active'])
+        resting = {**first, 'complete': False, 'cached': True}
+        self.assertEqual(self.get('updates'), resting)   # inside the cooldown: no walk
+        self.get('setup')                                # plain reads change nothing
+        self.get('capabilities')
+        self.answer('GET', '/api/research-note?path=nowhere&id=none')
+        self.assertEqual(self.get('updates'), resting)
+        self.post('setup', {'limits': {'parallel': 3}})
+        after = self.get('updates')
+        self.assertTrue(after['complete'], 'The save made the next poll walk')
+        self.assertNotEqual(after['revision'], first['revision'])
+        self.assertEqual(self.get('updates'), {**after, 'complete': False, 'cached': True})
+
+    def test_a_refused_save_still_makes_the_next_poll_walk(self):
+        first = self.walked()
+        self.post('setup', {'look_for_updates': 'yes'}, 400)
+        again = self.get('updates')
+        self.assertTrue(again['complete'])
+        self.assertEqual(again['revision'], first['revision'])

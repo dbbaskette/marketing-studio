@@ -154,7 +154,7 @@ from workspace import WorkspaceError
 from runner import decks, gitstate, marks, settings, setup
 from runner import engine as engines
 
-from studio_core import modules
+from studio_core import modules, polling
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 from studio_core.shared_runner import page as _shared
@@ -241,7 +241,7 @@ class RunnerPage(server.Page):
 
     def read(self, path: str, one):
         if path == '/api/research-note':
-            return self.write(path, {'path':one('path'), 'id':one('id'), 'action':'read'})
+            return self.apply(path, {'path':one('path'), 'id':one('id'), 'action':'read'})
 
         if path == '/api/updates':
             from studio_core import polling
@@ -250,7 +250,7 @@ class RunnerPage(server.Page):
         if path == '/api/slide-text-draft':
             try: level = one('level')
             except server.Refusal: level = None
-            return self.write(path, {'path': one('path'), 'level': level or None, 'action': 'read'})
+            return self.apply(path, {'path': one('path'), 'level': level or None, 'action': 'read'})
 
         if path == '/api/intake-draft':
             from studio_core import intake_drafts
@@ -459,6 +459,16 @@ class RunnerPage(server.Page):
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        """Every POST the page answers. Once it has run, even when it failed partway, the
+        next poll walks the workspace again instead of reusing the last walk, so the
+        change shows at once in every open tab. A read sent as a POST changes nothing."""
+        try:
+            return self.apply(path, sent)
+        finally:
+            if sent.get('action') != 'read':
+                polling.invalidate(self.engine)
+
+    def apply(self, path: str, sent: dict):
         if path == '/api/research-note':
             from studio_core import intake_drafts, research_notes
             try:

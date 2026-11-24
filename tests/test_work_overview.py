@@ -144,3 +144,71 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual(row['action'],'Review the training outline')
         self.assertEqual(sorted(root.rglob('*')),before)
         self.assertFalse((root/work_summary.FILE).exists())
+
+
+class KeptOverviewTests(unittest.TestCase):
+    """The home page's repeated reads reuse a studio's listing until a cheap look says it
+    changed, for a bounded time. Counted, never timed."""
+    STUDIOS=[{'id':'training','installed':True}]
+
+    # The same disposable workspace and saved work as OverviewTests.
+    setUp=OverviewTests.setUp
+    item=OverviewTests.item
+
+    def counted(self):
+        real=work_overview.listing
+        self.made=[]
+        def made(identifier):
+            self.made.append(identifier)
+            return real(identifier)
+        patch=mock.patch.object(work_overview,'listing',side_effect=made)
+        patch.start();self.addCleanup(patch.stop)
+
+    def test_repeated_home_reads_list_saved_work_once(self):
+        self.item('outline');self.counted()
+        first=work_overview.snapshot(self.STUDIOS)
+        for _ in range(4):self.assertEqual(work_overview.snapshot(self.STUDIOS),first)
+        self.assertEqual(self.made,['training'])
+
+    def test_saved_summaries_new_work_and_drafts_show_on_the_next_read(self):
+        item=self.item('outline');self.counted()
+        work_overview.snapshot(self.STUDIOS)
+        work_summary.save(item,'Synthetic outline','recent','Open saved work')   # a studio saved its state
+        self.assertEqual(work_overview.snapshot(self.STUDIOS)['training']['items'][0]['state'],'recent')
+        self.item('another')                                                       # new saved work
+        self.assertEqual(len(work_overview.snapshot(self.STUDIOS)['training']['items']),2)
+        self.assertEqual(len(self.made),3)
+
+    def test_a_change_made_through_marketing_studio_reads_fresh(self):
+        self.item('outline');self.counted()
+        work_overview.snapshot(self.STUDIOS)
+        work_overview.snapshot(self.STUDIOS,fresh=True)
+        self.assertEqual(len(self.made),2)
+
+    def test_a_kept_listing_is_read_again_once_it_is_old(self):
+        self.item('outline');self.counted()
+        work_overview.snapshot(self.STUDIOS)
+        kept=work_overview._kept['training']
+        work_overview._kept['training']=(kept[0],kept[1]-work_overview.FRESH_SECONDS,*kept[2:])
+        work_overview.snapshot(self.STUDIOS)
+        self.assertEqual(len(self.made),2)
+
+    def test_an_older_listing_never_replaces_a_newer_one(self):
+        import threading
+        self.item('outline')
+        release=threading.Event();self.addCleanup(release.set)
+        started=threading.Event();answers=iter(['older','newer'])
+        def listed(identifier):
+            made=next(answers)
+            if made=='older':
+                started.set()
+                release.wait(10)   # a slow home read, begun before the change
+            return {'made':made}
+        with mock.patch.object(work_overview,'listing',side_effect=listed):
+            slow=threading.Thread(target=work_overview.cached,args=('training',),daemon=True)
+            slow.start()
+            self.assertTrue(started.wait(5))
+            # The page's write reads afresh while the slow read is still in hand.
+            self.assertEqual(work_overview.cached('training',fresh=True),{'made':'newer'})
+            release.set();slow.join(5)
+            self.assertEqual(work_overview.cached('training'),{'made':'newer'})

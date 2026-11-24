@@ -1,9 +1,11 @@
+import concurrent.futures
 import json
 import os
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -557,6 +559,173 @@ time.sleep(60)
     def test_configured_path_is_authoritative(self):
         self.assertEqual(catalog.locate('training', self.preferences['paths']), self.install.resolve())
         self.assertIsNone(catalog.locate('training', {'training': '/does-not-exist'}))
+
+
+class PerStudioLockTests(unittest.TestCase):
+    """Connecting one studio holds only that studio: others open and stop meanwhile, and
+    closing stops every other studio first. Counted and ordered, never timed."""
+    setUp = LauncherTests.setUp
+    fixture = LauncherTests.fixture
+
+    GATED = """import json, os, pathlib, sys, time
+handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
+if '--connect' in sys.argv:
+    pathlib.Path(os.environ['FIXTURE_CONNECTING']).write_text(sys.argv[1])
+    gate = pathlib.Path(os.environ['FIXTURE_GATE'])
+    while not gate.exists():
+        time.sleep(.02)
+    print(json.dumps({'connected': True}), flush=True)
+    raise SystemExit(0)
+print(json.dumps({'address': 'http://127.0.0.1:12345/'}), flush=True)
+time.sleep(60)
+"""
+
+    def connecting(self):
+        """Training Studio connecting, held at its gate until the test opens it."""
+        other = self.root / 'presentation-install'
+        (other / 'runner').mkdir(parents=True)
+        (other / 'runner/studio.py').write_text('# fixture')
+        self.preferences = {'paths': {**self.preferences['paths'], 'presentation': str(other.resolve())}}
+        self.connecting_file, self.gate = self.root / 'connecting', self.root / 'gate'
+        env = mock.patch.dict(os.environ, {'FIXTURE_CONNECTING': str(self.connecting_file),
+                                           'FIXTURE_GATE': str(self.gate)})
+        env.start()
+        self.addCleanup(env.stop)
+        fixture = self.fixture(self.GATED)
+        fixture.start()
+        self.addCleanup(fixture.stop)
+        result = []
+        worker = threading.Thread(target=lambda: result.append(
+            self.launcher.connect('training', self.preferences, {})), daemon=True)
+        worker.start()
+        self.addCleanup(worker.join, 10)
+        self.addCleanup(self.gate.touch)   # runs first, so nothing is left waiting
+        self.assertTrue(waited(self.connecting_file.exists), 'The connect did not start')
+        return worker, result
+
+    def soon(self, call, *arguments):
+        """The call's answer, on another thread: one stuck behind the connect fails the
+        test instead of hanging it."""
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.addCleanup(pool.shutdown, wait=False)
+        return pool.submit(call, *arguments).result(timeout=20)
+
+    def test_connecting_one_studio_does_not_block_opening_or_stopping_another(self):
+        worker, result = self.connecting()
+        link = self.soon(self.launcher.open, 'presentation', self.preferences, {})
+        self.assertIn('#token=', link)
+        self.assertTrue(self.launcher.running('presentation'))
+        self.assertTrue(self.soon(self.launcher.stop, 'presentation'))
+        self.assertFalse(self.launcher.running('presentation'))
+        self.assertTrue(worker.is_alive(), 'Training Studio was still connecting throughout')
+        self.assertEqual(result, [])
+        self.gate.touch()
+        worker.join(10)
+        self.assertTrue(result[0]['connected'])
+
+    def test_closing_stops_the_others_first_then_waits_for_the_connect(self):
+        worker, result = self.connecting()
+        self.soon(self.launcher.open, 'presentation', self.preferences, {})
+        opened = self.launcher.children['presentation'][0]
+        closing = threading.Thread(target=self.launcher.close, daemon=True)
+        closing.start()
+        self.addCleanup(closing.join, 10)
+        self.assertTrue(waited(lambda: opened.poll() is not None), 'Presentation Studio was stopped at once')
+        self.assertTrue(closing.is_alive(), 'Closing waits for the connect to end')
+        with self.assertRaisesRegex(WorkspaceError, 'closing'):
+            self.soon(self.launcher.open, 'presentation', self.preferences, {})
+        self.gate.touch()
+        worker.join(10)
+        closing.join(10)
+        self.assertFalse(closing.is_alive())
+        self.assertTrue(result[0]['connected'])
+        self.assertFalse(self.launcher.children)
+
+
+class ProcessListTests(unittest.TestCase):
+    """Each look at the studios reads the process list once. Counted against a synthetic
+    list, so no real process list is needed; the recorded studios are disposable sleepers."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        patcher = mock.patch.dict(os.environ, {'MARKETING_STUDIO_DATA': str(self.root / 'data')})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.calls, self.lines = [], []
+
+        def listing(*arguments):
+            self.calls.append(arguments)
+            return ''.join(self.lines) if arguments == launching.LISTING else None
+        ps = mock.patch.object(launching, 'ps', side_effect=listing)
+        ps.start()
+        self.addCleanup(ps.stop)
+        signals = mock.patch.object(launching, 'stop_group', side_effect=AssertionError('Signalled'))
+        signals.start()
+        self.addCleanup(signals.stop)
+
+    def left_running(self, identifier, job=True):
+        """A studio an earlier Marketing Studio left running, with a codex job under it."""
+        process = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'],
+                                   start_new_session=True, stdin=subprocess.DEVNULL)
+        self.addCleanup(end, process)
+        folder = launching.records()
+        folder.mkdir(parents=True, exist_ok=True)
+        # A single-digit day: ps pads it to two, and a record keeps it as ps printed it.
+        (folder / (identifier + '.json')).write_text(json.dumps(
+            {'pid': process.pid, 'started': 'Mon Nov  3 10:00:00 2026'}))
+        pid = process.pid
+        self.lines.append(f'{pid:>6} 1 {pid} Ss 01:00:00 Mon Nov 3 10:00:00 2026 '
+                          f'python /m/marketing_studio/bridge.py {identifier} /s --home-data {launching.home_key()}\n')
+        if job:
+            self.lines.append(f'{pid + 900000:>6} {pid} {pid + 900000} S 30:00 Mon Nov 3 10:30:00 2026 '
+                              f'/usr/local/bin/codex exec --cd /d/jobs/{identifier}-deck/stand\n')
+        return pid
+
+    def test_jobs_under_a_studio_take_one_process_list(self):
+        pid = self.left_running('training')
+        jobs = Launcher().jobs('training')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual([(job['assistant'], job['label'], job['pid'], job['started']) for job in jobs],
+                         [('codex', 'training-deck', pid + 900000, 'Mon Nov  3 10:30:00 2026')])
+
+    def test_start_up_cleanup_looks_at_every_studio_from_one_process_list(self):
+        self.left_running('training')
+        self.left_running('presentation')
+        report = Launcher().clean_orphans(keep_busy=True)
+        self.assertEqual([(row['id'], row['stopped']) for row in report],
+                         [('presentation', False), ('training', False)])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_connect_refuses_a_working_studio_after_one_process_list(self):
+        install = self.root / 'studio'
+        (install / 'runner').mkdir(parents=True)
+        (install / 'runner/studio.py').write_text('# fixture')
+        self.left_running('training')
+        with self.assertRaisesRegex(WorkspaceError, 'is working: codex job training-deck'):
+            Launcher().connect('training', {'paths': {'training': str(install)}}, {})
+        self.assertEqual(len(self.calls), 1)
+
+    def test_nothing_recorded_reads_no_process_list(self):
+        self.assertEqual(Launcher().jobs('training'), [])
+        self.assertEqual(Launcher().clean_orphans(), [])
+        self.assertEqual(self.calls, [])
+
+    def test_waiting_for_a_group_to_stop_looks_less_often_as_it_goes_on(self):
+        clock, looks = [0.0], []
+        with mock.patch.object(launching.time, 'monotonic', lambda: clock[0]), \
+                mock.patch.object(launching.time, 'sleep', lambda pause: clock.__setitem__(0, clock[0] + pause)), \
+                mock.patch.object(launching.os, 'killpg', return_value=None), \
+                mock.patch.object(launching, 'group_alive', side_effect=lambda group: looks.append(clock[0]) or True):
+            STOP_GROUP(4242)
+        # A stubborn group is looked at through SIGTERM's 8 seconds and SIGKILL's 5: once
+        # every 0.1 s that was 130 looks, each running ps.
+        self.assertLessEqual(len(looks), 40)
+        self.assertGreaterEqual(clock[0], launching.WAIT + 5)
+
+
+STOP_GROUP = launching.stop_group   # the real one; ProcessListTests refuses every signal
 
 
 if __name__ == '__main__':
