@@ -34,6 +34,15 @@ CONSEQUENCES += (' Shared work requires every retained shared file in this deck 
                  'through the existing saved flow or commit them with Git, then preview again. '
                  'Private ignored inputs stay local. Local-only migration is not a complete Git backup.')
 CHANGED = 'The deck or its saved inputs changed. Preview Open on the desk again.'
+# A deck stopped before its outline was drafted has no slide parts to open on the desk.
+NO_OUTLINE = ('This deck has no outline yet. Continue it in its saved flow until its outline '
+              'is drafted, then open it on the desk.')
+# A pause, a stop and a failure are each kept in History; none is resumed on the desk.
+HALTS = {'paused': 'The prior runner pause remains in History. Conversation editing will not '
+                   'resume that runner.',
+         'stopped': 'The prior runner stop or failure remains in History. Conversation editing '
+                    'will not resume that runner.'}
+HALTS['failed'] = HALTS['stopped']
 SHARED = ('Retained shared files in this deck and the existing workspace record must first match '
           'their committed versions and staging index. Record intended changes through the existing '
           'saved flow or commit them with Git, then preview again. Migration does not commit those edits.')
@@ -65,6 +74,8 @@ def materials(record, files):
         if inventory.get('sha256') != hashlib.sha256(files[existing.SOURCE]).hexdigest():
             raise ValueError('The original deck differs from its saved inventory.')
     if not desk.selected(record):
+        if 'outline.json' not in files:
+            raise ValueError(NO_OUTLINE)
         format.shared_material('outline.json', files.get('outline.json'))
         saved = _json(files, 'outline.json', True)
         slides = saved.get('slides') if isinstance(saved, dict) else None
@@ -120,9 +131,9 @@ def prepare_migration(record, saved_inputs):
             raise ValueError('This deck already has desk metadata or pending recovery.')
         halted = record.get('halted')
         if halted:
-            if not isinstance(halted, dict) or halted.get('state') not in ('stopped', 'failed'):
+            if not isinstance(halted, dict) or halted.get('state') not in HALTS:
                 raise ValueError('This saved runner stop cannot be interpreted. Continue with its saved flow first.')
-            retained.append('The prior runner stop or failure remains in History. Conversation editing will not resume that runner.')
+            retained.append(HALTS[halted['state']])
         if record.get('question'):
             raise ValueError('Resolve the saved runner question in its saved flow before opening it on the desk.')
     except (ValueError, KeyError, TypeError, UnicodeError) as error:

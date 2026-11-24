@@ -2,7 +2,7 @@
 
 Only migrate at the person's explicit request. Run `studio desk migration-preview --folder PATH` first. Show retained materials, incomplete work, blockers and consequences; keep its token hidden. Preview and Cancel change nothing.
 
-Saved schemas 1–3 need a usable outline; Selected changes needs its inventory and original deck. Sources and pinned research must verify. Brief-only, unreadable or unsupported work keeps its saved flow. Worker markers block migration: use existing saved-flow Stop/recovery when appropriate. Recovery may discard uncommitted work. Never delete markers or invent completion.
+Saved schemas 1–3 need a usable outline; Selected changes needs its inventory and original deck. Sources and pinned research must verify. A saved pause, stop or failure stays in History and the runner is not resumed. Work stopped before its outline (a research plan or findings, a document's reading, an existing deck's inventory), a pending worker question, schema 4 parallel research and missing dependencies keep their saved flow; the preview says which. A saved record the runner cannot read opens read-only: its reason, its saved files and **Start new work from this**; it is never continued or migrated. Worker markers block migration: use existing saved-flow Stop/recovery when appropriate. Recovery may discard uncommitted work. Never delete markers or invent completion.
 
 After confirmation, run `studio desk migrate --folder PATH --expected TOKEN` with the exact token. Changed inputs, workers, owner or workspace refuse. It opens the same folder in conversation with scope `['part']`: existing slide parts only. Broader work needs explicit `desk scope`. Nothing is approved, drawn, researched, installed or delivered.
 
