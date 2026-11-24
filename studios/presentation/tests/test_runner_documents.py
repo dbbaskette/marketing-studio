@@ -21,6 +21,7 @@ from workspace import WorkspaceError
 
 from runner import documents, research, worker_tools
 from stand_ins import research as research_stand_in
+from studio_core import google_api
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 STRICT = 'http://purl.oclc.org/ooxml/wordprocessingml/main'
@@ -41,8 +42,9 @@ FORBIDDEN = ('artifact', 'stale', 'lineage')
 
 def setUpModule():
     """A slip in a test must fail here. It must never start a program or reach the network."""
+    # Google requests are sent through studio_core.google_api, so its opener is blocked too.
     for owner, name in ((subprocess, 'run'), (urllib.request, 'urlopen'),
-                        (socket, 'create_connection')):
+                        (socket, 'create_connection'), (google_api, 'urlopen')):
         blocked = mock.Mock(side_effect=AssertionError(f'A test tried to use {name}.'))
         patcher = mock.patch.object(owner, name, blocked)
         patcher.start()

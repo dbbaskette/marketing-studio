@@ -20,6 +20,7 @@ import workspace
 from workspace import WorkspaceError
 
 from runner import copies, index
+from studio_core import google_api
 
 FORBIDDEN_WORDS = re.compile(r'\b(artifacts?|stale|lineage)\b', re.IGNORECASE)
 HEADINGS = ['Objectives', 'What is here', 'Copies', 'Coverage', 'Open gaps and limitations',
@@ -36,7 +37,9 @@ SUPPLIED = [{'id': 'runbook-docx', 'title': 'Runbook', 'origin': 'supplied Runbo
 
 def setUpModule():
     """A slip in a test must fail here. It must never start a program or reach Google."""
-    for owner, name in ((subprocess, 'run'), (urllib.request, 'urlopen')):
+    # Google requests are sent through studio_core.google_api, so its opener is blocked too.
+    for owner, name in ((subprocess, 'run'), (urllib.request, 'urlopen'),
+                        (google_api, 'urlopen')):
         blocked = mock.Mock(side_effect=AssertionError(f'A test tried to use {name}.'))
         patcher = mock.patch.object(owner, name, blocked)
         patcher.start()
