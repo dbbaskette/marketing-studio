@@ -16,7 +16,16 @@ import server
 
 
 def main():
-    case, web = DeskCase(), None
+    if '--saved-taken' in sys.argv:
+        # Two people sharing one team repository: the page is Blake's, over a deck Alex runs.
+        from runner_support import TeamCase
+
+        class Team(DeskCase, TeamCase):
+            pass
+        case = Team()
+    else:
+        case = DeskCase()
+    web, engine = None, None
     try:
         with contextlib.redirect_stdout(sys.stderr):
             case.setUp()
@@ -68,7 +77,38 @@ def main():
                 # opening of every other deck in the workspace on the desk.
                 unread = root = case.load_saved('unleveled', title='Unreadable saved deck')
                 print(json.dumps({'read_only': str(unread)}), file=sys.stderr, flush=True)
-        web = server.Desk(page=lambda port: page.RunnerPage(port, case.engine))
+            if '--saved-delivered' in sys.argv:
+                # Delivered by the earlier flow: the finished Open on the desk opens it.
+                root = case.load_saved('delivered', title='Delivered earlier')
+            if '--saved-nothing' in sys.argv:
+                # Stopped at its research plan, before anything was made: read-only.
+                root = case.load_saved('research-plan', title='Stopped before its outline')
+            if '--saved-interrupted' in sys.argv:
+                # Its opening on the desk stopped in the middle, after the commit, as a runner
+                # that ended there leaves it; and another saved deck that waits for it.
+                import subprocess
+                from runner import desk_chat
+                from test_saved_records import CRASH, STUDIO
+                beside = case.load_saved('outline', title='Waiting beside it')
+                root = case.load_saved('build', title='Interrupted opening')
+                token = desk_chat.migration_preview(case.engine, root)['expected']
+                subprocess.run([sys.executable, '-c', CRASH, str(root), token, 'commit'],
+                               cwd=STUDIO, env={**os.environ, 'PYTHONPATH': '.:tests'},
+                               capture_output=True, text=True, timeout=30)
+                print(json.dumps({'beside': str(beside)}), file=sys.stderr, flush=True)
+            if '--saved-taken' in sys.argv:
+                # Alex runs a saved deck; the page is Blake's, who takes it over to open it.
+                taken = case.load_saved('build', title='Run by Alex')
+                case.engine.share()
+                blake = mock.patch.dict(os.environ, case.blake.env)
+                blake.start()
+                case.addCleanup(blake.stop)
+                studios_config.update({'local': {'root': str(case.blake.space.root)}})
+                preferences.finish(studios_config, lambda _: None)
+                case.blake.engine.fetch()
+                engine, root = case.blake.engine, case.theirs(case.blake, taken)
+        served = engine or case.engine
+        web = server.Desk(page=lambda port: page.RunnerPage(port, served))
         web.start()
         print(json.dumps({'url': web.url, 'path': str(root)}), flush=True)
         done = threading.Event()

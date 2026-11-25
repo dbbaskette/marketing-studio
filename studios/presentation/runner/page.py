@@ -19,8 +19,8 @@ What a caller needs to know
     "version", "problem"}]}; `/api/models?agent=` what an agent offers to choose from
     ({"agent", "models", "levels", "source", "problem"}; a list that could not be made is
     answered with no models and `problem`, and listing holds up nothing else).
-  - `/api/decks`, every deck in the engine's four lists {"needs", "working", "finished",
-    "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`); `/api/activity?path=`
+  - `/api/decks`, every deck in the engine's lists {"needs", "working", "finished",
+    "elsewhere", and "saved" when there are any}; `/api/run?path=` one deck's view (`engine.view`); `/api/activity?path=`
     one deck's Activity log (`engine.activity`): each finished assistant job, newest first,
     without its lines; `&entry=` one finished job's lines, `&job=&since=` one running job's.
   - `/api/slide?path=&kind=build|look|original&number=` (or `&name=sample` for the cover
@@ -56,12 +56,6 @@ What a caller needs to know
   - `/api/run` {"path", "action"}: pause, resume, stop, retry or undo; answers the view.
   - `/api/decide` {"path", "gate", "decision", "note"?, "extra"?}: the only way a gate
     moves; answers the view. `/api/answer` {"path", "id", "answer"}: a worker's question.
-  - `/api/picture` {"path", "slide", "name", "content", "alt", "source", "expected"}: a
-    picture of the person's own (PNG or JPEG, `content` in base64) for a cover, section or
-    content slide while the outline waits; answers {"asset", "slide"}. It may carry up to
-    PICTURE_LIMIT bytes, and only with the key.
-  - `/api/picture-remove` {"path", "slide", "expected"}: take that picture off its slide
-    while the outline waits; answers {"slide"}.
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
     `/api/publish` {"path"}, `/api/delete` {"path", "title"}, `/api/bring` {"path"}: a
     deck this computer knows from outside the workspace, copied in (`engine.bring`).
@@ -78,6 +72,11 @@ What a caller needs to know
     Update, and when main is no longer at the revision shown in `upkeep.versions.brand`.
   - `/api/computer` {}: look at this computer again, and at the skills, and wake the decks
     that were waiting on what was missing.
+  - A deck the earlier step-by-step flow saved: `/api/saved-check` {"path"} finds what becomes
+    of it now (read-only; run when its screen opens or the person asks, never by a poll);
+    `/api/saved-finish` {"path"} finishes an interrupted opening on the desk with the
+    migration's own recovery; `/api/saved-clear-marker` {"path"} removes the step markers a
+    dead step left and nothing else. Each answers the view; a refusal is 409.
   - The desk, for a deck started from the desk's start (`engine.desk_*`), each answering the
     deck's view: `/api/desk-note` {"path", "number", "note", "expected"} redraws one slide's
     section with the note; `/api/desk-deck-note` {"path", "note", "expected"} every section;
@@ -201,10 +200,15 @@ WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/build-feedback', '/api/progress-seen',
-          '/api/research-site', '/api/picture',
-          '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
+          '/api/research-site', '/api/desk-outline-price', SOURCE, *DESK)
 COPY = '/api/deck-copy'   # a deck's setup, for the start form to make a new one from
 WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready', COPY)
+# A deck the earlier step-by-step flow saved (GitHub issue #542): what becomes of it, found
+# when it is opened or the person asks; an interrupted opening on the desk finished; and a
+# step marker a dead step left cleared. Each answers the deck's view.
+SAVED = {'/api/saved-check': 'saved_check', '/api/saved-finish': 'finish_opening',
+         '/api/saved-clear-marker': 'clear_marker'}
+WRITES = (*WRITES, *SAVED)
 # Browsing the shared Document Library: it reads, and selects nothing for a deck.
 WRITES = (*WRITES, *library_context.ROUTES)
 # A folder on this computer, a Google Drive folder link, or a spreadsheet, read into the one
@@ -221,8 +225,6 @@ ONE_DOCUMENT = ('This folder holds more than one document, among them {names}. A
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
-PICTURE = '/api/picture'
-PICTURE_LIMIT = 28_000_000   # bytes: a picture of up to 20 MB for a slide, in base64
 FILES = engines.FILES   # a read-only record lists the same files
 PREVIEW_LIMIT = 1_000_000    # bytes of a file sent to the page
 NO_DECK = 'There is no deck there.'
@@ -437,12 +439,12 @@ class RunnerPage(server.Page):
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
             return LIMIT if address == '/api/intake-draft' else 512_000
-        if address in (DECKS, PICTURE, SOURCE, '/api/research-sources', DOCUMENT_INTAKE):
+        if address in (DECKS, SOURCE, '/api/research-sources', DOCUMENT_INTAKE):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
-            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000,
+            return {DECKS: DECKS_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000,
                     DOCUMENT_INTAKE: INTAKE_LIMIT}[address]
         return super().body_limit(target, headers)
 
@@ -521,6 +523,12 @@ class RunnerPage(server.Page):
             except ValueError as error:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
+        if path in SAVED:
+            deck = self.deck(server.text(sent, 'path'))
+            try:
+                return server.as_json(HTTPStatus.OK, getattr(self.engine, SAVED[path])(deck))
+            except WorkspaceError as refusal:
+                raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
         if path == COPY:
             deck = self.deck(server.text(sent, 'path'))
             try:
@@ -555,12 +563,6 @@ class RunnerPage(server.Page):
                 server.text(sent, 'note'), number))
         if path == '/api/decide':
             return server.as_json(HTTPStatus.OK, self.decide(sent))
-        if path == PICTURE:
-            return server.as_json(HTTPStatus.OK, self.picture_given(sent))
-        if path == '/api/picture-remove':
-            return server.as_json(HTTPStatus.OK, self.engine.remove_picture(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'slide'),
-                server.text(sent, 'expected', needed=False)))
         if path == '/api/answer':
             return server.as_json(HTTPStatus.OK, self.answered(sent))
         if path in DESK:
@@ -708,24 +710,6 @@ class RunnerPage(server.Page):
                                  'be. Save a smaller copy.')
         return {'name': name, 'content': base64.b64encode(data).decode('ascii'),
                 'bytes': len(data), 'said': found['said']}
-
-    def picture_given(self, sent: dict) -> dict:
-        """A picture the person gives one slide at the outline stop: {"path", "slide",
-        "name", "content" (the file in base64), "alt", "source", "expected"}."""
-        data = sent.get('content')
-        try:
-            if not isinstance(data, str) or not data:
-                raise ValueError
-            picture = base64.b64decode(data, validate=True)
-        except (binascii.Error, ValueError):
-            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'The picture did not arrive whole. '
-                                 'Choose the file again.')
-        return self.engine.add_picture(
-            self.deck(server.text(sent, 'path')), server.text(sent, 'slide'),
-            server.text(sent, 'name', needed=False) or '', picture,
-            server.text(sent, 'alt', needed=False) or '',
-            server.text(sent, 'source', needed=False) or '',
-            server.text(sent, 'expected', needed=False))
 
     def source_given(self, sent: dict) -> dict:
         """A source the person adds on the desk: {"path", "name", "content", "library"?} with

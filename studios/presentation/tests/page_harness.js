@@ -553,14 +553,10 @@ function see(words) {
   }
 }
 
-// A picture is the page's own when it is shown from memory. Any other is from somewhere else.
-// The one frame is the storyboard's: sandboxed, with no srcdoc, opened at the runner's own
-// framed address with a ticket.
+// A picture is the page's own when it is shown from memory. Any other is from somewhere else,
+// and the page frames nothing.
 function own(node) {
-  return node.tagName === 'IMG' && kept.has(node.src)
-    || node.tagName === 'IFRAME' && node.className === 'deck-storyboard-frame'
-      && node.getAttribute('sandbox') === '' && node.srcdoc === undefined
-      && String(node.src).startsWith('/api/deck-draft?ticket=');
+  return node.tagName === 'IMG' && kept.has(node.src);
 }
 
 function snapshot() {
@@ -883,7 +879,6 @@ async function app(file) {
         body: options && options.body ? JSON.parse(options.body) : null });
       // An answer can be kept for one address, query and all, or for every query of it.
       const held = answers[method + ' ' + address] || answers[key];
-      if (!held && key === 'GET /api/storyboard') return {ok: true, status: 200, json: async () => ({html:'<h1>Fixture storyboard</h1>'})};
       if (!held && address.split('?')[0] === '/api/intake-draft') {
         plan.intake ||= {revision:0,draft:null};
         const sent=options?.body ? JSON.parse(options.body) : {action:'read'};
