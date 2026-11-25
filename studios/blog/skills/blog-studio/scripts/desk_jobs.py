@@ -2335,7 +2335,19 @@ def view(root, ident):
         # In a team workspace, who drives the blog, as a run says it (blog_runner.describe).
         # While another computer drives it, or nobody does, the desk is read only.
         **_team(root, ident),
+        **_kept_notes(root, ident, directory),
     }
+
+
+def _kept_notes(root, ident, directory):
+    """{'kept_notes': text} for a saved blog of the earlier flow opened on the desk whose
+    outline was notes the desk could not read as sections: its start keeps them whole, and the
+    page shows them until the outline has sections. Nothing for any other blog."""
+    if not studio.inside(directory, 'desk', 'migration.json').is_file():
+        return {}
+    start = desk.read_start(root, ident) or {}
+    notes = start.get('notes')
+    return {'kept_notes': notes} if isinstance(notes, str) and notes.strip() else {}
 
 
 LINK = re.compile(r'https?://[^\s)<>\]"\']+')

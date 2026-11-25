@@ -6,7 +6,9 @@ the runner's worker record) and proven against it by test_saved_fixtures.py; non
 a desk record. For each stop the explicit migration preview is checked to change nothing and to
 start nothing, and its one classification is pinned; a stop that migrates is applied and every
 original byte, approval fact and publishing gap is checked; a stop that cannot be moved is
-refused with the saved flow still able to continue it (until that flow is retired).
+refused. The earlier flow continues none of them: the page shows each as a saved record (its
+run view), and every way that flow continued a blog is refused with the two exits, Open on the
+desk and new work from it. Only the manuscript editor's own runs still go on.
 """
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
@@ -73,20 +75,55 @@ class SavedStateCase(saved_fixtures.Maker):
             self.assertIsNone(shown['start'])
 
     def refused(self, ident, words, outcome, errors=ValueError):
-        """Not eligible, with the saved flow named; applying changes nothing. `outcome` is
+        """Not eligible, saying nothing was changed; applying changes nothing. `outcome` is
         (outcome, reason pattern, next action) as classify gives it."""
         directory = studio.inside(self.root, 'articles', ident)
         shown = self.preview(ident)
         self.assertFalse(shown['eligible'], shown)
         self.outcome(shown, *outcome)
         self.assertRegex(' '.join(shown['blockers']), words)
-        self.assertIn('saved flow', shown['notice'])
+        self.assertEqual(shown['notice'], desk_migration.REFUSAL)
         before = self.tree()
         with self.nothing_starts(), self.assertRaises(errors):
             desk_chat.migrate(self.root, ident, shown['expected'] or 'bm1.' + 'x' * 43)
         self.assertEqual(self.tree(), before)
         self.assertFalse((directory / 'desk').exists())
         return shown
+
+    def record(self, ident, outcome, next_action=None):
+        """The page's saved record of this blog (its run view), read without changing or
+        starting anything, with its outcome and its next action."""
+        import management
+
+        before = self.tree()
+        with self.nothing_starts():
+            shown = management.view(self.root, 'run', {'id': [ident]})
+        self.assertEqual(self.tree(), before)
+        saved = shown['saved_record']
+        self.assertEqual((saved['outcome'], saved['next']), (outcome, next_action), saved['why'])
+        return shown
+
+    def resume(self, found):
+        """The page's Resume for a saved blog."""
+        with studio.locked(self.root):
+            return runner.dispatch(
+                self.root, 'resume', {'id': found['id'], 'expected': found['expected']}
+            )
+
+    def not_continued(self, ident, *attempts):
+        """Each way the earlier flow continued this blog is refused with the two exits, and its
+        worker never starts a step: nothing in the workspace changes."""
+        before = self.tree()
+        for attempt in attempts:
+            with self.nothing_starts(), self.assertRaisesRegex(ValueError, 'no longer continues'):
+                attempt()
+        engine = runner.engine(self.root)
+        with (
+            self.nothing_starts(),
+            patch.object(engine, 'worker', side_effect=AssertionError('step ran')),
+        ):
+            engine._once(ident)
+        self.assertEqual(self.tree(), before)
 
     def migrates(self, ident):
         """Eligible; applied, every original byte stays and no approval is invented."""
@@ -100,6 +137,9 @@ class SavedStateCase(saved_fixtures.Maker):
             if name.startswith('articles/' + ident + '/')
         }
         run = json.loads(before['articles/' + ident + '/' + runner.STATE])
+        if not runner.continues(run):
+            # The page shows it as a saved record whose one action is Open on the desk.
+            self.record(ident, 'migrates')
         with self.nothing_starts():
             result = desk_chat.migrate(self.root, ident, shown['expected'])
         for name, raw in before.items():
@@ -122,14 +162,17 @@ class SavedStateCase(saved_fixtures.Maker):
 
 
 class EarlyStopTests(SavedStateCase):
-    """Stops before any usable manuscript or outline: the saved flow keeps them."""
+    """Stops before any usable manuscript or outline: read-only records, never continued."""
 
-    def test_angles_not_yet_written_keep_their_saved_flow(self):
+    def test_angles_not_yet_written_are_a_read_only_record(self):
         found = self.saved('angles-unwritten')
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
-        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'angles')
-        found = self.submit(runner.survey(self.root, found['id']), self.ANGLES, page=True)
-        self.assertEqual(found['awaits'], 'decision')
+        self.assertEqual(self.record(found['id'], 'read-only', 'copy')['title'], found['title'])
+        self.not_continued(
+            found['id'],
+            lambda: self.submit(found, self.ANGLES, page=True),
+            lambda: self.resume(found),
+        )
 
     def test_new_work_from_files_without_an_angle_carries_no_placeholder(self):
         # The run holds placeholders until an angle is chosen; they are not a point or audience.
@@ -147,48 +190,53 @@ class EarlyStopTests(SavedStateCase):
         said = desk_migration.classify(self.root, found['id'])
         self.assertEqual(said['start'], {'title': found['title']})
 
-    def test_angles_waiting_for_a_choice_keep_their_saved_flow(self):
+    def test_angles_waiting_for_a_choice_are_a_read_only_record(self):
         found = self.saved('angles-waiting')
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
-        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
-            runner.dispatch(
-                self.root,
-                'develop',
-                {
-                    'id': found['id'],
-                    'expected': found['expected'],
-                    'request': 'Retries are a budget',
-                },
-            )
-        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
+        self.record(found['id'], 'read-only', 'copy')
 
-    def test_research_questions_gate_keeps_its_saved_flow(self):
+        def develop():
+            with studio.locked(self.root):
+                runner.dispatch(
+                    self.root,
+                    'develop',
+                    {
+                        'id': found['id'],
+                        'expected': found['expected'],
+                        'request': 'Retries are a budget',
+                    },
+                )
+
+        self.not_continued(found['id'], develop)
+
+    def test_research_questions_gate_is_a_read_only_record(self):
         found = self.saved('research-questions')
         self.assertEqual((found['next'], found['awaits']), ('research-plan', 'decision'))
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
-        found = self.approve(runner.survey(self.root, found['id']), page=True)
-        self.assertEqual(found['next'], 'research')
+        self.record(found['id'], 'read-only', 'copy')
+        self.not_continued(found['id'], lambda: self.approve(found, page=True))
 
-    def test_research_findings_stop_keeps_its_saved_flow(self):
+    def test_research_findings_stop_is_a_read_only_record(self):
         found = self.saved('research-findings')
         self.assertEqual((found['next'], found['awaits']), ('research', 'decision'))
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
-        self.assertEqual(
-            self.approve(runner.survey(self.root, found['id']), page=True)['next'], 'outline'
-        )
+        self.record(found['id'], 'read-only', 'copy')
+        self.not_continued(found['id'], lambda: self.approve(found, page=True))
 
-    def test_claims_map_gate_keeps_its_saved_flow(self):
+    def test_claims_map_gate_is_a_read_only_record(self):
         found = self.saved('claims-map-gate')
         self.assertEqual(found['next'], 'claims-map')
         self.assertEqual(found['awaits'], 'decision')
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
-        self.assertEqual(self.approve(runner.survey(self.root, found['id']))['next'], 'outline')
+        self.record(found['id'], 'read-only', 'copy')
+        self.not_continued(found['id'], lambda: self.approve(found))
 
-    def test_brief_only_start_keeps_its_saved_flow(self):
+    def test_brief_only_start_is_a_read_only_record(self):
         found = self.saved('brief-only')
         self.assertEqual((found['next'], found['awaits']), ('outline', 'submission'))
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
-        self.assertEqual(self.submit(runner.survey(self.root, found['id']))['awaits'], 'decision')
+        self.record(found['id'], 'read-only', 'copy')
+        self.not_continued(found['id'], lambda: self.submit(found))
 
 
 class MaterialStopTests(SavedStateCase):
@@ -255,6 +303,10 @@ class MaterialStopTests(SavedStateCase):
         self.assertEqual(
             (result['start']['step'], result['start']['steps']), ('outline', ['outline', 'draft'])
         )
+        # The desk page shows the kept notes, to shape the outline from.
+        import desk_jobs
+
+        self.assertEqual(desk_jobs.view(self.root, found['id'])['kept_notes'], notes)
         self.assertEqual(meta['historical_stages']['outline']['status'], 'draft')
 
     def test_approved_outline_notes_stay_approved_and_the_draft_is_next(self):
@@ -404,12 +456,34 @@ class KeptStopTests(SavedStateCase):
         self.assertTrue(found['complete'])
         self.refused(found['id'], 'already finished', ('finished', 'already finished'))
         self.assertTrue(runner.engine(self.root).describe(found['id'])['desk_open'])
+        # Its saved record carries the run as it ended, for its Done card and Open on the desk.
+        shown = self.record(found['id'], 'finished')
+        self.assertTrue(shown['desk_open'])
+        self.assertTrue(shown['complete'])
+        self.not_continued(
+            found['id'],
+            lambda: runner.decide(
+                self.root, found['id'], found['expected'], 'changes', 'Tighter.', target='draft'
+            ),
+        )
 
     def test_working_or_queued_page_run_waits_for_its_step(self):
         for status in ('queued', 'working'):
             with self.subTest(status=status):
                 found = self.saved('draft-gate-' + status)
                 self.refused(found['id'], 'under way', ('wait', 'under way'))
+                # Nothing runs it any more: its leftover marker is cleared by Stop, and then
+                # it opens on the desk.
+                shown = self.record(found['id'], 'wait')
+                self.assertEqual(shown['saved_record']['clear'], 'stop')
+                self.not_continued(found['id'], lambda found=found: self.resume(found))
+                with studio.locked(self.root):
+                    runner.dispatch(
+                        self.root, 'stop', {'id': found['id'], 'expected': shown['expected']}
+                    )
+                self.assertEqual(
+                    desk_migration.classify(self.root, found['id'])['outcome'], 'migrates'
+                )
 
     def test_unreadable_run_or_session_record_keeps_every_file(self):
         for name in (runner.STATE, 'session.json'):
@@ -425,10 +499,11 @@ class KeptStopTests(SavedStateCase):
                 }[name]
                 shown = self.refused(found['id'], 'line 1', said)
                 self.assertEqual(shown['expected'], '')
+                self.record(found['id'], 'read-only', said[2])
                 self.assertEqual((directory / 'DRAFT.md').read_text(), MANUSCRIPT)
                 self.assertEqual((directory / name).read_text(), '{not json')
 
-    def test_unsupported_run_schema_keeps_its_saved_flow(self):
+    def test_unsupported_run_schema_is_a_read_only_record(self):
         found = self.saved('draft-gate-chat')
         directory = studio.inside(self.root, 'articles', found['id'])
         run = studio.read_json(directory / runner.STATE)
@@ -439,6 +514,7 @@ class KeptStopTests(SavedStateCase):
             'supported saved Blog Studio run',
             ('read-only', 'newer Blog Studio runtime', 'copy'),
         )
+        self.record(found['id'], 'read-only', 'copy')
 
     def test_registered_manuscript_without_a_run_keeps_the_editor_exception(self):
         ident = self.article(MANUSCRIPT)
@@ -452,7 +528,7 @@ class KeptStopTests(SavedStateCase):
 
 
 class ReadOnlyRecordTests(SavedStateCase):
-    """The page's read-only record: today only for saved blogs its run screen refuses."""
+    """The page's saved records: read-only, and waiting on something that can clear."""
 
     def run_view(self, ident):
         import management
@@ -522,21 +598,33 @@ class ReadOnlyRecordTests(SavedStateCase):
             },
         )
 
-    def test_records_the_run_screen_reads_keep_their_screen_until_the_flow_is_retired(self):
-        # A brief-only start will be a read-only record once the saved flow is retired; until
-        # then its run screen, and its Continue, stay.
+    def test_a_record_the_run_screen_reads_is_a_saved_record_too(self):
+        # A brief-only start is readable, and still a read-only record: the earlier flow does
+        # not continue it, so its run screen and its Continue are gone.
         found = self.saved('brief-only')
         self.assertEqual(desk_migration.classify(self.root, found['id'])['outcome'], 'read-only')
         shown = self.run_view(found['id'])
-        self.assertNotIn('saved_record', shown)
-        self.assertEqual(shown['next'], 'outline')
+        self.assertEqual(shown['saved_record']['outcome'], 'read-only')
+        self.assertNotIn('next', shown)
+        self.assertEqual(shown['saved_record']['files'], [])
 
-    def test_a_transient_refusal_is_said_as_before(self):
+    def test_an_interrupted_opening_waits_with_the_way_to_finish_it(self):
         import management
 
         found = self.saved('draft-gate-chat')
         directory = studio.inside(self.root, 'articles', found['id'])
         (directory / 'desk').mkdir()
-        studio.write_json(directory / 'desk' / desk_migration.JOURNAL, {'schema': 1})
-        with self.assertRaisesRegex(ValueError, 'interrupted'):
-            management.view(self.root, 'run', {'id': [found['id']]})
+        journal = directory / 'desk' / desk_migration.JOURNAL
+        # A journal that cannot say its token: nothing on the page finishes it, so the
+        # record waits and offers new work meanwhile.
+        studio.write_json(journal, {'schema': 1})
+        shown = management.view(self.root, 'run', {'id': [found['id']]})
+        saved = shown['saved_record']
+        self.assertEqual((saved['outcome'], saved['clear']), ('wait', None))
+        self.assertRegex(saved['why'], 'interrupted')
+        self.assertEqual((saved['next'], saved['start']['title']), ('copy', found['title']))
+        # One that kept its token: Finish opening on the desk repeats the migration with it.
+        token = 'bm1.' + 'x' * 43
+        studio.write_json(journal, {'schema': 1, 'expected': token})
+        saved = self.run_view(found['id'])['saved_record']
+        self.assertEqual((saved['clear'], saved['token'], saved['next']), ('recover', token, None))

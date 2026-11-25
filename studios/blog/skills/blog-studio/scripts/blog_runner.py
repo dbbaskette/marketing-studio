@@ -127,6 +127,28 @@ MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
 )
+# The earlier step-by-step flow continues nothing any more: only the review and revise runs
+# the manuscript editor's own check makes (Edit manuscript) still go on. Every other saved
+# run is a saved record that opens on the desk or is read-only (desk_migration.saved_record).
+SAVED_FLOW = (
+    'The earlier step-by-step flow no longer continues this blog: open it on the desk, or '
+    'start new work from it.'
+)
+
+
+def continues(found):
+    """Whether this saved run still goes on: only one the manuscript editor's check made.
+    `found` is the run record or the run as survey reads it (both carry editor_check)."""
+    check = found.get('editor_check') if isinstance(found, dict) else None
+    return isinstance(check, str) and bool(check)
+
+
+def refuse_saved(found):
+    """Refuse to continue a saved run that is not the manuscript editor's own."""
+    if not continues(found):
+        raise ValueError(SAVED_FLOW)
+
+
 # Research that stopped before its check accepted it (refused, out of time, a failed job) is
 # kept beside the blog for Try again: the draft dossier, the check's last review and the
 # captures they cite. It stays on this computer: the Team Hub skips dot folders, and the
@@ -1588,6 +1610,7 @@ def submit(root, ident, stage, result, expected, page=False):
     # A blog on the desk keeps its run as it ended: a late result writes nothing at all.
     desk.refuse_on_desk(studio.item(root, 'articles', ident)[0])
     found = guard(root, ident, expected, page)
+    refuse_saved(found)
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
     result = blog_worker.validate(result)
@@ -1716,6 +1739,7 @@ def _accept(directory, run, stage, by):
 
 def decide(root, ident, expected, action, request='', page=False, target=None, refresh=False):
     found = guard(root, ident, expected, page)
+    refuse_saved(found)
     directory, record, run = load(root, ident)
     kept = None  # What Finish did with the library, said in the decision.
     stage = target if action == 'changes' and target else found['next']
@@ -2226,6 +2250,7 @@ class Engine:
             raise ValueError('Choose Run this from here to move this blog from chat to the page.')
         state = self.local(ident)
         if action in ('resume', 'retry'):
+            refuse_saved(found)
             if found['complete']:
                 raise ValueError('This run is already complete.')
             state.update(enabled=True, status='queued', error='', reason=None)
@@ -2432,6 +2457,8 @@ class Engine:
         from team_workspace import before
 
         preview = survey(self.root, ident)
+        if not continues(preview):
+            return  # A saved run the earlier flow made: it never starts another step.
         if (
             not preview['complete']
             and preview['approval'] == 'page'
@@ -2456,6 +2483,8 @@ class Engine:
             if not local.get('enabled'):
                 return
             found = survey(self.root, ident)
+            if not continues(found):
+                return
             if found['complete']:
                 local.update(enabled=False, status='complete')
                 self.keep_local(ident, local)
@@ -2863,26 +2892,40 @@ def catalog(root):
                 continue
             if studio.inside(path.parent, STATE).is_file():
                 found = engine(root).describe(ident, listing=True)
+                saved = None
+                if not continues(found):
+                    # A saved run of the earlier flow is a saved record: listed by what becomes
+                    # of it, never as a run to continue.
+                    import desk_migration
+
+                    saved = desk_migration.classify(root, ident)['outcome']
+                    if saved not in desk_migration.RECORDS:
+                        saved = None
+                    else:
+                        found = {**found, 'status': 'saved', 'error': ''}
                 rows.append(
                     {
-                        k: found[k]
-                        for k in (
-                            'id',
-                            'title',
-                            'status',
-                            'next',
-                            'approval',
-                            'error',
-                            'stages',
-                            'complete',
-                            'engine',
-                            'mode',
-                            'editor_check',
-                            'team',
-                            'driver',
-                            'touched',
-                            'desk_open',
-                        )
+                        **({'saved': saved} if saved else {}),
+                        **{
+                            k: found[k]
+                            for k in (
+                                'id',
+                                'title',
+                                'status',
+                                'next',
+                                'approval',
+                                'error',
+                                'stages',
+                                'complete',
+                                'engine',
+                                'mode',
+                                'editor_check',
+                                'team',
+                                'driver',
+                                'touched',
+                                'desk_open',
+                            )
+                        },
                     }
                 )
         except (ValueError, OSError, KeyError):
@@ -3266,6 +3309,9 @@ def dispatch(root, action, data):
     found = survey(root, ident)
     if not data.get('expected') or data['expected'] != found['expected']:
         raise ValueError('This blog changed. Reload before deciding.')
+    if action not in ('stop', 'pause'):
+        # Stop and Pause end a step left under way, so a saved blog can open on the desk.
+        refuse_saved(found)
     if action == 'apply-review':
         guard(root, ident, data['expected'], page=True)
         directory, record, run = load(root, ident)
@@ -3578,6 +3624,7 @@ def command(root, args):
     if args.action == 'status':
         return engine(root).describe(args.id)
     with studio.locked(root):
+        refuse_saved(survey(root, args.id))
         if args.action == 'submit':
             if args.gap and args.stage not in NOTED:
                 # Only a draft and a handoff keep gaps; elsewhere one would be dropped unsaid.

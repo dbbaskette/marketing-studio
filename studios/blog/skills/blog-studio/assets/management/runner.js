@@ -35,7 +35,10 @@ function sDeskRowWords(found){
   const said=needs.length?needs.join(' · '):'On the desk';
   return said+(sent&&!/last sent/.test(said)?' · last sent '+sent:'')+(age?' · edited '+age:'');
 }
-function sWords(found){if(found.flow==='desk'&&found.status==='desk')return sDeskRowWords(found);if(sEditingRun(found)){if(found.status==='waiting-for-approval')return 'Suggestions ready';if(found.status==='paused'||found.status==='complete')return 'Ready to edit';if(found.status==='working')return {polish:'Polishing writing','factual-support':'Checking facts',shape:'Reviewing structure',geo:'Reviewing clarity for AI search',revise:'Revising draft'}[found.editor_check]||'Reviewing writing';}return RUN_LABELS[found.status]||found.status;}
+// A saved blog of the earlier flow, listed by what becomes of it (its saved record's outcome).
+const SAVED_WORDS={migrates:'Saved by the earlier flow · Opens on the desk',finished:'Finished in the earlier flow · Opens on the desk','read-only':'Saved by the earlier flow · Read-only',wait:'Saved by the earlier flow · Waiting before it opens on the desk'};
+function sGoWords(found){return found.saved?'Open':sEditingRun(found)||found.flow==='desk'?'Continue editing':sNeeds(found)?'Continue review':'Continue';}
+function sWords(found){if(found.saved)return SAVED_WORDS[found.saved]||SAVED_WORDS['read-only'];if(found.flow==='desk'&&found.status==='desk')return sDeskRowWords(found);if(sEditingRun(found)){if(found.status==='waiting-for-approval')return 'Suggestions ready';if(found.status==='paused'||found.status==='complete')return 'Ready to edit';if(found.status==='working')return {polish:'Polishing writing','factual-support':'Checking facts',shape:'Reviewing structure',geo:'Reviewing clarity for AI search',revise:'Revising draft'}[found.editor_check]||'Reviewing writing';}return RUN_LABELS[found.status]||found.status;}
 function sNeeds(found){return ['waiting-for-approval','failed','needs-attention'].includes(found.status)||!!(found.needs||[]).length;}
 function sField(id,label,held,key,about={}){
   const box=sNode('div','field'),caption=sNode('label','field-label',label),input=sNode(about.options?'select':about.long?'textarea':'input','input'+(about.short?' input-short':''));caption.htmlFor=id;input.id=id;input.name=key;
@@ -143,15 +146,15 @@ function sGooglePreview(found){
   return found;
 }
 // A finished blog that can go on the desk opens at its Done card, where Open on the desk is.
-function sReview(found){if(found.flow==='desk')return ()=>sRoute('desk',found.id);if(found.complete&&found.desk_open)return ()=>sRoute('run',found.id);if(['ideas','outline'].includes(found.mode)&&found.complete)return ()=>sRoute('gate',found.id,'outline');if(sEditingRun(found)||found.complete)return ()=>sRoute('editor',found.id);return ()=>found.next&&found.status==='waiting-for-approval'?sRoute('gate',found.id,found.next):sRoute('run',found.id);}
-function sRow(found){const row=sNode('li','row'+(found.status==='working'?' working':'')),text=sAdd(sNode('div','row-text'),sNode('h3','row-title',found.title),sNode('p','row-says',found.error||sWords(found)));return sAdd(row,sBead(sNeeds(found)?'review':found.complete?'done':found.status==='working'?'current':'none'),text,sRowActions(sButton(sEditingRun(found)||found.flow==='desk'?'Continue editing':sNeeds(found)?'Continue review':'Continue',sReview(found)),found));}
+function sReview(found){if(found.saved)return ()=>sRoute('run',found.id);if(found.flow==='desk')return ()=>sRoute('desk',found.id);if(found.complete&&found.desk_open)return ()=>sRoute('run',found.id);if(['ideas','outline'].includes(found.mode)&&found.complete)return ()=>sRoute('gate',found.id,'outline');if(sEditingRun(found)||found.complete)return ()=>sRoute('editor',found.id);return ()=>found.next&&found.status==='waiting-for-approval'?sRoute('gate',found.id,found.next):sRoute('run',found.id);}
+function sRow(found){const row=sNode('li','row'+(found.status==='working'?' working':'')),text=sAdd(sNode('div','row-text'),sNode('h3','row-title',found.title),sNode('p','row-says',!found.saved&&found.error||sWords(found)));return sAdd(row,sBead(sNeeds(found)?'review':found.complete?'done':found.status==='working'?'current':'none'),text,sRowActions(sButton(sGoWords(found),sReview(found)),found));}
 // A listed blog's way in, with Delete beside it where it has one: the same sheet as its card on Blogs.
 function sRowActions(go,found){const remove=sDeleteAction(found);return remove?sAdd(sNode('div','bar row-actions'),go,remove):go;}
 function sGroup(title,found,kind=''){if(!found.length)return null;const rows=sNode('ul','rows');for(const item of found)rows.append(sRow(item));const card=sCard(title,rows);if(kind)card.className+=' '+kind;return card;}
 function sGreeting(needs){const hour=new Date().getHours(),hello=hour<12?'Good morning.':hour<18?'Good afternoon.':'Good evening.',counted=['Nothing needs','One thing needs','Two things need','Three things need','Four things need','Five things need','Six things need','Seven things need','Eight things need','Nine things need','Ten things need'];return hello+' '+(needs<counted.length?counted[needs]:needs+' things need')+' you'+(needs?'.':' right now.');}
 function sHome(){const open=studio.listing.filter(found=>!found.complete),waiting=open.filter(sNeeds),first=waiting[0];sFrame('Home',[sNewButton(first?'':'filled'),first?sButton((first.flow==='desk'?'Open ':'Review ')+first.title,sReview(first),'filled'):null]);sPage(sNode('p','large-title',sGreeting(waiting.length)),sBlogIntake().resumeCard({resume:()=>sDeskBegin(),fresh:()=>sDeskBegin({step:0}),discarded:()=>{studio.deskStart=null;sHome();}}),sGroup('Needs you',waiting,'card-needs'),sGroup('In progress',open.filter(found=>!sNeeds(found))),typeof sGeoReportsCard==='function'?sGeoReportsCard():null,studio.ordinary.length?sCard('Saved drafts',...studio.ordinary.slice(0,5).map(found=>sAdd(sNode('div','row'),sNode('h3','row-title',found.title),sRowActions(sButton('Continue editing',()=>sRoute('editor',found.id)),found)))):null,sStartTasks(),sSetupTasks(),sGroup('Finished drafts',studio.listing.filter(found=>found.complete)),sNode('p','foot quiet','Your writing is saved as you work. Google feedback is sent only when you choose Send.'));}
 function sDeleteAction(found){if(found.location==='hub')return null;const remove=sButton('Delete',()=>sDeleteSheet({id:found.id,title:found.title,status:found.status||'',team:!!(found.team||studio.team?.joined)}));remove.disabled=!sCanEdit(found);return remove;}
-function sBlogCard(found){return sCard(found.title,found.flow==='desk'?null:sNode('p','quiet',sEditingRun(found)?'Editing a manuscript':BLOG_MODES.find(([mode])=>mode===found.mode)?.[1]||'Saved draft'),sStatus(sNeeds(found)?'review':found.complete?'done':found.status==='working'?'current':'none',sWords(found)),sAdd(sNode('div','bar'),sButton(sEditingRun(found)||found.flow==='desk'?'Continue editing':found.status==='waiting-for-approval'?'Continue review':'Continue',sReview(found),'filled'),sDeleteAction(found)));}
+function sBlogCard(found){return sCard(found.title,found.flow==='desk'?null:sNode('p','quiet',sEditingRun(found)?'Editing a manuscript':BLOG_MODES.find(([mode])=>mode===found.mode)?.[1]||'Saved draft'),sStatus(sNeeds(found)?'review':found.complete?'done':found.status==='working'?'current':'none',sWords(found)),sAdd(sNode('div','bar'),sButton(found.saved?'Open':sEditingRun(found)||found.flow==='desk'?'Continue editing':found.status==='waiting-for-approval'?'Continue review':'Continue',sReview(found),'filled'),sDeleteAction(found)));}
 function sTools(){sOpenSheet('Library and team tools',sButton('Tools',()=>sMoreTools()),sButton(sVoicesOn()?'Voices and kinds of post':'Kinds of post',()=>sVoiceTools()),sButton('Add to the team library',()=>sLibraryAdd()),...Object.entries({board:'All blogs',inbox:'Review findings',library:'Team library',memory:'Team memory'}).map(([name,label])=>sButton(label,()=>sLegacy(name))),sButton('Close',sCloseSheet));}
 function sBlogs(){sFrame('Blogs',[sNewButton('filled'),sButton('Library and team tools',sTools)]);const grid=sNode('div','grid');for(const found of studio.listing)grid.append(sBlogCard(found));for(const row of studio.reports||[])grid.append(sGeoReportCard(row));for(const found of studio.ordinary)grid.append(sCard(found.title,sNode('p','quiet',found.author||'Saved draft'),sAdd(sNode('div','bar'),sButton(found.mode==='interview'?'Resume interview':'Continue editing',()=>found.mode==='interview'?sInterview(found.id):sRoute('editor',found.id),'filled'),sDeleteAction(found))));sPage(sNode('p','lede','Every blog on this computer. Open one to keep writing; the team library, review findings and team memory are under Library and team tools.'),grid.children.length?grid:sCard('No drafts yet',sNode('p','','Choose a starting point and make your first draft.'),sButton('Choose a task',()=>sRoute('home'),'filled')),studio.total>20?sButton('Browse all saved blogs',()=>sLegacy('board')):null,sDeletedFold());}
 // Opened through Marketing Studio's private network link (a phone), not on this computer: a
@@ -249,17 +252,52 @@ function sRun(found){
   const migration=!found.complete||!found.desk_open?sAdd(sNode('div','page-head'),sNode('p','lede','Keep the saved writing, or preview opening supported materials on the writing desk.'),sAdd(sNode('div','bar'),sButton('Open on the desk',()=>sMigrationPreview(found)))):null;
   sPage(found.team?sNode('p','quiet',found.driver?(found.driver.name+' · '+(found.driver.here?'driving on this computer':'driving on another computer')):'Nobody is driving this blog. Take it to continue.'):null,migration,intro,sActivityNow(found.activity,{id:found.id}),noteBox,found.complete?(['ideas','outline'].includes(found.mode)?sCard('Choose what to develop',sButton('Review the ideas or outline',()=>sRoute('gate',found.id,'outline'),'filled')):sDoneCard(found)):null,disclosure('Writing progress and saved files',steps,files),sActivityLog({id:found.id}),disclosure('About this blog',about),disclosure('Decisions and history',history),found.approval==='page'?(sCanEdit(found)?sAdd(sNode('div','bar'),sButton('Continue in the conversation',()=>sConfirm('handoff',found))):null):sContinuation(found));
 }
-// A saved blog whose records cannot be read or understood: a read-only record. It says what it
-// is and why, lists its saved files to read in place, and offers one next action. It writes
-// nothing: Start new work opens New blog, which makes nothing until the person starts.
+// A saved blog of the earlier step-by-step flow, which no longer continues: a saved record, by
+// its one classification (saved_record.outcome). It says what it is, what happens next and
+// why, lists its saved files to read in place, and offers one main action: Open on the desk
+// (its preview sheet) when it moves; the finished Open on the desk in its Done card when it
+// finished; what clears what it waits on, or new work from it while nothing here can; and new
+// work from it when it is read-only. Reading it writes nothing: Start new work opens New blog,
+// which makes nothing until the person starts.
 const SAVED_FILE_WORDS={'DRAFT.md':'Read the saved draft','ORIGINAL.md':'Read the supplied manuscript','OUTLINE.md':'Read the saved outline','derived/blog-angles.md':'Read the saved angles','derived/blog-research-plan.md':'Read the research questions','derived/blog-research.md':'Read the research findings','derived/blog-claims-map.md':'Read the claims map','derived/blog-review.md':'Read the review','derived/blog-package.md':'Read the handoff'};
 function sSavedRecord(found){
   studio.found=found;studio.signature=JSON.stringify(found);
-  const saved=found.saved_record,copying=saved.next==='copy'&&!!saved.start;
-  const go=sButton(copying?'Start new work from this':'Start a new blog',()=>sDeskBegin(copying?{step:0,...saved.start}:{step:0}),'filled');go.disabled=!access.actions.edit;
-  sFrame(found.title,[go],'Saved blog · Read-only',()=>sRoute('blogs'));
-  const intro=sAdd(sNode('div','intro'),sNode('p','lede',found.sentence),sStatus('none','Read-only: it is not continued and not opened on the desk'),sNode('p','quiet',copying?'Start new work from this opens New blog with its title, point and audience. Nothing it researched or made is carried over, and this saved blog is kept as it is.':'Its start form cannot be read, so New blog opens empty. This saved blog is kept as it is.'));
-  sPage(intro,sCard('Why it cannot be continued',sNode('p','',saved.why),sNode('p','quiet','Nothing here changes it. Restore its saved records from your workspace history to continue it, or start new work.')),sSavedFiles(found));
+  const saved=found.saved_record,outcome=saved.outcome||'read-only',copying=saved.next==='copy'&&!!saved.start;
+  const fresh=()=>{const button=sButton(copying?'Start new work from this':'Start a new blog',()=>sDeskBegin(copying?{step:0,...saved.start}:{step:0}),'filled');button.disabled=!access.actions.edit;return button;};
+  const startWords=copying?'Start new work from this opens New blog with its title, point and audience. Nothing it researched or made is carried over, and this saved blog is kept as it is.':'Its start form cannot be read, so New blog opens empty. This saved blog is kept as it is.';
+  const problem=sNode('p','problem');problem.setAttribute('role','alert');
+  let go,above,state,next;const cards=[];
+  if(outcome==='migrates'){
+    go=sButton('Open on the desk',()=>sMigrationPreview(found),'filled');go.disabled=!access.actions.edit;
+    above='Saved blog · Opens on the desk';state=['none','Saved: it continues on the writing desk, not here'];
+    next='Open on the desk shows what stays with it, then opens it on the writing desk once you confirm. Nothing changes before that.';
+    const kept=sNode('ul','');for(const said of saved.retained||[])kept.append(sNode('li','',said));
+    cards.push(sCard('What stays with it',kept,saved.held?sNode('p','quiet',saved.held):null));
+  }else if(outcome==='finished'){
+    // Its Done card holds the finished Open on the desk, as it always has.
+    above='Saved blog · Finished';state=['done','Finished: it is edited on the writing desk from here on'];
+    next='Open on the desk, in the Done card, brings it to the writing desk to keep editing. Its run stays readable here.';
+    cards.push(sDoneCard(found));
+  }else if(outcome==='wait'){
+    above='Saved blog · Waiting';state=['current','Waiting: it opens on the desk once this is cleared'];
+    if(saved.clear==='recover'){
+      go=sButton('Finish opening on the desk',button=>busy(button,'Opening…',async()=>{problem.textContent='';try{await api('desk-migrate',{id:found.id,expected:saved.token});studio.desk=null;await sRoute('desk',found.id);}catch(error){problem.textContent=error.message;}}),'filled');go.disabled=!access.actions.edit;
+      next='Finish opening on the desk undoes the interrupted opening, then opens it again from its saved files.';
+    }else if(saved.clear==='stop'){
+      go=sButton('Stop the step',button=>busy(button,'Stopping…',async()=>{problem.textContent='';try{await api('run-stop',{id:found.id,expected:found.expected});await sRoute('run',found.id,null,true);}catch(error){problem.textContent=error.message;}}),'filled');go.disabled=!sCanEdit(found);
+      next='Stop the step ends it, and nothing more is written. Then Open on the desk is offered here.';
+    }else if(saved.clear==='take'){
+      const action=found.driver?'takeover':'take';go=sButton(action==='take'?'Take this blog':'Take over this blog',()=>sTeamDecision(found,action),'filled');go.disabled=!access.actions.edit;
+      next='Taking it makes this computer its driver. Then Open on the desk is offered here.';
+    }else{go=fresh();next='Nothing on this page clears it, so it waits until that is done. Meanwhile: '+startWords;}
+    cards.push(sCard('What it waits on',sNode('p','',saved.why),problem));
+  }else{
+    go=fresh();above='Saved blog · Read-only';state=['none','Read-only: it is not continued and not opened on the desk'];next=startWords;
+    cards.push(sCard('Why it cannot be continued',sNode('p','',saved.why),sNode('p','quiet','Nothing here changes it. Restored saved records may let it open on the desk; otherwise start new work from it.')));
+  }
+  sFrame(found.title,go?[go]:[],above,()=>sRoute('blogs'));
+  const status=sStatus(...state);status.setAttribute('role','status');
+  sPage(sAdd(sNode('div','intro'),sNode('p','lede',found.sentence),status,sNode('p','quiet',next)),...cards,sSavedFiles(found));
 }
 function sSavedFiles(found){
   const files=found.saved_record.files||[],card=sCard('Saved files');
@@ -279,7 +317,7 @@ async function sMigrationPreview(found){
     const apply=preview.eligible?sButton('Open on the desk',async button=>busy(button,'Opening…',async()=>{try{await api('desk-migrate',{id:found.id,expected:preview.expected});sCloseSheet();studio.desk=null;await sRoute('desk',found.id);}catch(error){problem.textContent=error.message;}}),'filled'):null;
     if(apply)apply.disabled=!sCanEdit(found);
     sOpenSheet('Open on the desk',sNode('p','lede','Review what stays with this blog before opening it on the writing desk.'),sCard('What stays',kept),preview.held?sNode('p','',preview.held):null,blockers,sNode('p','quiet',preview.notice),problem,sAdd(sNode('div','create-foot'),apply,sButton('Cancel',sCloseSheet)));
-  }catch(error){if(studio.sheet===requestedSheet)sOpenSheet('Open on the desk',sNode('p','lede','The saved materials could not be checked.'),sNode('p','problem',error.message),sNode('p','quiet','Your saved flow remains available.'),sButton('Cancel',sCloseSheet));}
+  }catch(error){if(studio.sheet===requestedSheet)sOpenSheet('Open on the desk',sNode('p','lede','The saved materials could not be checked.'),sNode('p','problem',error.message),sNode('p','quiet','Nothing was changed. Its saved files stay readable.'),sButton('Cancel',sCloseSheet));}
 }
 function sWritingReady(found){return found.approval==='page'&&found.status==='waiting-for-approval'&&['outline','draft'].includes(found.next);}
 function sContinuation(found){return continuation('Use Blog Studio. Continue guided blog '+found.id+' in workspace '+(found.team?found.directory.replace(/\/[^/]+$/,''):found.directory.replace(/\/articles\/[^/]+$/,''))+'. Show run status first.','Continue this blog in your conversation');}

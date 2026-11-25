@@ -26,15 +26,21 @@ JOURNAL = 'migration.pending.json'
 MAX_FILES = 2000
 MAX_BYTES = 32 * 1024 * 1024
 CHANGED = 'This blog or its inputs changed. Preview Open on the desk again before applying.'
-REFUSAL = 'Your saved flow remains available. No writing or approval has changed.'
+REFUSAL = 'Nothing was changed: its saved writing, decisions and files stay as they are.'
 PENDING = 'Opening this blog on the desk was interrupted. Repeat desk migrate with its preview token to recover before continuing or sharing.'
-NOTHING_MADE = 'There is no usable manuscript or supported outline yet. Continue the saved flow until one is saved.'
+NOTHING_MADE = (
+    'There is no usable manuscript or supported outline yet, so there is nothing to open on '
+    'the writing desk.'
+)
 FINISHED = 'This blog already finished. Use its existing finished-blog Open on the desk action.'
 NO_RUN = (
     'This blog has no saved step-by-step run to move. Use Open on the desk in Edit manuscript '
     'to bring its saved draft to the desk.'
 )
-OUTLINE_LOSS = 'This outline cannot yet be moved losslessly. Keep using the saved flow or supply a supported manuscript.'
+OUTLINE_LOSS = (
+    'This outline cannot yet be moved losslessly. Its saved files stay readable here; start '
+    'new work from them.'
+)
 NOTES_FINISHED = (
     'This finished outline is notes the desk cannot read as sections, and an outline-only '
     'request has no later step on the desk to keep them with. Its outline stays readable here.'
@@ -60,6 +66,17 @@ LINKED_WORKSPACE = (
     'This workspace or its blog folder is a link. Open the workspace from its real folder, '
     'then open this blog on the desk.'
 )
+# Nothing on the page clears these: the record also offers new work from the blog.
+CONDITIONS = (OLDER_HUB, NEWER_RUNTIME, IDENTITY, MARKER, LINKED_WORKSPACE)
+# Conditions of the blog itself that a person clears: Take it, Stop its step, or a job ends.
+DRIVER = (
+    'Another computer drives this blog, or it has no driver. Take it before opening on the desk.'
+)
+JOB_BUSY = (
+    'A saved job is under way or waiting to land. Stop or finish it before opening on the desk.'
+)
+STEP_BUSY = 'A step of this blog is under way. Stop it before opening on the desk.'
+KEPT_HERE = 'Its saved files stay readable here.'
 
 
 class Wait(ValueError):
@@ -232,7 +249,7 @@ def prepare_migration(record, saved_inputs):
                     draft['gaps'].append(gap)
             if len(draft['gaps']) > 100:
                 raise ValueError(
-                    'This saved work has more publishing notes than the desk supports. Keep using its saved flow.'
+                    'This saved work has more publishing notes than the desk supports. ' + KEPT_HERE
                 )
         if kind == 'outline' and (
             # The fixed Markdown outline format must round-trip before interpreting its
@@ -313,15 +330,13 @@ def prepare_migration(record, saved_inputs):
 
 def _read_tree(directory, files, prefix, budget):
     if directory.is_symlink():
-        raise ValueError('Linked saved files cannot be moved safely. Keep using the saved flow.')
+        raise ValueError('Linked saved files cannot be moved safely. ' + KEPT_HERE)
     for folder, directories, names in os.walk(
         directory, followlinks=False, onerror=lambda error: (_ for _ in ()).throw(error)
     ):
         here = Path(folder)
         if any((here / name).is_symlink() for name in directories + names):
-            raise ValueError(
-                'Linked saved files cannot be moved safely. Keep using the saved flow.'
-            )
+            raise ValueError('Linked saved files cannot be moved safely. ' + KEPT_HERE)
         for name in sorted(names):
             path = here / name
             if not path.is_file():
@@ -329,7 +344,7 @@ def _read_tree(directory, files, prefix, budget):
             size = path.stat().st_size
             if budget[0] + 1 > MAX_FILES or budget[1] + size > MAX_BYTES:
                 raise ValueError(
-                    'Saved work is too large to check safely for this migration. Keep using the saved flow.'
+                    'Saved work is too large to check safely for this migration. ' + KEPT_HERE
                 )
             with path.open('rb') as handle:
                 raw = handle.read(MAX_BYTES - budget[1] + 1)
@@ -555,9 +570,7 @@ def _snapshot(root, ident):
     if blog_runner.STATE not in original:
         raise ValueError(NO_RUN)
     if any(len(original[name]) > 1_000_000 for name in ('session.json', blog_runner.STATE)):
-        raise ValueError(
-            'The original records exceed the supported migration size. Keep using the saved flow.'
-        )
+        raise ValueError('The original records exceed the supported migration size. ' + KEPT_HERE)
     record = json.loads(original['session.json'])
     run = json.loads(original[blog_runner.STATE])
     if not session_supported(record, ident) or not isinstance(run, dict):
@@ -589,7 +602,8 @@ def _snapshot(root, ident):
     if record.get('hub_context'):
         # These older adapters can fetch/materialize Hub data. No such operation is a preview.
         raise ValueError(
-            'This saved Team Hub context still needs its saved flow. A local lossless context transform is required first.'
+            'This blog was saved with an older Team Hub context, which cannot yet be moved to '
+            'the desk without loss. ' + KEPT_HERE
         )
     if run.get('research_contract') and run.get('stages', {}).get('research', {}).get('hash'):
         from studio_core import research_contract
@@ -654,9 +668,7 @@ def _snapshot(root, ident):
             raise Wait(IDENTITY)
         if hub.get('repository'):
             if not driver.get('computer') or driver.get('computer') != (identity or {}).get('id'):
-                raise Wait(
-                    'Another computer drives this blog, or it has no driver. Take it before opening on the desk.'
-                )
+                raise Wait(DRIVER)
     local = root / '.blog-runs' / (ident + '.json')
     if local.is_symlink() or local.parent.is_symlink():
         raise ValueError('Restore an ordinary saved worker record first.')
@@ -682,9 +694,7 @@ def _snapshot(root, ident):
         if article == ident:
             files['worker/tools/' + name] = raw
             if unsettled or current and current.current == 'tool:' + job['id']:
-                raise Wait(
-                    'A saved job is under way or waiting to land. Stop or finish it before opening on the desk.'
-                )
+                raise Wait(JOB_BUSY)
     index = root / '.blog-runs/desk-jobs' / (ident + '.json')
     if index.parent.is_symlink() or index.is_symlink():
         raise ValueError('Restore an ordinary saved job index before opening on the desk.')
@@ -714,7 +724,7 @@ def _snapshot(root, ident):
             )
     active = bool(current and current.current == ident)
     if busy or active:
-        raise Wait('A step of this blog is under way. Stop it before opening on the desk.')
+        raise Wait(STEP_BUSY)
     files['worker/acquired'] = str(active).encode()
     basis = {name: _hash(raw) for name, raw in sorted(files.items())}
     token = 'bm1.' + base64.urlsafe_b64encode(
@@ -910,6 +920,21 @@ UNREAD_RECORD = (
     'This blog’s saved record cannot be read, so it can be neither continued nor opened on '
     'the desk. Its saved files are kept as they are.'
 )
+MOVES_RECORD = (
+    'This blog was saved by the earlier step-by-step flow, which no longer continues it. Its '
+    'saved writing continues on the writing desk.'
+)
+FINISHED_RECORD = (
+    'This blog was finished in the earlier step-by-step flow, which no longer continues it. '
+    'Open it on the writing desk to keep editing; it stays readable here.'
+)
+WAIT_RECORD = (
+    'This blog was saved by the earlier step-by-step flow, which no longer continues it. It '
+    'opens on the writing desk once what it waits on is cleared.'
+)
+# A saved blog the page shows as a saved record, by its one classification. `desk` and
+# `current` (the manuscript editor's own work) keep their own screens.
+RECORDS = ('migrates', 'finished', 'read-only', 'wait')
 
 
 def _saved_files(directory):
@@ -931,12 +956,53 @@ def _saved_files(directory):
     return found
 
 
-def saved_record(root, ident, refusal):
-    """What the page shows for a saved blog its run screen refuses to read, when that blog is
-    a read-only record (classify): what it is, why, the saved files it holds and one next
-    action. None for any other blog, whose refusal the page says as before. Only reads."""
-    said = classify(root, ident)
-    if said['outcome'] != 'read-only':
+def _clears(root, ident, reason):
+    """What a waiting saved blog's screen offers to clear what it waits on: `recover` (finish
+    an interrupted opening with the token its journal kept), `stop` (a step left under way),
+    `take` (another computer drives it), or None (a job ends by itself, or nothing on the page
+    clears a workspace or computer condition); with the token `recover` repeats."""
+    if reason == PENDING:
+        directory = studio.inside(root, 'articles', studio.identifier(ident))
+        try:
+            journal = _small_json(_fixed(directory, JOURNAL))
+        except (OSError, ValueError, UnicodeError):
+            return None, None
+        token = journal.get('expected') if isinstance(journal, dict) else None
+        if isinstance(token, str) and token.startswith('bm1.') and len(token) == 47:
+            return 'recover', token
+        return None, None
+    if reason == STEP_BUSY:
+        return 'stop', None
+    if reason == DRIVER:
+        return 'take', None
+    return None, None
+
+
+def saved_run(directory):
+    """A blog folder's saved run record as it is stored, or None when there is none or it
+    cannot be read (missing, linked, oversized or not JSON). Only reads."""
+    import blog_runner
+
+    try:
+        return _small_json(directory / blog_runner.STATE)
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
+def saved_record(root, ident, refusal=None):
+    """What the page shows for a saved blog of the earlier step-by-step flow, which no longer
+    continues: a saved record, by its one classification (classify). `saved_record` says its
+    outcome, why, the saved files it holds, and its one next action: Open on the desk (the
+    preview sheet) when it migrates, the finished Open on the desk when it finished, what
+    clears what it waits on, or new work from it. A finished blog also carries its run as the
+    run view reads it, for its Done card. None for desk work, for the manuscript editor's own
+    work, which keep their screens, and where there is no saved blog. Only reads.
+
+    `refusal`, the run view's own refusal when it had one, is not needed: the one
+    classification decides."""
+    shown = migration_preview(root, ident)
+    outcome = shown['outcome']
+    if outcome not in RECORDS:
         return None
     directory = studio.inside(root, 'articles', studio.identifier(ident))
     try:
@@ -945,31 +1011,56 @@ def saved_record(root, ident, refusal):
         session = None
     title = session.get('title') if isinstance(session, dict) else None
     title = title.strip() if isinstance(title, str) and title.strip() else directory.name
-    return {
-        'id': directory.name,
-        'title': title,
-        'status': 'read-only',
-        'sentence': SAVED_RECORD if isinstance(session, dict) else UNREAD_RECORD,
-        'saved_record': {
-            'why': said['reason'],
-            'files': _saved_files(directory),
-            'next': said['next'],
-            'start': said['start'],
-        },
+    said = {
+        'outcome': outcome,
+        'why': shown['reason'],
+        'files': _saved_files(directory),
+        'next': shown['next'],
+        'start': shown['start'],
     }
+    found = {'id': directory.name, 'title': title, 'status': outcome}
+    if outcome == 'read-only':
+        found['sentence'] = SAVED_RECORD if isinstance(session, dict) else UNREAD_RECORD
+    elif outcome == 'migrates':
+        found['sentence'] = MOVES_RECORD
+        said.update(retained=shown['retained'], held=shown.get('held'))
+    elif outcome == 'finished':
+        import blog_runner
+
+        # The run as it ended, for the finished blog's Done card and its Open on the desk.
+        found = {**blog_runner.engine(root).describe(directory.name), **found}
+        found['sentence'] = FINISHED_RECORD
+    else:
+        found['sentence'] = WAIT_RECORD
+        clear, token = _clears(root, directory.name, shown['reason'])
+        said.update(clear=clear, token=token)
+        if clear is None:
+            # Nothing on the page clears it: new work can start from it meanwhile.
+            start = _start_from(session, saved_run(directory))
+            said.update(next='copy' if start else 'new', start=start)
+        elif clear in ('stop', 'take'):
+            import blog_runner
+            from team_workspace import driver, space
+
+            # The version a Stop or a Take is checked against, and who drives the blog.
+            found['expected'] = blog_runner.survey(root, directory.name)['expected']
+            found['team'] = bool(space(root) and space(root).address)
+            found['driver'] = driver(root, directory.name) if space(root) else None
+    found['saved_record'] = said
+    return found
 
 
 def saved_file(root, ident, name):
-    """One saved file of a blog, read in place: a name SAVED_FILES lists, an ordinary file
-    inside the blog's folder, its text shortened past SAVED_TEXT characters. Only reads."""
+    """One saved file of a saved record, read in place: a name SAVED_FILES lists, an ordinary
+    file inside the blog's folder, its text shortened past SAVED_TEXT characters. Only reads."""
     directory = studio.inside(root, 'articles', studio.identifier(ident))
     if (
         name not in SAVED_FILES
         or not _a_blog(directory)
         or name not in _saved_files(directory)
-        or classify(root, directory.name)['outcome'] != 'read-only'
+        or classify(root, directory.name)['outcome'] not in RECORDS
     ):
-        # Only a read-only record's files are served here; other blogs have their own views.
+        # Only a saved record's files are served here; other blogs have their own views.
         raise ValueError('Choose a saved file this blog holds.')
     with (directory / name).open('rb') as handle:
         raw = handle.read(SAVED_TEXT * 4 + 1)
@@ -1060,7 +1151,7 @@ def migrate(root, ident, expected):
         encoded = {name: _json(value) for name, value in writes.items()}
         if len(encoded['desk/migration.json']) > 1_000_000:
             raise ValueError(
-                'This saved record is too large for supported desk migration. Keep using the saved flow.'
+                'This saved record is too large for supported desk migration. ' + KEPT_HERE
             )
         journal = {
             'schema': 1,

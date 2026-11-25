@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 import blog_runner as runner
 import desk
 import desk_chat
+import desk_migration
 import management
 import saved_fixtures
 import studio
@@ -557,7 +558,7 @@ class MigrationTests(RunnerCase):
                 preview = self.preview(ident)
                 self.assertFalse(preview['eligible'])
                 self.assertIn('usable', ' '.join(preview['blockers']))
-                self.assertIn('saved flow', preview['notice'])
+                self.assertEqual(preview['notice'], desk_migration.REFUSAL)
                 with self.assertRaises(ValueError):
                     self.apply(ident, preview)
                 self.assertEqual(self.snapshot(directory), before)
@@ -808,7 +809,11 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
         worker.assert_not_called()
 
     def test_worker_waiting_for_lock_rechecks_migration_ownership(self):
-        ident, _ = self.eligible()
+        ident, directory = self.eligible()
+        # Only the manuscript editor's own runs still reach a worker: this one is the editor's.
+        run = studio.read_json(directory / runner.STATE)
+        run['editor_check'] = 'proofread'
+        studio.write_json(directory / runner.STATE, run)
         shown = self.preview(ident)
         worker = Mock(side_effect=AssertionError('provider'))
         engine = runner.Engine(self.root, worker=worker)
@@ -957,9 +962,16 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
 
     def test_runner_settlement_keeps_a_parallel_record_edit(self):
         import editorial
+        import manuscript_editor
+        from test_editorial_tools import Fixture
 
-        found = self.create(page=True)
-        ident = found['id']
+        # The runner settles only the manuscript editor's own runs now: a revise check.
+        ident = Fixture.article(self, MANUSCRIPT)
+        shown = manuscript_editor.read(self.root, ident)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            manuscript_editor.dispatch(
+                self.root, 'check', {'id': ident, 'expected': shown['expected'], 'check': 'revise'}
+            )
         directory, _ = studio.item(self.root, 'articles', ident)
 
         def worker(*args, **kwargs):
@@ -976,6 +988,7 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
             studio.item(self.root, 'articles', ident)[1]['editorial']['owner'], 'New editor'
         )
         self.assertFalse((directory / 'OUTLINE.md').exists())
+        self.assertEqual((directory / 'DRAFT.md').read_text(), MANUSCRIPT)
 
     def test_original_session_schema_and_required_shapes_refuse_in_pure_and_snapshot(self):
         import desk_migration
@@ -1265,13 +1278,19 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
                 self.assertFalse(run_supported({**run, 'research_execution': broken}))
         self.assertFalse(run_supported({k: v for k, v in run.items() if k != 'research_execution'}))
 
-    def test_the_read_only_files_view_serves_only_a_read_only_blog(self):
+    def test_the_saved_files_view_serves_only_a_saved_record(self):
         ident, directory = self.eligible()
-        with self.assertRaisesRegex(ValueError, 'saved file'):
-            management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
+        # A saved blog that opens on the desk shows its saved files on its record too.
+        shown = management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
+        self.assertEqual(shown['text'], MANUSCRIPT)
         (directory / runner.STATE).write_text('{not json')
         shown = management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
         self.assertEqual(shown['text'], MANUSCRIPT)
+        # Once it is on the desk it is desk work, with its own views: refused here.
+        other, _ = self.eligible()
+        self.apply(other)
+        with self.assertRaisesRegex(ValueError, 'saved file'):
+            management.view(self.root, 'saved-file', {'id': [other], 'name': ['DRAFT.md']})
         # A folder that is no blog (in a team workspace any top-level folder) is refused.
         for name in ('sources', 'profiles', 'no-such-blog'):
             with self.subTest(folder=name):

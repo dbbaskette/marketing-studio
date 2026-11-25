@@ -878,6 +878,11 @@ class VoiceApplyTests(Fixture):
             'page',
         )
         ident = found['id']
+        # Only the manuscript editor's own runs still go on: this run is marked as its revise.
+        directory = self.root / 'articles' / ident
+        run = studio.read_json(directory / blog_runner.STATE)
+        run['editor_check'] = 'revise'
+        studio.write_json(directory / blog_runner.STATE, run)
         empty = self.apply(ident, blake['id'])
         self.assertEqual(empty['run']['voice_name'], 'Blake', 'no writing yet: no confirmation')
         found = blog_runner.submit(
