@@ -295,13 +295,9 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['saved']['heading'], 'Home')
 
     def test_home_puts_each_deck_where_it_stands_and_a_finished_one_with_its_link(self):
-        waiting = self.saved_started(title='Waiting deck')
-        done = self.saved_started(title='Finished deck')
-        for _ in range(20):
-            gate = self.run_of(done)['gate']
-            if gate is None:
-                break
-            self.decided(done)
+        waiting = self.started(title='Waiting deck')
+        done = self.started(title='Finished deck')
+        self.deliver_desk(Path(done))
         result = self.run_page(self.answers(), [{'see': 'Every slide of'},
                                                 {'snapshot': 'home'}])
         home = result['snapshots']['home']
@@ -1125,8 +1121,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('0 slides to change', shot['text'])
 
     def test_home_says_where_an_older_powerpoint_file_is(self):
-        path = self.saved_started(output='pptx')
-        self.to_end(Path(path))
+        path = self.started(output='pptx')
+        self.deliver_desk(Path(path))
         listed = self.get('decks')
         for where, said in (('maker', 'A .pptx on the computer that made it.'),
                             ('shared', 'A .pptx, to download from its own screen.')):
@@ -2126,8 +2122,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.record(Path(path))['classified'], 'spec')
 
     def test_decks_status_settings_and_published_are_drawn_from_the_runners_answers(self):
-        self.saved_started(title='Rolling restarts')
-        self.saved_started(title='Capacity planning')
+        self.started(title='Rolling restarts')
+        self.started(title='Capacity planning')
         answers = self.answers(**{'GET /api/status': [ok(self.get('status'))],
                                   'GET /api/published': [ok(self.get('published'))]})
         result = self.run_page(answers, [
@@ -2152,8 +2148,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_search_and_jump_finds_a_deck_by_name_and_opens_it(self):
-        path = self.saved_started(title='Capacity planning')
-        self.saved_started(title='Rolling restarts')
+        path = self.started(title='Capacity planning')
+        self.started(title='Rolling restarts')
         answers = self.answers(**{'GET /api/run': [ok(self.run_of(path))]})
         result = self.run_page(answers, [{'snapshot': 'home'}, {'command': 'Capacity planning'},
                                          {'snapshot': 'deck'}], shell=True)
@@ -2165,8 +2161,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotEqual(result['snapshots']['home']['heading'], 'Capacity planning')
 
     def test_a_deck_is_deleted_from_the_decks_list_through_its_own_sheet(self):
-        path = self.saved_started(title='Rolling restarts')
-        self.saved_started(title='Capacity planning')
+        path = self.started(title='Rolling restarts')
+        self.started(title='Capacity planning')
         before = self.get('decks')
         leaving = self.get('delete', path=path)
         deleted = self.post('delete', {'path': path, 'title': 'Rolling restarts'})
@@ -2206,8 +2202,8 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_a_list_offers_delete_only_where_the_runner_would_allow_it_and_says_its_refusal(
             self):
-        path = self.saved_started(title='Rolling restarts')
-        other = self.saved_started(title='Capacity planning')
+        path = self.started(title='Rolling restarts')
+        other = self.started(title='Capacity planning')
         listed = self.get('decks')
         theirs = next(brief for brief in listed['needs'] + listed['working']
                       if brief['path'] == other)
@@ -2295,7 +2291,7 @@ class ScreenTests(ScriptedPage, PageCase):
         said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
          'Marketing Studio release and run marketing-studio update --from <the '
          'unpacked folder> --yes.')
-        self.saved_started()
+        self.started()
         found = self.brand_upkeep()
         found = {**found, 'update': {**found['update'], 'offered': False},
                  'versions': {**found['versions'], 'suite': 'marketing-studio'}}
@@ -2311,7 +2307,7 @@ class ScreenTests(ScriptedPage, PageCase):
                     self.assertNotIn(button, shot['buttons'])
 
     def test_home_offers_the_brand_skill_and_asks_before_it_is_installed(self):
-        self.saved_started()
+        self.started()
         found = self.brand_upkeep()
         offer = found['versions']['brand']
         self.assertEqual((offer['offered'], offer['action'], offer['commit']),

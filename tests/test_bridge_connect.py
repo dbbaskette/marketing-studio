@@ -46,7 +46,7 @@ try:
  import home
  if identifier == 'presentation':
   from runner import decks as records
-  top = case.gated()
+  top = case.load_saved('build')
   originals = ('run.json',)
   side, receipt = 'desk/migration.json', 'desk/migration-origin.json'
  else:

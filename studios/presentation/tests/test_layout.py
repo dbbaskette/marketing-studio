@@ -35,16 +35,13 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         return shown
 
     def finished(self, title: str) -> str:
-        path = self.saved_started(title=title)
-        for _ in range(20):
-            if self.run_of(path)['gate'] is None:
-                break
-            self.decided(path)
+        path = self.started(title=title)
+        self.deliver_desk(Path(path))
         return path
 
     def every_kind(self) -> dict:
         """Decks needing you, working and finished, as the runner lists them."""
-        self.saved_started(title='Waiting deck')
+        self.started(title='Waiting deck')
         self.finished('Finished deck')
         decks = self.get('decks')
         working = {**decks['needs'][0], 'path': '/elsewhere/working', 'id': 'working',
@@ -56,7 +53,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
     # --- the toolbar ---------------------------------------------------------------
 
     def test_the_filled_action_comes_first_and_the_rest_are_quiet(self):
-        self.saved_started(title='Waiting deck')
+        self.started(title='Waiting deck')
         result = self.run_page(self.answers(), [{'snapshot': 'home'}])
         bar = result['snapshots']['home']['toolbar']
         self.assertEqual(bar[0], {'name': 'Review Waiting deck', 'filled': True, 'quiet': False})
@@ -96,7 +93,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertLess(home['text'].index('Good '), home['text'].index('What needs you'))
 
     def test_start_a_deck_opens_the_form_at_its_route(self):
-        self.saved_started(title='Waiting deck')
+        self.started(title='Waiting deck')
         result = self.run_page(self.answers(), [
             {'click': 'From a document'}, {'snapshot': 'document'}])
         shot = result['snapshots']['document']
@@ -155,7 +152,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def four(self) -> dict:
         """Four decks: one needs you, one working from a document, two finished from scratch."""
-        self.saved_started(title='Waiting deck')
+        self.started(title='Waiting deck')
         brief = self.get('decks')['needs'][0]
 
         def like(title, state, route, needs=False):
@@ -532,7 +529,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_bring_in_a_deck_picks_then_brings(self):
         known = [{'title': 'Old deck', 'path': '/old/a'}, {'title': 'Other deck', 'path': '/old/b'}]
-        self.saved_started(title='Waiting deck')
+        self.started(title='Waiting deck')
         answers = self.answers(**{'GET /api/known-decks': [ok({'decks': known})],
                                   'POST /api/bring': [ok({'path': '/nowhere'})], **NOT_THERE})
         result = self.run_page(answers, [
@@ -698,7 +695,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(len(self.posts(result)), 1)
 
     def test_the_sheet_keeps_the_focus_when_it_opens_from_an_address(self):
-        self.saved_started(title='Waiting deck')
+        self.started(title='Waiting deck')
         result = self.run_page(self.answers(), [
             {'snapshot': 'home'}, {'back': True}, {'snapshot': 'opened'}],
             earlier=[{'screen': 'new', 'path': None}], transitions=True)

@@ -1074,6 +1074,13 @@ class StudioCase(unittest.TestCase):
                               source={'kind': 'upload', 'name': 'old.pptx'},
                               uploads={'old.pptx': DECK}, **changes)
 
+    def deliver_desk(self, root: Path, engine=None) -> dict:
+        """Deliver a desk deck that rests on the desk, as the desk's Deliver does: bound to
+        the deck the desk shows (`expected`) and to the brand check's blockers it shows."""
+        engine = engine or self.engine
+        shown = engine.view(root)['desk']
+        return engine.desk_deliver(root, shown['expected'], shown.get('blockers_seen'))
+
 
     def saved_existing_deck(self, review: str, level: str, **changes) -> Path:
         """A saved deck started at `level` under the review level `review`, read word

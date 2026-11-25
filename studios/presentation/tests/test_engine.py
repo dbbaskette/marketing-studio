@@ -260,7 +260,7 @@ class AheadTests(StudioCase):
     under its own level, and what its agent's jobs have spent so far."""
 
     def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
-        root = self.saved_start()
+        root = self.start()
         record = decks.read_run(root)
         record['steps'] = {name: entry for name, entry in record['steps'].items()
                            if (stages.BY_NAME.get(name) or
@@ -315,7 +315,7 @@ class NoCostYetTests(StudioCase):
     is said as $0.00."""
 
     def test_a_deck_that_ran_only_its_own_steps_reports_no_cost_yet(self):
-        root = self.saved_start()
+        root = self.start()
         run = decks.read_run(root)
         run['steps'] = {'intake-source': {'failed': 0, 'done': True,
                                           'tries': [{'seconds': 2, 'dollars': None}]}}
@@ -405,7 +405,7 @@ class HonestStopTests(StudioCase):
         self.assertEqual(self.engine.decks(), before, 'nothing is made')
 
     def test_an_unexpected_failure_says_its_message_without_its_class(self):
-        root = self.saved_start()
+        root = self.start()
         self.engine._trouble(root, ValueError('boom'))
         problem = self.view(root)['problem']
         self.assertEqual(problem['why'], 'The runner could not go on: boom.')
@@ -597,7 +597,7 @@ class ScratchTests(StudioCase):
 class RetryTests(StudioCase):
     def test_a_step_that_fails_three_times_stops_and_retry_carries_on(self):
         self.workers.then('outline', fails(), fails(), fails('The model gave up again.'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertIn('This step did not work in 3 tries: Draft the outline. The last one: '
@@ -607,20 +607,20 @@ class RetryTests(StudioCase):
         self.assertIn('An earlier try at this job did not work',
                       self.workers.of('outline')[1].task)
         self.engine.act(root, 'retry')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertEqual(len(self.workers.of('outline')), 4)
 
     def test_a_draft_the_checks_refuse_is_tried_again_with_the_reason(self):
         def wrong(tools, job):
             tools.submit_outline(json.dumps({'version': 1, 'slides': []}))
         self.workers.then('outline', wrong)
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIn('did not pass the checks', self.workers.of('outline')[1].task)
 
     def test_an_agent_that_cannot_be_used_stops_at_once(self):
         self.workers.then('outline', fails('Not signed in.', reason='unavailable'))
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.state(root), 'failed')
         self.assertIn('could not be used. Not signed in. Check this computer, on the Status '
                       'screen, says what it needs.', self.view(root)['sentence'])
@@ -628,7 +628,7 @@ class RetryTests(StudioCase):
 
     def test_an_account_at_its_usage_limit_stops_at_once_and_says_where_to_look(self):
         self.workers.then('outline', fails("You've hit your usage limit.", reason='limit'))
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.state(root), 'failed')
         self.assertEqual(self.view(root)['sentence'], "scripted's account reached a usage or "
                          'rate limit. Wait until it resets, then Try again.')
@@ -636,7 +636,7 @@ class RetryTests(StudioCase):
 
     def test_no_assistant_job_is_ended_for_how_long_it_takes(self):
         self.workers.then('outline', *[fails()] * 3)
-        root = self.saved_start()
+        root = self.start()
         # No job is given a time limit, whatever Settings still holds.
         self.assertEqual(self.settings.load().step_seconds, 1350)
         self.assertEqual({job.limits.seconds for job in self.workers.of('outline')}, {None})
@@ -648,19 +648,19 @@ class RetryTests(StudioCase):
             self.engine._store(root, record)
             self.engine._commit(root, 'as a deck stopped at a time limit before')
         self.engine.act(root, 'more-time')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIsNone(self.workers.of('outline')[-1].limits.seconds)
 
 
 class QuestionTests(StudioCase):
     def test_a_workers_question_waits_for_an_answer_which_goes_into_the_task(self):
         self.workers.then('outline', asks('Who presents it?'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
         self.assertEqual(view['question']['text'], 'Who presents it?')
         self.engine.answer(root, view['question']['id'], 'A platform engineer.')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIn('Answer: A platform engineer.', self.workers.of('outline')[-1].task)
 
 
@@ -836,7 +836,7 @@ class SharedDataTests(StudioCase):
             self.assertIn('PRESENTATION_STUDIO_DATA', said)
             self.assertNotIn('staging', said)
             self.assertEqual(self.engine.status()['problem'], said)
-            root = self.saved_start()
+            root = self.start()
             record = self.record(root)
             self.assertEqual(self.state(root), 'stopped')
             self.assertEqual(record['halted']['why'], said)
@@ -850,7 +850,7 @@ class SharedDataTests(StudioCase):
 
 class HaltTests(StudioCase):
     def test_pause_stop_resume_and_what_is_refused(self):
-        root = self.saved_start()
+        root = self.start()
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.act(root, 'pause')
         self.assertIn('Only a deck that is working can be paused', str(caught.exception))
@@ -861,19 +861,15 @@ class HaltTests(StudioCase):
         with self.assertRaises(WorkspaceError):
             self.engine.act(root, 'stop')
         self.engine.act(root, 'resume')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
 
     def test_a_deck_carries_on_whatever_its_jobs_report_they_cost(self):
         self.workers.cost = 500.0
         self.workers.then('outline', asks('One thing first?'))
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.record(root)['limits'], {'step_seconds': 1350})
         self.assertNotIn('spending_policy', self.record(root))
         self.engine.answer(root, self.view(root)['question']['id'], 'Yes.')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
-        self.decide(root, 'gate:look')
         self.assertEqual(self.waiting(root), 'gate:build')
         view = self.view(root)
         self.assertIsNone(view['problem'])
@@ -888,15 +884,15 @@ class HaltTests(StudioCase):
         self.workers.then('outline', lambda tools, job: Outcome(
             False, 'limit', 'It stopped without finishing: its spending limit was reached',
             cost=1.0))
-        root = self.saved_start()
+        root = self.start()
         # Nothing stopped for money: the step was tried again and worked.
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         tried = self.record(root)['steps']['outline']['tries']
         self.assertEqual([one['outcome'] for one in tried], ['failed', 'kept'])
 
     def test_a_deck_saved_while_spending_was_limited_still_opens_and_resumes(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         with self.engine.files:
             record = self.engine._load(root)
             record.update(
@@ -924,23 +920,17 @@ class HaltTests(StudioCase):
         self.assertEqual((root / 'run.json').read_bytes(), before,
                          'reading it rewrites nothing')
         self.engine.act(root, 'resume')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
+        self.assertEqual(self.waiting(root), 'gate:build')
         kept = self.record(root)
         self.assertEqual((kept['spending_policy'], kept['cleared']), ('hard-stop', 1.5))
 
     def test_a_research_job_that_still_ends_for_its_time_offers_try_again(self):
         from runner import research_steps
         from runner.agents import Outcome
-        root = self.saved_start(research=True)
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
         late.outcome = Outcome(False, 'timeout', 'It did not finish in 1350 seconds, so it was stopped.')
         with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
-            self.decide(root, 'gate:research-plan')
+            root = self.start(research=True)
         problem = self.view(root)['problem']
         # No job is given a time limit now, so there is no more time to offer: it is tried
         # again like any other step that failed.
@@ -950,12 +940,17 @@ class HaltTests(StudioCase):
                          'Research did not finish its author job in round 1 of 3.')
 
     def test_undo_takes_back_the_last_step(self):
-        root = self.saved_start()
-        self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
+        root = self.start()
+        self.assertEqual(self.log()[-1], 'Rolling restarts: the deck is on the desk')
+        count = len(self.log())
         self.engine.act(root, 'undo')
-        self.assertEqual(len(self.workers.of('outline')), 2)
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
+        # The step was taken back and taken again: its commit undone, then made again.
+        taken = self.git('reflog', '--format=%gs').splitlines()
+        self.assertEqual(taken[0], 'commit: Rolling restarts: the deck is on the desk')
+        self.assertIn('branch: Reset to HEAD~1', taken[1:3])
+        self.assertEqual(len(self.log()), count)
+        self.assertEqual(self.waiting(root), 'gate:build')
+        self.assertEqual(self.log()[-1], 'Rolling restarts: the deck is on the desk')
 
 
 class OlderSlidesToolTests(StudioCase):
@@ -1015,12 +1010,8 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotIn(said, needs['missing'], 'it holds up no deck already exported')
         [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
         self.assertEqual((item['state'], item['fix']), ('problem', said))
-        root = self.saved_start()
-        for _ in range(10):
-            view = self.view(root)
-            if view['state'] != 'waiting':
-                break
-            self.decide(root, view['gate'])
+        root = self.start()
+        view = self.view(root)
         self.assertEqual(view['state'], 'stopped')
         self.assertIn(said, view['sentence'])
         self.assertEqual(self.workers.of('outline'), [], 'nothing that needs the brand ran')
@@ -1028,23 +1019,37 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotIn(said, json.dumps(self.engine.deck_needs(fresh=True)['items']))
 
     def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:outline')
-        self.brand.version = '0.13.2'
-        self.engine.deck_needs(fresh=True)
-        self.decide(root, 'gate:outline')
+        def begun(tools, job):
+            # The deck has begun: its outline is being drafted when the brand skill turns old.
+            self.brand.version = '0.13.2'
+            self.engine.deck_needs(fresh=True)
+            return self.workers.outline(tools, job)
+        self.workers.then('outline', begun)
+        root = self.start()
         view = self.view(root)
+        self.assertEqual(self.brand.version, '0.13.2')
         self.assertNotEqual(view['state'], 'stopped', view.get('problem'))
         self.assertNotEqual(view['state'], 'failed', view.get('problem'))
 
     def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:outline')
-        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
-        with self.too_old():
+        old, before = self.too_old(), []
+
+        def begun(tools, job):
+            # The outline is drafted and checked when the slides tool turns out too old.
+            [root] = self.engine.every()
+            # What it has, but the lock of the job in hand, which is let go when it ends.
+            before.extend(sorted(str(path.relative_to(root)) for path in root.rglob('*')
+                                 if path.name != 'step.lock'))
+            old.start()
             self.engine.deck_needs(fresh=True)
-            self.decide(root, 'gate:outline')
+            return self.workers.text_check(tools, job)
+        self.workers.then('text-check', begun)
+        try:
+            root = self.start()
             view = self.view(root)
+        finally:
+            old.stop()
+        self.assertTrue(before)
         self.assertIn(view['state'], ('stopped', 'failed'))
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.19.0 or newer. '
                       'Update Harness Slides, then try again.', json.dumps(view))
@@ -1054,10 +1059,15 @@ class OlderSlidesToolTests(StudioCase):
 
 class BrandTests(StudioCase):
     def test_a_brand_that_changed_stops_the_deck_before_the_next_step_that_uses_it(self):
-        root = self.saved_start()
         rules = self.brand.run.home / 'references' / 'brand-rules.md'
-        rules.write_text(rules.read_text() + 'Round corners now.\n')
-        self.decide(root, 'gate:outline')
+
+        def changed(tools, job):
+            # The brand changes once the outline is drafted and its text checked.
+            said = self.workers.text_check(tools, job)
+            rules.write_text(rules.read_text() + 'Round corners now.\n')
+            return said
+        self.workers.then('text-check', changed)
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'stopped')
         self.assertTrue(view['sentence'].startswith('The brand changed since this deck began'))
@@ -1071,20 +1081,18 @@ class BrandTests(StudioCase):
     def test_without_a_brand_skill_a_deck_runs_until_it_needs_its_brand(self):
         from runner import engine
         self.without_a_brand_skill()
-        root = self.saved_start(research=True, brand='', variant='')
+        root = self.start(research=True, brand='', variant='')
         self.assertIn('your brand, chosen when the brand skill is installed',
                       (root / 'intake.md').read_text())
-        self.assertEqual(self.waiting(root), 'gate:research-plan')
-        self.decide(root, 'gate:research-plan')
-        self.assertEqual(self.waiting(root), 'gate:research')
-        self.decide(root, 'gate:research')
+        # The research, which does not need the brand, ran; the deck stopped after it.
+        self.assertTrue(self.record(root)['steps']['research']['done'])
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']), ('stopped', engine.NO_BRAND))
         self.assertEqual(view['problem']['action'], 'retry')
         self.assertEqual(self.workers.of('outline'), [], 'nothing that needs the brand ran')
         self.brand = self.installed
         self.engine.act(root, 'retry')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         form = json.loads((root / 'run.json').read_text())['form']
         self.assertEqual((form['brand'], form['variant']), ('example', 'light'),
                          'the first brand the brand skill lists, and its first variant')
@@ -1093,7 +1101,7 @@ class BrandTests(StudioCase):
         from dataclasses import replace
         self.settings.save(replace(self.settings.load(), brand='example', variant='dark'))
         self.without_a_brand_skill()
-        root = self.saved_start(brand='', variant='')
+        root = self.start(brand='', variant='')
         self.assertEqual(self.state(root), 'stopped')
         self.brand = self.installed
         self.engine.act(root, 'retry')
@@ -1104,7 +1112,7 @@ class BrandTests(StudioCase):
         from runner import engine
         self.without_a_brand_skill()
         with mock.patch.dict('os.environ', {'BRAND_SKILL_RUNTIME': str(self.base / 'nowhere')}):
-            root = self.saved_start(brand='', variant='')
+            root = self.start(brand='', variant='')
         view = self.view(root)
         self.assertNotEqual(view['sentence'], engine.NO_BRAND)
         self.assertEqual(view['sentence'], f"BRAND_SKILL_RUNTIME names {self.base / 'nowhere'}, "
@@ -1121,7 +1129,7 @@ class BrandTests(StudioCase):
                  named.NO_VARIANT.format(variant='neon', brand='example',
                                          listed='light, dark'))):
             self.brand = None
-            root = self.saved_start(title=f"Restarts in {form['variant'] or form['brand']}", **form)
+            root = self.start(title=f"Restarts in {form['variant'] or form['brand']}", **form)
             self.brand = self.installed
             self.engine.act(root, 'retry')
             view = self.view(root)
@@ -1133,7 +1141,7 @@ class BrandTests(StudioCase):
 
     def test_the_brand_chosen_for_a_deck_is_said_in_its_intake(self):
         self.without_a_brand_skill()
-        root = self.saved_start(brand='', variant='')
+        root = self.start(brand='', variant='')
         self.brand = self.installed
         self.engine.act(root, 'retry')
         self.assertIn('## Brand\nexample (light)\n', (root / 'intake.md').read_text())
@@ -1141,11 +1149,15 @@ class BrandTests(StudioCase):
                          (root / 'intake.md').read_text())
 
     def test_without_a_brand_skill_an_existing_deck_is_still_listed_slide_by_slide(self):
+        from runner import engine
+        from runner.steps import outline as outlines
         self.without_a_brand_skill()
-        root = self.saved_start(route='existing', level='polish', brand='', variant='',
+        root = self.start(route='existing', level='polish', brand='', variant='',
                           source={'kind': 'upload', 'name': 'old.pptx'},
                           uploads={'old.pptx': ExistingTests.DECK})
-        self.assertEqual(self.waiting(root), 'gate:classify')
+        # Listed slide by slide, then stopped where the brand is first needed.
+        self.assertEqual(len(json.loads((root / outlines.INVENTORY).read_text())['slides']), 3)
+        self.assertEqual(self.view(root)['sentence'], engine.NO_BRAND)
 
 
 class ResearchTests(StudioCase):
@@ -1245,23 +1257,19 @@ class SynthesisStopTests(StudioCase):
               'original': 'sources/supplied/handbook-html.original.html',
               'access_error': 'There is no tool to read it.'}]
 
-    def synthesis(self):
-        root = self.saved_start(research=True)
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
-        return root
+    def synthesis(self, refusal):
+        """A desk deck with research, whose research stops as `refusal` says."""
+        from runner import research_steps
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
+            return self.start(research=True)
 
     def test_a_check_that_could_not_read_an_original_stops_and_says_whose_problem_it_is(self):
-        from runner import research_steps
         from studio_core import research_contract
-        root = self.synthesis()
         said = str(research_contract.CheckCouldNotFinish(['fact-a (narrow): Not read.'], 0,
                                                         self.CAUSE))
         refusal = WorkspaceError(said)
         refusal.objections, refusal.rounds, refusal.cause = ['fact-a (narrow): Not read.'], 0, self.CAUSE
-        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'gate:research-plan')
+        root = self.synthesis(refusal)
         view = self.view(root)
         self.assertEqual((view['state'], view['problem']['why']), ('failed', said))
         self.assertIn('could not read the original of "Handbook"', view['sentence'])
@@ -1287,13 +1295,11 @@ class SynthesisStopTests(StudioCase):
 
     def test_objections_are_kept_under_their_groups(self):
         from runner import research_steps
-        root = self.synthesis()
         refusal = WorkspaceError('The independent check of the research still needs changes.')
         refusal.objections, refusal.rounds = ['f01 (narrow): Too broad.'], 3
         refusal.groups = [{'title': '1 fact the check calls narrow', 'count': 1,
                            'note': 'f01: Too broad.', 'items': ['f01: Too broad.']}]
-        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'gate:research-plan')
+        root = self.synthesis(refusal)
         kept = self.view(root)['problem']['kept']
         self.assertIn('every objection is listed under its group in research/review.md', kept)
         self.assertTrue(kept.endswith('\n- 1 fact the check calls narrow (f01: Too broad.)'))
@@ -1313,7 +1319,7 @@ class SynthesisStopTests(StudioCase):
 
     def test_a_dry_read_reads_each_original_as_the_check_would(self):
         from studio_core import research_contract
-        root = self.saved_start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
+        root = self.start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
                           uploads={'handbook.html': b'<p>Restart one batch at a time.</p>'})
         self.assertIsNone(research_contract.dry_read(self.engine, root, self.CAUSE))
         with mock.patch.object(worker_tools.WorkerTools, '_original',
@@ -1329,8 +1335,23 @@ class ResearchRoundTests(StudioCase):
     """A deck's research done as one authored report and one independent check: its jobs
     count under the research step, and the page says which round is in hand."""
 
+    def desk_synthesis(self):
+        """A desk deck with research, its research step's jobs as below: the step itself is
+        not finished, as while its rounds are in hand."""
+        import shutil
+        from studio_core import research_contract
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['steps'].pop('research')
+        self.engine._store(root, record)
+        # No draft is saved yet, as before the first round handed one back.
+        shutil.rmtree(root / research_contract.CASE / '.harness-research')
+        return self.rounds(root)
+
     def synthesis(self):
-        root = self.saved_start(research=True)
+        return self.rounds(self.saved_start(research=True))
+
+    def rounds(self, root):
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         tried = lambda at, seconds, dollars, outcome='kept': {
@@ -1346,12 +1367,12 @@ class ResearchRoundTests(StudioCase):
         return root
 
     def test_every_research_job_counts_under_the_research_step(self):
-        root = self.synthesis()
+        root = self.desk_synthesis()
         row = next(row for row in self.view(root)['timeline'] if row['name'] == 'research')
         self.assertEqual((row['attempts'], row['seconds'], row['dollars']), (4, 530.0, 1.5))
 
     def test_the_stop_says_what_the_last_try_of_the_research_took(self):
-        root = self.synthesis()
+        root = self.desk_synthesis()
         self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
         self.assertEqual(self.view(root)['problem']['research'], {
             'rounds': 2, 'jobs': 3, 'seconds': 480.0, 'dollars': 1.4, 'most': 3,
@@ -1363,10 +1384,7 @@ class ResearchRoundTests(StudioCase):
         self.assertNotIn('research', self.view(root)['problem'])
 
     def test_the_round_in_hand_is_said_while_it_runs(self):
-        root = self.synthesis()
-        record = self.engine._load(root)
-        record['gates']['gate:research-plan']['state'] = 'approved'
-        self.engine._store(root, record)
+        root = self.desk_synthesis()
         self.assertEqual(jobs.first(self.engine._load(root)).name, 'research')
         run = self.engine._run(root)
         run.workers['research:review-2'] = {
@@ -1841,12 +1859,12 @@ class DocumentTests(StudioCase):
             self.workers.classification(tools, job)
 
         self.workers.then('classification', reads)
-        root = self.saved_start(route='document', source={'kind': 'upload', 'name': 'notes.md'},
+        root = self.start(route='document', source={'kind': 'upload', 'name': 'notes.md'},
                           uploads={'notes.md': b'# Notes\n\nCapacity holds with two.\n'})
-        self.assertEqual(self.waiting(root), 'gate:classify')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIn('Capacity holds with two.', read[0])
         self.assertFalse((root / 'sources' / 'incoming').exists())
-        self.assertEqual(self.view(root)['gate']['documents'][0]['name'], 'notes.md')
+        self.assertEqual(self.view(root)['desk']['sources'][0]['name'], 'notes.md')
 
     def test_an_upload_that_was_not_sent_starts_nothing(self):
         before = self.log()
@@ -1895,8 +1913,8 @@ class ExistingTests(StudioCase):
 class PictureTests(StudioCase):
     def test_progress_images_are_named_by_current_refs_and_do_not_replace_the_gate(self):
         from runner import build_progress
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         basis = build.read_state(root)['start']['folder']
         shown = build_progress.view(root, basis)
         self.assertTrue(shown['slides'])
@@ -1907,8 +1925,8 @@ class PictureTests(StudioCase):
             self.engine.picture(root, 'progress', '../../private')
 
     def test_only_pictures_the_steps_recorded_are_served(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         (root / 'secret.png').write_bytes(runner_support.png())
         for kind, ref in (('build', 99), ('build', '../secret'), ('look', 7),
                           ('original', 1)):
@@ -1921,37 +1939,40 @@ class PictureTests(StudioCase):
 
 class LockTests(StudioCase):
     def test_a_render_in_hand_never_holds_up_a_decision_on_another_deck(self):
-        slow, other = self.saved_start(), self.saved_start(title='Another deck')
+        other = self.start(title='Another deck')
+        expected = self.view(other)['desk']['expected']
         entered, release, real = threading.Event(), threading.Event(), build.render
+        slow = []
 
         def held(root, *args, **named):
-            if Path(root) == slow:
+            if Path(root).name != other.name:
                 entered.set()
                 release.wait(30)
             return real(root, *args, **named)
 
         with mock.patch.object(build, 'render', held):
-            self.decide(slow)                       # the outline; the brand waits next
-            going = threading.Thread(target=self.decide, args=(slow,))
-            going.start()                           # the brand; the build runs to its render
+            going = threading.Thread(target=lambda: slow.append(self.start()))
+            going.start()                           # a new deck runs to its render
             try:
                 self.assertTrue(entered.wait(60), 'the render was reached')
                 clock = time.monotonic()
-                self.engine.decide(other, 'gate:outline', 'changes', 'Shorter, please.')
+                drawn = len(self.workers.of('section'))
+                self.engine.desk_deck_note(other, 'Shorter, please.', expected)
                 self.assertLess(time.monotonic() - clock, 10,
                                 "a decision waited for another deck's render")
-                self.assertEqual(self.waiting(other), 'gate:outline')
+                self.assertEqual(self.waiting(other), 'gate:build')
+                self.assertIn('Shorter, please.', self.workers.of('section')[drawn].task)
             finally:
                 release.set()
                 going.join(60)
-        self.assertEqual(self.waiting(slow), 'gate:build')
+        self.assertEqual(self.waiting(slow[0]), 'gate:build')
 
 
 class ListTests(StudioCase):
     def test_decks_are_listed_by_what_they_need(self):
-        waiting = self.saved_start()
-        done = self.saved_start(title='Second deck')
-        self.to_end(done)
+        waiting = self.start()
+        done = self.start(title='Second deck')
+        self.deliver_desk(done)
         listed = self.engine.decks()
         self.assertEqual([entry['id'] for entry in listed['needs']], [waiting.name])
         self.assertEqual([entry['id'] for entry in listed['finished']], [done.name])
@@ -1962,7 +1983,7 @@ class ListTests(StudioCase):
 
 class DrivenTests(StudioCase):
     def test_a_deck_folder_reached_through_a_link_or_dots_is_not_driven(self):
-        root = self.saved_start()
+        root = self.start()
         space = self.engine.space().root
         self.assertEqual(self.engine.driven(root), root)
         self.assertEqual(self.engine.every(), [root])
@@ -1995,10 +2016,14 @@ class ModelProfileTests(StudioCase):
         from runner import setup
         self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
         self.workers.found = [grave]
-        root = self.saved_start()
+        def later(tools, job):
+            # Settings change once the outline is drafted, before the deck is drawn.
+            studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
+            return self.workers.text_check(tools, job)
+        self.workers.then('text-check', later)
+        root = self.start()
         self.assertEqual(self.workers.of('outline')[0].model, 'quick-model')
-        studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
-        self.to_gate(root, 'gate:build')
+        self.assertEqual(self.waiting(root), 'gate:build')
         choices = self.record(root)['model_jobs']
         # Settings saved before the kinds of work: Writing and Checking take Main's model.
         self.assertTrue(any(c['profile'] == 'writing' and c['model'] == 'main-model' for c in choices))
@@ -2014,10 +2039,10 @@ class ModelProfileTests(StudioCase):
 
     def test_codex_and_explicit_work_override(self):
         self.configure('codex')
-        root = self.saved_start(title='By task')
+        root = self.start(title='By task')
         self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
         self.assertEqual(self.workers.of('outline')[-1].model, 'quick-model')
-        other = self.saved_start(title='Work override', agent='codex', model='own-model', effort='high')
+        other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.of('outline')[-1].model, 'own-model')
 
@@ -2414,8 +2439,8 @@ class PreviewRepairEngineTests(StudioCase):
         second = OUTLINE['slides'][1]['id']
         self.slides.run.screens = {second: [
             {'severity': 'error', 'code': 'text-overflow', 'detail': 'Text runs off.'}]}
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         state = build.read_state(root)
         # The first round went back to its composer before any review; later rounds within
         # REPAIRS too; the review came after.
@@ -2448,7 +2473,7 @@ class HoldingTests(StudioCase):
 
 class PreviewLinkTests(StudioCase):
     def test_a_pooled_preview_is_never_listed_as_a_file_the_deck_left(self):
-        root = self.saved_start()
+        root = self.start()
         kept = root / build.BUILD / 'drive-preview.json'
         kept.parent.mkdir(parents=True, exist_ok=True)
         own = {'name': 'Preview: Rolling restarts', 'id': 'file-1',
