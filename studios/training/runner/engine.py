@@ -1899,21 +1899,6 @@ class Engine(Reviewing):
                         self._edits_first(root)
                     self._desk_gate(root, found)
                     continue
-                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
-                                                               'look') \
-                        and not deck_content.checkpoint(record, step.step.id) \
-                        and review_policy.automatic(record, 'training', step.step.id,
-                                                    holding=pipeline.holding(root, found,
-                                                                             step.step)):
-                    if step.kind == 'look':
-                        self._look_default(root, step.step)
-                    elif pipeline.bare(step.step.id) == 'gate:deck-outline':
-                        if step.kind == 'gate':
-                            self._ask(root, run, found, step)
-                        self._policy_outline(root, self._survey(root, self._load(root)))
-                    else:
-                        self._policy_accept(root, step.step)
-                    continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
                     with self.files:
                         activity_log.checkpoint(root / ACTIVITY,
@@ -1995,13 +1980,13 @@ class Engine(Reviewing):
             step: pipeline.Next) -> None:
         if step.step.id == 'scan':
             return outline_first.scan(self, root, run, found, step)
-        if step.step.id.startswith('review-sample'):
-            return self._review_sample(root, found, step.step)
         drawing = DECK.get(pipeline.bare(step.step.id)) if step.step.stage == 'deck' else None
         if drawing:
             getattr(self, drawing)(root, run, found, step)
         elif step.kind == 'gate':
-            self._gate(root, step.step)
+            # A desk run passes every gate on its desk (`_desk_gate`); the one it waits at,
+            # what a deck says, is drawn above. The earlier flow's gates went with it (#542).
+            raise WorkspaceError(f'A desk training has no gate to wait at: {step.step.label}.')
         elif step.step.id == 'research-start':
             self._hand_over(root, step.step)
         elif step.step.id == 'research-report':
@@ -2100,16 +2085,6 @@ class Engine(Reviewing):
     @staticmethod
     def _level(step: pipeline.Step) -> str | None:
         return workspace.split(step.artifact)[1] if step.artifact else None
-
-    def _gate(self, root: Path, step: pipeline.Step) -> None:
-        """Put a checked draft to the person, through the core, and wait."""
-        it = workspace.label(step.artifact)
-        with self.files:
-            workspace.checkpoint(root, stage=step.stage, gate=step.artifact,
-                                 question=f'Approve {it}?', level=self._level(step),
-                                 next_step=f'Waiting for your review of {it}')
-            self._commit(root, f'ask for a review of {it}')
-            activity_log.checkpoint(root / ACTIVITY, 'ready', step.id)
 
     # --- the code steps after the blueprint ----------------------------------------------
 
@@ -2732,44 +2707,6 @@ class Engine(Reviewing):
             it = workspace.label(step.artifact)
             self._commit(root, f'continue the look of {it} on the desk' if desk else
                          f"use the brand's default look for {it}, under the saved review level")
-
-    def look(self, path, level: str | None, choice: str, words: str | None = None) -> dict:
-        """Record the look a person chose for a deck from the brand's samples, with their
-        words, as the page heard it, and carry on. AGAIN draws the samples again; DEFAULT,
-        offered when they could not be rendered, carries on in the brand's default look.
-        Nothing else calls this."""
-        root = self._held(path)
-        with self.files:
-            record = self._load(root)
-            step = self._survey(root, record).next
-            if step.kind != 'look' or self._level(step.step) != level:
-                raise WorkspaceError('No look is waiting to be chosen for that deck.')
-            shown = pipeline.read_built(root, level).get('look') or {}
-            if choice == pipeline.AGAIN_LOOK:
-                self._note(root, level, look=None)
-                self._commit(root, f'draw the looks of {workspace.label(step.step.artifact)} '
-                                   'again')
-            else:
-                if choice == pipeline.DEFAULT_LOOK:
-                    if not shown.get('failed'):
-                        raise WorkspaceError('Choose one of the looks the brand drew.')
-                    named = "the brand's default"
-                    said = deck_flow.PROCEED_WORDS.format(name=named)
-                else:
-                    named = next((look['name'] for look in shown.get('looks') or ()
-                                  if look['id'] == choice), None)
-                    if named is None:
-                        raise WorkspaceError('Choose one of the looks the brand drew for this '
-                                             'deck.')
-                    said = (words or '').strip()[:NEXT_NOTE] \
-                        or pipeline.NO_COMMENT.format(name=named)
-                if self._choose_look(root, level, choice, said, 'page'):
-                    self._commit(root, f'choose the look of '
-                                       f'{workspace.label(step.step.artifact)}: {named}')
-                else:
-                    self._commit(root, 'draw the looks again: what the deck says changed')
-        self.carry_on(root)
-        return self.view(root)
 
     def _guide(self, work: Path, chosen: tuple, told: Path, saved: dict,
                root: Path | None = None) -> dict:

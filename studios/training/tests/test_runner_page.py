@@ -46,7 +46,7 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
 GETS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
 POSTS = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
-         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
+         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install',
          '/api/note', '/api/research-site')
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'current_models', 'decided', 'deck', 'deck_aside', 'deck_left', 'documents', 'driver', 'effort',
@@ -235,7 +235,6 @@ class RuleTests(PageCase):
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},
-                       '/api/review': {'path': self.path, 'expected': 'old-version', 'decision': 'approve'},
                        '/api/share': {}, '/api/companions': {}, '/api/restart': {},
                        '/api/upgrade': {'version': '99.0.0'},
                        '/api/versions': {'dismiss': 'training-studio 99.0.0'},

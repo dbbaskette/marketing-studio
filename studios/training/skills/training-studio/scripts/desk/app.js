@@ -160,10 +160,6 @@ const RUN_WORDS = {
 };
 // A training worked on in a conversation: nothing runs here, and it waits for nobody here.
 const CONVERSATION_WORDS = ['none', 'In conversation'];
-const STEP_WORDS = {
-  done: ['done', 'Done'], working: ['current', 'Working'], waiting: ['review', 'Waiting for you'],
-  failed: ['late', 'Failed'], 'to-do': ['none', 'To do'],
-};
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
@@ -205,9 +201,6 @@ const DELIVERIES = [['live', 'Presented in a session'], ['reading', 'Read on its
 const COPIES = [['google', 'Google Docs'], ['word', 'Word']];
 const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
   ['scenario', 'Practice scenarios']];
-// Where the research looks. What each answer means is said under the choice.
-const REVIEW_LEVELS = [['balanced', 'Balanced'], ['automatic', 'Automatic draft'],
-  ['step_by_step', 'Step by step']];
 // Where research may look: your documents, your sites and/or the public web, any of them
 // together. Your sites start as the list every studio shares; a site added on the form is
 // for that training only. The words are the ones every studio uses
@@ -241,11 +234,6 @@ const WHOSE = {
     + 'is used as it is.',
   runner: 'This file is Training Studio’s draft, written from the practice plan in the '
     + 'blueprint.',
-};
-// A copy of a guide, a brief or a Yoodli scenario, and where it stands.
-const COPY_KINDS = { google: 'Google Doc', word: 'Word copy' };
-const COPY_STATES = {
-  made: ['done', 'Made'], 'out-of-date': ['late', 'Out of date'], 'not-made': ['off', 'Not made'],
 };
 const WEB_LINK = /^https?:\/\/\S+$/i;
 const KEPT_HERE = 'Your documents stay on this computer and are never shared with your team. '
@@ -282,20 +270,7 @@ const PREVIEW_ABSENT = [
 ];
 const PREVIEW_WORDS = { local: 'made with LibreOffice, on this computer',
   drive: 'made through Google Drive' };
-// A section of a deck while it is drawn, and a finding of the review by how much it matters.
-const SECTION_WORDS = {
-  'to-do': ['none', 'Not started'], working: ['current', 'Being drawn'],
-  done: ['done', 'Handed in'], failed: ['late', 'Could not be drawn'],
-};
-// How each asset a deck's approved design uses stands in the slides tool's record of it.
-const ASSET_WORDS = {
-  recorded: ['done', 'Recorded'], wanted: ['none', 'Still needed'],
-  drawn: ['done', 'Drawn from its numbers'],
-  left: ['none', 'Left out, as you asked'],
-  brand: ['done', 'Comes with the brand'],
-  missing: ['late', 'Its file is missing'], changed: ['late', 'Its file has changed'],
-  conflict: ['late', 'Recorded as something else'],
-};
+// A finding of a deck's review, by how much it matters.
 const SEVERITIES = { critical: ['late', 'Critical'], major: ['late', 'Major'],
   minor: ['none', 'Minor'] };
 const SERIOUS = ['critical', 'major'];
@@ -356,17 +331,6 @@ const DELETE_UNDO = 'This cannot be undone from this page. Its history stays in 
   + 'someone who knows git can bring it back.';
 const DELETE_DRIVE = 'Training Studio never deletes anything in your Google Drive. Remove '
   + 'these yourself if you no longer want them:';
-// Drawing a deck again from a design: what its card and its confirmation say. The runner says
-// which decks may be; these are the words around them.
-const REDESIGN_SAYS = 'This deck was approved before decks were drawn from a design. Training '
-  + 'Studio can draw it again from one: each slide planned to show what it teaches.';
-const REDESIGN_DOES = ['What the deck says is written again, with how each slide is drawn, '
-  + 'from the words you approved. You review both together, as for a new deck.',
-'Then it is drawn, rendered and reviewed again, and comes back to you to approve.',
-'Nothing else in the training changes.'];
-const REDESIGN_KEEPS = ['The deck you approved, as it is, until the new one replaces it. Then '
-  + 'it stays in the training’s history.', 'What you approved it should say, and when.'];
-const REDESIGN_COSTS = 'It costs about what drawing the deck cost the first time.';
 // Where a finished training's index is, in its folder.
 const UPDATE_SAYS = 'Each is fetched from its own repository at the one revision this '
   + 'Training Studio was made with, and checked file for file before any of it is run. Then '
@@ -430,10 +394,9 @@ const view = {
   // has each training, a look for teammates' work and what it brought, and the switch for
   // the computer's own notifications while it is being changed.
   status: null, shelf: null, issued: null, adopted: null, noticed: {},
-  // The training the delete sheet is about, the open one or one on a list, what deleting it
-  // would do, as the runner said when its sheet was opened, and the deck whose redesign the
-  // sheet asks about.
-  doomed: null, leaving: null, redesigning: null,
+  // The training the delete sheet is about, the open one or one on a list, and what deleting
+  // it would do, as the runner said when its sheet was opened.
+  doomed: null, leaving: null,
   // Looking online for updates, while it is switched, and why switching it was refused.
   turningLook: false, lookRefused: '',
   // The brand skill's repository as it is typed in Settings, while it is saved, and why
@@ -662,9 +625,6 @@ function settingsAddress() {
   return '/onboarding/#token=' + view.token;
 }
 
-// The shared review level, as a start form says it.
-const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
-  step_by_step: 'Step by step' };
 
 // What it is doing now, in one line: the step, how long it has taken and what it has cost
 // so far. Each is left out where it is not known.
@@ -1307,7 +1267,6 @@ function closeSheet() {
   view.leaving = null;
   view.doomedMany = null;
   view.leavingMany = null;
-  view.redesigning = null;
   view.picture = null;
   drawSheet();
   repaintUnder();
@@ -1475,12 +1434,11 @@ function drawSheet() {
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
     || (view.sheet === 'new' && view.draft) || (view.sheet === 'picture' && view.picture)
-    || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
+    || ['delete', 'bulk-delete', 'companions', 'upgrade', 'brand', 'copy-choice',
       'update-research', 'stop-run', 'desk-migration'].includes(view.sheet)
     || (view.sheet === 'change-settings' && view.changing)
     || (view.sheet === 'use-models' && view.usingModels)
-    || (DESK_SHEETS.includes(view.sheet) && view.run)
-    || (view.sheet === 'approve-combined' && view.run && view.run.review)));
+    || (DESK_SHEETS.includes(view.sheet) && view.run)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
   byId('actions').hidden = Boolean(shown);
@@ -1504,14 +1462,12 @@ function drawSheet() {
   else if (view.sheet === 'picture') body = pictureSheet();
   else if (view.sheet === 'companions') body = updateSheet();
   else if (view.sheet === 'upgrade') body = upgradeSheet();
-  else if (view.sheet === 'redesign') body = redesignSheet();
   else if (view.sheet === 'brand') body = brandSheet();
   else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
   else if (view.sheet === 'update-research') body = updateResearchSheet();
   else if (view.sheet === 'change-settings') body = settingsSheet();
   else if (view.sheet === 'use-models') body = modelsSheet();
   else if (view.sheet === 'stop-run') body = stopSheet();
-  else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (DESK_SHEETS.includes(view.sheet)) body = deskSheet(view.sheet);
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
@@ -5129,11 +5085,6 @@ function placeParts(spec, parts, fresh) {
   }
 }
 
-// The next decision a run will ask for, so the person knows what is coming.
-function nextGate(run) {
-  return list(run.steps).find((step) => step.kind === 'gate' && step.status === 'to-do') || null;
-}
-
 // A run that waits for documents waits for its person, whatever it says of itself meanwhile.
 function adding(run) {
   return Boolean(run.documents && run.documents.waiting);
@@ -5152,62 +5103,6 @@ function runStanding(run) {
   if (queued(run)) return ['none', 'Waiting its turn'];
   return run.state === 'working' && (adding(run) || outlining(run)) ? RUN_WORDS.waiting
     : runWords(run);
-}
-
-// One line under the beads: how many steps are left, where the training next stops for you
-// under its own level, and what it has spent so far, all as the runner says them.
-function aheadLine(run) {
-  const ahead = run.ahead;
-  if (!ahead || !ahead.steps_left) return null;
-  const parts = [count(ahead.steps_left, 'step left', 'steps left')];
-  if (ahead.next_stop) {
-    parts.push('Next stop: ' + lower(ahead.next_stop).replace(/^(your review of|review) /, ''));
-  }
-  if (ahead.spent) parts.push('So far ' + ahead.spent);
-  return make('p', 'quiet ahead-line', parts.join(' · '));
-}
-
-function runIntro(run, training) {
-  const node = add(make('div', 'intro'), make('p', 'lede run-says', run.sentence));
-  if (run.decided) {
-    const last = run.decided;
-    const line = make('p', 'quiet', (last.decision === 'revise' ? 'You asked for changes to '
-      : 'You approved ') + last.label + ' at ' + clock(last.at) + '. ' + last.next);
-    line.setAttribute('role', 'status');
-    add(node, line);
-  }
-  add(node, nowLine(run), state(...runStanding(run)));
-  if (list(training.stages).length) add(node, beads(training.stages, false));
-  add(node, aheadLine(run));
-  const next = nextGate(run);
-  // What someone else runs asks nothing of this person, and promises them nothing: who
-  // runs it, and what can be read, is said next.
-  const theirs = run.mine === false;
-  const stands = theirs ? '' : run.state;
-  if (queued(run) && !theirs) add(node, make('p', '', queueSays(run.queue)));
-  if (stands === 'working' && !adding(run) && !outlining(run)) {
-    add(node, make('p', 'quiet', 'Nothing is needed from you right now. It carries on by '
-      + 'itself, and this page tells you when it needs you.'
-      + (next ? ' Next it asks for your decision on '
-        + lower(next.label).replace(/^your review of /, '') + '.' : '')));
-    // What the two ways of halting it cost, said before either is pressed.
-    if (!queued(run)) {
-      add(node, make('p', 'quiet', 'Stop ends the step in hand and loses its work so far; '
-        + 'Pause lets it finish first.'));
-    }
-  } else if (stands === 'paused') {
-    add(node, make('p', 'quiet', 'Nothing more is started until you resume it. Everything '
-      + 'made so far is kept.'));
-  } else if (stands === 'stopped' && !run.problem) {
-    add(node, make('p', 'quiet', 'Everything finished before the stop is kept. Resume, and '
-      + 'the step that was in hand starts over.'));
-  }
-  if (view.steered) {
-    const problem = make('p', 'problem', view.steered);
-    problem.setAttribute('role', 'alert');
-    add(node, problem);
-  }
-  return node;
 }
 
 // The step a problem stopped at: the one it names, or else the one the steps say failed.
@@ -5275,81 +5170,6 @@ function moreTime(found, thing) {
 }
 
 // --- one run: a note for the next step -----------------------------------------------------
-
-// Whether a note can be left: the training is this computer's and has a next step to come.
-function noting(run) {
-  return Boolean(run.note) && run.mine !== false
-    && ['working', 'waiting', 'paused', 'failed'].includes(run.state);
-}
-
-// A note for the next job that starts, sent without stopping anything. One already waiting
-// is shown, and another sent before a job takes it replaces it.
-function notePart(run) {
-  const path = view.path;
-  const waiting = run.note.pending;
-  const label = make('label', 'field-label', 'Note for the next step');
-  label.htmlFor = 'next-note';
-  const box = make('textarea', 'input');
-  box.id = 'next-note';
-  box.rows = 2;
-  box.maxLength = 2000;
-  box.value = view.nextNotes[path] || '';
-  box.dataset.key = 'next-note ' + path;
-  box.spellcheck = true;
-  const hint = make('p', 'quiet field-hint', waiting
-    ? 'Noted for the next step: ' + shortNote(waiting.text) + ' Sending another replaces it.'
-    : 'It goes with the next job that starts, and stops nothing. A reviewer takes no note: '
-      + 'it waits for the next writer.');
-  hint.id = 'next-note-hint';
-  box.setAttribute('aria-describedby', 'next-note-hint next-note-problem');
-  box.addEventListener('input', () => {
-    view.nextNotes[path] = box.value;
-    if (box.getAttribute('aria-invalid')) refuse('next-note', '');
-  });
-  const problem = alertLine('next-note-problem');
-  const go = capsule(waiting ? 'Replace the note' : 'Send the note', '',
-    () => sendNote(run, box, problem, go), 'send-note');
-  go.disabled = Boolean(view.busy);
-  return add(make('div', 'answer'), label, box, hint, problem, add(make('div', 'bar'), go));
-}
-
-async function sendNote(run, box, problem, pressed) {
-  const text = box.value.trim();
-  if (!text) {
-    say(problem, 'Write the note first.');
-    box.setAttribute('aria-invalid', 'true');
-    box.focus();
-    return;
-  }
-  if (view.busy) return;
-  const turn = view.turn;
-  const path = view.path;
-  view.busy = true;
-  pressed.disabled = true;
-  try {
-    const found = await send('note', { path, expected: run.note.expected, text });
-    delete view.nextNotes[path];
-    view.busy = false;
-    toast(run.note.pending ? 'The note is replaced. It goes with the next job that starts.'
-      : 'Noted. It goes with the next job that starts.');
-    if (turn === view.turn && view.screen === 'run' && view.path === path) {
-      view.run = found;
-      paintRun(false);
-    }
-    refresh();
-  } catch (failure) {
-    say(problem, failure.message + ' Your note is still here, and nothing was sent.');
-    pressed.disabled = false;
-  }
-  view.busy = false;
-}
-
-// The step a note went with, as the steps name it: a job of a step is named for its step.
-function stepLabel(run, name) {
-  const base = String(name || '').split(':')[0];
-  const row = list(run.steps).find((step) => step.id === base);
-  return row ? row.label : base;
-}
 
 function researchDecisionPart(run) {
   const box = make('section', 'card stack');
@@ -5531,92 +5351,6 @@ function questionPart(run, title) {
   return add(node, questionBox(view.path, title, run.question, 'filled', 'answer-run'));
 }
 
-function gatePart(training, waiting, said) {
-  const sentence = training.sentence || sentenceOf(waiting.label);
-  return callout('yours', sentence === said ? null : make('p', '', sentence),
-    waiting.question ? make('p', sentence === said ? '' : 'quiet',
-      asker(training.path) + waiting.question) : null);
-}
-
-function sentenceOf(label) {
-  return capital(label) + ' is waiting for your review.';
-}
-
-// What a step has taken so far. It moves while the step is working, so it is written into
-// the step that is already on the screen rather than drawing the list again.
-function stepFacts(step) {
-  const facts = [];
-  if (step.kind === 'gate') facts.push('Your decision');
-  if (step.attempts > 1) facts.push(count(step.attempts, 'try', 'tries'));
-  if (given(step.seconds)) facts.push(lasted(step.seconds) + (step.id === 'research' ? ' assistant time' : ''));
-  if (given(step.dollars)) facts.push(money(step.dollars));
-  return facts.join(' · ');
-}
-
-function stepItem(step) {
-  const [shape, words] = STEP_WORDS[step.status] || STEP_WORDS['to-do'];
-  const facts = make('p', 'quiet step-facts', stepFacts(step));
-  facts.hidden = !facts.textContent;
-  const text = add(make('div', 'row-text'), make('p', 'step-name', step.label), facts);
-  if (step.error) add(text, make('p', step.status === 'failed' ? 'problem' : 'quiet', step.error));
-  const item = make('li', 'row step' + (step.status === 'working' ? ' working' : ''));
-  item.dataset.state = step.status;
-  return add(item, bead(shape), text, make('span', 'step-words', words));
-}
-
-function stepsCard(run) {
-  const node = add(make('details', 'paper training-options'), make('summary', '', 'All production steps'));
-  node.dataset.key = 'production-steps';
-  const steps = list(run.steps);
-  if (!steps.length) return add(node, make('p', 'quiet', 'It is working out what to do first.'));
-  const items = make('ol', 'rows');
-  for (const step of steps) items.append(stepItem(step));
-  add(node, items);
-  const used = list(run.note && run.note.used);
-  if (used.length) add(node, make('p', 'row-title', 'Notes for the next step'),
-    bullets(used.map((item) => item.text + ' Went with: ' + stepLabel(run, item.step) + '.')));
-  return node;
-}
-
-function tickSteps(run) {
-  const shown = main().querySelectorAll('.step-facts');
-  list(run.steps).forEach((step, index) => {
-    const said = stepFacts(step);
-    if (!shown[index] || shown[index].textContent === said) return;
-    shown[index].textContent = said;
-    shown[index].hidden = !said;
-  });
-}
-
-function workerItem(worker) {
-  // A poll carries the latest line (`now`), not every line: those are read while opened.
-  const lines = [...list(worker.lines).map((line) => (typeof line === 'string' ? line : line.text)),
-    ...(worker.lines === undefined && worker.now ? [worker.now.text] : [])];
-  const item = add(make('li', 'worker'), add(make('div', 'computer-top'),
-    make('p', 'row-title', worker.label),
-    add(make('span', 'quiet'), 'Started ', when(worker.started_at))));
-  if (!lines.length) return add(item, make('p', 'quiet', 'Just starting.'));
-  add(item, make('p', 'worker-now', lines[lines.length - 1]));
-  if (lines.length > 1) {
-    const before = make('details', 'worker-before');
-    before.dataset.key = 'worker ' + worker.id;
-    add(item, add(before, make('summary', '', 'What it did just before'),
-      bullets(lines.slice(0, -1).reverse(), 'reasons')));
-  }
-  return item;
-}
-
-// What each assistant working now is doing: its latest line, and Show activity with every line
-// so far (ui-kit/activity.js). Without the shared piece, the older short list.
-function workersCard(run) {
-  if (typeof StudioActivity !== 'undefined') {
-    return add(card('Working now'), StudioActivity.live(run.workers, { load: jobLines(view.path) }));
-  }
-  const items = make('ul', 'plain workers');
-  for (const worker of list(run.workers)) items.append(workerItem(worker));
-  return add(card('Working now'), items);
-}
-
 // The training's Activity log: each assistant job that ended, newest first, with what it did.
 // It is read when the person opens it, while the run works and after it ends.
 function activityLogCard(path) {
@@ -5630,59 +5364,6 @@ function jobLines(path) {
   const read = (job, since) => ask('activity', { path, job, since });
   read.scope = path;   // a job's lines are its own training's: the same step elsewhere is another job
   return read;
-}
-
-function madeCard(training, theirs) {
-  const node = card('Made so far');
-  const made = list(training.view && training.view.files).filter((file) => !['not-started',
-    'skipped', 'unavailable'].includes(file.status));
-  if (!made.length) {
-    add(node, make('p', 'quiet', 'Nothing yet. Each thing it makes appears here, ready to '
-      + 'open.'));
-  } else {
-    const items = make('ul', 'rows');
-    for (const file of made) {
-      const words = file.waiting ? (theirs ? 'waiting for a decision where it runs'
-        : 'waiting for your review')
-        : file.asked ? file.words + ', changes asked for' : file.words;
-      const review = file.waiting && !theirs;
-      const go = capsule(review ? 'Review' : 'Open', 'quiet',
-        () => show('gate', { path: training.path, artifact: file.artifact }),
-        'file ' + file.artifact);
-      go.setAttribute('aria-label', (review ? 'Review ' : 'Open ') + lower(file.label));
-      add(items, add(make('li', 'row'), bead(file.waiting ? 'review' : FILE_BEADS[file.status]),
-        add(make('div', 'row-text'), make('p', 'step-name', file.label),
-          make('p', 'quiet', capital(words))), go,
-        (() => {
-          const save = capsule('Download', 'quiet', (event) => downloadFile(training.path,
-            {artifact: file.artifact}, file.file.split('/').pop(), event.currentTarget),
-            'download-' + file.artifact);
-          save.setAttribute('aria-label', 'Download ' + lower(file.label));
-          return save;
-        })()));
-    }
-    add(node, items);
-  }
-  return add(node, add(make('div', 'bar'), capsule('Everything about this training', 'quiet',
-    () => show('training', { path: view.path }), 'detail')));
-}
-
-function costCard(run) {
-  const node = card('What it has cost');
-  const spent = run.spent || {};
-  const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
-  // A cost of nothing is not reported money: it is never said as $0.00.
-  const reported = given(spent.dollars) && Number(spent.dollars) > 0;
-  add(node, make('p', 'cost', !reported ? 'Not reported'
-    : Number(spent.dollars) < 0.005 ? 'Less than $0.01' : money(spent.dollars)));
-  const says = [];
-  const silent = !reported && given(spent.tokens);
-  if (reported) says.push('So far.');
-  else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
-  else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
-  if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
-  return add(node, make('p', 'quiet', says.join(' ')),
-    make('p', 'quiet', 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(run.model, run.effort)) + '.'));
 }
 
 // --- a run: your own documents ---------------------------------------------------------
@@ -6088,52 +5769,6 @@ function copyLink(found, kind, what) {
   return add(make('p', ''), node);
 }
 
-function copyItem(found) {
-  const [shape, words] = COPY_STATES[found.state] || COPY_STATES['not-made'];
-  const kind = COPY_KINDS[found.kind] || 'copy';
-  const what = kind + ' of ' + lower(found.label);
-  const text = add(make('div', 'row-text'),
-    make('p', 'step-name', capital(what)));
-  if (found.state === 'out-of-date') {
-    add(text, make('p', '', 'Its file has changed since this copy was made.'));
-  }
-  // What Google was found to hold, when the person last looked.
-  if (found.remote === 'remote changed') add(text, make('p', '', 'Changed in Google Docs.'));
-  if (found.remote === 'both changed') {
-    add(text, make('p', '', 'Changed in Google Docs, and here too.'));
-  }
-  const why = found.problem || (found.state === 'not-made' ? 'No reason was given.' : '');
-  if (found.state !== 'made' && why) add(text, make('p', '', why));
-  add(text, copyLink(found, kind, what));
-  if (found.kind === 'google' && view.run?.mine !== false) {
-    if (found.conflict) {
-      for (const [choose, label] of [['theirs', "Use the Doc's version"],
-        ['ours', 'Keep this version and send it']]) {
-        add(text, capsule(label, 'quiet', (event) => {
-          view.copyChoice = {found, choose};
-          openSheet('copy-choice', event.currentTarget)();
-        }, 'choose-copy-' + choose + '-' + found.artifact));
-      }
-    }
-    if (found.conflict || ['remote changed', 'both changed'].includes(found.remote)) {
-      add(text, capsule("Bring the Doc's changes in", 'quiet', (event) =>
-        pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
-    }
-  }
-  if (found.kind === 'google' && found.missing && view.run?.mine !== false) {
-    add(text, capsule('Make a new Google Doc', 'quiet', (event) =>
-      remakeCopy(found, event.currentTarget), 'remake-copy-' + found.artifact));
-  }
-  if (found.kind === 'word' && found.link && found.state !== 'not-made') {
-    add(text, capsule('Download the Word copy', 'quiet', (event) =>
-      downloadFile(view.path, {artifact: found.artifact, copy: 'word'},
-        found.link.split('/').pop(), event.currentTarget), 'download-word-' + found.artifact));
-  }
-  const item = make('li', 'row step');
-  item.dataset.state = found.state;
-  return add(item, bead(shape), text, make('span', 'step-words', words));
-}
-
 function copyChoiceSheet() {
   const {found, choose} = view.copyChoice;
   const theirs = choose === 'theirs';
@@ -6146,20 +5781,6 @@ function copyChoiceSheet() {
       + ' with the Doc’s kept text. Review it again before continuing.'
       : 'This replaces the changes in the Google Doc with this training’s version.'),
     add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
-}
-
-async function remakeCopy(found, pressed) {
-  pressed.disabled = true;
-  try {
-    view.run = await send('copies', { path: view.path, action: 'remake',
-      artifact: found.artifact });
-    toast(view.run.said);
-    paintRun(false);
-  } catch (failure) {
-    toast(failure.message + ' Nothing was changed.');
-  } finally {
-    pressed.disabled = false;
-  }
 }
 
 async function pullCopy(found, choose, pressed) {
@@ -6177,176 +5798,6 @@ async function pullCopy(found, choose, pressed) {
   } finally {
     pressed.disabled = false;
   }
-}
-
-async function tryCopies() {
-  if (view.copying) return;
-  const turn = view.turn;
-  view.copying = true;
-  view.uncopied = '';
-  paintRun(false);
-  let run = null;
-  let refusal = '';
-  try {
-    run = await send('copies', { path: view.path });
-  } catch (failure) {
-    refusal = failure.message + ' Nothing was changed: the copies are as they were.';
-  }
-  // Another screen is open by now, and it has put this one's state away.
-  if (turn !== view.turn) return;
-  view.copying = false;
-  view.uncopied = refusal;
-  if (run) {
-    view.run = run;
-    const left = list(run.copies).filter((found) => found.state !== 'made').length;
-    toast(left ? count(left, 'copy is', 'copies are') + ' still not made. Each says why.'
-      : 'Every copy is made.');
-  }
-  paintRun(false);
-  if (!focusKey('copies-again')) byId('title').focus({ preventScroll: true });
-}
-
-// Asked for by the person: the one time Google is asked whether a Doc was changed there.
-async function checkCopies(pressed) {
-  if (view.checking) return;
-  view.checking = true;
-  pressed.disabled = true;
-  try {
-    const run = await send('copies', { path: view.path, action: 'check' });
-    view.run = run;
-    const changed = list(run.copies).filter((found) => found.remote).length;
-    // The runner says what it found, including a Doc Google could not be asked about.
-    toast(run.said || (changed ? count(changed, 'Google Doc was', 'Google Docs were')
-      + ' changed there.' : 'No Google Doc was changed there.'));
-  } catch (failure) {
-    toast(failure.message + ' Nothing was changed.');
-  } finally {
-    view.checking = false;
-    pressed.disabled = false;
-  }
-  paintRun(false);
-  focusKey('check-copies');
-}
-
-// A Google copy changed both there and here waits for the person's choice.
-function conflicted(found) {
-  return found.kind === 'google' && found.conflict && view.run?.mine !== false;
-}
-
-function conflictPart(run) {
-  const items = make('ul', 'rows');
-  for (const found of list(run.copies).filter(conflicted)) items.append(copyItem(found));
-  return add(card('A copy changed in two places', 'card-needs'),
-    make('p', 'quiet', 'Choose which version to keep. Nothing is sent until you confirm it.'),
-    items);
-}
-
-function copiesCard(run) {
-  const node = card('Copies');
-  const items = make('ul', 'rows');
-  for (const found of list(run.copies).filter((one) => !conflicted(one))) {
-    items.append(copyItem(found));
-  }
-  add(node, items);
-  const docs = list(run.copies).some((found) => found.kind === 'google' && found.link);
-  if (docs && run.mine !== false) {
-    const look = capsule('Look for changes in Google Docs', 'quiet',
-      (event) => checkCopies(event.currentTarget), 'check-copies');
-    add(node, add(make('div', 'bar'), look));
-  }
-  if (!list(run.copies).some((found) => found.state !== 'made')) return node;
-  // Making them again is a change, which only the computer that runs the training makes.
-  if (run.mine === false) {
-    return add(node, make('p', 'quiet', 'The training itself is complete without them.'));
-  }
-  const go = capsule(view.copying ? 'Trying again…' : 'Try the copies again', '', tryCopies,
-    'copies-again');
-  if (view.copying) go.setAttribute('aria-busy', 'true');
-  const problem = alertLine('copies-problem');
-  say(problem, view.uncopied);
-  return add(node, make('p', 'quiet', 'A copy that is not made is listed as a limitation. A '
-    + 'copy that is out of date must be sent again before the training is ready.'), problem,
-  add(make('div', 'bar'), go));
-}
-
-// A deck this computer cannot make is the one stage a run leaves. It says what is missing in
-// its own words, and leaving the deck out is the decision a gate has, with its reason.
-function deckLeftPart(run) {
-  const found = run.deck_left;
-  if (run.mine === false) {
-    return callout('', make('h2', 'aside-title', 'The slide deck is all that is left'),
-      found.says === run.sentence ? null : make('p', '', found.says));
-  }
-  const leave = capsule('Leave the deck out', '', () => {
-    view.deciding = found.artifact;
-    openSheet('skip', 'leave-deck')();
-    paintRun(false);
-  }, 'leave-deck');
-  return callout('yours', make('h2', 'aside-title', 'What to do about the slide deck'),
-    found.says === run.sentence ? null : make('p', '', found.says),
-    make('p', 'quiet', 'Leaving it out takes a reason, which is kept with the training. You '
-      + 'can bring the deck back later.'),
-    add(make('div', 'bar'), leave));
-}
-
-// The soft controls: finish the level in hand and then wait, and leave the deck out before
-// anything of it is drawn. Neither stops what is in hand.
-function controlsPart(run) {
-  const found = run.controls;
-  const node = callout('', make('h2', 'aside-title', 'Steer it'));
-  if (found.grouped) add(node, make('p', 'quiet', 'The final review waits until every level is made.'));
-  const bar = make('div', 'bar');
-  if (found.finishing) {
-    add(node, make('p', '', 'It finishes level ' + found.finishing + ', then waits. Resume it '
-      + 'when you are ready for the next level.'));
-  } else if (found.finish_level) {
-    add(node, make('p', 'quiet', 'Level ' + found.finish_level + ' is in hand. You can have it '
-      + 'finished, and nothing started for another level until you resume.'));
-    const finish = capsule('Finish this level, then wait', '', () => steer('finish-level', finish),
-      'finish-level');
-    add(bar, finish);
-  }
-  if (found.skip_deck) {
-    add(node, make('p', 'quiet', 'Nothing of the deck is drawn yet. Leaving it out takes a '
-      + 'reason, which is kept with the training; you can bring the deck back later.'));
-    add(bar, capsule('Leave the deck out', '', () => {
-      view.deciding = 'deck';
-      openSheet('skip', 'skip-deck')();
-      paintRun(false);
-    }, 'skip-deck'));
-  }
-  return add(node, bar.childNodes.length ? bar : null);
-}
-
-function finishedPart(run, lead) {
-  const found = run.finished;
-  const desk = run.can_open_desk ? openDeskButton(view.path, '') : null;
-  const limits = list(found.limitations);
-  const yoodli = list(found.yoodli).map((item) => add(make('div', 'card-part'),
-    make('p', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
-  // The index is one more file of the training, read on a screen of its own.
-  const open = found.index && !found.ready ? capsule('Open the index', '',
-    () => show('index', { path: view.path, artifact: found.index }), 'index') : null;
-  const limited = limits.length ? [make('p', '', count(limits.length, 'thing was',
-    'things were') + ' left out or limited:'), bullets(limits, 'reasons')] : [];
-  const indexed = open ? make('p', 'quiet', 'The index lists every file, what was checked, '
-    + 'and how to use the practice scenarios.') : null;
-  if (found.ready) {
-    return callout('', make('h2', 'aside-title', 'Ready to use'),
-      ...(limited.length ? limited : [make('p', '', 'Nothing was left out or limited.')]),
-      found.index ? make('p', 'quiet', 'Open the index for the materials and how to use them, '
-        + 'or open an individual material below.') : null, ...yoodli,
-      desk ? add(make('div', 'bar'), desk) : null);
-  }
-  const blocking = list(found.blocking);
-  const go = capsule('See what is in the way', lead ? 'filled' : '',
-    () => show('training', { path: view.path }), 'blocking');
-  return callout('late', make('h2', 'aside-title', 'Not ready to use yet'),
-    make('p', '', blocking.length ? count(blocking.length, 'thing is', 'things are')
-      + ' in the way:' : 'Something is in the way, and it was not said what.'),
-    blocking.length ? bullets(blocking, 'reasons') : null,
-    add(make('p', ''), make('strong', '', 'What was kept: '), 'everything that was made.'),
-    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open, desk));
 }
 
 async function steer(action, pressed) {
@@ -6390,70 +5841,11 @@ async function steer(action, pressed) {
   refresh();
 }
 
-// The toolbar's side of a run: pause, resume and stop, and one filled button for whatever
-// is needed first.
-function runActions(run, waiting, lead) {
-  const actions = [];
-  if (run.review && !run.question && !run.problem) {
-    // On a desktop the filled action follows the marks: Send once anything is marked, the
-    // approval otherwise. On a phone the filled one is the review bar's.
-    const asked = marked(run.review);
-    const leads = lead === 'combined' && !narrow();
-    if (asked.length && !narrow()) {
-      const send = capsule('Send ' + count(asked.length, 'request', 'requests'),
-        leads ? 'filled' : '', () => decideCombined(run.review, 'revise', null, null, send,
-          byId('combined-send-problem'), marked(run.review)), 'send-requests');
-      actions.push(send);
-    }
-    const approve = capsule(combinedLabel(run.review), leads && !asked.length ? 'filled' : '',
-      () => decideCombined(run.review, 'approve', null, null, approve), 'approve-combined');
-    actions.push(approve);
-  }
-  if (run.finished?.ready && run.finished.index) {
-    actions.push(capsule('Open the index', lead === 'finished' ? 'filled' : '',
-      () => show('index', { path: view.path, artifact: run.finished.index }), 'index'));
-  }
-  const press = (label, kind, action) => {
-    const node = capsule(label, kind, () => steer(action, node), action);
-    actions.push(node);
-  };
-  const offered = run.problem && run.problem.action;
-  if (run.state === 'working') press('Pause', '', 'pause');
-  // Stop asks first: the step in hand loses its work.
-  if (['working', 'waiting', 'paused'].includes(run.state)) {
-    actions.push(capsule('Stop', 'quiet', openSheet('stop-run', 'stop'), 'stop'));
-  }
-  if (['paused', 'stopped'].includes(run.state) && offered !== 'resume') {
-    press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
-  }
-  // A run that failed and says nothing more is still not a dead end.
-  if (lead === 'retry') press('Try again', 'filled', 'retry');
-  if (waiting && !run.question && !run.review) {
-    actions.push(capsule('Review ' + waiting.label, lead === 'review' ? 'filled' : '',
-      () => show('gate', { path: view.path, artifact: waiting.artifact }), 'lead'));
-  }
-  // What a deck says is reviewed on a screen of its own, reached like any gate.
-  if (outlining(run) && !run.question && !run.review) {
-    actions.push(capsule('Review ' + outlineLabel(run.outline),
-      lead === 'outline' ? 'filled' : '', () => show('outline', { path: view.path }),
-      'lead-outline'));
-  }
-  return actions;
-}
-
 // --- a run: the slide deck -----------------------------------------------------------------
 
 function outlineLabel(outline) {
   return outline && outline.level ? 'what the level ' + outline.level + ' deck says'
     : 'what the deck says';
-}
-
-// What a deck says is waiting for its person. The run leads to it, and says why it matters.
-function outlinePart(run) {
-  const says = capital(outlineLabel(run.outline)) + ' is waiting for your review.';
-  return callout('yours', says === run.sentence ? null : make('p', '', says),
-    make('p', 'quiet', 'It is every slide’s words, before any slide is drawn. Words are '
-      + 'quick to change now, and slow to change once the slides are drawn.'));
 }
 
 // The brand's looks for a deck, each drawn on the same slide of what it says, in the panel
@@ -6474,135 +5866,6 @@ function lookPicker(look, picked, changed) {
     picked, changed,
     picture: (number, alt) => pictureAt({ artifact: look.artifact, section: 'look', number },
       alt) });
-}
-
-function lookPart(run, leads) {
-  const look = run.look;
-  const deck = look.level ? 'the level ' + look.level + ' slide deck' : 'the slide deck';
-  const node = callout('yours', make('p', '', 'Choose the look of ' + deck + '.'),
-    make('p', 'quiet', 'The brand drew one slide of what the deck says in each of its looks. '
-      + 'The look you choose sets the colours, what each one stands for and how cards are '
-      + 'drawn on every slide.'));
-  const key = 'look:' + look.artifact;
-  const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
-  const problem = alertLine('look-problem');
-  add(node, lookPicker(look, held, (now) => Object.assign(held, now)), problem);
-  if (look.failed) {
-    const again = capsule('Try again', leads ? 'filled' : '',
-      () => chooseLook(look, 'again', '', problem, again), 'look-again');
-    const proceed = capsule('Carry on in the brand’s default look', '',
-      () => chooseLook(look, 'default', '', problem, proceed), 'look-default');
-    return add(node, again, proceed);
-  }
-  const use = capsule('Use this look', leads ? 'filled' : '', () => {
-    if (!held.choice) return say(problem, 'Pick a look first.');
-    return chooseLook(look, held.choice, held.words || '', problem, use);
-  }, 'look-use');
-  return add(node, use);
-}
-
-async function chooseLook(look, choice, words, problem, pressed) {
-  if (view.busy) return;
-  const turn = view.turn;
-  view.busy = true;
-  pressed.disabled = true;
-  let run;
-  try {
-    run = await send('look', { path: view.path, level: look.level || null, choice,
-      words: words.trim() || null });
-  } catch (failure) {
-    say(problem, failure.message);
-    pressed.disabled = false;
-    view.busy = false;
-    return;
-  }
-  delete view.notes['look:' + look.artifact];
-  view.busy = false;
-  if (turn !== view.turn) return;
-  view.run = run;
-  toast('The look is chosen. ' + run.sentence);
-  show('run', { path: view.path }, true);
-  refresh();
-}
-
-// What a deck of this size has cost before, so that this one is no surprise.
-function costBefore(before) {
-  const parts = [];
-  if (given(before.dollars)) parts.push('about ' + money(before.dollars));
-  if (given(before.minutes)) {
-    parts.push('about ' + lasted(Number(before.minutes) * 60) + ' of agent time');
-  }
-  return parts.length ? 'A deck of this size has cost ' + parts.join(' and ') + ' before.' : '';
-}
-
-// One section of a deck while it is drawn: where it stands, how many previews it has used,
-// and its slides as they were last previewed. The runner numbers a section's slides within
-// that section, from 1, and gives each its title: where a slide falls in the deck is not
-// known until the sections are put together, so nothing here says.
-function sectionItem(section, index) {
-  const [shape, words] = SECTION_WORDS[section.state]
-    || ['current', spoken(section.state || 'being drawn')];
-  const slides = list(section.slides);
-  const titles = list(section.titles);
-  const used = Number(section.previews) || 0;
-  const text = add(make('div', 'row-text'), make('p', 'step-name', 'Section ' + (index + 1)),
-    make('p', 'quiet', used ? (slides.length ? count(slides.length, 'slide', 'slides') + ' · '
-      : '') + count(used, 'preview', 'previews') + ' used' : 'No preview yet'));
-  if (used && slides.length) {
-    const thumbs = make('ul', 'thumbs');
-    slides.forEach((number, at) => {
-      const name = make('span', 'thumb-name quiet', String(number));
-      name.setAttribute('aria-hidden', 'true');
-      // A new preview is a new picture of the same slide, so it is fetched again.
-      add(thumbs, add(make('li', 'thumb'), pictureAt({ section: section.id, number },
-        'Section ' + (index + 1) + ', slide ' + number + (titles[at] ? ': ' + titles[at] : ''),
-        used), name));
-    });
-    add(text, make('p', 'quiet', 'As last previewed:'), thumbs);
-  }
-  const item = make('li', 'row step section');
-  item.dataset.state = section.state;
-  return add(item, bead(shape), text, make('span', 'step-words', words));
-}
-
-// One picture or icon a deck's approved design uses, and how it stands. A picture the
-// person gives can be supplied here, or given again.
-function assetItem(found, index, theirs) {
-  const [shape, words] = ASSET_WORDS[found.state] || ['none', spoken(found.state || '')];
-  const named = (found.kind === 'icon' ? 'Icon' : capital(found.kind)) + ': '
-    + (found.ref || found.asset);
-  const text = add(make('div', 'row-text'), make('p', 'step-name', named),
-    make('p', 'quiet', (found.concept ? found.concept + ', on ' : 'On ') + found.slide
-      + (found.alt ? '. It shows: ' + found.alt : '')));
-  if (found.supply && !theirs) {
-    add(text, add(make('div', 'bar'), capsule('Add the picture', '',
-      () => openPicture(found, index, 'asset-' + index), 'asset-' + index)));
-  }
-  const item = make('li', 'row step asset');
-  item.dataset.state = found.state;
-  return add(item, bead(shape), text, make('span', 'step-words', words));
-}
-
-// Whether the deck waits for a picture from this person, and nothing else says so already.
-function waitsForPicture(run) {
-  return run.mine !== false && list(run.deck && run.deck.assets).some((found) => found.supply)
-    && !(run.problem && run.problem.action === 'asset');
-}
-
-// At the top of the run: each picture the deck waits for, and the way to add it.
-function picturePart(run) {
-  const items = make('ul', 'rows');
-  list(run.deck.assets).forEach((found, index) => {
-    if (!found.supply) return;
-    const go = capsule('Add the picture', '', () => openPicture(found, index,
-      'needs-asset-' + index), 'needs-asset-' + index);
-    go.setAttribute('aria-label', 'Add the picture: ' + assetName(found));
-    items.append(add(make('li', 'row row-needs'), bead('review'), add(make('div', 'row-text'),
-      make('p', 'row-title', assetName(found)),
-      make('p', 'row-says', 'The slide deck waits for this picture, on ' + found.slide + '.')),
-    go));
-  });
-  return add(card('Needs you', 'card-needs'), items);
 }
 
 // The name a deck's picture or icon goes by.
@@ -6688,41 +5951,6 @@ async function supplyAsset(found, index, pressed) {
   refresh();
 }
 
-function deckCard(run) {
-  const deck = run.deck;
-  const sections = list(deck.sections);
-  const node = card(deck.level ? 'The level ' + deck.level + ' slide deck' : 'The slide deck',
-    'deck');
-  const cost = deck.before ? costBefore(deck.before) : '';
-  if (cost) add(node, make('p', '', cost));
-  if (!sections.length) {
-    add(node, make('p', 'quiet', 'Its sections appear here once the deck is split into '
-      + 'them.'));
-  } else {
-    const items = make('ol', 'rows');
-    sections.forEach((section, index) => items.append(sectionItem(section, index)));
-    add(node, make('p', '', 'It is drawn in sections, side by side. Each one draws its '
-      + 'slides, looks at a preview of them, and puts right what it sees before handing in.'),
-    items);
-  }
-  const assets = list(deck.assets);
-  if (assets.length) {
-    const items = make('ul', 'rows');
-    assets.forEach((found, index) => items.append(assetItem(found, index,
-      run.mine === false)));
-    add(node, make('p', 'row-title', 'Pictures and icons'), make('p', '', 'What its '
-      + 'approved design uses. The slides tool keeps each one, and a picture is yours to '
-      + 'give.'), items);
-  }
-  return add(node, run.outline ? add(make('div', 'bar'), capsule('Read '
-    + outlineLabel(run.outline), 'quiet', () => show('outline', { path: view.path }),
-  'read-outline')) : null);
-}
-
-function combinedLabel(review) {
-  return 'Approve ' + (review.phase === 'direction' ? 'the first drafts' : 'the finished materials');
-}
-
 // What one item of a combined review is marked as on this page: 'changes', 'good' or ''.
 function markKey(review, item) {
   return [view.path, review.phase, 'mark', item.target].join('\n');
@@ -6740,323 +5968,6 @@ function marked(review) {
 }
 
 // The stages written before the first drafts stop: approving it does not write them.
-
-// What approving a combined review commits to, said before it is approved.
-function commitsSays(review) {
-  const commits = review.commits;
-  if (review.phase !== 'direction' || !commits) {
-    return 'Approving finishes this training. Everything is kept as it stands, and '
-      + 'publishing is a separate action.';
-  }
-  const names = { document: 'learner guides', brief: 'briefs', scenario: 'practice scenarios',
-    yoodli: 'Yoodli scenarios' };
-  // The runner lists only work still unwritten in this run, including legacy runs.
-  const made = list(commits.materials)
-    .map((stage) => names[stage] || stage);
-  const levels = commits.levels > 1 ? 'each of the ' + commits.levels + ' levels' : 'the training';
-  const parts = [];
-  if (given(commits.dollars)) parts.push('about ' + money(commits.dollars));
-  if (given(commits.minutes)) parts.push(lasted(Number(commits.minutes) * 60) + ' of agent time');
-  const estimate = parts.length ? parts.join(' and ') + ' for a deck of this size (a fixed '
-    + "estimate, not this computer's history)" : '';
-  let said;
-  if (made.length) {
-    said = 'Approving the first drafts writes the ' + series(made) + ' for ' + levels
-      + (commits.deck ? ', and the deck is then drawn' + (estimate ? ': estimated at '
-        + estimate : '') : '') + '.';
-  } else {
-    const what = commits.levels > 1 ? 'the levels' : 'the training';
-    said = commits.deck ? 'Nothing more is written for ' + what + ': approving carries on to '
-      + 'the deck.' + (estimate ? ' The deck is estimated at ' + estimate + '.' : '')
-      : 'Nothing more is written for ' + what + '.';
-  }
-  return said;
-}
-
-// The sheet that confirms a combined approval: the same one a file's approval gets, saying
-// what the approval commits to.
-function combinedConfirm() {
-  const review = view.run && view.run.review;
-  const spec = CONFIRMS.approve;
-  const problem = problemLine();
-  const confirm = capsule(spec.send, 'filled', () => decideCombined(review, 'approve', null,
-    null, confirm, problem), 'send');
-  const what = review.phase === 'direction' ? 'the first drafts' : 'the finished materials';
-  // Requests marked but not sent are said before the approval goes without them.
-  const held = marked(review).length;
-  return [sheetTitle(spec.title(what)), make('p', '', spec.says),
-    make('p', '', commitsSays(review)),
-    held ? state('late', count(held, 'item is', 'items are') + ' marked for changes. Approving '
-      + 'does not send ' + (held === 1 ? 'it' : 'them') + '.') : null, problem,
-    add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet, 'cancel'))]
-    .filter(Boolean);
-}
-
-// Looks that could not be rendered, drawn again from the combined review. It approves
-// nothing: the review comes back with what was drawn.
-async function redrawLooks(review, looks, problem, pressed) {
-  if (view.busy) return;
-  const turn = view.turn;
-  view.busy = true;
-  pressed.disabled = true;
-  say(problem, '');
-  let run;
-  try {
-    run = await send('review', { path: view.path, expected: review.expected,
-      decision: 'approve', target: null, note: null,
-      looks: { [looks.level || '']: { choice: 'again', words: '' } } });
-  } catch (failure) {
-    say(problem, failure.message);
-    pressed.disabled = false;
-    view.busy = false;
-    return;
-  }
-  view.busy = false;
-  if (turn !== view.turn) return;
-  view.run = run;
-  toast('The looks are being drawn again. ' + run.sentence);
-  show('run', { path: view.path }, true);
-  refresh();
-}
-
-async function decideCombined(review, decision, target, note, pressed,
-  problem = byId('combined-problem'), requests = null) {
-  if (view.busy) return;
-  // An approval is confirmed first, in the sheet, which says what it commits to.
-  if (decision === 'approve' && view.sheet !== 'approve-combined') {
-    view.deciding = null;
-    openSheet('approve-combined', pressed && pressed.dataset.key)();
-    return;
-  }
-  const turn = view.turn;
-  const path = view.path;
-  const asked = decision === 'revise' ? requests || [{ target, note }] : null;
-  if (asked) {
-    const empty = asked.find((ask) => !String(ask.note || '').trim());
-    if (empty) {
-      const named = review.items.find((item) => item.target === empty.target);
-      say(problem, 'Say what should change in ' + (named ? named.label : 'it') + ' first.');
-      focusKey('change-' + review.phase + '-' + empty.target);
-      return;
-    }
-  }
-  view.busy = true;
-  if (pressed) pressed.disabled = true;
-  say(problem, '');
-  try {
-    const body = { path, expected: review.expected, decision, target: null, note: null };
-    // The looks picked for each deck go with an approval of the direction.
-    const offered = review.items.filter((item) => item.looks);
-    if (decision === 'approve' && offered.length) {
-      body.looks = {};
-      for (const item of offered) {
-        const held = view.notes['look:' + item.looks.artifact] || {};
-        if (!held.choice) {
-          view.busy = false;
-          if (pressed) pressed.disabled = false;
-          say(problem, 'Pick a look for ' + item.label.toLowerCase() + ' first.');
-          return;
-        }
-        body.looks[item.looks.level || ''] = { choice: held.choice, words: held.words || '' };
-      }
-    }
-    if (asked && requests) body.requests = asked.map((ask) => ({ target: ask.target, note: ask.note }));
-    else if (asked) Object.assign(body, { target, note });
-    const run = await send('review', body);
-    if (turn !== view.turn) return;
-    for (const ask of asked || []) {
-      delete view.notes[[path, review.phase, ask.target].join('\n')];
-      delete view.marks[[path, review.phase, 'mark', ask.target].join('\n')];
-    }
-    view.run = run;
-    view.busy = false;
-    if (view.sheet === 'approve-combined') {
-      view.sheet = '';
-      drawSheet();
-    }
-    paintRun(false);
-    toast(decision === 'approve' ? 'Approved. ' + run.sentence
-      : (asked.length === 1 ? 'Changes requested. ' : asked.length + ' changes requested. ')
-        + run.sentence);
-    byId('title').focus({preventScroll: true});
-    refresh();
-  } catch (failure) {
-    if (turn === view.turn) {
-      say(problem, failure.message);
-      if (pressed) pressed.disabled = false;
-    }
-  } finally { view.busy = false; }
-}
-
-// What is sent when the marked requests go: how many, and what each change is followed by.
-function reviewBar(review, theirs, leads) {
-  const bar = make('div', 'review-bar');
-  const says = make('p', '');
-  const follows = make('p', 'quiet');
-  const problem = alertLine('combined-send-problem');
-  // On a desktop the toolbar holds both actions and the bar the tally. On a phone the one
-  // filled action is the bar's, under the thumb and above the tab bar: Send while anything
-  // is marked for changes, the approval otherwise.
-  const small = narrow() && !theirs;
-  const kind = leads ? 'filled' : '';
-  const send = small ? capsule('', kind, () => decideCombined(review, 'revise', null, null,
-    send, problem, marked(review)), 'send-requests') : null;
-  const approve = small ? capsule(combinedLabel(review), kind,
-    () => decideCombined(review, 'approve', null, null, approve), 'approve-combined-bar') : null;
-  const update = () => {
-    const asked = marked(review);
-    const seen = review.items.filter((item) => view.marks[markKey(review, item)]).length;
-    says.textContent = asked.length ? count(asked.length, 'item is', 'items are')
-      + ' marked for changes.' : seen ? seen + ' of ' + review.items.length + ' looked at. '
-      + 'Nothing is marked for changes.' : 'Nothing is marked for changes.';
-    const after = [...new Set(asked.flatMap((ask) => ask.rewrites))]
-      .filter((label) => !asked.some((ask) => ask.label === label));
-    follows.textContent = after.length ? 'If ' + series(asked.map((ask) => ask.label))
-      + (asked.length === 1 ? ' changes, ' : ' change, ') + 'these are written again from '
-      + (asked.length === 1 ? 'it' : 'them') + ': ' + series(after) + '.' : '';
-    follows.hidden = !after.length;
-    if (send) {
-      send.textContent = 'Send ' + count(asked.length, 'request', 'requests');
-      send.hidden = !asked.length;
-    }
-    if (approve) approve.hidden = Boolean(asked.length);
-  };
-  add(bar, says, follows, problem, add(make('div', 'bar'), send, approve));
-  bar.update = update;
-  update();
-  return bar;
-}
-
-function combinedReview(run, leads) {
-  const review = run.review;
-  const theirs = run.mine === false;
-  const small = narrow();
-  const node = card(review.label);
-  // The screen's lede is the run's; what this review is for is a quiet line of its own.
-  add(node, make('p', 'quiet', review.phase === 'direction'
-    ? 'Review the first drafts below: the research and what is written so far for each level. Approve them to go on to what is still to write.'
-    : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
-  if (!theirs) {
-    add(node, make('p', 'quiet', 'Mark what needs changes as you read, and send every request '
-      + 'at once' + (small ? '' : ' from the toolbar, or approve them there') + '.'));
-  }
-  const problem = problemLine();
-  problem.id = 'combined-problem';
-  add(node, problem);
-  const material = (item) => /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target);
-  const items = [...review.items];
-  if (review.phase === 'final') items.sort((a, b) => Number(material(b)) - Number(material(a)));
-  const firstMaterial = items.find(material);
-  const bar = theirs ? null : reviewBar(review, theirs, leads);
-  for (const item of items) {
-    const detail = add(make('details', 'review-bundle'), make('summary', 'row-title', item.label));
-    detail.dataset.key = 'combined-' + review.phase + '-' + item.target;
-    const part = make('div', 'review-bundle-body'); add(detail, part);
-    const first = review.phase === 'direction' ? item.target === 'research' : item === firstMaterial;
-    const mark = view.marks[markKey(review, item)] || '';
-    // On a phone everything but the first material is folded away until it is opened.
-    detail.open = small ? first || mark === 'changes'
-      : Boolean(item.sample || item.sample_note || item.looks || item.deck_view || first);
-    if (item.research) add(part, researchReading(item.research));
-    else if (item.document) add(part, documentBody(item.document, {label: item.label}));
-    else if (item.text) add(part, window.StudioMarkdown.render(item.text));
-    if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
-      'Sample slide for ' + item.label, review.expected));
-    // The draft and the look are approved together: the draft as the slides tool draws it,
-    // and the look the person picks.
-    if (/^outline:/.test(item.target) && !theirs) {
-      add(part, draftPanel(item.target.slice('outline:'.length) || null));
-    }
-    if (item.looks && !theirs) {
-      const key = 'look:' + item.looks.artifact;
-      const held = view.notes[key] || (view.notes[key] = { choice: '', words: '' });
-      add(part, make('p', 'step-name', 'Pick the look of this deck'),
-        lookPicker(item.looks, held, (now) => Object.assign(held, now)));
-      if (item.looks.failed) {
-        // Nothing is picked blind: the looks are drawn again, or the brand's default is
-        // chosen knowingly, and goes with the approval.
-        const lookProblem = alertLine('look-problem-' + item.looks.artifact);
-        const again = capsule('Try again', '', () => redrawLooks(review, item.looks,
-          lookProblem, again), 'looks-again-' + item.looks.artifact);
-        const proceed = capsule('Use the brand’s default look', '', () => {
-          held.choice = held.choice === 'default' ? '' : 'default';
-          proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
-        }, 'looks-default-' + item.looks.artifact);
-        proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
-        add(part, again, proceed, lookProblem);
-      }
-    }
-    // A sample that could not be drawn is said in its place; the review goes on without it.
-    if (item.sample_note) add(part, make('p', 'fix', item.sample_note));
-    if (item.deck_view) {
-      for (const slide of list(item.deck_view.slides)) add(part,
-        pictureAt({path: view.path, artifact: item.target, number: slide.number},
-          slide.title || 'Slide ' + slide.number, review.expected));
-      for (const finding of list(item.deck_view.review?.findings)) add(part, make('p', 'fix',
-        (finding.number ? 'Slide ' + finding.number + ': ' : '') + (finding.note || finding.question || 'Review finding')
-        + (finding.fix ? ' Suggested: ' + finding.fix : '')));
-      if (!list(item.deck_view.slides).length) add(part, make('p', 'fix', 'Slide pictures are unavailable on this computer. Read the saved deck before approving.'));
-      add(part, capsule('Open the saved deck and its review', '', () => show('gate', {path: view.path, artifact: item.target}), 'read-' + item.target));
-    }
-    if (item.target.startsWith('yoodli:')) add(part, yoodliCopies({artifact: item.target, text: item.text}));
-    if (review.phase === 'final' && /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target)) {
-      add(part, capsule('Download ' + lower(item.label), 'quiet', (event) =>
-        downloadFile(view.path, {artifact: item.target},
-          String(item.file || '').split('/').pop() || item.target, event.currentTarget),
-        'download-' + item.target));
-    }
-    if (item.notes) add(part, window.StudioMarkdown.render(item.notes));
-    if (!theirs) {
-      // Marked for changes, the item takes a note; the request goes with the others.
-      const request = make('textarea'); request.maxLength = 4000;
-      request.id = 'change-' + item.target;
-      request.dataset.key = 'change-' + review.phase + '-' + item.target;
-      const label = make('label', 'note-label', 'What should change in ' + item.label);
-      label.htmlFor = request.id;
-      request.setAttribute('aria-label', 'What should change in ' + item.label);
-      const key = noteKeyOf(review, item);
-      request.value = view.notes[key] || '';
-      request.addEventListener('input', () => { view.notes[key] = request.value; });
-      const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
-        + 'written again from it: ' + series(item.rewrites) + '.'
-        + (item.returns ? ' They come back to this review.' : '')
-        + (item.deck_again ? ' The deck is drawn again and stops for you first.' : '')
-        : 'Nothing else is built from it.')
-        + (item.research_price ? ' ' + item.research_price.words : item.redo ? ' ' + item.redo.says : ''));
-      const asking = add(make('div', 'review-request'), label, request, hint);
-      asking.hidden = mark !== 'changes';
-      const marks = make('div', 'review-marks chips');
-      marks.setAttribute('role', 'group');
-      marks.setAttribute('aria-label', 'Your view of ' + item.label);
-      const set = (value) => {
-        view.marks[markKey(review, item)] = value;
-        asking.hidden = value !== 'changes';
-        for (const [name, chipNode] of Object.entries(both)) {
-          chipNode.setAttribute('aria-pressed', String(value === name));
-        }
-        bar.update();
-        // The toolbar follows: Send is the filled action once anything is marked.
-        if (view.run && view.run.review === review) paintRun(false);
-        if (value === 'changes') request.focus();
-      };
-      // Each chip names its item, so the same words on every item are told apart.
-      const both = {
-        changes: chip('Needs changes', mark === 'changes', (on) => set(on ? 'changes' : ''),
-          'needs-' + item.target),
-      };
-      both.changes.setAttribute('aria-label', 'Needs changes in ' + item.label);
-      // Looked at and fine: offered at every width, so the tally can count it.
-      both.good = chip('Looks good', mark === 'good', (on) => set(on ? 'good' : ''),
-        'good-' + item.target);
-      both.good.setAttribute('aria-label', 'Looks good: ' + item.label);
-      add(marks, both.good, both.changes);
-      add(part, marks, asking);
-    }
-    add(node, detail);
-  }
-  if (bar) add(node, bar);
-  return node;
-}
 
 // --- a saved record ---------------------------------------------------------------------
 // A training the earlier step-by-step flow saved, or one whose run record cannot be read.
@@ -7227,116 +6138,10 @@ function savedFilesPart(run) {
 function paintRun(fresh) {
   const run = view.run;
   // A training the earlier flow saved, or whose run record cannot be read, is a saved record:
-  // what it is, which way on it has, its saved files, and one filled action.
+  // what it is, which way on it has, its saved files, and one filled action. Every other
+  // run is desk work, drawn by drafts.js: the earlier flow's run screen is gone.
   if (run.saved_record) return paintSavedRecord(run, fresh);
-  // A training started on the desk is drawn by drafts.js. Every other run keeps this screen.
-  if (onTheDesk(run)) {
-    paintDesk(fresh);
-    return;
-  }
-  const training = view.training
-    || list(view.listing).find((found) => found.path === view.path) || {};
-  const title = training.title || 'Untitled';
-  const waiting = training.waiting && training.waiting.artifact ? training.waiting : null;
-  const offered = run.problem && run.problem.action;
-  // A training someone else runs, or nobody does, is read here and never changed.
-  const theirs = run.mine === false;
-  const driver = run.driver || null;
-  const supplying = adding(run) && !theirs;
-  const outline = outlining(run) && !theirs;
-  const looking = Boolean(run.look && run.look.waiting) && !theirs;
-  const free = theirs && !driver && !run.finished;
-  // One filled button on the screen, for the first thing that is needed. While a sheet is
-  // open it holds that button, so nothing under it is filled.
-  const lead = view.sheet || view.after ? '' : theirs ? (run.finished ? 'finished'
-    : free ? 'take' : '')
-    : run.question ? 'answer' : offered ? 'problem'
-      : supplying ? 'documents' : run.review ? 'combined' : waiting ? 'review' : outline ? 'outline'
-        : looking ? 'look' : run.finished ? 'finished' : ['paused', 'stopped'].includes(run.state) ? 'resume'
-          : run.state === 'failed' && !run.problem ? 'retry' : '';
-  const runs = !theirs ? 'Runs on this page' : driver ? 'Run by ' + nameOf(driver)
-    : run.finished ? 'Finished' : 'Nobody is running it';
-  const above = [make('span', '', [levelsText(training.levels), runs, ({balanced: 'Balanced review', automatic: 'Automatic draft review', step_by_step: 'Step by step review'})[run.review_level]]
-    .filter(Boolean).join(' · '))];
-  const published = view.issued && view.issued.path === view.path ? view.issued : null;
-  const brought = view.adopted && view.adopted.path === view.path ? view.adopted : null;
-  placeParts({ title, above, back: true, actions: theirs ? readActions(run, waiting)
-    : runActions(run, waiting, lead),
-  mark: [title, training.levels, run.state, lead, offered, waiting, outline
-    && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
-    run.finished, run.review ? marked(run.review).length : 0] }, [
-    ['intro', [run.state, run.sentence, run.decided, training.stages, view.steered,
-      nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
-      run.queue, run.steps, run.workers, run.spent],
-    () => runIntro(run, training)],
-    run.can_migrate_desk ? ['migration', [view.path, run.can_migrate_desk], () => add(card('Continue saved work'),
-      make('p', '', 'Preview which saved materials can open for editing in conversation.'),
-      add(make('div', 'bar'), openDeskButton(view.path, '', true)))] : null,
-    brought ? ['brought', brought, () => broughtPart(brought)] : null,
-    theirs && (driver || !run.finished) ? ['theirs', [driver, lead, run.taken, run.notice,
-      run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
-    !theirs && run.notice ? ['notice', [run.notice, run.clash, run.kept],
-      () => noticePart(run)] : null,
-    // What needs you: a worker's question, a problem, a copy changed in two places, and a
-    // picture the deck waits for.
-    run.question && theirs ? ['asked', [run.question, driver], () => askedPart(run)] : null,
-    run.question && !theirs ? ['question', [run.question, title],
-      () => questionPart(run, title)] : null,
-    run.problem ? ['problem', [run.problem, lead, theirs],
-      () => problemPart(run, lead === 'problem')] : null,
-    list(run.copies).some(conflicted) ? ['conflict', [run.copies, view.copying, view.uncopied],
-      () => conflictPart(run)] : null,
-    waitsForPicture(run) ? ['picture', [run.deck.assets], () => picturePart(run)] : null,
-    supplying ? ['documents', [run.documents, lead],
-      () => documentsCard(run, lead === 'documents')] : null,
-    // Then the review, or the gate.
-    run.review ? ['combined-review', [run.review, theirs, lead],
-      () => combinedReview(run, lead === 'combined')] : null,
-    waiting && !run.question && !run.review && !theirs ? ['gate', [waiting, training.sentence],
-      () => gatePart(training, waiting, run.sentence)] : null,
-    outline && !run.question && !run.review ? ['outline', [run.outline.level, run.sentence],
-      () => outlinePart(run)] : null,
-    looking && !run.question && !run.review ? ['look', [run.look, run.sentence, lead],
-      () => lookPart(run, lead === 'look')] : null,
-    run.deck_left ? ['deck-left', [run.deck_left, run.sentence, theirs],
-      () => deckLeftPart(run)] : null,
-    !theirs && run.controls && (run.controls.finish_level || run.controls.finishing
-      || run.controls.skip_deck) ? ['controls', [run.controls], () => controlsPart(run)] : null,
-    // Then work in progress.
-    noting(run) ? ['note', [run.note, run.state], () => notePart(run)] : null,
-    // While a deck is drawn, its sections and their latest previews are what there is to see.
-    run.deck ? ['deck', [run.deck, run.outline && run.outline.level],
-      () => deckCard(run)] : null,
-    run.research_progress ? ['research-progress', [run.research_progress, run.timing, run.workers], () => researchActivity(run)] : null,
-    // The research panel shows its own workers; any other work shows them here.
-    list(run.workers).length && !researching(run) ? ['workers', run.workers, () => workersCard(run)] : null,
-    ['made', [training.path, training.view && training.view.files, theirs],
-      () => madeCard(training, theirs)],
-    ['steps', [list(run.steps).map((step) => [step.id, step.label, step.kind, step.status,
-      step.attempts > 1, step.error]), run.note && run.note.used], () => stepsCard(run)],
-    list(run.copies).some((found) => !conflicted(found)) ? ['copies', [run.copies,
-      view.copying, view.uncopied, theirs], () => copiesCard(run)] : null,
-    // Once that is all of them, what was added is kept on the screen, with nothing to press.
-    run.documents && !supplying && !theirs ? ['documents', [run.documents, ''],
-      () => documentsCard(run, false)] : null,
-    ['cost', [run.spent, run.agent, run.model, run.effort],
-      () => costCard(run)],
-    ['activity-log', [view.path], () => activityLogCard(view.path)],
-    // Then what is finished.
-    run.finished ? ['finished', [run.finished, lead, run.can_open_desk],
-      () => finishedPart(run, lead === 'finished')] : null,
-    theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
-    run.finished ? ['publish', [run.finished.ready, published, teamSpace()],
-      () => publishCard(run, published)] : null,
-    // What this computer runs for a team can be handed over, for anyone to take.
-    !theirs && driver && driver.here ? ['mine', [driver, title, run.kept],
-      () => minePart(driver, run.kept)] : null,
-    !theirs && list(run.redesign).length ? ['redesign', [run.redesign, run.state],
-      () => redesignCard(run)] : null,
-    deletable(run) ? ['delete', [title], () => deleteCard()] : null,
-  ], fresh);
-  tickSteps(run);
-  tidyPictures();
+  return paintDesk(fresh);
 }
 
 async function drawRun(fresh) {
@@ -7840,24 +6645,6 @@ function askTeam(kind, opener) {
   };
 }
 
-// The toolbar's side of a run that is only read: the ways to what there is to read.
-function readActions(run, waiting) {
-  const actions = [];
-  if (run.finished?.ready && run.finished.index) {
-    actions.push(capsule('Open the index', view.sheet ? '' : 'filled',
-      () => show('index', { path: view.path, artifact: run.finished.index }), 'index'));
-  }
-  if (waiting) {
-    actions.push(capsule('Read ' + waiting.label, '',
-      () => show('gate', { path: view.path, artifact: waiting.artifact }), 'lead'));
-  }
-  if (run.outline && !run.deck) {
-    actions.push(capsule('Read ' + outlineLabel(run.outline), '',
-      () => show('outline', { path: view.path }), 'lead-outline'));
-  }
-  return actions;
-}
-
 // On a run this computer does not drive: who does and since when, what was last shared,
 // that it is read here, and the way to take it. Where it was this computer's until it was
 // taken, the runner's own sentence says so first: who took it, when, that this computer
@@ -7887,17 +6674,6 @@ function theirsPart(run, lead) {
   add(make('div', 'bar'), capsule('Take it over', '', askTeam('take', 'take'), 'take')));
 }
 
-// A finished training in a shared workspace is nobody's. It is read and published as it
-// stands; anything that changes it is refused until someone takes it, so that is offered.
-function finishedFreePart() {
-  return callout('', make('h2', 'aside-title', 'Nobody is running this training'),
-    make('p', '', 'It is finished, so no computer runs it. It can be read, and published as '
-      + 'it stands, from any computer on your team.'),
-    make('p', '', 'To change anything in it, such as a decision that is in the way or a copy '
-      + 'to make again, take it first. It then runs from this computer.'),
-    add(make('div', 'bar'), capsule('Take it', '', askTeam('take', 'take'), 'take')));
-}
-
 // What the runner says about a training this computer runs: that it was changed on two
 // computers at once, which is put right by carrying on from the shared version, or that
 // it has just been.
@@ -7909,29 +6685,6 @@ function noticePart(run) {
     make('p', '', run.notice),
     add(make('div', 'bar'), capsule('Carry on from the shared version', '',
       askTeam('take', 'take-shared'), 'take-shared')));
-}
-
-// A question that only the computer running the training can answer, shown to be read.
-function askedPart(run) {
-  const name = run.driver ? nameOf(run.driver) : '';
-  return add(card('A question is waiting'),
-    make('p', 'row-says', (run.question.from || 'A worker') + ' asks:'),
-    make('p', 'row-quote', run.question.text),
-    make('p', 'quiet', name ? 'Only ' + name + ' can answer it, on the computer that runs '
-      + 'this training.' : 'It can be answered once someone takes this training.'));
-}
-
-function minePart(driver, kept) {
-  const aside = keptLine(kept);
-  return add(card('Who runs this training'), whoSays(driver, ''),
-    make('p', 'quiet', 'Your teammates can read it, and only this computer can change it. '
-      + 'If someone else should carry it on, hand it over: anyone on your team may then '
-      + 'take it.'),
-    aside ? make('p', 'quiet', 'Some of what this computer made for this training was set '
-      + 'aside, because it had not been shared when the training carried on from the shared '
-      + 'version. It is kept on this computer, and can be brought back.') : null, aside,
-    add(make('div', 'bar'), capsule('Hand over', '', askTeam('hand-over', 'hand-over'),
-      'hand-over')));
 }
 
 // A training that was just brought in: where the copy is, and that it is the one to use.
@@ -8465,72 +7218,6 @@ async function settleDelete(title, problem, pressed) {
 // --- a deck drawn again from a design ------------------------------------------------------
 // Offered for each deck of the run that was drawn without a design. Nothing happens until the
 // person says yes in the sheet: it is never done for them, after an update or otherwise.
-
-function redesignCard(run) {
-  const node = card('Draw a deck again from a design');
-  add(node, make('p', '', REDESIGN_SAYS));
-  for (const found of list(run.redesign)) {
-    const pressed = capsule(list(run.redesign).length > 1 ? 'Redesign ' + lower(found.label)
-      : 'Redesign', '', () => {
-      view.redesigning = found;
-      openSheet('redesign', 'redesign-' + (found.level || 'deck'))();
-      paintRun(false);
-    }, 'redesign-' + (found.level || 'deck'));
-    pressed.disabled = run.state === 'working';
-    add(node, add(make('div', 'bar'), pressed));
-    if (!found.may && found.why) add(node, make('p', 'quiet', found.why));
-  }
-  if (run.state === 'working') {
-    add(node, make('p', 'quiet', 'Pause the training, or wait until it stops for you, to ask '
-      + 'for this.'));
-  }
-  return node;
-}
-
-function redesignSheet() {
-  const found = view.redesigning || {};
-  const head = sheetTitle('Redesign ' + lower(found.label || 'the slide deck') + '?');
-  const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
-  if (!found.may) {
-    return [head, make('p', '', (found.why || 'This computer cannot draw a deck from a design '
-      + 'yet.') + ' Nothing was changed.'), add(make('div', 'bar'), cancel)];
-  }
-  const problem = problemLine();
-  const confirm = capsule('Redesign it', 'filled', () => settleRedesign(found, problem,
-    confirm), 'send');
-  return [head, make('h3', 'sheet-part', 'What happens'), bullets(REDESIGN_DOES),
-    make('h3', 'sheet-part', 'What is kept'), bullets(REDESIGN_KEEPS),
-    make('p', 'quiet', REDESIGN_COSTS), problem, add(make('div', 'bar'), confirm, cancel)];
-}
-
-// Ask for it. A refusal is said in the sheet, in the runner's own words; once it is asked, the
-// run is shown as the runner now has it, writing what the deck says again.
-async function settleRedesign(found, problem, pressed) {
-  if (view.busy) return;
-  const turn = view.turn;
-  view.busy = true;
-  pressed.disabled = true;
-  let run;
-  try {
-    run = await send('redesign', { path: view.path, level: found.level || null });
-  } catch (failure) {
-    view.busy = false;
-    if (turn !== view.turn) return;
-    say(problem, failure.message);
-    pressed.disabled = false;
-    pressed.focus();
-    return;
-  }
-  view.busy = false;
-  if (turn !== view.turn) return;
-  view.sheet = '';
-  view.redesigning = null;
-  if (run) view.run = run;
-  drawSheet();
-  toast(found.label + ' is being drawn again from a design. What it says comes back to you '
-    + 'first.');
-  paintRun(false);
-}
 
 // --- with a team: every run at once ----------------------------------------------------
 

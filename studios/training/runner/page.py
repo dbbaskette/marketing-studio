@@ -123,9 +123,7 @@ What a caller needs to know
   address a sandboxed frame opens it at, `/api/deck-draft?ticket=…`, good for that one page
   for two minutes. That address answers the page under its own policy (CSP sandbox,
   default-src 'none'), so the draft can run nothing and reach nothing of the page.
-- `POST /api/look` with {"path", "level", "choice", "words"?} records the look the person
-  chose for a deck from the brand's rendered samples, in their words, and answers the run.
-  A run carries `look` while there are looks to show; `GET /api/slide` with the deck's
+- A run carries `look` while there are looks to show; `GET /api/slide` with the deck's
   `artifact`, `section` "look" and a look's `number` (0 for the sheet of them all) answers
   its picture.
 - A run carries `redesign`: each of its decks drawn without a design, as {"level",
@@ -189,8 +187,8 @@ What a caller needs to know
   `/api/drafts/send` {path, name} each answer it after the change (`level-ready` adds
   `marked` and `stopped`, `reviewed-ready` `marked` and `left`, `draft` adds `returned`, `send` adds `made` and `problems`).
   Each is 409 with `drafts.NOT_ON_DESK` for a saved training, and a desk training is 409
-  with `drafts.ON_DESK` at `/api/decide`, `/api/review`, `/api/outline`, `/api/look` and
-  `GET /api/gate`. A teammate reads the desk with only
+  with `drafts.ON_DESK` at `/api/decide`, `/api/outline` and `GET /api/gate`. A saved
+  record is 409 with `engines.SAVED_ONLY` at every route that continued it. A teammate reads the desk with only
   Download on each card, and each change is refused with who runs the training.
 - Add a source reads `GET /api/drafts/source-price?path=` before sending
   `POST /api/drafts/source` with {path, files: [{name, content (base64)}]}. It adds the
@@ -279,10 +277,10 @@ READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/ou
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview', f'{DRAFTS}/doc-preview')
 WRITES = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', SETTINGS, SETTINGS_SOURCES, COPY, MODELS, '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
-          '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
+          '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
-          '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
+          '/api/brand', '/api/brand/install', '/api/shared', '/api/note',
           '/api/research-site', f'{DRAFTS}/open', f'{DRAFTS}/migrate',
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
@@ -968,28 +966,9 @@ class RunnerPage(desk.Page):
         gates: it is refused, and changed on the desk."""
         self.not_on_desk(path)
         self.not_saved(path)
-        if self.engine.driven(path) is None:
-            return super().decide(path, target, decision, note, seen, refresh)
-        with self.engine.files:
-            self.engine.hold(path)
-            try:   # a deck the slides tool presented has the approval sent to it first
-                self.engine.refuse_while_reviewing(path, decision)
-                self.engine.deck_decided(path, target, decision, note, seen)
-            except WorkspaceError as refusal:
-                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
-            reply = super().decide(path, target, decision, note, seen, refresh, held=self.engine.files)
-            driven = self.engine.decided(path, reply['decided'], checked=True)
-        if not driven:
-            return reply
-        self.engine.carry_on(path)
-        state, coming = self.engine.ahead(path)
-        if state in ('paused', 'stopped', 'failed'):
-            coming = HALTED
-        elif state == 'working':
-            coming = f'{coming} {CLOSE}'
-        reply['said'] = f'{desk.SAID[decision]} {coming}'
-        reply['next'] = desk.next_up(self.trainings())
-        return reply
+        # Every training a run drives is desk work or a saved record, each refused above:
+        # only a training a conversation keeps outside the workspace is decided here.
+        return super().decide(path, target, decision, note, seen, refresh)
 
     def move_approval(self, path: str, mode: str) -> dict:
         """Move a training's decisions as the desk does, except away from the page while a
@@ -1394,17 +1373,6 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, reply)
         if path in TYPED:
             return desk.as_json(HTTPStatus.OK, self.part(path, sent))
-        if path == '/api/review':
-            self.not_on_desk(desk.text(sent, 'path'))
-            self.not_saved(desk.text(sent, 'path'))
-            self.run(desk.text(sent, 'path'))
-            looks = sent.get('looks')
-            if looks is not None and not isinstance(looks, dict):
-                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the looks picked as an object.')
-            return desk.as_json(HTTPStatus.OK, self.engine.review_decide(
-                desk.text(sent, 'path'), desk.text(sent, 'expected'),
-                desk.text(sent, 'decision'), desk.text(sent, 'target', False),
-                desk.text(sent, 'note', False), self.requests(sent), looks))
         if path == '/api/outline-flow':
             from runner import outline_first
             return desk.as_json(HTTPStatus.OK, outline_first.adoption(self.engine,
@@ -1416,8 +1384,6 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'decision'), desk.text(sent, 'note', False), sent.get('levels'), sent.get('outline')))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
-        if path == '/api/look':
-            return desk.as_json(HTTPStatus.OK, self.look(sent))
         if path == '/api/redesign':
             return desk.as_json(HTTPStatus.OK, self.redesign(sent))
         return super().write(path, sent)
@@ -1503,19 +1469,6 @@ class RunnerPage(desk.Page):
         except intake_drafts.Conflict as failure:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(failure)) from None
 
-    def look(self, sent: dict) -> dict:
-        """Record the look the person chose for a deck from the brand's samples, with their
-        words. It is theirs alone to choose, and chosen here."""
-        self.not_on_desk(desk.text(sent, 'path'))
-        self.not_saved(desk.text(sent, 'path'))
-        path, choice = desk.text(sent, 'path'), desk.text(sent, 'choice')
-        level, words = desk.text(sent, 'level', False), desk.text(sent, 'words', False)
-        self.run(path)
-        try:
-            return self.engine.look(path, level or None, choice, words)
-        except WorkspaceError as refusal:
-            raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
-
     def deck_draft(self, sent: dict) -> dict:
         """Draw a deck's wireframe draft, and give the page the address its frame opens it
         at: with a ticket for that one page, since a frame cannot send the key. It is read
@@ -1572,20 +1525,6 @@ class RunnerPage(desk.Page):
                                             restrictions or None)
         except WorkspaceError as refusal:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
-
-    @staticmethod
-    def requests(sent: dict) -> list | None:
-        """The change requests a combined review sends together, each a target and a
-        note, or None when it sends one the old way or none at all."""
-        asked = sent.get('requests')
-        if asked is None:
-            return None
-        if not isinstance(asked, list) or not all(
-                isinstance(ask, dict) and isinstance(ask.get('target'), str)
-                and isinstance(ask.get('note'), str) for ask in asked):
-            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give requests as a list, each with a '
-                               'target and a note.')
-        return [{'target': ask['target'], 'note': ask['note']} for ask in asked]
 
     def act(self, sent: dict) -> dict:
         path, action = desk.text(sent, 'path'), desk.text(sent, 'action')

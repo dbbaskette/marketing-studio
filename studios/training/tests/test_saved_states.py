@@ -535,8 +535,6 @@ class NothingContinuesTests(SavedStopTests):
                 ('/api/run', {'path': path, 'action': 'resume'}),
                 ('/api/run', {'path': path, 'action': 'retry'}),
                 ('/api/answer', {'path': path, 'id': 'asked', 'answer': 'Kubernetes.'}),
-                ('/api/review', {'path': path}),
-                ('/api/look', {'path': path, 'choice': 'default'}),
                 ('/api/outline', {'path': path}),
                 ('/api/note', {'path': path, 'text': 'More examples.', 'expected': ''}),
                 ('/api/documents', {'path': path, 'action': 'done'}),
@@ -553,6 +551,9 @@ class NothingContinuesTests(SavedStopTests):
         self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
         with self.assertRaises(page.desk.Refusal):
             native.read('/api/gate', lambda key: {'path': path, 'artifact': 'blueprint'}[key])
+        # The combined review and the look gate of the earlier flow are no longer routes.
+        for gone in ('/api/review', '/api/look'):
+            self.assertNotIn(gone, native.writes)
         self.engine.wake(root)
         self.engine.resume()
         self.assertEqual(len(self.workers.jobs), jobs)

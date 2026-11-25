@@ -51,22 +51,6 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertGreater(len(bar), 1)
         self.assertEqual([control for control in bar[1:] if not control['quiet']], [])
 
-    def test_a_phone_wraps_the_toolbar_and_has_no_more_menu(self):
-        self.started()
-        resting = 'Paused before the research questions.'
-        paused = a_run('paused', resting, steps=steps('done', 'pending'))
-        answers = self.answers(**{'GET /api/trainings': [self.listed('paused', resting)],
-                                  'GET /api/training': [self.detail('paused', resting)],
-                                  'GET /api/run': [paused]})
-        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
-                                         {'snapshot': 'phone'}], narrow=True)
-        phone = result['snapshots']['phone']
-        names = [control['name'] for control in phone['toolbar']]
-        self.assertIn('Resume', names)
-        self.assertIn('Stop', names)
-        self.assertNotIn('More', names)
-        self.assertNotIn('More', phone['buttons'])
-
 
     # --- Home, the detail, Status, Settings, the index and set-up ---------------------
 
@@ -139,26 +123,6 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertLess(parts.index('Where each training is decided'), parts.index('Notifications'))
         self.assertLess(parts.index('Brand skill'), parts.index('Updates'))
         self.assertLess(parts.index('Updates'), parts.index('Notifications'))
-
-    def test_the_index_downloads_from_its_toolbar(self):
-        self.started()
-        over = 'Finished, and ready to use.'
-        index = '# Rolling restarts\n\nPlatform engineers new to it.\n'
-        read = ok({'artifact': 'README.md', 'file': 'README.md', 'size': len(index),
-                   'binary': False, 'text': index, 'truncated': False})
-        answers = self.answers(**{
-            'GET /api/trainings': [self.listed('done', over)],
-            'GET /api/training': [self.detail('done', over)],
-            'GET /api/run': [a_run('done', over, steps=steps(*['done'] * 7), finished={
-                'ready': True, 'limitations': [], 'blocking': [], 'index': 'README.md'})],
-            'GET /api/file': [read]})
-        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
-                                         {'click': 'Open the index'}, {'snapshot': 'index'}])
-        shot = result['snapshots']['index']
-        self.assertEqual(shot['toolbar'][0], {'name': 'Download the index', 'filled': True,
-                                              'quiet': False})
-        self.assertEqual(shot['ledes'], ['Everything this training made, with where each file '
-                                         'is.'])
 
     def test_set_up_has_one_heading_per_card(self):
         fresh = {**SET_UP, 'configured': False, 'workspace': None}
@@ -489,39 +453,6 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
             'GET /api/run': [a_run('waiting', waits, steps=steps('done', 'waiting'), deck=deck)],
             'POST /api/asset': [recorded]})
 
-    def test_a_picture_is_added_in_its_own_sheet(self):
-        result = self.run_page(self.waiting_for_a_picture(), [
-            {'click': 'Open Rolling restarts'}, {'snapshot': 'run'},
-            {'click': 'Add the picture'}, {'snapshot': 'sheet'},
-            {'click': 'Save the picture'}, {'snapshot': 'refused'},
-            {'attach': 'Supply the picture', 'files': [{'name': 'cluster.png',
-                                                        'bytes': 'PNG-bytes'}]},
-            {'fill': 'What it shows', 'value': 'Three nodes, one restarting.'},
-            {'fill': 'Where it came from', 'value': 'Our own diagram.'},
-            {'click': 'Save the picture'}, {'snapshot': 'saved'}])
-        shots = result['snapshots']
-        run = shots['run']
-        self.assertEqual(run['parts'][0], 'Needs you')
-        self.assertIn('cluster-photo', run['text'].split('Needs you', 1)[1][:200])
-        sheet = shots['sheet']['sheet']
-        steps = ['Add a picture', '1. The picture', '2. What it shows',
-                 '3. Where it came from, and any limit on its use']
-        self.assertEqual(sorted(steps, key=sheet.index), steps)
-        self.assertEqual(shots['sheet']['filled'], ['Save the picture'])
-        self.assertTrue(sheet.rstrip().endswith('Save the picture\nCancel'), sheet[-120:])
-        self.assertEqual(shots['refused']['posts'], 0)
-        self.assertIn('Choose the picture first.', shots['refused']['sheet'])
-        (address, body), = self.posts(result)
-        self.assertEqual(address, '/api/asset')
-        self.assertEqual({key: body[key] for key in ('path', 'level', 'asset', 'alt', 'source',
-                                                      'restrictions')},
-                         {'path': str(self.root), 'level': None, 'asset': 'hero',
-                          'alt': 'Three nodes, one restarting.', 'source': 'Our own diagram.',
-                          'restrictions': None})
-        self.assertTrue(body['content'])
-        self.assertEqual(shots['saved']['sheet'], '')
-        self.assertIn('The picture is recorded.', shots['saved']['toasts'])
-
 
     # --- the combined review, the run screen and gates -------------------------------
 
@@ -537,75 +468,6 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         return self.answers(**{'GET /api/trainings': [self.listed('waiting', waits)],
                                'GET /api/training': [self.detail('waiting', waits)],
                                'GET /api/run': [waiting]})
-
-    def test_the_primary_follows_the_marks(self):
-        result = self.run_page(self.reviewing(), [
-            {'click': 'Open Rolling restarts'}, {'snapshot': 'unmarked'},
-            {'click': 'Needs changes in Research'}, {'snapshot': 'marked'}])
-        shots = result['snapshots']
-        unmarked = shots['unmarked']['toolbar']
-        self.assertEqual(unmarked[0], {'name': 'Approve the first drafts', 'filled': True,
-                                       'quiet': False})
-        marked = shots['marked']['toolbar']
-        self.assertEqual(marked[0], {'name': 'Send 1 request', 'filled': True, 'quiet': False})
-        self.assertIn({'name': 'Approve the first drafts', 'filled': False, 'quiet': True},
-                      marked)
-        # The bar holds the tally on a desktop; the one way to send is the toolbar's.
-        self.assertEqual(shots['marked']['buttons'].count('Send 1 request'), 1)
-        self.assertIn('1 item is marked for changes.', shots['marked']['text'])
-        self.assertEqual(self.posts(result), [])
-
-    def test_a_phone_sends_from_the_bar_above_the_tab_bar(self):
-        result = self.run_page(self.reviewing(), [
-            {'click': 'Open Rolling restarts'}, {'snapshot': 'unmarked'},
-            {'click': 'Needs changes in Research'}, {'snapshot': 'marked'}], narrow=True)
-        for name, filled in (('unmarked', 'Approve the first drafts'),
-                             ('marked', 'Send 1 request')):
-            shot = result['snapshots'][name]
-            with self.subTest(name):
-                self.assertEqual(shot['filled'], [filled])
-                self.assertEqual([control for control in shot['toolbar'] if control['filled']],
-                                 [])
-                self.assertIn('Approve the first drafts',
-                              [control['name'] for control in shot['toolbar']])
-
-    def test_looks_good_is_offered_at_every_width(self):
-        result = self.run_page(self.reviewing(), [
-            {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
-            {'click': 'Looks good: Research'}, {'snapshot': 'looked'}])
-        self.assertIn('Looks good: Research', result['snapshots']['review']['buttons'])
-        self.assertIn('1 of 2 looked at.', result['snapshots']['looked']['text'])
-        review = result['snapshots']['review']
-        self.assertEqual(len(review['ledes']), 1)
-
-    def test_a_question_comes_before_the_review(self):
-        question = {'id': 'q-1', 'from': 'The worker on the research',
-                    'text': 'Which version do your learners use?'}
-        result = self.run_page(self.reviewing(question=question), [
-            {'click': 'Open Rolling restarts'}, {'snapshot': 'run'}])
-        text = result['snapshots']['run']['text']
-        self.assertLess(text.index('Which version do your learners use?'),
-                        text.index('Review the first drafts below'))
-
-    def test_a_copy_conflict_comes_before_the_steps(self):
-        self.started()
-        copy = {**a_copy('document', 'the learner guide', 'google', 'out-of-date',
-                         'https://docs.example.com/d/one/edit',
-                         'Someone has changed the Google Doc since it was last sent.'),
-                'remote': 'both changed', 'conflict': True}
-        going = 'Writing the brief.'
-        run = a_run('working', going, steps=steps('done', 'working'), copies=[copy],
-                    workers=[{'id': 'w1', 'label': 'The brief',
-                              'started_at': '2030-01-02T03:04:05Z', 'lines': ['Writing']}])
-        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
-                                  'GET /api/training': [self.detail('working', going)],
-                                  'GET /api/run': [run]})
-        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
-                                         {'snapshot': 'run'}])
-        text = result['snapshots']['run']['text']
-        self.assertLess(text.index("Use the Doc's version"), text.index('Working now'))
-        self.assertLess(text.index("Use the Doc's version"), text.index('All production steps'))
-        self.assertEqual(text.count("Use the Doc's version"), 1)
 
     def gate_lede(self, artifact: str) -> None:
         found = self.read('gate', path=str(self.root), artifact=artifact)
@@ -651,26 +513,6 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertEqual(shot['toolbar'][0], {'name': 'Request changes in the first drafts '
                                                       'review', 'filled': True, 'quiet': False})
         self.assertEqual(shot['buttons'].count('Request changes in the first drafts review'), 1)
-
-    def test_use_this_look_is_not_filled_beside_a_problem(self):
-        self.started()
-        asking = 'Choose the look.'
-        look = {'level': None, 'artifact': 'deck', 'waiting': True,
-                'default': 'example-calm', 'sheet': False, 'chosen': None, 'notes': [],
-                'looks': [{'id': 'example-calm', 'name': 'Calm', 'useWhen': 'Explanations.',
-                           'number': 1}]}
-        problem = {'what': 'The previews could not be made.', 'kept': 'Everything was kept.',
-                   'action': 'retry', 'label': 'Try again'}
-        answers = self.answers(**{
-            'GET /api/trainings': [self.listed('waiting', asking, needs=True)],
-            'GET /api/training': [self.detail('waiting', asking)],
-            'GET /api/run': [a_run('waiting', asking, look=look, problem=problem)],
-            'GET /api/slide': [test_desk.a_picture()]})
-        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
-                                         {'snapshot': 'run'}])
-        shot = result['snapshots']['run']
-        self.assertIn('Use this look', shot['buttons'])
-        self.assertEqual(shot['filled'], ['Try again'])
 
 
     # --- what the review of the whole branch found -----------------------------------
