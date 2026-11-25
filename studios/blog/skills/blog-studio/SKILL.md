@@ -13,11 +13,12 @@ For a shared studios repository, drivers, handovers or migration, read
 For new work in chat, use [conversation desk commands](references/conversation-desk.md).
 This conversation writes the requested material; it opens no page and starts no other
 assistant. Outline, research, interview and passage requests keep their scope.
-For older work with `derived/blog-run.json`, use the clearly marked
-[saved step-by-step work](references/guided-runs.md) path.
+Older work with `derived/blog-run.json` is a saved record the earlier flow no longer
+continues: read [saved step-by-step work](references/guided-runs.md).
 For an explicit request to move eligible unfinished work to the desk, use the
 preview and guarded [unfinished-work migration](references/desk-migration.md).
-Early work without a supported manuscript or lossless outline retains its saved flow.
+Early work without a supported manuscript or lossless outline is read-only; new work
+can start from it.
 
 Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,
 “My blogs,” or memory controls, load only [getting started](references/getting-started.md),

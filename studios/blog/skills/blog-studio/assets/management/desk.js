@@ -1967,7 +1967,7 @@ function sDeskReview(held,keep=null){
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
   held.bench=sDeskBench(held);
-  sPage(held.bench,held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,sActivityLog({id:held.id}));
+  sPage(held.bench,held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,held.view.sections.length?null:sDeskKeptNotes(held.view),sActivityLog({id:held.id}));
   sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held,keep);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and

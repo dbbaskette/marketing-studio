@@ -2905,6 +2905,12 @@ def catalog(root):
                     }
                 )
         except (ValueError, OSError, KeyError):
+            import desk_migration
+
+            if desk_migration.classify(root, ident)['outcome'] == 'read-only':
+                # A saved blog whose records cannot be read: its record says why.
+                rows.append({'id': ident, 'title': ident, 'status': 'saved', 'saved': 'read-only'})
+                continue
             rows.append(
                 {
                     'id': ident,

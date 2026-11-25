@@ -602,6 +602,33 @@ class ReadOnlyRecordTests(SavedStateCase):
         self.assertNotIn('next', shown)
         self.assertEqual(shown['saved_record']['files'], [])
 
+    def test_lists_say_what_becomes_of_each_saved_blog(self):
+        made = {
+            state: saved_fixtures.load(self.root, state)
+            for state in ('brief-only', 'outline-gate', 'finished-chat', 'draft-gate-queued')
+        }
+        unread = saved_fixtures.load(self.root, 'draft-gate-chat')
+        (self.root / 'articles' / unread / runner.STATE).write_text('{not json')
+        before = self.tree()
+        with self.nothing_starts():
+            rows = {row['id']: row for row in runner.catalog(self.root)['items']}
+        self.assertEqual(self.tree(), before)
+        said = {state: rows[ident]['saved'] for state, ident in made.items()}
+        self.assertEqual(
+            said,
+            {
+                'brief-only': 'read-only',
+                'outline-gate': 'migrates',
+                'finished-chat': 'finished',
+                'draft-gate-queued': 'wait',
+            },
+        )
+        self.assertEqual((rows[unread]['saved'], rows[unread]['status']), ('read-only', 'saved'))
+        for ident in made.values():
+            # Never a run waiting on a decision, and no step's error line in a list.
+            self.assertEqual((rows[ident]['status'], rows[ident]['error']), ('saved', ''))
+        self.assertTrue(rows[made['finished-chat']]['complete'])
+
     def test_an_interrupted_opening_waits_with_the_way_to_finish_it(self):
         import management
 

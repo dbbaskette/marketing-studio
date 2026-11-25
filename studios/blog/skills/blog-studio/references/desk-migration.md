@@ -31,11 +31,11 @@ continued without research or saved with a research execution record, paused,
 stopped or failed page runs (nothing is retried) and editor reviews.
 
 Brief-only starts, early research or angles without materials, missing documents
-or pins, unreadable or unsupported records, links, active jobs, older Team Hub
-contexts and oversized work refuse; the saved flow stays. A blog with no run
-refuses; Edit manuscript brings its draft to the desk. Research, reviews and
-handoff stay historical; gaps stay unresolved. On the page, an unreadable saved
-blog is a read-only record: why, its files, and Start new work from this.
+or pins, unreadable or unsupported records, links, older Team Hub contexts and
+oversized work refuse and are read-only records: why, their files, and Start new
+work from this. Active jobs, another computer driving and workspace conditions
+wait until cleared. A blog with no run refuses; Edit manuscript brings its draft to
+the desk. Research, reviews and handoff stay historical; gaps stay unresolved.
 
 Unknown worker formats, statuses or ownership refuse, even when disabled. Stop known
 work and wait for its process to end before previewing again; never edit records to
