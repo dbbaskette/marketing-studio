@@ -466,6 +466,10 @@ class ReadOnlyRecordTests(SavedStopTests):
                         mock.patch.object(desk_migration, 'classify', side_effect=AssertionError('classified')):
                     self.assertEqual(self.engine.brief(root)['saved'], kind)
                     self.assertEqual(native.with_run({'path': str(root)})['run']['saved'], kind)
+                    # Nothing of a saved record waits for the person in its row of stages.
+                    listed = native.detail(str(root))
+                    self.assertFalse([stage for stage in listed.get('stages') or ()
+                                      if stage.get('state') in ('current', 'review')])
                     self.assertEqual(self.engine.standing()['runs'][0]['state'], 'saved')
                     status, _, body = native.read('/api/saved-file', lambda key: {'path': str(root), 'name': 'blueprint.md'}[key])
                     self.assertEqual(status, 200, body)
@@ -946,6 +950,24 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                 self.assertIn('Check again', shot['buttons'])
                 self.assertNotIn('Open on the desk', shot['buttons'])
                 self.assert_no_continuing(shot, result)
+
+    def test_home_and_trainings_say_a_saved_record_in_words(self):
+        """Home lists saved records apart, each with the words its two small records prove,
+        and the Trainings filter offers them; nothing of them is said to wait for you."""
+        fixture = self.fixture('blueprint-gate')
+        for narrow in (False, True):
+            with self.subTest(narrow=narrow):
+                result = self.run_page(self.answers(fixture), [{'snapshot': 'home'}],
+                                       state={'screen': 'home'}, narrow=narrow)
+                text = result['snapshots']['home']['text']
+                self.assertIn('Saved earlier', text)
+                self.assertIn(engines.SAVED_BRIEF, text)
+                self.assertNotIn('yours to review', text)
+                self.assertNotIn('Review ', ' '.join(result['snapshots']['home']['buttons']))
+        result = self.run_page(self.answers(fixture), [{'snapshot': 'list'}],
+                               state={'screen': 'trainings'})
+        self.assertIn('Saved earlier', result['snapshots']['list']['text'])
+        self.assertNotIn('yours to review', result['snapshots']['list']['text'])
 
     def test_an_open_record_is_not_read_again_at_the_lists_pace(self):
         """An open saved record classifies its folder once: polling reads the list, not the

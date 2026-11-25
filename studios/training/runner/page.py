@@ -875,6 +875,12 @@ class RunnerPage(desk.Page):
             item.update(driver=found['driver'], mine=found['mine'], notice=None,
                         last_shared=None, state='saved', sentence=found['sentence'],
                         waiting=None)
+            # Nothing of it is waiting for the person or being worked on: its stages say
+            # only what is done.
+            item['stages'] = [{**stage, 'state': 'not-started',
+                               'words': desk.STAGE_STATES['not-started']}
+                              if stage.get('state') in ('current', 'review') else stage
+                              for stage in item.get('stages') or ()]
             return item
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),

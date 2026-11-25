@@ -1692,6 +1692,8 @@ function quietRow(training, kind) {
   const text = add(make('div', 'row-text'),
     make('p', 'row-title', training.title || 'Untitled'));
   if (kind === 'in-progress') add(text, beads(training.stages, true, true));
+  // A saved record says in words what its two small records prove.
+  if (kind === 'saved') add(text, state(...standingOf(training)));
   // A run that is not working says so: paused, stopped, or finished as far as it goes here.
   // A desk training says its own standing instead: a finished writing job is not Ready.
   if (training.standing && kind === 'in-progress') {
@@ -1825,6 +1827,8 @@ function drawHome(fresh) {
       ['start', [Boolean(view.runner)], startCard],
       ...setup,
       rows('Finished', pick('finished'), (training) => quietRow(training, 'finished')),
+      // Saved by the earlier flow, which no longer continues them: each opens on its record.
+      rows('Saved earlier', pick('saved'), (training) => quietRow(training, 'saved')),
       rows('Cannot be read', all.filter((training) => training.error), brokenRow));
   }
   parts.push(['foot', around(),
@@ -1838,7 +1842,7 @@ function drawHome(fresh) {
 
 // Where a training stands, as the Trainings list filters it.
 const STANDS = [['', 'Any'], ['needs-you', 'Needs you'], ['in-progress', 'In progress'],
-  ['finished', 'Finished'], ['teammates', 'Run by your teammates'],
+  ['finished', 'Finished'], ['saved', 'Saved earlier'], ['teammates', 'Run by your teammates'],
   ['unreadable', 'Cannot be read']];
 
 // A list's filters, as they were last set on this page.
@@ -1924,7 +1928,8 @@ function trainingFilters() {
   // Teammates' trainings and ones that cannot be read are offered only where there are any.
   const offered = STANDS.filter(([value]) => (value !== 'teammates' || teamSpace()
     || teammates().length) && (value !== 'unreadable'
-    || view.listing.some((training) => training.error)) || value === held.stands);
+    || view.listing.some((training) => training.error)) && (value !== 'saved'
+    || view.listing.some((training) => training.state === 'saved')) || value === held.stands);
   return keepTyped(window.StudioLists.filterRow({ key: 'trainings',
     search: { id: 'text', label: 'Search', value: held.draft === undefined ? held.text
       : held.draft, hint: 'By its title, what it says or who runs it' },
