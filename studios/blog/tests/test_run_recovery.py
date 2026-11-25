@@ -1226,6 +1226,45 @@ class DraftTieTests(ResearchCase):
         state, _ = self.resumed_from(engine, ident)
         self.assertEqual(state['dossier']['topic'], 'ACCEPTED')
 
+    def test_a_changed_brief_or_sources_lets_the_draft_go(self):
+        for change in ('brief', 'sources'):
+            with self.subTest(change=change):
+                engine, ident, directory = self.refused()
+                _, record, run = runner.load(self.root, ident)
+                if change == 'brief':
+                    run['brief']['goal'] = 'Explain a different fictional gateway'
+                else:
+                    extra = self.source('A second synthetic source about the gateway.')
+                    _, source = runner.studio.item(self.root, 'sources', extra['id'])
+                    record['sources'].append(
+                        {
+                            'source_id': extra['id'],
+                            'revision': source['revision'],
+                            'purposes': ['reference'],
+                        }
+                    )
+                runner.save(self.root, directory, record, run, 'Synthetic change: ' + change)
+                # New inputs bring the approved research plan back for review first.
+                shown = engine.describe(ident)
+                self.assertEqual(shown['next'], 'research-plan')
+                self.assertFalse(shown['research']['kept'])
+                # The saved plan brought back for review as it stands (what the page's old
+                # Review saved version submitted).
+                shown = runner.submit(
+                    self.root,
+                    ident,
+                    'research-plan',
+                    {'content': shown['content'], 'notes': 'The saved version was brought back.'},
+                    shown['expected'],
+                    page=True,
+                )
+                shown = self.approve(shown, page=True)
+                self.assertEqual(shown['next'], 'research')
+                self.assertTrue((directory / DRAFT).exists(), 'still on disk until research runs')
+                state, _ = self.resumed_from(engine, ident)
+                self.assertIsNone(state)
+                self.assertFalse((directory / DRAFT).exists())
+
     def test_a_draft_whose_research_was_saved_elsewhere_is_let_go_here(self):
         engine, ident, directory = self.refused()
         # Another computer saved and shared the research, then asked for changes to it: its

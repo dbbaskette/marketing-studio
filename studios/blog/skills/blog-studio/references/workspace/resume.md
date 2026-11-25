@@ -11,7 +11,8 @@ Use the [workspace](../workspace.md) command prefix.
 
 For desk work (`flow: desk`), use `desk show --article <id>` and then the checked
 [conversation desk commands](../conversation-desk.md). Inspection never transfers
-execution or wakes a worker. Older saved step-by-step work keeps its existing commands.
+execution or wakes a worker. Older step-by-step work is a saved record nothing continues;
+[saved step-by-step work](../guided-runs.md) says how it is read and moved.
 
 Use `resume` for compact context plus last-known status in one call. Read
 [focused context and reuse](performance.md) when retrieving passages or running

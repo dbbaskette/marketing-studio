@@ -8,7 +8,7 @@ outline or notes, or a draft. Nothing stops after Start. The desk has section no
 **Add a source** and **Needs you before publishing**. **Finishing** proposes **Copy edit**
 (grammar and wording fixes, each approved first), Humanize, **Quick check** (the mechanical
 check, no assistant), fact checks, headlines, feedback, **Apply a voice** and Before
-publishing; nothing changes until Apply. Blogs started before the desk keep their step-by-step run.
+publishing; nothing changes until Apply. Blogs started before the desk are saved records; nothing continues them step by step.
 
 In a manuscript, choose **Tools**. From Blogs, use **Library and team tools
 → Tools** for global tasks. Normal writing and polishing require none of

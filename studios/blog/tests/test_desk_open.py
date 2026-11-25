@@ -93,7 +93,9 @@ class OpenOnTheDeskTests(RunnerCase):
         self.assertFalse(shown['complete'], 'the edit reads as a stale draft')
         self.assertTrue(shown['desk_open'])
         row = next(r for r in runner.catalog(self.root)['items'] if r['id'] == found['id'])
-        self.assertTrue(row['desk_open'], 'the list knows it can go on the desk')
+        # A list says only what the small records prove; opening the record says the rest.
+        self.assertEqual(row['status'], 'saved')
+        self.assertNotIn('desk_open', row)
         self.assertTrue(manuscript_editor.read(self.root, found['id'])['operation']['desk_open'])
         opened = management.dispatch(self.root, 'desk-open', {'id': found['id']})
         self.assertEqual(opened['sections'][0]['text'], 'Because, edited in the editor.')

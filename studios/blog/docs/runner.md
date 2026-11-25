@@ -621,8 +621,8 @@ Research installation is skipped. If `main` declares it
 would install or replace another companion, Blog Studio refuses before running
 the installer; install a compatible companion yourself first.
 
-A blog run step by step (in chat, with `--brand ID --variant VARIANT`, or `--brand ''`
-for none) takes a brand and variant from that skill; the shared `brand.brand` /
+A blog saved step by step (made in chat with `--brand ID --variant VARIANT`, or
+`--brand ''` for none) took a brand and variant from that skill; the shared `brand.brand` /
 `brand.variant` default applies when the selected skill has it. The blog exports a
 contract for the `blog` medium and keeps its exact naming and design guides with the
 run. Blogs on the writing desk carry no brand contract. Existing blogs keep
@@ -668,7 +668,7 @@ styles** again and the rest of this section applies. Off, the page hides them, t
 refuses them ("Voices are switched off in Blog Studio settings.") and new blogs write with
 their tone. Saved voices, samples and every blog's pinned voice stay as they are.
 
-A **voice** is how one person sounds. A blog run step by step takes a voice and a kind of
+A **voice** is how one person sounds. A blog saved step by step took a voice and a kind of
 post: the kind decides the structure, the voice the wording. Blogs on the desk write with
 their tone and are pinned to no voice; **Apply a voice** with a voice guide is the desk's
 way to sound like someone. Settings → **Voices and styles** opens the screen; from a blog,
@@ -746,11 +746,12 @@ what becomes of it, with one main action:
 | --- | --- | --- |
 | Saved an outline, a draft, a review or a handoff | It continues on the writing desk | **Open on the desk**, which shows what stays with it before anything changes |
 | Finished | It is edited on the desk from here on | **Open on the desk** in its Done card, beside copy, download, a Google Doc, pre-publish and repurposing |
-| Waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), **Finish opening on the desk**, or new work from it while nothing here clears it |
+| Would open on the desk but waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), the waiting tool task, **Finish opening on the desk**, or new work from it while nothing here clears it |
 | Stopped before an outline or draft, or cannot be read | Why it is read-only | **Start new work from this**: a new blog from its title, point and audience; nothing it researched is carried |
 
-Each record lists its saved files to read in place. **Blogs** and Home say the same in
-words beside each one. Opening on the desk keeps every original file and decision; it
+Each record lists its saved files to read in place. **Blogs** and Home say only that a blog
+was saved by the earlier flow, finished there, or cannot be read; open it to see the rest.
+A finished one's Done card works as before, Polish or edit the draft included. Opening on the desk keeps every original file and decision; it
 invents no approval and starts no step. A blog whose outline was notes the desk could not
 read as sections shows those notes on the desk, to shape the outline from.
 

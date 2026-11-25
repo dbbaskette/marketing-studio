@@ -2240,22 +2240,6 @@ class Engine:
         self.wake.set()
         return self.describe(ident)
 
-    def note_stage(self, ident, found, local=None):
-        """The stage a note left now would go with: the next job that starts. While a
-        submitted stage waits for a decision, or a worker is on the next stage, that is the
-        stage after it; None when there is no later stage."""
-        if found['complete'] or not found['next']:
-            return None
-        local = self.local(ident) if local is None else local
-        names = [row['stage'] for row in found['stages']]
-        at = names.index(found['next'])
-        busy = found['awaits'] == 'decision' or (
-            local.get('status') == 'working' and self.current == ident
-        )
-        if not busy:
-            return found['next']
-        return names[at + 1] if at + 1 < len(names) else None
-
     def note_research(self, ident, event):
         """Note the research round that started, or a research job that ended, in this
         computer's run state. Best effort: a busy workspace skips a note, never the work."""
@@ -2386,7 +2370,6 @@ class Engine:
             'driver': owner,
             'status': status,
             'notes': local.get('notes') or {},
-            'note_stage': self.note_stage(ident, found, local),
             # The job's start is timed only while it is the one working here.
             'started_at': local.get('started_at') if status == 'working' else None,
             'touched': decisions[-1]['at'] if decisions else None,
@@ -2654,8 +2637,9 @@ class Engine:
                 if pending:
                     # submit() let any kept draft go: the accepted research replaces it.
                     state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
-                if run.get('editor_check'):
-                    state['enabled'] = False
+                # Every run that goes on is the manuscript editor's: it stops after each step
+                # for the editor (only the earlier flow went on to the next step by itself).
+                state['enabled'] = False
                 self.keep_local(ident, state)
                 self.activity.checkpoint(blog_activity.blog(ident), 'output-saved', found['next'])
                 self.activity.checkpoint(blog_activity.blog(ident), 'ready', found['next'])
@@ -2808,6 +2792,58 @@ def engine(root):
     return ENGINES.setdefault(str(root), Engine(root))
 
 
+def saved_row(root, ident, directory, run):
+    """A list row of a saved blog of the earlier flow, from its small records only (session
+    and run; the team's driver record): saved there, finished there, or its records cannot be
+    read. Never its material, sources or a classification."""
+    import desk_migration
+
+    try:
+        session = desk_migration._small_json(directory / 'session.json')
+    except (OSError, ValueError, UnicodeError):
+        session = None
+    title = session.get('title') if isinstance(session, dict) else None
+    row = {
+        'id': ident,
+        'title': title if isinstance(title, str) and title.strip() else ident,
+        'status': 'saved',
+        'saved': 'unreadable',
+        'next': None,
+        'error': '',
+        'stages': [],
+        'complete': False,
+        'mode': None,
+        'editor_check': None,
+        'touched': None,
+    }
+    if not isinstance(session, dict) or not isinstance(run, dict):
+        return row
+    stages = run.get('stages') if isinstance(run.get('stages'), dict) else {}
+    pipeline = run.get('pipeline') if isinstance(run.get('pipeline'), list) else []
+    finished = bool(pipeline) and all(
+        isinstance(stages.get(name), dict) and stages[name].get('status') == 'approved'
+        for name in pipeline
+    )
+    decisions = run.get('decisions') if isinstance(run.get('decisions'), list) else []
+    last = decisions[-1] if decisions and isinstance(decisions[-1], dict) else {}
+    row.update(
+        saved='finished' if finished else 'saved',
+        complete=finished,
+        mode=run.get('mode') if isinstance(run.get('mode'), str) else None,
+        touched=last.get('at') if isinstance(last.get('at'), str) else None,
+    )
+    try:
+        from team_workspace import driver, space
+
+        found = space(root)
+        row.update(
+            team=bool(found and found.address), driver=driver(root, ident) if found else None
+        )
+    except (ValueError, OSError, KeyError, TypeError):
+        pass
+    return row
+
+
 def catalog(root):
     import desk
     import desk_jobs
@@ -2867,56 +2903,49 @@ def catalog(root):
                 )
                 continue
             if studio.inside(path.parent, STATE).is_file():
-                found = engine(root).describe(ident, listing=True)
-                saved = None
-                if not continues(found):
-                    # A saved run of the earlier flow is a saved record: listed by what becomes
-                    # of it, never as a run to continue.
-                    import desk_migration
+                import desk_migration
 
-                    saved = desk_migration.classify(root, ident)['outcome']
-                    if saved not in desk_migration.RECORDS:
-                        saved = None
-                    else:
-                        found = {**found, 'status': 'saved', 'error': ''}
+                run = desk_migration.saved_run(path.parent)
+                if not continues(run):
+                    # A saved run of the earlier flow is a saved record, never a run to
+                    # continue. A list (polled on Home and Blogs) says only what its session
+                    # and run records prove; opening its record says what becomes of it.
+                    rows.append(saved_row(root, ident, path.parent, run))
+                    continue
+                found = engine(root).describe(ident, listing=True)
                 rows.append(
                     {
-                        **({'saved': saved} if saved else {}),
-                        **{
-                            k: found[k]
-                            for k in (
-                                'id',
-                                'title',
-                                'status',
-                                'next',
-                                'approval',
-                                'error',
-                                'stages',
-                                'complete',
-                                'engine',
-                                'mode',
-                                'editor_check',
-                                'team',
-                                'driver',
-                                'touched',
-                                'desk_open',
-                            )
-                        },
+                        k: found[k]
+                        for k in (
+                            'id',
+                            'title',
+                            'status',
+                            'next',
+                            'approval',
+                            'error',
+                            'stages',
+                            'complete',
+                            'engine',
+                            'mode',
+                            'editor_check',
+                            'team',
+                            'driver',
+                            'touched',
+                            'desk_open',
+                        )
                     }
                 )
         except (ValueError, OSError, KeyError):
-            import desk_migration
-
-            if desk_migration.classify(root, ident)['outcome'] == 'read-only':
+            if not studio.inside(path.parent, 'desk', 'draft.json').exists():
                 # A saved blog whose records cannot be read: its record says why.
-                rows.append({'id': ident, 'title': ident, 'status': 'saved', 'saved': 'read-only'})
+                rows.append({'id': ident, 'title': ident, 'status': 'saved', 'saved': 'unreadable'})
                 continue
             rows.append(
                 {
                     'id': ident,
                     'title': ident,
                     'status': 'needs-attention',
-                    # Its run screen says why: a read-only record, or the refusal itself.
+                    # Its desk says why.
                     'error': 'Its saved records cannot be read here. Open it to see why.',
                 }
             )

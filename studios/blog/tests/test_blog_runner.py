@@ -338,6 +338,10 @@ class BlogRunnerTests(RunnerCase):
             found = self.approve(self.submit(self.create(sources=[source['id']])))
             found = self.approve(self.submit(found))
             ids.append(self.submit(found)['id'])
+        # A list describes only runs that still go on, the manuscript editor's: these runs are
+        # marked as the editor's (a saved run of the earlier flow lists from its small records).
+        for ident in ids:
+            self.editors({'id': ident}, 'shape')
         with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
             detail = runner.survey(self.root, ids[0])
         self.assertEqual(counted.call_count, 1)
@@ -352,6 +356,9 @@ class BlogRunnerTests(RunnerCase):
         self.assertIsNone(runner.survey(self.root, ids[0], listing=True)['expected'])
 
     def test_list_and_detail_views_agree_when_inputs_change(self):
+        # Runner code the editor's own runs still use: this run is marked as the
+        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
+        self.EDITOR = 'revise'
         found = self.approve(self.submit(self.create()))
         directory, record = studio.item(self.root, 'articles', found['id'])
         record['title'] = 'A changed synthetic title'
@@ -499,6 +506,57 @@ class BlogRunnerTests(RunnerCase):
         engine.once(found['id'])
         self.assertEqual((directory / 'OUTLINE.md').read_text(), 'My newer outline')
         self.assertEqual(engine.describe(found['id'])['status'], 'failed')
+
+    def test_worker_saves_one_stage_and_never_crosses_gate(self):
+        # Runner code the editor's own runs still use: this run is marked as the
+        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
+        self.EDITOR = 'revise'
+        calls = []
+
+        def worker(*args, **kwargs):
+            calls.append(kwargs)
+            return {'content': '# Outline\nA fictional outline.', 'notes': 'Synthetic.'}
+
+        found = self.create(page=True, stop='draft')
+        engine = runner.Engine(self.root, worker)
+        engine.control(found['id'], 'resume')
+        engine.once(found['id'])
+        engine.once(found['id'])
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(calls[0]['web'])
+        found = engine.describe(found['id'])
+        self.assertEqual(found['status'], 'waiting-for-approval')
+        self.assertEqual(found['next'], 'outline')
+        found = self.approve(found, page=True)
+        # The editor's runs stop after each step; it starts the next one.
+        engine.control(found['id'], 'resume')
+        self.assertEqual(engine.describe(found['id'])['status'], 'queued')
+        engine.once(found['id'])
+        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        self.assertEqual(len(calls), 2)
+
+    def test_background_runner_does_not_regenerate_a_manual_edit(self):
+        # Runner code the editor's own runs still use: this run is marked as the
+        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
+        self.EDITOR = 'revise'
+        calls = []
+
+        def worker(*args, **kwargs):
+            calls.append(True)
+            return {'content': 'Generated outline', 'notes': ''}
+
+        found = self.create(page=True)
+        engine = runner.Engine(self.root, worker)
+        engine.control(found['id'], 'resume')
+        engine.once(found['id'])
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        (directory / 'OUTLINE.md').write_text('My edited outline')
+        # The editor's runs stop after each step; resumed, the run meets the edit.
+        engine.control(found['id'], 'resume')
+        engine.once(found['id'])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((directory / 'OUTLINE.md').read_text(), 'My edited outline')
+        self.assertEqual(engine.describe(found['id'])['status'], 'needs-attention')
 
     def test_restart_only_resumes_explicitly_started_local_runs(self):
         # Runner code the editor's own runs still use: this run is marked as the

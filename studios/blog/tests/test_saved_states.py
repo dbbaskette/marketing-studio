@@ -461,23 +461,71 @@ class KeptStopTests(SavedStateCase):
             lambda: self.page(found, 'changes', request='Tighter.', stage='draft'),
         )
 
-    def test_working_or_queued_page_run_waits_for_its_step(self):
+    def test_a_queued_or_working_marker_nothing_runs_is_idle_and_a_running_step_waits(self):
         for status in ('queued', 'working'):
             with self.subTest(status=status):
                 found = self.saved('draft-gate-' + status)
-                self.refused(found['id'], 'under way', ('wait', 'under way'))
-                # Nothing runs it any more: its leftover marker is cleared by Stop, and then
-                # it opens on the desk.
-                shown = self.record(found['id'], 'wait')
-                self.assertEqual(shown['saved_record']['clear'], 'stop')
+                local = self.root / '.blog-runs' / (found['id'] + '.json')
+                kept = local.read_bytes()
+                # No runner picks the marker up again: it is idle, and the blog opens on the
+                # desk by what it holds. Reading it writes nothing.
+                self.record(found['id'], 'migrates')
                 self.not_continued(found['id'], lambda found=found: self.page(found, 'resume'))
-                with studio.locked(self.root):
-                    runner.dispatch(
-                        self.root, 'stop', {'id': found['id'], 'expected': shown['expected']}
-                    )
+                self.assertEqual(local.read_bytes(), kept)
+                # Only a step running now waits, and Stop ends it.
+                engine = runner.engine(self.root)
+                engine.current = found['id']
+                try:
+                    self.refused(found['id'], 'under way', ('wait', 'under way'))
+                    shown = self.record(found['id'], 'wait')
+                    self.assertEqual(shown['saved_record']['clear'], 'stop')
+                    with studio.locked(self.root):
+                        runner.dispatch(
+                            self.root, 'stop', {'id': found['id'], 'expected': shown['expected']}
+                        )
+                    self.assertTrue(engine.stop.is_set())
+                finally:
+                    engine.current = None
+                    engine.stop.clear()
                 self.assertEqual(
                     desk_migration.classify(self.root, found['id'])['outcome'], 'migrates'
                 )
+
+    def test_a_gate_the_page_worker_left_is_idle_and_opens_on_the_desk(self):
+        found = self.saved('draft-gate-paused')
+        local = self.root / '.blog-runs' / (found['id'] + '.json')
+        # The page worker's own marker once it saved a stage: still enabled, at the gate.
+        studio.write_json(
+            local,
+            {
+                'enabled': True,
+                'status': 'waiting-for-approval',
+                'error': '',
+                'reason': None,
+                'started_at': '2026-01-05T09:30:00+00:00',
+                'jobs': [{'stage': 'draft', 'seconds': 1.0, 'tokens': None, 'dollars': None}],
+            },
+        )
+        kept = local.read_bytes()
+        shown = self.record(found['id'], 'migrates')
+        self.assertEqual(shown['status'], 'migrates')
+        self.migrates(found['id'])
+        self.assertEqual(local.read_bytes(), kept)
+
+    def test_nothing_made_is_read_only_whatever_its_workspace_waits_on(self):
+        found = self.saved('brief-only')
+        # An older Team Hub connection of the workspace, and a step of the blog running now.
+        studio.write_json(self.root / '.team-hub.json', {'schema': 1})
+        said = desk_migration.classify(self.root, found['id'])
+        self.assertEqual((said['outcome'], said['next']), EARLY[::2])
+        self.assertRegex(said['reason'], EARLY[1])
+        (self.root / '.team-hub.json').unlink()
+        engine = runner.engine(self.root)
+        engine.current = found['id']
+        try:
+            self.record(found['id'], 'read-only', 'copy')
+        finally:
+            engine.current = None
 
     def test_unreadable_run_or_session_record_keeps_every_file(self):
         for name in (runner.STATE, 'session.json'):
@@ -602,32 +650,103 @@ class ReadOnlyRecordTests(SavedStateCase):
         self.assertNotIn('next', shown)
         self.assertEqual(shown['saved_record']['files'], [])
 
-    def test_lists_say_what_becomes_of_each_saved_blog(self):
+    def test_lists_say_what_the_small_records_prove(self):
+        """A list (polled on Home and Blogs) reads only a saved blog's session and run records:
+        saved by the earlier flow, finished there, or cannot be read. What becomes of it is
+        decided when its record is opened."""
+        import desk_migration as migration
+
         made = {
             state: saved_fixtures.load(self.root, state)
             for state in ('brief-only', 'outline-gate', 'finished-chat', 'draft-gate-queued')
         }
         unread = saved_fixtures.load(self.root, 'draft-gate-chat')
         (self.root / 'articles' / unread / runner.STATE).write_text('{not json')
-        before = self.tree()
-        with self.nothing_starts():
+        # Its material files cannot even be opened: a list never reads them.
+        material = [
+            path
+            for ident in [*made.values(), unread]
+            for path in (self.root / 'articles' / ident).glob('*.md')
+        ]
+        for path in material:
+            path.chmod(0)
+        self.addCleanup(lambda: [path.chmod(0o644) for path in material])
+
+        def small():
+            return {
+                str(path.relative_to(self.root)): path.read_bytes()
+                for path in self.root.rglob('*')
+                if path.is_file() and path.suffix != '.md' and path.name != '.studio.lock'
+            }
+
+        before = small()
+        heavy = AssertionError('a list read more than the small records')
+        with (
+            self.nothing_starts(),
+            patch.object(migration, 'migration_preview', side_effect=heavy),
+            patch.object(runner, 'inputs', side_effect=heavy),
+            patch.object(runner, 'survey', side_effect=heavy),
+            patch.object(studio, 'artifact_fingerprint', side_effect=heavy),
+        ):
             rows = {row['id']: row for row in runner.catalog(self.root)['items']}
-        self.assertEqual(self.tree(), before)
+        self.assertEqual(small(), before)
+        for path in material:
+            path.chmod(0o644)
         said = {state: rows[ident]['saved'] for state, ident in made.items()}
         self.assertEqual(
             said,
             {
-                'brief-only': 'read-only',
-                'outline-gate': 'migrates',
+                'brief-only': 'saved',
+                'outline-gate': 'saved',
                 'finished-chat': 'finished',
-                'draft-gate-queued': 'wait',
+                'draft-gate-queued': 'saved',
             },
         )
-        self.assertEqual((rows[unread]['saved'], rows[unread]['status']), ('read-only', 'saved'))
+        self.assertEqual((rows[unread]['saved'], rows[unread]['status']), ('unreadable', 'saved'))
         for ident in made.values():
             # Never a run waiting on a decision, and no step's error line in a list.
             self.assertEqual((rows[ident]['status'], rows[ident]['error']), ('saved', ''))
         self.assertTrue(rows[made['finished-chat']]['complete'])
+
+    def test_the_board_says_a_saved_blog_is_a_saved_record(self):
+        import editorial
+
+        found = self.saved('draft-gate-paused')
+        directory = studio.inside(self.root, 'articles', found['id'])
+        session = (directory / 'session.json').read_bytes()
+        row = next(
+            row for row in editorial.board(self.root)['items'] if row.get('id') == found['id']
+        )
+        self.assertEqual(row['next_step'], desk_migration.BOARD_WORDS)
+        self.assertEqual((directory / 'session.json').read_bytes(), session)  # Not rewritten.
+
+    def test_the_editors_check_is_no_side_door_into_an_unfinished_saved_run(self):
+        import manuscript_editor
+
+        found = self.saved('draft-gate-paused')
+        shown = manuscript_editor.read(self.root, found['id'])
+        before = self.tree()
+        with (
+            self.nothing_starts(),
+            studio.locked(self.root),
+            self.assertRaisesRegex(ValueError, 'no longer continues'),
+        ):
+            manuscript_editor.dispatch(
+                self.root,
+                'check',
+                {'id': found['id'], 'expected': shown['expected'], 'check': 'proofread'},
+            )
+        self.assertEqual(self.tree(), before)
+        # A finished blog keeps the editor, as it always had: the check makes its own run.
+        found = self.saved('finished-page')
+        shown = manuscript_editor.read(self.root, found['id'])
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            manuscript_editor.dispatch(
+                self.root,
+                'check',
+                {'id': found['id'], 'expected': shown['expected'], 'check': 'proofread'},
+            )
+        self.assertEqual(runner.survey(self.root, found['id'])['editor_check'], 'proofread')
 
     def test_an_interrupted_opening_waits_with_the_way_to_finish_it(self):
         import management

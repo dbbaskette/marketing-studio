@@ -66,8 +66,6 @@ LINKED_WORKSPACE = (
     'This workspace or its blog folder is a link. Open the workspace from its real folder, '
     'then open this blog on the desk.'
 )
-# Nothing on the page clears these: the record also offers new work from the blog.
-CONDITIONS = (OLDER_HUB, NEWER_RUNTIME, IDENTITY, MARKER, LINKED_WORKSPACE)
 # Conditions of the blog itself that a person clears: Take it, Stop its step, or a job ends.
 DRIVER = (
     'Another computer drives this blog, or it has no driver. Take it before opening on the desk.'
@@ -678,7 +676,11 @@ def _snapshot(root, ident):
             raise ValueError('Restore a supported saved worker record first.')
         files['worker/run.json'] = local.read_bytes()
         state = json.loads(files['worker/run.json'])
-        busy = _worker_state(state)
+        # Only a step that will really run keeps a blog waiting. The manuscript editor's own
+        # runs go on, so their marker counts; any other saved run's marker, even enabled or
+        # queued, is left from the earlier flow and no runner picks it up again
+        # (blog_runner.continues): only a step running now (below) waits.
+        busy = _worker_state(state) and blog_runner.continues(run)
     tools = root / '.blog-runs' / 'tools'
     if tools.is_symlink():
         raise ValueError('Restore ordinary saved worker records first.')
@@ -795,6 +797,22 @@ def _a_blog(directory):
     )
 
 
+def _made(directory):
+    """Whether a saved blog holds a manuscript or outline to open on the desk: a non-blank
+    DRAFT.md, ORIGINAL.md or OUTLINE.md, an ordinary file in its folder. Only reads."""
+    for name in ('DRAFT.md', 'ORIGINAL.md', 'OUTLINE.md'):
+        path = directory / name
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            with path.open('rb') as handle:
+                if handle.read(1_000_000).strip():
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def _small_json(path):
     """A saved record's value, or raise: missing, linked, oversized or not JSON."""
     if path.is_symlink() or not path.is_file():
@@ -886,6 +904,10 @@ def _verdict(root, ident, shown, failure):
     if not run_supported(run):
         return said('read-only', UNKNOWN_RUN, session, run)
     if isinstance(failure, Wait):
+        if not _made(directory):
+            # What the blog is comes first: with nothing made it is read-only, whatever its
+            # workspace or a leftover waits on. Waiting is for a blog that would open on the desk.
+            return said('read-only', EARLY, session, run)
         return said('wait', str(failure))
     if shown['eligible']:
         return said('migrates', MIGRATES)
@@ -928,6 +950,31 @@ FINISHED_RECORD = (
     'This blog was finished in the earlier step-by-step flow, which no longer continues it. '
     'Open it on the writing desk to keep editing; it stays readable here.'
 )
+# What lists and the editorial board say of a saved blog of the earlier flow: what its small
+# records prove. Its record, opened, says what becomes of it.
+BOARD_WORDS = 'Saved by the earlier step-by-step flow: open it to see what becomes of it.'
+
+
+def saved_flow(directory, record=None):
+    """Whether a blog folder is a saved blog of the earlier flow: a saved run that is not the
+    manuscript editor's, not desk work and not opened on the desk. Reads only the small
+    records (session and run); a run that cannot be read counts. Never raises."""
+    import blog_runner
+
+    try:
+        if record is None:
+            record = _small_json(directory / 'session.json')
+        if not isinstance(record, dict) or record.get('flow') == 'desk':
+            return False
+        if (directory / 'desk' / 'draft.json').is_file():
+            return False
+        if not os.path.lexists(directory / blog_runner.STATE):
+            return False
+    except (OSError, ValueError, UnicodeError):
+        return False
+    return not blog_runner.continues(saved_run(directory))
+
+
 WAIT_RECORD = (
     'This blog was saved by the earlier step-by-step flow, which no longer continues it. It '
     'opens on the writing desk once what it waits on is cleared.'
@@ -956,11 +1003,30 @@ def _saved_files(directory):
     return found
 
 
+def _waiting_job(root, ident):
+    """The tool job of this blog that keeps it waiting (queued, working, or ready and not yet
+    applied), as the blog's Tools list shows it: {'id', 'kind', 'status'}, or None. Only reads."""
+    folder = root / '.blog-runs' / 'tools'
+    if folder.is_symlink() or not folder.is_dir():
+        return None
+    for path in sorted(folder.glob('*.json')):
+        try:
+            job = _small_json(path)
+            article, busy = _tool_state(job, path.name)
+        except (OSError, ValueError, UnicodeError, KeyError, TypeError):
+            continue
+        if article == ident and busy:
+            return {'id': job['id'], 'kind': job['kind'], 'status': job['status']}
+    return None
+
+
 def _clears(root, ident, reason):
     """What a waiting saved blog's screen offers to clear what it waits on: `recover` (finish
-    an interrupted opening with the token its journal kept), `stop` (a step left under way),
-    `take` (another computer drives it), or None (a job ends by itself, or nothing on the page
-    clears a workspace or computer condition); with the token `recover` repeats."""
+    an interrupted opening with the token its journal kept), `stop` (a step running now),
+    `take` (another computer drives it, or this computer's identity is recorded by taking
+    it), `job` (its waiting tool job, to finish or cancel where the blog's Tools list it), or
+    None (nothing on the page clears a workspace or computer condition); with the token
+    `recover` repeats, or the job."""
     if reason == PENDING:
         directory = studio.inside(root, 'articles', studio.identifier(ident))
         try:
@@ -973,8 +1039,11 @@ def _clears(root, ident, reason):
         return None, None
     if reason == STEP_BUSY:
         return 'stop', None
-    if reason == DRIVER:
+    if reason in (DRIVER, IDENTITY):
         return 'take', None
+    if reason == JOB_BUSY:
+        job = _waiting_job(root, ident)
+        return ('job', job) if job else (None, None)
     return None, None
 
 
@@ -1033,12 +1102,7 @@ def saved_record(root, ident, refusal=None):
     else:
         found['sentence'] = WAIT_RECORD
         clear, token = _clears(root, directory.name, shown['reason'])
-        said.update(clear=clear, token=token)
-        if clear is None:
-            # Nothing on the page clears it: new work can start from it meanwhile.
-            start = _start_from(session, saved_run(directory))
-            said.update(next='copy' if start else 'new', start=start)
-        elif clear in ('stop', 'take'):
+        if clear in ('stop', 'take'):
             import blog_runner
             from team_workspace import driver, space
 
@@ -1046,6 +1110,17 @@ def saved_record(root, ident, refusal=None):
             found['expected'] = blog_runner.survey(root, directory.name)['expected']
             found['team'] = bool(space(root) and space(root).address)
             found['driver'] = driver(root, directory.name) if space(root) else None
+            if clear == 'take' and not found['team']:
+                clear = None  # Taking needs a joined team repository: nothing here clears it.
+        said.update(clear=clear, token=token if clear == 'recover' else None)
+        if clear == 'job':
+            # Its task is finished where the blog's Tools list it; new work is there meanwhile
+            # (a task whose source changed since cannot be finished).
+            said.update(job=token, start=_start_from(session, saved_run(directory)))
+        if clear is None:
+            # Nothing on the page clears it: new work can start from it meanwhile.
+            start = _start_from(session, saved_run(directory))
+            said.update(next='copy' if start else 'new', start=start)
     found['saved_record'] = said
     return found
 
