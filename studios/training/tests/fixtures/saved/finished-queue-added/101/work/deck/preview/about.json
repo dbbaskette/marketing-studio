@@ -1,0 +1,35 @@
+{
+  "deck": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f",
+  "slides": [
+    {
+      "id": "cover-restarts",
+      "number": 1,
+      "title": "Rolling restarts"
+    },
+    {
+      "id": "what-it-does",
+      "number": 2,
+      "title": "A rolling restart replaces instances one batch at a time"
+    },
+    {
+      "id": "when-capacity-holds",
+      "number": 3,
+      "title": "Capacity holds only with more than one instance"
+    },
+    {
+      "id": "the-objection",
+      "number": 4,
+      "title": "Rolling does not always mean zero downtime"
+    },
+    {
+      "id": "check-yourself",
+      "number": 5,
+      "title": "Check what you can now explain"
+    },
+    {
+      "id": "closing-practice",
+      "number": 6,
+      "title": "Next: practice the objection"
+    }
+  ]
+}

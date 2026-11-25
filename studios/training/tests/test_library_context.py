@@ -54,111 +54,8 @@ class LibraryCase(StudioCase):
         self.engine.documents = real_documents
         self.library = document_library.opened(create=True)
 
-    def waiting(self):
-        """A saved training researched from documents alone, waiting for them."""
-        root = self.saved_start(source_scope='supplied-only')
-        self.assertTrue(self.view(root)['documents']['waiting'])
-        return root
-
-    def researched(self):
-        """The same training once its documents are all added and its research planned."""
-        root = self.waiting()
-        self.engine.supply(root, 'add', 'handbook.txt', b'Capacity holds with two.\n')
-        self.engine.supply(root, 'done')
-        self.to_end(root)
-        self.assertFalse(self.view(root)['documents']['waiting'])
-        return root
-
     def offered(self, root):
         return [one['text'] for one in self.engine._sources(root, self.record(root))[1]]
-
-
-class WaitingTests(LibraryCase):
-    def test_pinned_while_waiting_is_read_with_the_rest_and_starts_nothing(self):
-        root = self.waiting()
-        row = self.library.add_upload('brief.md', NOTES, studio='blog')
-        jobs, commits = len(self.workers.jobs), self.log()
-        shown = self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])['documents']
-        # Pinning asks nothing of an assistant and commits nothing: the documents are local.
-        self.assertEqual((len(self.workers.jobs), self.log()), (jobs, commits))
-        self.assertTrue(shown['waiting'])
-        self.assertEqual(shown['added'][0]['library'], {'id': row['id'], 'revision': 1})
-        self.assertEqual((shown['added'][0]['title'], shown['added'][0]['update']), ('brief', False))
-        self.assertNotIn('later', shown)
-        self.engine.supply(root, 'done')
-        self.assertIn('Capacity holds only when', ''.join(self.offered(root)))
-        # The training reads its own copy when the library is gone.
-        shutil.rmtree(self.library.root)
-        self.assertIn('Capacity holds only when', ''.join(self.offered(root)))
-
-    def test_a_newer_revision_is_said_and_taken_only_when_asked(self):
-        root = self.waiting()
-        kept = self.library.retain('blog:launch', 'blog', 'blog', 'Launch post', 'First words.\n')
-        self.engine.library_add(root, [{'id': kept['document'], 'revision': 1}])
-        self.library.retain('blog:launch', 'blog', 'blog', 'Launch post', 'Second words.\n')
-        added = self.view(root)['documents']['added'][0]
-        self.assertEqual((added['update'], added['library_head']), (True, 2))
-        entry = real_documents.listed(root)[0]
-        self.assertEqual(real_documents.text_of(root, entry), 'First words.\n')
-        added = self.engine.library_update(root, kept['document'])['documents']['added'][0]
-        self.assertEqual((added['library']['revision'], added['update']), (2, False))
-        self.assertEqual(real_documents.text_of(root, real_documents.listed(root)[0]),
-                         'Second words.\n')
-        with self.assertRaisesRegex(WorkspaceError, 'newest'):
-            self.engine.library_update(root, kept['document'])
-
-    def test_refusals_change_nothing(self):
-        row = self.library.add_upload('brief.md', NOTES)
-        picks = [{'id': row['id'], 'revision': 1}]
-        # Research that does not read documents takes none, and is not widened to.
-        web = self.saved_start(title='Web only')
-        with self.assertRaisesRegex(WorkspaceError, 'does not read documents'):
-            self.engine.library_add(web, picks)
-        self.assertEqual(real_documents.listed(web), [])
-        self.assertIsNone(self.record(web)['documents'])
-        # A job running keeps the documents it started with.
-        root = self.waiting()
-        self.engine._run(root).busy = True
-        with self.assertRaisesRegex(WorkspaceError, 'job that is running'):
-            self.engine.library_add(root, picks)
-        self.engine._run(root).busy = False
-        self.assertEqual(real_documents.listed(root), [])
-        # An unreadable revision cannot be chosen, and one refusal adds nothing.
-        scan = self.library.add_upload('broken.docx', b'not a zip')
-        with self.assertRaisesRegex(WorkspaceError, 'cannot be added'):
-            self.engine.library_add(root, [*picks, {'id': scan['id'], 'revision': 1}])
-        self.assertEqual(real_documents.listed(root), [])
-
-
-class LaterTests(LibraryCase):
-    def test_pinned_after_the_research_waits_for_the_research_to_be_updated(self):
-        root = self.researched()
-        row = self.library.add_upload('brief.md', NOTES)
-        jobs = len(self.workers.jobs)
-        shown = self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])['documents']
-        self.assertEqual([one['name'] for one in shown['later']], ['brief.md'])
-        self.assertIn('update_price', shown)
-        self.assertEqual(len(self.workers.jobs), jobs, 'nothing is researched yet')
-        self.assertNotIn('Capacity holds only when', ''.join(self.offered(root)))
-        self.assertTrue(self.log()[-1].endswith('not read until the research is updated'))
-        # Only Update the research reads it.
-        with mock.patch.object(self.engine, 'carry_on'):
-            self.engine.supply(root, 'update')
-        self.assertEqual(self.record(root)['documents']['later'], [])
-        self.assertIn('Capacity holds only when', ''.join(self.offered(root)))
-
-    def test_a_newer_revision_after_the_research_waits_too(self):
-        root = self.researched()
-        kept = self.library.retain('blog:launch', 'blog', 'blog', 'Launch post', 'First.\n')
-        self.engine.library_add(root, [{'id': kept['document'], 'revision': 1}])
-        with mock.patch.object(self.engine, 'carry_on'):
-            self.engine.supply(root, 'update')
-        self.assertIn('First.\n', self.offered(root))
-        self.library.retain('blog:launch', 'blog', 'blog', 'Launch post', 'Second.\n')
-        later = self.engine.library_update(root, kept['document'])['documents']['later']
-        self.assertEqual(len(later), 1)
-        self.assertNotIn('Second.\n', self.offered(root))
-        self.assertNotIn('First.\n', self.offered(root))
 
 
 class DeskTests(DeckCase):
@@ -210,14 +107,6 @@ class DeskTests(DeckCase):
         self.assertIsNone(self.record(root)['problem'])
         self.assertTrue(any(source['title'] == 'capacity'
                             for source in self.engine._sources(root, self.record(root))[0]))
-
-    def test_a_saved_training_that_reads_no_documents_is_not_widened(self):
-        root = self.saved_start()
-        self.to_end(root)
-        row = self.library.add_upload('capacity.md', NOTES)
-        with self.assertRaisesRegex(WorkspaceError, 'research does not read documents'):
-            self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])
-        self.assertIsNone(self.record(root)['documents'])
 
 
 class KeepTests(DeckCase):
@@ -307,48 +196,6 @@ class UploadTests(LibraryCase):
         self.assertEqual((row['kind'], row['studio'], row['origin']), ('upload', 'training', 'upload'))
         with mock.patch.object(document_library, 'opened', side_effect=OSError('No room.')):
             self.assertEqual(library.upload('more.md', NOTES), {'state': 'failed', 'problem': 'No room.'})
-
-    def test_the_page_keeps_only_what_the_person_chose_to(self):
-        root = self.waiting()
-        page = pages.RunnerPage(8765, self.engine)
-        import base64
-        content = base64.b64encode(NOTES).decode()
-        only = page.supplied({'path': str(root), 'action': 'add', 'name': 'one.md',
-                              'content': content, 'keep': False})
-        self.assertNotIn('library_kept', only)
-        both = page.supplied({'path': str(root), 'action': 'add', 'name': 'two.md',
-                              'content': content, 'keep': True})
-        self.assertEqual(both['library_kept']['state'], 'kept')
-        self.assertEqual(self.library.catalog()['total'], 1)
-        self.assertEqual([one['name'] for one in both['documents']['added']], ['one.md', 'two.md'])
-        self.assertNotIn('library', both['documents']['added'][1], 'kept, not pinned')
-        import desk
-        with self.assertRaises(desk.Refusal):
-            page.supplied({'path': str(root), 'action': 'add', 'name': 'three.md',
-                           'content': content, 'keep': 'yes'})
-        # A refused upload is not kept in the library either.
-        with self.assertRaises(WorkspaceError):
-            page.supplied({'path': str(root), 'action': 'add', 'name': 'two.md',
-                           'content': content, 'keep': True})
-        self.assertEqual(self.library.catalog()['total'], 1)
-
-    def test_a_failed_keep_is_tried_again_from_the_trainings_own_copy(self):
-        root = self.waiting()
-        page = pages.RunnerPage(8765, self.engine)
-        import base64
-        content = base64.b64encode(NOTES).decode()
-        with mock.patch.object(document_library, 'opened', side_effect=OSError('No room.')):
-            first = page.supplied({'path': str(root), 'action': 'add', 'name': 'one.md',
-                                   'content': content, 'keep': True})
-        self.assertEqual(first['library_kept'], {'state': 'failed', 'problem': 'No room.'})
-        again = json.loads(page.write(pages.LIBRARY_UPLOAD, {'path': str(root), 'name': 'one.md'})[2])
-        self.assertEqual(again['library_kept']['state'], 'kept')
-        self.assertEqual(again['documents']['added'][0]['name'], 'one.md')
-        # Asked again, it is the same library document, never a second one.
-        library.upload_again(self.engine, root, 'one.md')
-        self.assertEqual(self.library.catalog()['total'], 1)
-        with self.assertRaisesRegex(WorkspaceError, 'not a document added'):
-            library.upload_again(self.engine, root, 'two.md')
 
     def test_a_spreadsheet_kept_from_the_source_editor_is_read_in_the_library_too(self):
         import base64

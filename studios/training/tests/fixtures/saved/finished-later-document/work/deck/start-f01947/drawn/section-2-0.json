@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "title": "Rolling restarts",
+  "direction": {
+    "focal": "headingPrimary",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "id": "the-objection",
+      "title": "Rolling does not always mean zero downtime",
+      "sources": [
+        "O3"
+      ],
+      "brief": {
+        "relation": "order",
+        "focal": "s2_the_objection_t1",
+        "rhythm": "anchor"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "children": [
+          {
+            "type": "text",
+            "id": "s2_the_objection_h1",
+            "text": "Claim",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s2_the_objection_t1",
+            "text": "Rolling always means zero downtime."
+          },
+          {
+            "type": "text",
+            "id": "s2_the_objection_h2",
+            "text": "Correction",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s2_the_objection_t2",
+            "text": "Only with more than one instance."
+          }
+        ]
+      },
+      "notes": "7 min. Correct the claim without dismissing the customer."
+    },
+    {
+      "id": "check-yourself",
+      "title": "Check what you can now explain",
+      "sources": [
+        "O1",
+        "O2",
+        "O3"
+      ],
+      "brief": {
+        "relation": "order",
+        "focal": "s2_check_yourself_t1",
+        "rhythm": "anchor"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "children": [
+          {
+            "type": "text",
+            "id": "s2_check_yourself_h1",
+            "text": "Describe",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s2_check_yourself_t1",
+            "text": "What happens to the instances?"
+          },
+          {
+            "type": "text",
+            "id": "s2_check_yourself_h2",
+            "text": "Explain",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s2_check_yourself_t2",
+            "text": "Why does one instance lose capacity?"
+          }
+        ]
+      },
+      "notes": "3 min. One question for each objective."
+    }
+  ]
+}

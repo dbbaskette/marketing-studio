@@ -159,11 +159,6 @@ class BatchReadyTests(BatchCase):
                 name: self.seen(root, name) for name in self.drafted(root)})
         self.assertEqual(self.log(), commits)
 
-    def test_row_244_a_saved_training_is_refused(self):
-        root = self.saved_start(levels=['101'])
-        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
-            self.engine.mark_reviewed_ready(root, '101', {})
-
 
 class BatchEndpointTests(PageCase):
     """POST /api/drafts/reviewed-ready, as the page sends it."""

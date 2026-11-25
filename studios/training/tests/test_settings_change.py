@@ -416,12 +416,6 @@ class RefusalTests(SettingsCase):
         with self.assertRaisesRegex(WorkspaceError, 'Nothing has changed'):
             self.engine.change_settings(root, self.sent(self.form(root)))
 
-    def test_a_saved_run_says_why_it_cannot_be_changed(self):
-        root = self.saved_start()
-        self.assertEqual(self.view(root)['settings'], {'may': False, 'why': settings_change.OLDER})
-        with self.assertRaisesRegex(WorkspaceError, 'started before its settings'):
-            self.engine.change_settings(root, {'expected': 'x'})
-
     def test_a_serial_draft_keeps_what_research_reads(self):
         root = self.supplied()
         case = root / '.studio-research/.harness-research'

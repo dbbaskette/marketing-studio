@@ -135,41 +135,6 @@ class DeskStartTests(DeckCase):
             with self.subTest(schema=schema):
                 self.assertEqual(read(schema=schema, **extra)['flow'], 'desk')
 
-    def test_saved_runs_keep_their_gates(self):
-        root = self.saved_start()
-        record = self.record(root)
-        self.assertNotIn('flow', record)
-        self.assertEqual(record['schema'], 1)
-        self.assertEqual(record['review_policy'], {'schema': 1, 'level': 'step_by_step'})
-        self.assertIn('review_layout', record)
-        self.assertEqual(workspace.load(root)['review_policy'], record['review_policy'])
-        self.to_gate(root, 'research-plan')
-        self.assertEqual(self.state(root), 'waiting')
-        self.assertEqual(self.view(root)['review_level'], 'step_by_step')
-        self.assertIsNone(self.view(root)['flow'], 'a saved run keeps its own screens')
-        self.assertFalse(self.record(root).get('review_events'))
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            balanced = self.saved_start(title='Balanced restarts')
-        self.assertEqual(workspace.status(balanced)['gate'], 'research-plan')
-        self.assertEqual(self.state(balanced), 'waiting')
-        self.assertEqual(self.record(balanced)['schema'], 2)
-        self.assertNotIn('flow', self.record(balanced))
-        # Automatic draft still stops at a drawn deck and at the finished materials.
-        self.brand.offers_looks = True
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'automatic'}):
-            automatic = self.saved_begin(title='Automatic restarts', levels=['101'])
-        self.assertEqual(workspace.status(automatic)['gate'], 'deck@101', self.view(automatic))
-        self.assertEqual(self.state(automatic), 'waiting')
-        self.decide(automatic, 'deck@101')
-        shown = self.view(automatic)
-        self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
-        self.assertIn('review:final', [step['id'] for step in shown['steps']])
-        events = self.record(automatic)['review_events']
-        self.assertTrue(events)
-        self.assertEqual({event['by'] for event in events}, {'review-policy'})
-
 
 class DeskRunTests(DeckCase):
     """A desk run never stops for review: the engine continues each gate, outline and look
@@ -459,23 +424,6 @@ class DeskHoldTests(DeckCase):
             self.engine.update(root, 'deck@101', scope='slides 1-3')
         self.assertEqual(self.record(root)['drafts']['updates'], {})
 
-    def test_saved_runs_still_remake(self):
-        root = self.saved_begin(levels=['101'])
-        self.drawn(root, '101')
-        self.to_end(root)
-        self.assertIsNone(workspace.status(root)['gate'])
-        outlines = len(self.workers.of('outline'))
-        self.guide_edit(root)
-        self.assertEqual(drafts.held(root, workspace.load(root), self.record(root)),
-                         frozenset())
-        self.engine.wake(root)
-        self.assertEqual(len(self.workers.of('outline')), outlines + 1,
-                         'the deck is put back through its steps, as today')
-        for act in (self.engine.update, self.engine.keep):
-            with self.subTest(act=act.__name__), self.assertRaisesRegex(
-                    WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
-                act(root, 'deck@101')
-
 
 class DeskReadyTests(DeckCase):
     """Mark ready is the person's approval on the desk, one material or one level at a
@@ -572,13 +520,6 @@ class DeskReadyTests(DeckCase):
                 WorkspaceError, '^Update or keep the level 101 blueprint first.$'):
             self.engine.mark_ready(root, 'document@101', seen=self.seen(root, 'document@101'))
         self.assertEqual(self.log(), commits)
-
-    def test_mark_ready_is_the_desk_s_alone(self):
-        root = self.saved_start(levels=['101'])
-        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
-            self.engine.mark_ready(root, 'intake', seen=self.seen(root, 'intake'))
-        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
-            self.engine.mark_level_ready(root, '101', {})
 
     def test_a_level_of_a_levelled_training_must_be_chosen(self):
         root = self.desk()
@@ -688,12 +629,6 @@ class DeskReadyTests(DeckCase):
             self.engine.mark_ready(root, name, seen=self.seen(root, name))
             self.assertIsNotNone(self.record(root).get('last_decision_stop'))
             self.view(root)
-
-    def test_saved_runs_still_write_their_index(self):
-        root = self.saved_start(levels=['101'])
-        self.to_end(root)
-        self.assertTrue((root / pipeline.INDEX).is_file())
-        self.assertEqual(self.state(root), 'done')
 
 
 class DeskTypingTests(DeckCase):

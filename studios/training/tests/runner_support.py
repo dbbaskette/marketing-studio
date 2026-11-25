@@ -1662,68 +1662,15 @@ class StudioCase(unittest.TestCase):
                    'documents': self.documents, 'copies': self.copies, 'index': self.index,
                    # Historic fixtures exercise the saved serial protocol. New protocol
                    # integration tests explicitly use the production default.
-                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, 'plan_first': False, 'outline_first': False, 'section_synthesis': False,
-                   # Once a test drives the earlier step-by-step flow (`saved_flow_on`), every
-                   # engine it makes, a teammate's or one after a restart, drives it too.
-                   'saved_flow': getattr(self, 'saved_flow', False), **options}
+                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, 'plan_first': False, 'outline_first': False, 'section_synthesis': False, **options}
         engine = self.engines.Engine(**options)
         self.addCleanup(engine.close)
-        self.__dict__.setdefault('made_engines', []).append(engine)
         return engine
-
-    def saved_flow_on(self) -> None:
-        """Drive the earlier step-by-step flow, as only its own tests and the shared deck
-        contract do (`Engine.saved_flow`): no runner continues saved work any more."""
-        self.saved_flow = True
-        for engine in self.__dict__.get('made_engines', []):
-            engine.saved_flow = True
 
     def start(self, engine=None, **changes) -> Path:
         from runner import pipeline
         engine = engine or self.engine
         return Path(engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
-
-    def saved_start(self, engine=None, saved_contract=None, schema=None, **changes) -> Path:
-        """Construct a saved queue/policy session and run, then resume real readers. The
-        earlier step-by-step flow no longer continues saved work on any runner: its engine is
-        asked to drive it as that flow did (`Engine.saved_flow`), for the tests of that flow
-        and the shared deck contract."""
-        import home
-        import workspace
-        from runner import pipeline, settings, team
-        from studio_core import review_policy
-        engine = engine or self.engine
-        self.saved_flow_on()
-        space = engine.space()
-        form = pipeline.check_form({**FORM, **{k: v for k, v in changes.items()
-            if k not in ('review_level', 'review_seen', 'review_default')}, 'flow': None})
-        chosen = settings.load()
-        agent = form['agent'] or chosen.agent
-        model = form['model'] if form['agent'] else form['model'] or chosen.model
-        effort = settings.check_effort(form['effort'] if form['agent'] else form['effort'] or chosen.effort, agent, model)
-        root = pipeline.create(space, form)
-        record = self.engines.new_record(agent, model, chosen, form['source_scope'], effort, form.get('research_from'))
-        record['research_questions'] = form.get('research_questions') or []
-        if changes.get('review_level'):
-            record['review_policy'] = {'schema': 1, 'level': changes['review_level']}
-        record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
-        if saved_contract is not None:
-            record['research_contract'] = dict(saved_contract)
-            record['schema'] = 3
-        if schema is not None:
-            record['schema'] = schema
-        session = workspace.load(root)
-        session['review_policy'] = record['review_policy']
-        if saved_contract is not None:
-            session['research_contract'] = dict(saved_contract)
-        workspace.store(root, session)
-        record['driver'] = team.claim(space)
-        engine._tried(record, 'intake', home.now(), 0.0, 'kept')
-        engine._store(root, record)
-        engine._commit(root, 'start the training from the form')
-        engine._claimed(root, space)
-        engine.wake(root)
-        return root
 
     def view(self, root: Path) -> dict:
         return self.engine.view(root)

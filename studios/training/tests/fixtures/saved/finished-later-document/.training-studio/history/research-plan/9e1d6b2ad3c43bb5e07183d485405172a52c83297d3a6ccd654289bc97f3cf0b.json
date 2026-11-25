@@ -1,0 +1,40 @@
+{
+  "topic": "Rolling restarts",
+  "purpose": "planning",
+  "scope": "supplied-only",
+  "sources": [
+    {
+      "file": "sources/supplied/first.text",
+      "id": "first",
+      "limits": "none",
+      "original_file": "sources/supplied/first.txt",
+      "title": "first"
+    }
+  ],
+  "items": [
+    {
+      "id": "availability",
+      "question": "When does a rolling restart keep capacity?",
+      "public_query": null,
+      "claim": null
+    },
+    {
+      "id": "instance-min",
+      "question": "How many instances keep capacity during a restart?",
+      "public_query": null,
+      "claim": null
+    },
+    {
+      "id": "health-checks",
+      "question": "What starts the next batch?",
+      "public_query": null,
+      "claim": null
+    },
+    {
+      "id": "zero-downtime",
+      "question": "Do rolling restarts guarantee zero downtime?",
+      "public_query": null,
+      "claim": null
+    }
+  ]
+}

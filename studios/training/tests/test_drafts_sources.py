@@ -242,14 +242,13 @@ class SourceTests(DeckCase):
         self.assertFalse(drafts.updates(self.record(root)))
 
     def saved_with_later_document(self):
-        root = self.saved_begin(source_scope='supplied-only')
-        self.send(root, 'first.txt')
-        self.engine.supply(root, 'done')
-        self.send(root, 'later.txt')
-        self.to_end(root)
-        self.engine.outline(root, None, 'approve')
-        self.to_end(root)
-        self.assertEqual(self.state(root), 'done', self.view(root))
+        """A finished saved training given one document before its research and one after,
+        as the saved flow stored it; the documents stand-in holds the two it was given."""
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'finished-later-document')
+        kept = saved_fixtures.FIXTURES / 'finished-later-document.documents.json'
+        self.documents.kept[str(root)] = json.loads(kept.read_text())
+        self.assertEqual(self.view(root)['saved_record']['outcome'], 'finished')
         return root
 
     def test_row_182_opened_saved_training_blocks_research_during_deck_notes(self):

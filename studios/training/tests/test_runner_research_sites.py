@@ -268,35 +268,6 @@ class RunTests(StudioCase):
         self.assertEqual(studios_config.read()[0]['research'],
                          {'sites': ['https://other.example.com']})
 
-    def test_row_130_research_keeps_to_the_sites_and_its_stop_says_what_was_refused(self):
-        self.web.page(OTHER, PAGE)
-        tried = []
-
-        def wanders(tools, job):
-            tried.append(tools.save_source(OTHER))
-            return self.workers.question(tools, job)
-
-        self.workers.then('question:availability', wanders)
-        root = self.saved_start(research_from={'sites': [DOCS], 'web': False})
-        self.to_gate(root, 'research')
-        plan, = self.workers.jobs[:1]
-        self.assertEqual(plan[2]['artifacts']['research-plan']['scope'], 'public-web')
-        self.assertIn('Allowed sites: docs.example.com. Pages from anywhere else on the public '
-                      'web are not allowed.', plan[1].task)
-        for kind, job, spec in self.workers.jobs[1:]:
-            with self.subTest(kind):
-                self.assertEqual(spec['research'], {'documents': False, 'sites': [DOCS],
-                                                    'web': False})
-                self.assertIn('site:docs.example.com', job.guidance)
-                self.assertIn('Allowed sites: docs.example.com.', job.task)
-        self.assertEqual(tried, [(False, research_sites.refused(OTHER, {'sites': [DOCS]}))])
-        self.assertNotIn(OTHER, [asked for asked, _ in self.web.asked])
-        said = research_sites.outside(1, [DOCS])
-        self.assertEqual(said, '1 page was outside your sites (docs.example.com) and was not saved.')
-        self.assertEqual(self.view(root)['research_from']['outside'], said)
-        self.assertEqual(page.RunnerPage(8765, self.engine).gate(str(root), 'research')['outside'],
-                         said)
-
     def test_a_training_started_with_the_older_words_researches_as_before(self):
         root = self.start(source_scope='public-web')
         self.assertEqual(self.record(root)['research_from'], WEB)
@@ -337,30 +308,6 @@ class RunTests(StudioCase):
                       'anywhere else on the public web are not allowed.', seen[0]['scope'])
         self.assertIn('The wider public web may fill gaps', seen[1]['scope'])
         self.assertIn('Use the supplied documents.', seen[2]['scope'])
-
-    def test_a_run_saved_before_the_choice_keeps_its_research_task_scope(self):
-        seen = []
-
-        def native(engine, root, run, task, offered, product):
-            seen.append(task)
-            raise WorkspaceError('Stopped here by the test.')
-
-        contract = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
-        with mock.patch.object(research_contract, 'snapshot', return_value=contract), \
-                mock.patch.object(research_contract, 'native', native):
-            root = self.saved_start(source_scope='public-web', saved_contract=contract)
-            with self.engine.files:   # as a run record written before the choice was saved
-                record = self.engine._load(root)
-                record.pop('research_from')
-                self.engine._store(root, record)
-            self.to_gate(root, 'research-plan')
-            self.decide(root, 'research-plan')
-        task, = seen
-        self.assertEqual(task['source_mode'], 'public')
-        self.assertNotIn(research_sites.scope_text(WEB), task['scope'])
-        self.assertTrue(task['scope'].startswith('Topic: '))
-        # The scope it was always researched under: what the training is about, and no more.
-        self.assertTrue(task['scope'].splitlines()[-1].startswith('Selected materials:'))
 
 
 if __name__ == '__main__':

@@ -46,7 +46,7 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
 GETS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
 POSTS = ('/api/research-decision', '/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
-         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
+         '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install',
          '/api/note', '/api/research-site')
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/outline-flow', '/api/intake-draft', '/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'current_models', 'decided', 'deck', 'deck_aside', 'deck_left', 'documents', 'driver', 'effort',
@@ -130,10 +130,6 @@ class PageCase(StudioCase):
 
     def started(self, **changes) -> str:
         return self.post('trainings', {**FORM, 'flow': 'desk', **changes})['path']
-
-    def saved_started(self, **changes) -> str:
-        """A saved fixture enters the page through its actual run reader."""
-        return str(self.saved_start(**changes))
 
     def on_disk(self) -> dict:
         return {path.relative_to(self.base).as_posix(): path.read_bytes()
@@ -239,7 +235,6 @@ class RuleTests(PageCase):
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
                        '/api/copies': {'path': self.path},
-                       '/api/review': {'path': self.path, 'expected': 'old-version', 'decision': 'approve'},
                        '/api/share': {}, '/api/companions': {}, '/api/restart': {},
                        '/api/upgrade': {'version': '99.0.0'},
                        '/api/versions': {'dismiss': 'training-studio 99.0.0'},
@@ -1640,40 +1635,6 @@ class WholeUpgradeTests(PageCase):
                          (['/bin/sh', str(root / 'studio'), 'serve'], ['left']))
 
 
-class CombinedReviewTests(PageCase):
-    def test_combined_reviews_have_beads(self):
-        path = self.saved_started(review_level='balanced')
-        self.decide(Path(path), 'research-plan')
-        stages = self.get('training', path=path)['stages']
-        by_name = {item['stage']: item for item in stages}
-        names = list(by_name)
-        self.assertEqual(by_name['review:direction']['state'], 'review')
-        self.assertEqual(by_name['review:final']['state'], 'not-started')
-        self.assertEqual(names[names.index('brief') + 1], 'review:direction')
-        self.assertEqual(names[names.index('package') - 1], 'review:final')
-        plain = self.saved_started(title='Plain', review_level='step_by_step')
-        self.assertFalse(any(item['stage'].startswith('review:')
-                             for item in self.get('training', path=plain)['stages']))
-
-    def test_grouped_reviews_are_revision_bound_over_the_authenticated_page(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started()
-        run = self.get('run', path=path)
-        self.assertEqual((run['state'], run['review'], run['review_level']), ('waiting', None, 'balanced'))
-        shown = self.get('gate', path=path, artifact='research-plan')
-        self.assertEqual((shown['waiting'], shown['decisions'][0]), (True, 'approve'))
-        self.post('decide', {'path': path, 'artifact': 'research-plan', 'decision': 'approve',
-                             'seen': shown['sha256']})
-        run = self.get('run', path=path)
-        self.assertEqual(run['review']['phase'], 'direction')
-        self.post('review', {'path': path, 'expected': 'old-version', 'decision': 'approve'}, expect=409)
-        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
-        self.assertEqual(run['review']['phase'], 'final')
-        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
-        self.assertEqual(run['state'], 'done')
-
-
 class RunTests(PageCase):
     def test_a_run_is_described_field_for_field(self):
         self.workers.cost = 0.5
@@ -1829,23 +1790,8 @@ class ListTests(PageCase):
     def listed(self) -> dict:
         return {item['title']: item for item in self.get('trainings')['trainings']}
 
-    def test_each_training_carries_its_run_or_none(self):
-        path, chat = self.saved_started(), self.chat()
-        listed = self.listed()
-        self.assertEqual(listed['Rolling restarts']['run'], {
-            'state': 'waiting', 'sentence': 'The research plan is waiting for your review.',
-            'can_migrate_desk': True})
-        self.assertIsNone(listed['Started in a chat']['run'])
-        self.assertEqual(self.get('training', path=path)['run'],
-                         listed['Rolling restarts']['run'])
-        self.assertIsNone(self.get('training', path=str(chat))['run'])
-        gate = listed['Rolling restarts']
-        self.assertEqual((gate['state'], gate['waiting']['artifact'], gate['approval']),
-                         ('needs-you', 'research-plan', 'page'))
-        self.assertEqual(self.get('trainings')['needs'], 1)
-
     def test_list_and_detail_keep_desk_navigation_for_finished_and_desk_runs(self):
-        path = self.saved_started()
+        path = self.started()
         brief = self.engine.brief(path)
         for state, flow, can_open in (('done', None, True), ('done', None, False),
                                       ('working', 'desk', False)):
@@ -1885,16 +1831,6 @@ class ListTests(PageCase):
         self.assertTrue(item['sentence'].startswith('This step did not work in 3 tries'))
         self.assertEqual(item['waiting']['question'], None)
 
-    def test_a_run_that_is_only_halted_does_not_need_the_person(self):
-        path = self.saved_started()
-        self.post('run', {'path': path, 'action': 'stop'})
-        self.post('decide', {'path': path, 'artifact': 'research-plan', 'decision': 'approve',
-                             'seen': workspace.sha256_file(Path(path) / pipeline.PLAN)})
-        found = self.get('trainings')
-        item = found['trainings'][0]
-        self.assertEqual((found['needs'], item['state'], item['run'], item['sentence']), (
-            0, 'in-progress', {'state': 'stopped', 'sentence': STOPPED, 'can_migrate_desk': True}, STOPPED))
-
     def test_reading_never_starts_or_wakes_a_run(self):
         self.workers.then('research-plan', fails(), fails(), fails(), asks('Which platform?'))
         failed = self.started()
@@ -1921,71 +1857,6 @@ class DecideTests(PageCase):
         return self.post('decide', {'path': path, 'artifact': name, 'decision': 'approve',
                                     'seen': workspace.sha256_file(file)}, expect)
 
-    def test_the_last_approval_says_the_training_is_finished_and_says_approved_once(self):
-        path = self.saved_started()
-        for name in ('research-plan', 'research', 'blueprint', 'document', 'brief'):
-            self.approve(path, name)
-        said = self.approve(path, 'scenario:main')
-        self.assertEqual(said['said'], 'Approved. This training is finished, with 1 thing '
-                         'left out or limited.')
-        self.assertIsNone(said['next'])
-        self.assertEqual(self.get('run', path=path)['state'], 'done')
-
-    def test_the_last_approval_before_the_deck_says_the_deck_is_all_that_is_left(self):
-        path = self.saved_started(deck_target='pptx')
-        for name in ('research-plan', 'research', 'blueprint', 'document', 'brief'):
-            self.approve(path, name)
-        said = self.approve(path, 'scenario:main')
-        self.assertEqual(said['said'], f'Approved. {left(pipeline.DECK_LEFT)}')
-        run = self.get('run', path=path)
-        self.assertEqual((run['state'], run['deck_left']), (
-            'done', {'says': left(pipeline.DECK_LEFT), 'artifact': 'deck'}))
-        item = self.get('trainings')['trainings'][0]
-        self.assertEqual((item['state'], item['run']['state'], item['sentence']),
-                         ('in-progress', 'done', left(pipeline.DECK_LEFT)))
-        open_stages = [stage['stage'] for stage in item['stages']
-                       if stage['state'] not in ('done', 'left-out')]
-        self.assertEqual(open_stages, ['deck', 'package'],
-                         'the deck is the only stage left besides the wrap-up')
-        said = self.post('decide', {'path': path, 'artifact': run['deck_left']['artifact'],
-                                    'decision': 'skip', 'note': 'No slides for this one.'})
-        self.assertEqual(said['said'], 'This stage is left out. You can bring it back from '
-                         'the training at any time. This training is finished, with 1 thing '
-                         'left out or limited.')
-        item = self.get('trainings')['trainings'][0]
-        self.assertEqual((item['state'], item['run']['state']), ('finished', 'done'))
-        self.assertEqual(self.get('run', path=path)['finished']['index'], 'README.md')
-
-    def test_a_decision_made_through_the_desks_own_address_wakes_the_run(self):
-        path = self.saved_started()
-        gate = self.get('gate', path=path, artifact='research-plan')
-        self.assertEqual((gate['waiting'], gate['decisions'][0], gate['question']),
-                         (True, 'approve', 'Approve the research plan?'))
-        self.assertIn('Checked for you: 1 check passed.', gate['review'])
-        said = self.approve(path, 'research-plan')
-        self.assertEqual(said['decided']['by'], 'page')
-        self.assertEqual(said['said'],
-                         'Approved. The research report is waiting for your review.')
-        for word in ('assistant', 'conversation'):
-            self.assertNotIn(word, said['said'])
-        self.assertEqual(said['next'], {
-            'path': path, 'title': 'Rolling restarts', 'artifact': 'research',
-            'sentence': 'The research report is waiting for your review.'})
-        self.assertEqual(len(self.workers.of('question')), 4)
-        self.assertEqual(self.git('status', '--porcelain'), '')
-        self.assertIn('Rolling restarts: The research plan was approved on the page.',
-                      self.log())
-
-    def test_a_decision_the_desk_refuses_changes_nothing_and_wakes_nothing(self):
-        path = self.saved_started()
-        before = self.on_disk()
-        said = self.post('decide', {'path': path, 'artifact': 'research-plan',
-                                    'decision': 'approve', 'seen': 'another-version'}, 409)
-        self.assertIn('has changed since it was opened', said['error'])
-        self.post('decide', {'path': path, 'artifact': 'research-plan',
-                             'decision': 'revise'}, 409)
-        self.assertEqual((self.on_disk(), len(self.workers.jobs)), (before, 1))
-
     def test_a_training_no_run_is_driving_is_decided_as_the_desk_always_did(self):
         chat = self.base / 'started-in-a-chat'
         chat.mkdir()
@@ -1996,22 +1867,6 @@ class DecideTests(PageCase):
         self.assertEqual(said['said'], f"{desk.SAID['skip']} {desk.BACK_TO_CHAT}")
         self.assertEqual(self.post('approval', {'path': str(chat), 'mode': 'chat'}),
                          {'approval': 'chat'})
-
-    def test_decisions_cannot_be_moved_to_a_conversation_while_a_run_is_driving(self):
-        path = self.saved_started()
-        said = self.post('approval', {'path': path, 'mode': 'chat'}, 409)
-        self.assertEqual(said['error'], 'The runner is driving this training, so its '
-                         'decisions are made on the page.')
-        self.assertEqual(workspace.status(Path(path))['approval'], 'page')
-        self.assertEqual(self.post('approval', {'path': path, 'mode': 'page'}),
-                         {'approval': 'page'})
-        self.to_end(Path(path))
-        self.assertEqual(self.get('run', path=path)['state'], 'done')
-        self.assertEqual(self.post('approval', {'path': path, 'mode': 'chat'}),
-                         {'approval': 'chat'})
-        self.assertEqual(self.git('status', '--porcelain'), '')
-        self.assertEqual(self.log()[-1],
-                         'Rolling restarts: decisions are now made in the conversation')
 
 
 class LaterTests(PageCase):
@@ -2123,19 +1978,6 @@ class LaterTests(PageCase):
                                       'content': self.sent(large)})
         self.assertEqual(run['documents']['added'][0]['bytes'], len(large))
 
-    def test_the_page_updates_the_research_with_a_later_document(self):
-        path = self.saved_started(source_scope='supplied-only')
-        root = Path(path)
-        self.engine.supply(root, 'add', 'handbook.txt', b'Capacity holds only when more than '
-                           b'one instance is running.\n')
-        self.engine.supply(root, 'done')
-        self.to_gate(root, 'research')
-        self.engine.supply(root, 'add', 'more.txt', b'More.\n')
-        with mock.patch.object(self.engine, 'carry_on'):   # the request, before it runs
-            run = self.post('documents', {'path': path, 'action': 'update'})
-        self.assertEqual(run['documents']['later'], [])
-        self.assertEqual(workspace.load(root)['requests'][-1]['added'], ['more.txt'])
-
     def test_the_copies_are_made_again_on_the_page(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'
         path = self.started(copies=['google'])
@@ -2154,38 +1996,6 @@ class LaterTests(PageCase):
             ('brief', 'not-made', None, None)],
             'the brief is not marked ready yet, so no copy of it is made')
         self.assertEqual(self.post('copies', {}, 400)['error'], 'Give path as text.')
-
-    def test_a_scenarios_gate_says_whose_file_it_is(self):
-        path = self.saved_started()
-        root = Path(path)
-        self.to_gate(root, 'blueprint')
-        (root / 'scenarios').mkdir()
-        (root / 'scenarios' / 'objection.md').write_text(SCENARIO)
-        self.to_gate(root, 'scenario:main')
-        self.assertEqual(self.get('gate', path=path, artifact='scenario:main')['whose'],
-                         'runner')
-        theirs = self.get('gate', path=path, artifact='scenario:objection')
-        self.assertEqual((theirs['whose'], theirs['label']),
-                         ('you', 'The practice scenario "objection"'))
-        self.assertNotIn('whose', self.get('gate', path=path, artifact='document'))
-        chat = self.base / 'started-in-a-chat'
-        chat.mkdir()
-        workspace.init(chat, 'Started in a chat')
-        home.remember(chat, 'Started in a chat', [])
-        (chat / 'scenario.md').write_text(SCENARIO)
-        self.assertIsNone(self.get('gate', path=str(chat), artifact='scenario:main')['whose'],
-                          'with no run, nobody recorded who wrote it')
-
-    def test_a_yoodli_scenarios_gate_names_the_scenario_to_show_beside_it(self):
-        path = self.saved_started(yoodli=True, levels=['101'])
-        self.to_gate(Path(path), 'yoodli:main@101')
-        shown = self.get('gate', path=path, artifact='yoodli:main@101')
-        self.assertEqual(shown['beside'], {'artifact': 'scenario:main@101',
-                                           'label': 'The level 101 practice scenario'})
-        self.assertNotIn('whose', shown)
-        beside = self.get('file', path=path, artifact=shown['beside']['artifact'])
-        self.assertEqual((beside['file'], beside['text']), ('101/scenario.md', SCENARIO))
-        self.assertIn('Which goal carries each success criterion', shown['review'])
 
     def test_the_index_is_read_as_a_file_once_it_is_written(self):
         path = self.started()
@@ -2260,19 +2070,6 @@ class WireTests(WireCase):
         self.assertEqual(self.ask('/api/capabilities', token=False)[0], 403)
         self.assertTrue(self.server.url.endswith(f'#token={self.server.token}'))
         self.assertNotIn(self.server.token, self.server.address)
-
-    def test_a_training_is_started_decided_and_watched_over_the_wire(self):
-        path = str(self.saved_start())
-        run = json.loads(self.ask('/api/run?' + urlencode({'path': path}))[2])
-        self.assertEqual((run['state'], sorted(run)), ('waiting', RUN_KEYS))
-        seen = workspace.sha256_file(Path(path) / pipeline.PLAN)
-        status, _, body = self.ask('/api/decide', {
-            'path': path, 'artifact': 'research-plan', 'decision': 'approve', 'seen': seen})
-        self.assertEqual(status, 200, body)
-        self.assertEqual(workspace.status(Path(path))['gate'], 'research')
-        listed = json.loads(self.ask('/api/trainings')[2])
-        self.assertEqual((listed['needs'], listed['trainings'][0]['run']['state']),
-                         (1, 'waiting'))
 
     def test_a_change_without_the_key_the_origin_or_json_is_refused_over_the_wire(self):
         before = len(self.engine.trainings())
@@ -2357,53 +2154,6 @@ class WireTests(WireCase):
     def test_stopping_the_server_ends_the_engine(self):
         self.server.stop()
         self.assertTrue(self.engine._closing)
-
-
-class LiveWireTests(WireCase):
-    """The whole of it as the runner serves it: threads of its own, and a real connection."""
-
-    BACKGROUND = True
-
-    def run_of(self, path: str) -> dict:
-        return json.loads(self.ask('/api/run?' + urlencode({'path': path}))[2])
-
-    def until(self, path: str, check, seconds: float = 60) -> dict:
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            run = self.run_of(path)
-            if check(run):
-                return run
-            time.sleep(0.05)
-        self.fail(f'It did not happen in time: {run}')
-
-    def test_a_training_goes_from_the_form_to_finished_on_the_page(self):
-        root = self.saved_start(levels=['101', '201'])
-        path, decided = str(root), 0
-        for gate in ('research-plan', 'research', 'blueprint@101', 'blueprint@201',
-                     'document@101', 'brief@101', 'scenario:main@101', 'document@201',
-                     'brief@201', 'scenario:main@201'):
-            self.until(path, lambda run: run['state'] == 'waiting'
-                       and workspace.status(root)['gate'] == gate)
-            shown = json.loads(self.ask('/api/gate?' + urlencode(
-                {'path': path, 'artifact': gate}))[2])
-            self.assertEqual((shown['waiting'], shown['decisions'][0]), (True, 'approve'))
-            status, _, body = self.ask('/api/decide', {
-                'path': path, 'artifact': gate, 'decision': 'approve',
-                'seen': shown['sha256']})
-            self.assertEqual(status, 200, body)
-            decided += 1
-        done = self.until(path, lambda run: run['state'] == 'done')
-        self.assertEqual(decided, 10)
-        self.assertEqual({step['status'] for step in done['steps']}, {'done'})
-        self.assertEqual((done['workers'], done['finished']['ready']), ([], True))
-        self.assertEqual(len(self.workers.jobs), 13)
-        self.until(path, lambda run: self.git('status', '--porcelain') == '')
-        approved = [line for line in self.log() if line.endswith('approved on the page.')]
-        self.assertEqual(len(approved), 10)
-        status, _, body = self.ask('/api/file?' + urlencode(
-            {'path': path, 'artifact': done['finished']['index']}))
-        self.assertEqual((status, json.loads(body)['text'].splitlines()[0]),
-                         (200, '# Rolling restarts'))
 
 
 class PlainDeskTests(unittest.TestCase):
@@ -2745,56 +2495,6 @@ class PullCopyTests(PageCase):
         self.assertEqual(refused, [{'error': 'It is being worked on. Bring the Doc\'s changes in once it stops.'}])
 
 
-class DecisionMessageTests(PageCase):
-    def test_row_125_reaching_the_next_stop_keeps_the_existing_audit_commit(self):
-        path = self.saved_started()
-        root = Path(path)
-        self.to_gate(root, 'document')
-        self.decide(root, 'document')
-        self.assertIsNone(self.get('run', path=path)['decided'])
-        self.assertTrue(self.engine._load(root)['last_decision_stop'])
-        self.assertEqual(self.log()[-1], 'Rolling restarts: ask for a review of the brief')
-        self.assertEqual(self.git('status', '--porcelain'), '')
-
-    def test_combined_approval_persists_the_next_step_and_done_yoodli_fields(self):
-        path = self.saved_started(review_level='balanced', yoodli=True)
-        root = Path(path)
-        self.decide(root, 'research-plan')
-        working = []
-
-        def build(tools, job):
-            working.append(self.get('run', path=path)['decided'])
-            self.workers.brief(tools, job)
-
-        self.workers.then('brief', build)
-        run = self.get('run', path=path)
-        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
-        self.assertEqual(working[0]['label'], 'the first drafts')
-        self.assertIsNone(run['decided'])
-        run = self.post('review', {'path': path, 'expected': run['review']['expected'], 'decision': 'approve'})
-        self.assertEqual(run['finished']['yoodli'][0]['artifact'], 'yoodli:main')
-        self.assertIn('Roleplay name', run['finished']['yoodli'][0]['text'])
-
-    def test_a_decision_is_said_until_the_next_stop(self):
-        path = self.saved_started()
-        root = Path(path)
-        self.to_gate(root, 'document')
-        working = []
-
-        def build(tools, job):
-            working.append(self.get('run', path=path)['decided'])
-            self.workers.brief(tools, job)
-
-        self.workers.then('brief', build)
-        self.decide(root, 'document')
-        self.assertEqual(working[0]['label'], 'the learner guide')
-        self.assertEqual(working[0]['decision'], 'approve')
-        self.assertIn('brief', working[0]['next'])
-        self.assertIsNone(self.get('run', path=path)['decided'])
-        record = self.engine._load(root)
-        self.assertEqual(record['last_decision']['label'], 'the learner guide')
-
-
 FORBIDDEN = ('artifact', 'stale', 'lineage', 'your review')
 CARD_KEYS = ['actions', 'checks', 'held', 'kind', 'label', 'level', 'name', 'needs', 'notes',
              'says', 'seen', 'state']
@@ -2825,123 +2525,6 @@ class DeskPageTests(PageCase):
         """Every sentence the desk's view says, to look for words it must never use."""
         return [*(card['says'] for card in view['cards']), *view['needs'],
                 view['progress']['line'], view['progress']['doing']]
-
-    def test_finishing_routes_are_authenticated_and_saved_runs_refuse_them(self):
-        path = self.desk(materials=['document', 'brief'], levels=['101'])
-        name = 'document@101'
-        card = self.get('drafts/card', path=path, name=name)
-        sent = {'path': path, 'name': name, 'tool': 'coverage', 'seen': card['revision']}
-        self.post('drafts/finish', sent, expect=403, token=False)
-        checked = self.post('drafts/finish', sent)
-        self.assertIn('coverage', checked['finishing'])
-        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
-            self.post('drafts/finish', {**sent, 'tool': tool}, expect=403, token=False)
-        for route in ('apply', 'skip'):
-            self.post('drafts/' + route, {**sent, 'job': 'a' * 32, 'items': []},
-                      expect=403, token=False)
-        proof = self.get('drafts/proofread', path=path, name=name)
-        self.assertIn('findings', proof)
-        saved = self.saved_started(title='Saved training')
-        for route in ('finish', 'apply', 'skip'):
-            refused = self.post('drafts/' + route, {**sent, 'path': saved}, expect=409)
-            self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
-        self.get('drafts/proofread', path=saved, name=name, expect=409)
-        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
-            refused = self.post('drafts/finish', {**sent, 'path': saved, 'tool': tool}, expect=409)
-            self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
-
-    def test_added_sources_have_a_read_only_price_and_authenticated_batch_route(self):
-        path = self.desk(materials=['document', 'brief'])
-        before = self.on_disk()
-        price = self.get('drafts/source-price', path=path)
-        self.assertEqual(price['afterwards'], drafts.AFTERWARDS)
-        self.assertEqual(self.on_disk(), before)
-        sent = {'path': path, 'files': [{'name': 'notes.txt', 'content': base64.b64encode(
-            b'Capacity holds only when more than one instance is running.').decode()}]}
-        self.post('drafts/source', sent, expect=403, token=False)
-        self.assertEqual(self.on_disk(), before)
-        malformed = {**sent, 'files': [sent['files'][0], {'name': 'bad.txt', 'content': '%%%'}]}
-        self.post('drafts/source', malformed, expect=400)
-        self.assertEqual(self.on_disk(), before)
-        added = self.post('drafts/source', sent)
-        self.assertEqual(added['sources']['documents'][0]['name'], 'notes.txt')
-        self.assertTrue(any(card['held'] for card in added['cards']))
-        saved = self.saved_started(title='Saved training')
-        refused = self.post('drafts/source', {**sent, 'path': saved}, expect=409)
-        self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
-        self.get('drafts/source-price', path=saved, expect=409)
-        self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers()), 12_000_000)
-        self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers(token=False)), 64_000)
-
-    def test_bulk_updates_and_stop_are_authenticated_desk_actions(self):
-        path = self.desk(materials=['document', 'brief'], levels=['101', '201'])
-        root = Path(path)
-        self.engine.add_source(root, [{'name': 'notes.txt', 'data': QUOTE.encode()}])
-        before = self.on_disk()
-        self.post('drafts/update-all', {'path': path}, expect=403, token=False)
-        self.assertEqual(self.on_disk(), before)
-        self.post('drafts/update-all', {'path': path, 'level': '999'}, expect=409)
-        self.post('drafts/update-all', {'path': path, 'level': []}, expect=400)
-        with mock.patch.object(self.engine, 'carry_on'):
-            result = self.post('drafts/update-all', {'path': path, 'level': '101'})
-        chain = result['sources']['updates']['chain']['id']
-        self.post('drafts/stop-updates', {'path': path, 'chain': chain}, expect=403, token=False)
-        stopped = self.post('drafts/stop-updates', {'path': path, 'chain': chain})
-        self.assertEqual(stopped['sources']['updates']['chain']['status'], 'stopped')
-        self.assertFalse(drafts.updates(self.record(root)))
-        saved = self.saved_started(title='Saved training')
-        for route, extra in [('update-all', {}), ('stop-updates', {'chain': chain})]:
-            result = self.post('drafts/' + route, {'path': saved, **extra}, expect=409)
-            self.assertEqual(result['error'], drafts.NOT_ON_DESK)
-
-    def test_row_159_desk_and_review_routes_refuse_each_other(self):
-        path = self.desk(materials=['document', 'brief'])
-        root = Path(path)
-        saved = self.saved_started(title='Saved restarts')
-        before, commits = self.on_disk(), self.log()
-        name = 'blueprint'
-        for target, sent in (
-                ('decide', {'artifact': name, 'decision': 'approve',
-                            'seen': hashed(root, name)}),
-                ('review', {'expected': 'x', 'decision': 'approve'}),
-                ('outline', {'decision': 'approve'}),
-                ('look', {'choice': 'first'})):
-            with self.subTest(route=target):
-                said = self.post(target, {'path': path, **sent}, 409)
-                self.assertEqual(said['error'], drafts.ON_DESK)
-        said = self.get('gate', 409, path=path, artifact=name)
-        self.assertEqual(said['error'], drafts.ON_DESK)
-        self.assertEqual(self.get('drafts', 409, path=saved)['error'], drafts.NOT_ON_DESK)
-        for route, sent in (('ready', {'name': 'research-plan', 'seen': 'x'}),
-                            ('level-ready', {'level': '', 'seen': {}}),
-                            ('update', {'name': 'research-plan'}),
-                            ('keep', {'name': 'research-plan', 'reason': 'Fine.',
-                                      'seen': 'x'}),
-                            ('send', {'name': 'research-plan'}),
-                            ('save', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
-                                      'text': 'Typed.', 'session': 'ab12'}),
-                            ('restore', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
-                                         'index': 0}),
-                            ('share', {}),
-                            ('note', {'name': 'blueprint', 'seen': 1, 'note': 'Change.'}),
-                            ('revise', {'name': 'document', 'seen': 1, 'note': 'Change.'}),
-                            ('selection', {'name': 'document', 'part': 'opening', 'seen': 1,
-                                           'text': 'word', 'start': 0, 'action': 'shorten'}),
-                            ('stop', {'job': 'unknown'}), ('retry', {'job': 'unknown'})):
-            with self.subTest(route=route):
-                said = self.post(f'drafts/{route}', {'path': saved, **sent}, 409)
-                self.assertEqual(said['error'], drafts.NOT_ON_DESK)
-        said = self.get('drafts/versions', 409, path=saved, name='blueprint', part='opening')
-        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
-        said = self.get('drafts/card', 409, path=saved, name='blueprint')
-        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
-        self.assertEqual((self.on_disk(), self.log()), (before, commits),
-                         'nothing was changed or committed')
-        # Each still answers what is its own as it always did.
-        self.assertTrue(self.get('gate', path=saved, artifact='research-plan')['waiting'])
-        self.assertEqual(sorted(self.get('drafts', path=path)),
-                         ['cards', 'docs', 'execution', 'flow', 'index_written', 'job', 'levels',
-                          'library', 'needs', 'progress', 'sources', 'standing', 'team', 'title'])
 
     def test_reading_the_desk_changes_nothing(self):
         path = self.desk(levels=['101'], materials=['document', 'brief'])
@@ -3100,13 +2683,6 @@ class DeskPageTests(PageCase):
         found = self.engine._survey(root, record)
         self.assertEqual(drafts.start_minutes(root, record, found),
                          round(6 + 1 + 3 + 8 * 1.25))
-
-    def test_a_desk_run_keeps_how_long_its_steps_took_here(self):
-        self.saved_started(title='Saved restarts', levels=['101'])
-        self.assertFalse(drafts.times().exists(), 'a saved training keeps no times')
-        self.desk(levels=['101'], materials=['document', 'brief'])
-        kept = json.loads(drafts.times().read_text(encoding='utf-8'))
-        self.assertEqual(sorted(kept), ['blueprint', 'brief', 'document', 'research'])
 
     def test_what_keeps_a_ready_training_from_its_index_is_named(self):
         path = self.desk(levels=['101'], materials=['brief'])
@@ -3414,16 +2990,18 @@ class DeskTeamTests(TeamCase):
     def test_a_finished_saved_training_must_be_claimed_before_opening(self):
         from stand_ins.research import saved_queue
         self.research = saved_queue()
+        import saved_fixtures
         with self.be(self.alex):
-            root = self.saved_start(levels=['101'], materials=['document'])
-            self.to_end(root)
-            self.assertEqual(self.engine.view(root)['state'], 'done')
+            root = saved_fixtures.load(self, 'finished')
+            # Its stored record names the computer that made it, so here it waits to be
+            # taken over before it opens on the desk.
+            self.assertIn(self.engine.view(root)['saved_record']['outcome'], ('finished', 'waiting'))
             self.engine.share()
         self.as_(self.blake, self.blake.engine.fetch)
         theirs = self.theirs(self.blake, root)
         detail = self.ask(self.blake, 'training', path=str(theirs))
         run = self.ask(self.blake, 'run', path=str(theirs))
-        self.assertFalse(detail['run']['can_open_desk'])
+        self.assertFalse(detail['run'].get('can_open_desk'))
         self.assertFalse(run['can_open_desk'])
         self.ask(self.blake, 'drafts/open', {'path': str(theirs)}, expect=409)
         claimed = self.ask(self.blake, 'drive', {'path': str(theirs), 'action': 'take'})

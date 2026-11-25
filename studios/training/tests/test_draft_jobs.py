@@ -26,18 +26,15 @@ class DraftJobTests(DeckCase):
         return root
 
     def saved_queue_desk(self, ident):
-        # Exercise a finished, explicitly saved queue-format training on the desk.
+        # Exercise a finished, explicitly saved queue-format training on the desk. The saved
+        # flow made it with one more planned question, `ident`; it is loaded as it stored it.
+        import saved_fixtures
         from stand_ins.research import saved_queue
         from runner import draft_jobs
         self.research = saved_queue()
         self.jobs = draft_jobs
-        self.workers.plan = {**self.workers.plan, 'items': [
-            *self.workers.plan['items'], {'id': ident, 'question': 'Extra finding'}]}
-        root = self.saved_begin(levels=['101'])
-        self.to_end(root)
-        self.engine.outline(root, '101', 'approve')
-        self.to_end(root)
-        self.assertEqual(self.state(root), 'done', self.view(root))
+        root = saved_fixtures.load(self, 'finished-queue-' + ident)
+        self.assertEqual(self.view(root)['saved_record']['outcome'], 'finished')
         self.engine.open_on_desk(root)
         self.assertNotIn('research_contract', workspace.load(root))
         return root
@@ -683,16 +680,3 @@ class DraftJobTests(DeckCase):
         self.workers.then('document', worker)
         self.engine.update(root, self.NAME)
         self.assertIsNone(self.record(root)['problem'], self.record(root)['problem'])
-
-    def test_saved_runs_do_not_recover_or_run_desk_job_metadata(self):
-        root = self.saved_begin()
-        with self.engine.files:
-            record = self.record(root)
-            record['drafts'] = {'jobs': [{'id': 'synthetic', 'status': 'working'}]}
-            self.engine._store(root, record)
-            self.engine._commit(root, 'synthetic saved run metadata')
-        file = root / drafts.RECORD
-        before = file.read_bytes()
-        self.engine._tidy()
-        self.assertEqual(file.read_bytes(), before)
-        self.assertEqual(self.workers.of('part'), [])

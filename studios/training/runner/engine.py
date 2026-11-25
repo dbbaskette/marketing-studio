@@ -465,9 +465,11 @@ SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which n
               'continues. Open it on the desk, or start new work from it.')
 # What clears each thing a saved training can wait for before it opens on the desk.
 WAITS_FOR = {
-    'busy': ('A step of the earlier flow, or a lock it took, is still marked as in progress in '
-             'it.', 'If nothing is still working on it, the next start of Training Studio clears '
-             'a leftover marker. Check again then.'),
+    'busy': ('Something else in this workspace is in progress or was interrupted.',
+             'Check again once it is done, or start new work from this training meanwhile.'),
+    'running': (None, 'It opens on the desk once that step ends. Check again then.'),
+    'opening': ('Opening it on the desk was interrupted part way.', 'Finish opening on the '
+                'desk completes the opening you previewed, or puts it back as it was.'),
     'owner': ('Another computer runs this training.', 'Take it over to open it on the desk '
               'here.'),
     'shared': ('Its saved records, or files they depend on, have changes that are not committed '
@@ -721,15 +723,8 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True, section_synthesis=True,
-                 saved_flow=False):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True, section_synthesis=True):
         self.adapters = dict(adapters or agents.AGENTS)
-        # The earlier step-by-step flow no longer continues saved work: a training it saved
-        # opens on its saved record (`saved_record`). Only the root suite's shared deck
-        # contract between Training Studio and Presentation Studio (tests/deck_contract.py)
-        # still takes a deck through that flow's review levels, and the suite's tests of
-        # that flow with it; `saved_flow` is theirs alone, and no runner sets it.
-        self.saved_flow = saved_flow
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
         self._asked: float | None = None    # when a page last asked anything
@@ -1706,6 +1701,8 @@ class Engine(Reviewing):
         if space is None:
             return ours
         for root in self.trainings():
+            if self._run(root).busy:
+                continue   # a step running in this process is never touched
             try:
                 with gitstate.workspace_locked(space, self.files, configured=True):
                     gitstate.inside(space, root / IN_HAND)
@@ -1737,7 +1734,13 @@ class Engine(Reviewing):
                             self._store(root, resumed)
                             self._commit(root, 'keep interrupted desk changes ready to try again')
             except (WorkspaceError, OSError):
-                continue  # its view says what is wrong; the others still run
+                # A training whose run record cannot be read at all keeps no leftover marker:
+                # only the marker file goes. Its view says what is wrong; the others still run.
+                if self.saved_kind(root) == 'unread':
+                    marker = root / IN_HAND
+                    if marker.is_file() and not marker.is_symlink():
+                        marker.unlink()
+                continue
             ours.append(root)
         return ours
 
@@ -1839,7 +1842,7 @@ class Engine(Reviewing):
                 record = self._load(root)
                 if run.gone or not self._ours(record) or drafts.in_conversation(record):
                     return  # someone else drives it, or nobody does
-                if not drafts.on_desk(record) and not self.saved_flow:
+                if not drafts.on_desk(record):
                     return  # the earlier step-by-step flow no longer continues
                 pending = next((job for job in (record.get('drafts') or {}).get('jobs', [])
                                 if job.get('status') == 'queued'), None)
@@ -1872,21 +1875,6 @@ class Engine(Reviewing):
                     with self.files:
                         self._edits_first(root)
                     self._desk_gate(root, found)
-                    continue
-                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
-                                                               'look') \
-                        and not deck_content.checkpoint(record, step.step.id) \
-                        and review_policy.automatic(record, 'training', step.step.id,
-                                                    holding=pipeline.holding(root, found,
-                                                                             step.step)):
-                    if step.kind == 'look':
-                        self._look_default(root, step.step)
-                    elif pipeline.bare(step.step.id) == 'gate:deck-outline':
-                        if step.kind == 'gate':
-                            self._ask(root, run, found, step)
-                        self._policy_outline(root, self._survey(root, self._load(root)))
-                    else:
-                        self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
                     with self.files:
@@ -1969,13 +1957,13 @@ class Engine(Reviewing):
             step: pipeline.Next) -> None:
         if step.step.id == 'scan':
             return outline_first.scan(self, root, run, found, step)
-        if step.step.id.startswith('review-sample'):
-            return self._review_sample(root, found, step.step)
         drawing = DECK.get(pipeline.bare(step.step.id)) if step.step.stage == 'deck' else None
         if drawing:
             getattr(self, drawing)(root, run, found, step)
         elif step.kind == 'gate':
-            self._gate(root, step.step)
+            # A desk run passes every gate on its desk (`_desk_gate`); the one it waits at,
+            # what a deck says, is drawn above. The earlier flow's gates went with it (#542).
+            raise WorkspaceError(f'A desk training has no gate to wait at: {step.step.label}.')
         elif step.step.id == 'research-start':
             self._hand_over(root, step.step)
         elif step.step.id == 'research-report':
@@ -2074,16 +2062,6 @@ class Engine(Reviewing):
     @staticmethod
     def _level(step: pipeline.Step) -> str | None:
         return workspace.split(step.artifact)[1] if step.artifact else None
-
-    def _gate(self, root: Path, step: pipeline.Step) -> None:
-        """Put a checked draft to the person, through the core, and wait."""
-        it = workspace.label(step.artifact)
-        with self.files:
-            workspace.checkpoint(root, stage=step.stage, gate=step.artifact,
-                                 question=f'Approve {it}?', level=self._level(step),
-                                 next_step=f'Waiting for your review of {it}')
-            self._commit(root, f'ask for a review of {it}')
-            activity_log.checkpoint(root / ACTIVITY, 'ready', step.id)
 
     # --- the code steps after the blueprint ----------------------------------------------
 
@@ -2706,44 +2684,6 @@ class Engine(Reviewing):
             it = workspace.label(step.artifact)
             self._commit(root, f'continue the look of {it} on the desk' if desk else
                          f"use the brand's default look for {it}, under the saved review level")
-
-    def look(self, path, level: str | None, choice: str, words: str | None = None) -> dict:
-        """Record the look a person chose for a deck from the brand's samples, with their
-        words, as the page heard it, and carry on. AGAIN draws the samples again; DEFAULT,
-        offered when they could not be rendered, carries on in the brand's default look.
-        Nothing else calls this."""
-        root = self._held(path)
-        with self.files:
-            record = self._load(root)
-            step = self._survey(root, record).next
-            if step.kind != 'look' or self._level(step.step) != level:
-                raise WorkspaceError('No look is waiting to be chosen for that deck.')
-            shown = pipeline.read_built(root, level).get('look') or {}
-            if choice == pipeline.AGAIN_LOOK:
-                self._note(root, level, look=None)
-                self._commit(root, f'draw the looks of {workspace.label(step.step.artifact)} '
-                                   'again')
-            else:
-                if choice == pipeline.DEFAULT_LOOK:
-                    if not shown.get('failed'):
-                        raise WorkspaceError('Choose one of the looks the brand drew.')
-                    named = "the brand's default"
-                    said = deck_flow.PROCEED_WORDS.format(name=named)
-                else:
-                    named = next((look['name'] for look in shown.get('looks') or ()
-                                  if look['id'] == choice), None)
-                    if named is None:
-                        raise WorkspaceError('Choose one of the looks the brand drew for this '
-                                             'deck.')
-                    said = (words or '').strip()[:NEXT_NOTE] \
-                        or pipeline.NO_COMMENT.format(name=named)
-                if self._choose_look(root, level, choice, said, 'page'):
-                    self._commit(root, f'choose the look of '
-                                       f'{workspace.label(step.step.artifact)}: {named}')
-                else:
-                    self._commit(root, 'draw the looks again: what the deck says changed')
-        self.carry_on(root)
-        return self.view(root)
 
     def _guide(self, work: Path, chosen: tuple, told: Path, saved: dict,
                root: Path | None = None) -> dict:
@@ -7729,7 +7669,7 @@ class Engine(Reviewing):
         more. Nothing waits for the person and nothing runs; whether it opens on the desk is
         said when it is opened."""
         driver, mine = self._saved_driver(root)
-        return {'state': 'saved', 'sentence': SAVED_BRIEF if kind == 'saved' else UNREAD_BRIEF,
+        return {'state': 'saved', 'sentence': UNREAD_BRIEF if kind == 'unread' else SAVED_BRIEF,
                 'needs': False, 'question': None, 'mine': mine, 'driver': driver,
                 'last_shared': None, 'notice': None, 'busy_since': None, 'saved': kind}
 
@@ -7882,8 +7822,12 @@ class Engine(Reviewing):
         from runner import desk_migration
         if (root / drafts.RECORD).is_symlink():
             return None
+        # An opening on the desk that was interrupted waits for the person to finish it.
+        pending = root / desk_migration.format.PENDING
+        if pending.is_file() and not pending.is_symlink():
+            return 'opening'
         kind = desk_migration.record_kind(root)
-        return None if kind == 'desk' or (kind == 'saved' and self.saved_flow) else kind
+        return None if kind == 'desk' else kind
 
     def _refusal(self, root: Path) -> str | None:
         """The runner's own refusal of a training's records, or None when it reads them."""
@@ -7930,7 +7874,9 @@ class Engine(Reviewing):
         title = title if isinstance(title, str) and title.strip() else root.name
         driver, mine = self._saved_driver(root)
         refusal = self._refusal(root)
-        if kind == 'unread':
+        if kind == 'opening':
+            found = {'outcome': 'waiting', 'next': self._next(root)}
+        elif kind == 'unread':
             found = {'outcome': 'read-only', 'reason': desk_migration.UNREAD, 'next': 'new'}
         else:
             found = desk_migration.outcome(self, root) or {
@@ -7941,7 +7887,22 @@ class Engine(Reviewing):
                  'targets': []}
         sentence = UNREAD_RECORD if kind == 'unread' else SAVED_RECORD
         can_open = can_migrate = False
+        finished = None
+        if kind == 'opening':
+            # The token of the opening the person previewed, kept in its journal: finishing
+            # runs the existing recovery with it, and never applies anything else.
+            try:
+                journal = json.loads((root / desk_migration.format.PENDING).read_bytes())
+                expected = journal.get('expected') if isinstance(journal, dict) else None
+            except (OSError, ValueError):
+                expected = None
+            shown.update(waits=[self._waits('opening')], expected=expected
+                         if isinstance(expected, str) else None)
+            sentence = SAVED_WAITING
         if found['outcome'] == 'finished':
+            # A finished training keeps what it could do before: published as it stands,
+            # read by a teammate, its files read and downloaded in place.
+            finished = self._finished_shown(root)
             if not mine:
                 shown.update(outcome='waiting', waits=[self._waits('owner')])
                 sentence = SAVED_WAITING
@@ -7957,7 +7918,8 @@ class Engine(Reviewing):
                              next=found.get('next') or shown['next'])
             elif preview['blockers']:
                 shown.update(outcome='waiting', waits=[
-                    self._waits(self._waiting_on(said), said)
+                    self._busy_where(root) if self._waiting_on(said) == 'busy'
+                    else self._waits(self._waiting_on(said), said)
                     for said in dict.fromkeys(preview['blockers'])])
                 sentence = SAVED_WAITING
             else:
@@ -7967,7 +7929,19 @@ class Engine(Reviewing):
         return {'path': str(root), 'title': title, 'state': 'saved', 'flow': None,
                 'execution': 'saved', 'mine': mine, 'driver': driver, 'sentence': sentence,
                 'can_open_desk': can_open, 'can_migrate_desk': can_migrate,
-                'saved_record': shown}
+                'finished': finished, 'saved_record': shown}
+
+    def _finished_shown(self, root: Path) -> dict | None:
+        """What a finished saved training's record says of it as finished: whether it is
+        ready to use, and its index, for Publish. None where its records cannot be read."""
+        try:
+            record = self._load(root)
+            report = self.index.readiness(root, self._wanted(root, record))
+        except (WorkspaceError, OSError, ValueError):
+            return None
+        return {'ready': bool(report['ready']), 'index': report['file'],
+                'limitations': list(report['limitations']),
+                'blocking': list(report['blocking'])}
 
     @staticmethod
     def _waiting_on(said: str) -> str:
@@ -7980,7 +7954,21 @@ class Engine(Reviewing):
     @staticmethod
     def _waits(kind: str, said: str | None = None) -> dict:
         what, clears = WAITS_FOR[kind]
-        return {'kind': kind, 'what': what or said, 'clears': clears, 'take': kind == 'owner'}
+        return {'kind': kind, 'what': what or said, 'clears': clears, 'take': kind == 'owner',
+                'finish': kind == 'opening'}
+
+    def _busy_where(self, root: Path) -> dict:
+        """Why the workspace check is busy for a saved record, saying only what is known: a
+        step running now in a named training of this studio, or something else in the
+        workspace that is in progress or was interrupted."""
+        for other in self.trainings():
+            if self._run(other).busy:
+                try:
+                    title = workspace.load(other)['title']
+                except (WorkspaceError, OSError):
+                    title = other.name
+                return self._waits('running', f'A step is running now in “{title}”.')
+        return self._waits('busy')
 
     def _next(self, root: Path) -> str:
         """'copy' where a saved training's start form can be read, else 'new'."""

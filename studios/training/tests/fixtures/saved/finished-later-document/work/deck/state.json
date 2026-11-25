@@ -1,0 +1,178 @@
+{
+  "brand": {
+    "at": "2026-11-25T01:27:52Z",
+    "brand": "example-co",
+    "changed": null,
+    "contract": "brand-a17b3f/brand-contract.json",
+    "folder": "brand-a17b3f",
+    "guidance": {
+      "problem": "This brand skill is not the entry to slide building yet, so the deck's workers read the installed slides tool's own guidance."
+    },
+    "sha256": "1b546a819f0722a77f0b418b678a6411ac8ae73d0591f3b5a45c46f529c0aa66",
+    "told": "told-a17b3f",
+    "variant": "light",
+    "voice": "brand-a17b3f/VOICE.md"
+  },
+  "look": {
+    "at": "2026-11-25T01:27:52Z",
+    "brand": "1b546a819f0722a77f0b418b678a6411ac8ae73d0591f3b5a45c46f529c0aa66",
+    "outline": "665fb5b943755fd25d064f20e63a4adc25510d782ad8aa106fe2a63d6e99bfcf",
+    "unavailable": "This brand skill is too old to offer looks to choose from, so the deck is drawn in the brand's default direction, or in the slides tool's own where the brand gives none."
+  },
+  "rounds": [
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "audit_findings": [],
+      "audit_warnings": [
+        "Slide 2: Text under 18 points.",
+        "Slide 3: Text under 18 points.",
+        "Slide 3: Many words for one slide."
+      ],
+      "compiled": "start-f01947/whole-0f7e2a/compiled",
+      "deck": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f",
+      "file": "start-f01947/whole-0f7e2a/preview/deck.pptx",
+      "folder": "start-f01947/whole-0f7e2a",
+      "made_from": {
+        "section-1": "073f4d61b28a86363e8a37322019de870659339403a5c3629ebe813093eb61fc",
+        "section-2": "4c62f1a2eb8cd96a083548ca43bbd06c7c86aba1dfdd0c7898fa0e62e49f9073"
+      },
+      "preview": "start-f01947/whole-0f7e2a/preview",
+      "questions": [
+        "After three seconds, is the main point clear, and is it the claim in the title?",
+        "Does the eye land first on the element that carries the point?",
+        "Is there exactly one emphasis?",
+        "Does every element support the title?",
+        "Is each label inside or right beside what it names?",
+        "Is the space balanced, with nothing stranded or crowded?",
+        "Is the slide consistent with its neighbors in style, and different from them in layout unless they are meant to be compared?",
+        "Does every image and icon explain something?"
+      ],
+      "review": {
+        "at": "2026-11-25T01:27:52Z",
+        "coverage": {
+          "O1": [
+            2
+          ],
+          "O2": [
+            3
+          ],
+          "O3": [
+            4
+          ]
+        },
+        "findings": [],
+        "weakest": []
+      },
+      "screens": [
+        {
+          "blocking": false,
+          "codes": {
+            "SMALL_TEXT": 1
+          },
+          "number": 2,
+          "slide": "what-it-does"
+        },
+        {
+          "blocking": false,
+          "codes": {
+            "HIGH_TEXT_DENSITY": 1,
+            "SMALL_TEXT": 1
+          },
+          "number": 3,
+          "slide": "when-capacity-holds"
+        }
+      ],
+      "slides": [
+        {
+          "findings": [],
+          "id": "cover-restarts",
+          "number": 1,
+          "title": "Rolling restarts"
+        },
+        {
+          "findings": [],
+          "id": "what-it-does",
+          "number": 2,
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        {
+          "findings": [],
+          "id": "when-capacity-holds",
+          "number": 3,
+          "title": "Capacity holds only with more than one instance"
+        },
+        {
+          "findings": [],
+          "id": "the-objection",
+          "number": 4,
+          "title": "Rolling does not always mean zero downtime"
+        },
+        {
+          "findings": [],
+          "id": "check-yourself",
+          "number": 5,
+          "title": "Check what you can now explain"
+        },
+        {
+          "findings": [],
+          "id": "closing-practice",
+          "number": 6,
+          "title": "Next: practice the objection"
+        }
+      ],
+      "start": "start-f01947"
+    }
+  ],
+  "sections": {
+    "section-1": {
+      "file": "start-f01947/drawn/section-1-0.json",
+      "notes": "What I changed after looking: Nothing: it read well at once.\nWhat still bothers me: The second slide is the weaker.",
+      "pictures": [
+        1,
+        2
+      ],
+      "previews": 1,
+      "round": 0,
+      "sha256": "073f4d61b28a86363e8a37322019de870659339403a5c3629ebe813093eb61fc",
+      "start": "start-f01947"
+    },
+    "section-2": {
+      "file": "start-f01947/drawn/section-2-0.json",
+      "notes": "What I changed after looking: Nothing: it read well at once.\nWhat still bothers me: The second slide is the weaker.",
+      "pictures": [
+        1,
+        2
+      ],
+      "previews": 1,
+      "round": 0,
+      "sha256": "4c62f1a2eb8cd96a083548ca43bbd06c7c86aba1dfdd0c7898fa0e62e49f9073",
+      "start": "start-f01947"
+    }
+  },
+  "start": {
+    "at": "2026-11-25T01:27:52Z",
+    "brand": "1b546a819f0722a77f0b418b678a6411ac8ae73d0591f3b5a45c46f529c0aa66",
+    "design": null,
+    "folder": "start-f01947",
+    "look": null,
+    "outline": "665fb5b943755fd25d064f20e63a4adc25510d782ad8aa106fe2a63d6e99bfcf",
+    "sections": [
+      {
+        "file": "section-1.json",
+        "id": "section-1",
+        "slides": [
+          "what-it-does",
+          "when-capacity-holds"
+        ]
+      },
+      {
+        "file": "section-2.json",
+        "id": "section-2",
+        "slides": [
+          "the-objection",
+          "check-yourself"
+        ]
+      }
+    ]
+  }
+}

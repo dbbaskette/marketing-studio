@@ -380,7 +380,8 @@ class StatusTests(StudioCase):
 
 class SavedWorkTests(StudioCase):
     def test_saved_work_prints_the_report_and_changes_nothing(self):
-        root = self.saved_start()   # begun on the legacy queue, at its research plan
+        import saved_fixtures   # a saved training begun on the legacy queue, at its research plan
+        root = saved_fixtures.load(self, 'research-plan-gate')
         jobs = len(self.workers.jobs)
         files = {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
                  if path.is_file() and '.git' not in path.parts}
