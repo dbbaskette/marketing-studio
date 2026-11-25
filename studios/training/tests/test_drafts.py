@@ -630,6 +630,13 @@ class DeskReadyTests(DeckCase):
             self.assertIsNotNone(self.record(root).get('last_decision_stop'))
             self.view(root)
 
+    def test_mark_ready_is_the_desk_s_alone(self):
+        root = saved_fixtures.load(self, 'level-document-gate')
+        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
+            self.engine.mark_ready(root, 'intake', seen=self.seen(root, 'intake'))
+        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
+            self.engine.mark_level_ready(root, '101', {})
+
 
 class DeskTypingTests(DeckCase):
     """Typing on the desk saves one part of a guide, brief or plan into the material's file,

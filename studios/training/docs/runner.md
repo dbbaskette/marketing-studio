@@ -163,45 +163,11 @@ Saving writes only the values you changed on that screen, and only where the fil
 
 New trainings continue without review stops and show materials as they arrive. Read and edit them, request changes, settle holds and mark them ready yourself. The desk shows progress, costs and problems. See [the desk](the-desk.md) for the controls, Sources and Finishing.
 
-### Review levels
+### Trainings started before the desk
 
-Trainings started before the desk were made by the earlier step-by-step flow, which no longer continues them: each opens on its saved record (see [the desk](the-desk.md)), from which it opens on the desk, keeps its finished Open on the desk, waits for what clears it, or is read-only. The rest of this section describes how that flow made them, for reading their saved records.
+Trainings started before the desk were made by the earlier step-by-step flow, which no longer continues them. Each opens on its saved record (see [the desk](the-desk.md#working-with-teammates-and-older-trainings)): from there it opens on the desk, keeps its finished Open on the desk, waits for what clears it, or is read-only with its reason. Nothing on a saved record decides a step, asks for changes or starts work. Only opening it on the desk, Take over where it must be taken to open it, Delete, Start new work from this, Publish and Bring in act on it; anything else is refused with the sentence that names the two ways on.
 
-### The steps in a saved run
-
-The steps below describe Step by step review for trainings started before the desk.
-
-| The runner does this on its own | Then it stops for you |
-| --- | --- |
-| Drafts the research questions | You approve them, or ask for changes |
-| Researches the topic: one agent writes the report and another checks it, for up to three rounds of correction (an earlier training researches each question, several at a time) | You approve the research, or ask for more |
-| Drafts the blueprint, one for each level | You approve each blueprint |
-| Writes the learner guide | You approve it |
-| Writes the brief | You approve it |
-| Writes what each slide of the deck says, shown beside its wireframe draft | You approve the words, or say what should change |
-| Has the brand draw one slide in each of its looks | You pick the look the deck is drawn in |
-| Draws the slides in that look, screens them, has them reviewed and puts right what the screens and the review find | You approve the deck |
-| Drafts each practice scenario the blueprint plans | You approve each one |
-| Lays each scenario out for Yoodli, when you asked for that | You approve each one |
-| Makes the copies you asked for and writes the index | Nothing: it says it is finished, and what is not ready |
-
-At each stop the page shows the document, what was checked for you, and the agent's own notes on its draft, labelled as its judgment. Ask for changes in your own words and the runner makes them and brings the new version back.
-
-**Finishing on the page.** Made files, review documents and Word copies have Download buttons. The finished index can be downloaded too. Downloads use the same local page key as every other request.
-
-The copies card has **Look for changes in Google Docs**: the one time Google is asked whether a teammate edited a Doc, and only when you press it. A Doc changed there shows **Changed in Google Docs** and **Bring the Doc's changes in**, which brings a clean change in; headings that came in without their hidden note are named. A Doc Google can no longer find offers **Make a new Google Doc**. A remote edit is brought into the local Markdown only after you ask. If both copies changed, both texts are kept and a confirmation lets you keep this computer's text or replace it with the Google Doc. If either text changes again, pull again before choosing. Pulling is refused while a worker is using that file; downstream work is marked to be written again.
-
-**The combined reviews.** Under Balanced and Automatic draft, the direction and the finished materials come to you together, on the run. Mark what needs changes as you read, say what should change in each, and send every request at once: the review says what each change is written again from, so a change to the research is known to rewrite every level's blueprint, guide, brief and deck direction before it is sent. Approving is confirmed in a sheet that says what it commits to, with what a deck of this size is estimated to cost. A change asked for at **Review the finished materials** keeps the first drafts approved: what it rewrites comes back to that review, and a deck drawn again stops at its own gate first. While a combined review waits, each file it covers is read-only on its own page, with one way back to the review: nothing can restart a step from two places at once. Leaving the deck out is still allowed from there. Yoodli fields can be copied from their own page, the finished-materials review and Done, ready for the box of the same name in Yoodli's Builder.
-
-Saved Balanced and Automatic draft trainings prepare the research, blueprints, guides and deck direction before the first combined review. Balanced waits for approval; Automatic draft continues under its saved policy. Briefs and their copies are written after that review is completed. Older trainings keep their saved ordering. Combined reviews have their own beads in the timeline. **Finish this level, then wait** appears after preparation, where a level can actually be finished; it is hidden while the first review is being prepared.
-
-After a decision, its time and what happens next stay above the working line until the next stop for you. With levels, every blueprint is drafted first. Then each level is finished in turn, lowest first.
-
-**The deck in a saved run.** The following approval and review flow applies to trainings started before the desk. For new trainings, see [the desk](the-desk.md#the-deck), where findings are proposals for you to Apply or Skip. Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, the brand's way: the deck's slide task is started through the brand's own guidance, the brand's guidance for composers goes to every agent that draws, and the brand decides how it looks. In this saved flow, a deck comes to you on what it says, its look and the deck itself.
-
-- **What the deck says.** Every slide's title, points, caveat and notes, beside its wireframe draft, before any slide is drawn. Words are quick to change here and slow to change later. The run says what a deck of this size has cost before.
-- **The look.** After what the deck says is approved (`gate:deck-look`), the brand draws one of its slides in each of its looks (`deck-look`), rendered the way this computer renders every preview, which the page says. You pick one on a picker that shows each look with what it is for, and may say why; your words are kept with the choice, and the brand writes the look into the deck's outline. Under Balanced you pick it in **Review the first drafts** instead. If the looks cannot be rendered, nothing is picked blind: try again, or carry on knowingly in the brand's default, and the deck says it is an unreviewed draft of its look. Automatic draft uses the brand's default and says why. A brand too old to offer looks is noted, and the deck is drawn in its default direction.
-- **The deck itself.** Every slide as a picture, with what the review still finds, the result of the brand's own check, and which slides cover each objective. The file you approve is the one whose pictures you are shown.
+That flow stopped for you at each step: the research questions, the research, each level's blueprint, the learner guide, the brief, what the deck said, its look, the deck itself, each practice scenario and each Yoodli layout. A training kept the review level it was started with: Step by step, or Balanced and Automatic draft, which gathered those stops into two combined reviews of the first drafts and of the finished materials. The saved record shows the decisions that were made, and when. Review levels, combined reviews and the stops themselves are no longer offered; a deck's findings on the desk are proposals for you to Apply or Skip (see [the desk](the-desk.md#the-deck)).
 
 **A talk or a handout, asked once.** With the slide deck, the form's Materials step asks **How is this deck used?**: **Presented in a session** (a talk, the default) or **Read on its own**. The brand is exported, the looks drawn and the outline checked for that delivery; a talk's notes carry what the presenter says and the source behind each claim. A training started before this was asked stays for reading, and a change after the first outline is refused.
 
@@ -393,9 +359,8 @@ the form writes that plan without a planning job. You can ask up to eight questi
 up to 300 characters; with none, the plan asks what the documents say that serves your goal.
 An explicit request to revise the plan uses the planning assistant with its current
 questions and your request, retaining the supplied-only boundary and eight-question limit.
-Step by step stops at the plan. Balanced and Automatic accept this plan under the saved
-policy, so Balanced's first stop is the first-drafts review. Web research still drafts a
-plan with your questions. Older runs retain their saved source scope and legacy queue.
+Web research still drafts a plan with your questions. Trainings saved before keep their
+saved source scope and legacy queue on their saved record.
 A new training on a Harness Research without synthesis is refused at Start. The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. `studio saved-work` lists any that still need it.
 
 Writers are told what the reviewed research is: its brief first, and that its IDs, digests

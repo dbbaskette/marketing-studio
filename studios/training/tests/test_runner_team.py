@@ -107,6 +107,26 @@ class Team(TeamCase, Asking):
     def head(self, person) -> str:
         return self.git('rev-parse', 'HEAD', repo=person.space.repo)
 
+    def ready(self, root: Path) -> set[str]:
+        """The materials of a desk training that are marked ready."""
+        statuses = workspace.person_statuses(root, workspace.load(root))
+        return {name for name, status in statuses.items() if status != 'draft'}
+
+    def mark_one(self, person, root: Path) -> str:
+        """The person's own decision on the desk: Mark ready on one written material that
+        is not ready yet, in the version it is now, committed. Says which."""
+        with self.be(person):
+            return self.marking(self.theirs(person, root), person.engine)
+
+    def marking(self, root: Path, engine) -> str:
+        session = workspace.load(root)
+        name = next(name for name in workspace.artifact_names(root, session)
+                    if name not in self.ready(root)
+                    and (root / workspace.artifact(root, session, name)['file']).is_file())
+        engine.mark_ready(root, name, workspace.sha256_file(
+            root / workspace.artifact(root, session, name)['file']))
+        return name
+
     def kept(self, person) -> list[str]:
         return self.git('for-each-ref', '--format=%(refname)', 'refs/training-studio/kept/',
                         repo=person.space.repo).splitlines()
@@ -202,6 +222,192 @@ class DriverTests(Team):
         self.assertEqual((view['mine'], view['driver']['name']), (False, 'Alex'))
         self.assertEqual(self.head(self.blake), self.git('rev-parse', 'main', repo=self.remote))
 
+    def test_a_teammate_reads_a_training_and_cannot_change_it(self):
+        root = self.desk_started()
+        self.assertEqual(self.fetch(self.blake)['reached'], True)
+        theirs = self.theirs(self.blake, root)
+        view = self.seen(self.blake, root)
+        self.assertEqual((view['mine'], view['driver']['name'], view['driver']['here']),
+                         (False, 'Alex', False))
+        self.assertIn('Alex is running this training from another computer', view['sentence'])
+        self.assertTrue(view['steps'], 'its steps can be read')
+        engine = self.blake.engine
+        with self.be(self.blake):
+            for change in (lambda: engine.act(theirs, 'stop'),
+                           lambda: engine.answer(theirs, 'abc', 'An answer'),
+                           lambda: engine.supply(theirs, 'done'),
+                           lambda: engine.copies_again(theirs),
+                           lambda: engine.outline(theirs, None, 'approve'),
+                           lambda: engine.publish(theirs),
+                           lambda: engine.mark_ready(theirs, 'blueprint', 'abc'),
+                           lambda: page.RunnerPage(1, engine).move_approval(str(theirs),
+                                                                            'chat'),
+                           lambda: engine.drive(theirs, 'hand-over')):
+                with self.assertRaisesRegex(engines.Elsewhere, 'Alex has been running this '
+                                            'training from another computer since'):
+                    change()
+            self.assertEqual(engine.brief(theirs)['needs'], False)
+            jobs = len(self.workers.jobs)
+            engine.resume()
+        self.assertEqual(self.head(self.blake), self.git('rev-parse', 'main', repo=self.remote),
+                         'nothing was written to it there')
+        self.assertEqual(len(self.workers.jobs), jobs, 'and nothing was worked on there')
+
+    def test_handing_over_leaves_a_training_for_anyone_to_take(self):
+        root = self.desk_started()
+        handed = self.drive(self.alex, root, 'hand-over')
+        # A desk training's work is all done here, so it says what is made, not who runs it.
+        self.assertEqual((handed['mine'], handed['driver'], handed['state']),
+                         (False, None, 'done'))
+        self.assertEqual(self.shared()[0], 'Rolling restarts: Alex hands this training over')
+        with self.be(self.alex), self.assertRaisesRegex(engines.Elsewhere,
+                                                        'Nobody is running this training'):
+            self.alex.engine.mark_ready(root, 'blueprint', 'abc')
+        self.fetch(self.blake)
+        self.assertEqual(self.seen(self.blake, root)['driver'], None)
+        self.assertEqual(self.drive(self.blake, root)['mine'], True)
+        self.assertEqual(self.shared()[0], 'Rolling restarts: Blake takes this training')
+        marked = self.mark_one(self.blake, root)
+        self.assertIn(marked, self.ready(self.theirs(self.blake, root)))
+
+    def test_a_training_nobody_drives_is_published_as_it_is_and_changed_once_taken(self):
+        root = self.desk_started()
+        self.drive(self.alex, root, 'hand-over')
+        path = str(root)
+        # Publishing changes nothing in a training, so it is the one thing that needs no
+        # driver. Everything else is refused until someone takes it.
+        self.assertEqual(self.ask(self.alex, 'publish', {'path': path})['revision'], 1)
+        for endpoint, sent in (
+                ('run', {'action': 'resume'}), ('copies', {}), ('approval', {'mode': 'chat'}),
+                ('drafts/ready', {'name': 'blueprint', 'seen': 'abc'})):
+            said = self.ask(self.alex, endpoint, {'path': path, **sent}, 409)['error']
+            self.assertEqual(said, team.NOBODY, endpoint)
+        self.fetch(self.blake)
+        theirs = str(self.theirs(self.blake, root))
+        self.assertEqual(self.ask(self.blake, 'publish', {'path': theirs})['revision'], 2)
+        taken = self.ask(self.blake, 'drive', {'path': theirs, 'action': 'take'})
+        self.assertEqual((taken['mine'], taken['state']), (True, 'done'))
+        self.mark_one(self.blake, root)
+
+    def test_taking_over_stops_the_other_runner_which_keeps_what_it_had(self):
+        with self.be(self.alex):
+            gitstate.share_when('asked')
+        root = self.desk_started()
+        marked = self.mark_one(self.alex, root)
+        unshared = self.head(self.alex)
+        self.assertEqual(self.shared()[0], STARTED)
+        self.fetch(self.blake)
+        taken = self.drive(self.blake, root)
+        self.assertEqual((taken['mine'], taken['driver']['name'], taken['driver']['here']),
+                         (True, 'Blake', True))
+        self.assertEqual(self.shared()[0],
+                         'Rolling restarts: Blake takes this training over from Alex')
+        self.assertNotIn(marked, self.ready(self.theirs(self.blake, root)),
+                         "Blake's runner carried on from what was shared")
+
+        self.assertEqual(self.fetch(self.alex)['reached'], True)
+        view = self.seen(self.alex, root)
+        self.assertEqual((view['mine'], view['driver']['name']), (False, 'Blake'))
+        self.assertEqual(view['taken']['by'], 'Blake')
+        self.assertRegex(view['taken']['at'], STAMP)
+        self.assertEqual(self.kept(self.alex), [view['taken']['kept']])
+        self.assertEqual(self.git('rev-parse', view['taken']['kept'], repo=self.alex.space.repo),
+                         unshared, 'what this computer had made is kept')
+        self.assertIn('Blake took this training over on', view['notice'])
+        # The sentence is for a person: kept here, and can be brought back. The name git
+        # keeps it under is a detail, given apart.
+        self.assertIn('What this computer had made and not yet shared is kept on this '
+                      'computer, and can be brought back.', view['notice'])
+        self.assertNotIn('refs/', view['notice'])
+        self.assertEqual(view['kept'], [view['taken']['kept']])
+        with self.be(self.alex):
+            listed = page.RunnerPage(1, self.alex.engine).trainings()[0]
+            status = self.alex.engine.standing()
+            again = self.make().view(root)
+        self.assertEqual((listed['notice'], listed['mine']), (view['notice'], False))
+        self.assertEqual(status['elsewhere'][0]['notice'], view['notice'])
+        self.assertEqual((again['notice'], again['taken']), (view['notice'], view['taken']),
+                         'a runner started again still says so')
+        with self.be(self.alex), self.assertRaisesRegex(engines.Elsewhere,
+                                                        'Blake has been running'):
+            self.alex.engine.mark_ready(root, 'blueprint', 'abc')
+        jobs = len(self.workers.jobs)
+        with self.be(self.alex):
+            self.alex.engine.resume()
+            self.assertEqual(self.alex.engine.share()['shared'], True)
+        self.assertEqual(len(self.workers.jobs), jobs, 'it works on it no more')
+        self.assertEqual(self.shared()[0],
+                         'Rolling restarts: Blake takes this training over from Alex',
+                         "nothing of Alex's was put on top of Blake's")
+        self.assertEqual(self.as_(self.alex, team.taken, root)['by'], 'Blake',
+                         'and it is remembered on this computer')
+
+        self.mark_one(self.blake, root)
+        self.fetch(self.alex)
+        self.assertEqual(self.drive(self.alex, root)['taken'], None, 'taking it back clears it')
+
+    def test_a_teammates_training_says_what_was_last_shared_and_never_what_it_does_now(self):
+        with self.be(self.alex):
+            gitstate.share_when('asked')
+        root = self.desk_started()   # the claim is shared; the work done since is not
+        self.fetch(self.blake)
+        theirs = self.theirs(self.blake, root)
+        view = self.seen(self.blake, root)
+        # Its files say an agent's step is next. That is not this computer's to call
+        # working: all it knows is what was shared, and when.
+        self.assertEqual((view['state'], view['mine'], view['workers'], view['queue']),
+                         ('elsewhere', False, [], None))
+        self.assertNotIn('working', [step['status'] for step in view['steps']])
+        last = view['last_shared']
+        self.assertEqual((sorted(last), last['by']), (['at', 'by', 'says'], 'Alex'))
+        self.assertRegex(last['at'], STAMP)
+        self.assertEqual(last['says'], 'Then, the next step was to draft the research plan.')
+        self.assertEqual(view['sentence'], (
+            'Alex is running this training from another computer. What is here is what was '
+            f"last shared, on {team.day(last['at'])}. {last['says']} It may have moved on "
+            'since.'))
+        with self.be(self.blake):
+            listed = page.RunnerPage(1, self.blake.engine).trainings()[0]
+            brief = self.blake.engine.brief(theirs)
+        self.assertEqual((listed['run'], listed['mine'], listed['last_shared'], listed['state']),
+                         ({'state': 'elsewhere', 'sentence': view['sentence'], 'flow': 'desk',
+                           'can_open_desk': False}, False, last, 'in-progress'))
+        self.assertEqual((brief['state'], brief['needs']), ('elsewhere', False))
+        self.assertEqual(self.seen(self.alex, root)['last_shared'], None,
+                         'the computer that drives it knows what it is doing')
+        # (What followed here, a gate of theirs waiting when it was shared, has no desk
+        # counterpart: a desk training has no gate to wait at.)
+
+    def test_a_rule_broken_by_hand_is_reported_and_put_right_by_taking_over(self):
+        root = self.desk_started()
+        clone = self.base / 'by-hand'
+        self.git('clone', '--quiet', str(self.remote), str(clone), repo=self.base)
+        record = clone / 'trainings' / 'rolling-restarts' / '.training-studio' / 'run.json'
+        record.write_text(json.dumps(json.loads(record.read_text())))
+        self.git('commit', '--quiet', '-am', 'Edited by hand', repo=clone)
+        self.git('push', '--quiet', 'origin', 'HEAD:main', repo=clone)
+
+        marked = self.mark_one(self.alex, root)
+        found = self.as_(self.alex, self.engine.share)
+        self.assertEqual(found['shared'], False)
+        self.assertIn('"Rolling restarts" was changed on this computer and on another at the '
+                      'same time', found['notice'])
+        self.assertIn('One side must take it over', found['notice'])
+        self.assertEqual(self.seen(self.alex, root)['notice'], found['notice'])
+        mine = self.head(self.alex)
+
+        taken = self.drive(self.alex, root)
+        self.assertEqual(taken['mine'], True)
+        self.assertIn('carries on from the shared version', taken['notice'])
+        self.assertIn('kept on this computer, and can be brought back', taken['notice'])
+        self.assertNotIn('refs/', taken['notice'])
+        self.assertEqual(taken['kept'], self.kept(self.alex))
+        self.assertEqual([self.git('rev-parse', ref, repo=self.alex.space.repo)
+                          for ref in self.kept(self.alex)], [mine])
+        self.assertEqual(self.as_(self.alex, self.engine.share)['shared'], True)
+        self.assertEqual(self.seen(self.alex, root)['notice'], None)
+        self.assertNotIn(marked, self.ready(root), 'it carries on from what was shared')
+
 
 class NoDriverTests(StudioCase):
     """A workspace that is a folder on one computer has no drivers."""
@@ -220,6 +426,34 @@ class NoDriverTests(StudioCase):
 
 
 class InStepTests(Team):
+    def test_a_teammates_trainings_are_adopted_into_the_lists_with_their_driver(self):
+        root = self.desk_started()
+        with self.be(self.alex):
+            self.to_end(root)
+            self.all_ready(root)
+        going = self.desk_started(title='Health checks')
+        self.assertEqual(self.ask(self.blake, 'trainings'), {'trainings': [], 'needs': 0})
+        self.assertEqual(self.ask(self.blake, 'fetch', {})['reached'], True)
+        listed = {item['title']: item for item in self.ask(self.blake, 'trainings')['trainings']}
+        self.assertEqual(self.ask(self.blake, 'trainings')['needs'], 0,
+                         "a teammate's training never needs the person here")
+        self.assertEqual(listed['Rolling restarts']['state'], 'finished')
+        self.assertIsNone(listed['Rolling restarts']['driver'])
+        theirs = listed['Health checks']
+        self.assertEqual((theirs['state'], theirs['driver']['name'], theirs['driver']['here'],
+                          theirs['mine'], theirs['run']['state']),
+                         ('in-progress', 'Alex', False, False, 'elsewhere'))
+        self.assertIsNone(theirs['waiting'], 'nothing was waiting when it was last shared')
+        self.assertIn('Alex is running this training', theirs['sentence'])
+        mine = {item['title']: item for item in self.ask(self.alex, 'trainings')['trainings']}
+        self.assertEqual((mine['Health checks']['state'], mine['Health checks']['driver']['here']),
+                         ('needs-you', True))
+        path = str(self.theirs(self.blake, going))
+        for read in ('training', 'run'):
+            self.ask(self.blake, read, path=path)
+        self.ask(self.blake, 'drafts', path=path)    # the desk's read, where a gate was
+        self.ask(self.blake, 'file', path=path, artifact='intake')
+
 
     def test_fetching_on_a_timer_never_touches_a_training_this_computer_drives(self):
         mine = self.desk_started()
@@ -455,6 +689,18 @@ class NotifyTests(StudioCase, Asking):
     def on(self) -> None:
         settings.save(replace(settings.load(), notify=True))
 
+    def test_each_thing_that_needs_a_decision_is_told_once(self):
+        self.on()
+        self.workers.then('blueprint', asks('Which platform version?'))
+        root = self.start()
+        self.assertEqual(self.engine.tell(), ['Rolling restarts'])
+        self.assertEqual(self.engine.tell(), [])
+        self.assertEqual(self.make().tell(), [], 'nor again after the runner is started again')
+        self.engine.act(root, 'stop')
+        self.assertEqual(self.engine.tell(), [], 'a training its person stopped needs nothing')
+        self.assertEqual(self.notifier.sent, ['Rolling restarts'],
+                         'only the title is handed over')
+
     def test_nothing_is_told_until_it_is_turned_on(self):
         self.start()
         self.assertEqual((settings.load().notify, self.engine.tell(), self.notifier.sent),
@@ -549,6 +795,53 @@ class SlowRemoteTests(Team):
             finally:
                 go.set()
 
+    def test_a_decision_is_not_held_up_by_a_slow_push_or_fetch(self):
+        root = self.desk_started()
+        with self.be(self.alex):
+            gitstate.share_when('asked')    # so the decision itself sends nothing
+        for name, sharing in (('push', self.engine.share), ('fetch', self.engine.fetch)):
+            with self.subTest(name), self.be(self.alex), self.held_up(name) as (reached, go):
+                behind = threading.Thread(target=sharing, daemon=True)
+                behind.start()
+                self.assertTrue(reached.wait(30), f'the {name} was never asked for')
+                before, made = self.head(self.alex), []
+                deciding = threading.Thread(target=lambda: made.append(
+                    self.marking(root, self.engine)), daemon=True)
+                deciding.start()
+                deciding.join(20)
+                self.assertFalse(deciding.is_alive(), f'the decision waited for the {name}')
+                self.assertTrue(behind.is_alive(), f'the {name} is still held up')
+                self.assertIn(made[0], self.ready(root))
+                self.assertNotEqual(self.head(self.alex), before, 'and it was committed')
+                go.set()
+                behind.join(30)
+                self.assertFalse(behind.is_alive())
+        self.assertEqual(self.as_(self.alex, self.engine.share)['shared'], True)
+
+    def test_nothing_is_changed_on_the_page_until_the_first_look_after_starting(self):
+        root = self.desk_started()
+        path = str(root)
+        with self.be(self.alex):
+            name = next(name for name, status in workspace.person_statuses(
+                root, workspace.load(root)).items() if status == 'draft')
+            seen = workspace.sha256_file(
+                root / workspace.artifact(root, workspace.load(root), name)['file'])
+            self.engine.close()
+            self.alex.engine = self.make(background=True)
+        with self.be(self.alex), self.held_up('fetch') as (reached, go):
+            self.alex.engine.resume(wait=False)
+            self.assertTrue(reached.wait(30), 'the first look was never asked for')
+            for endpoint, sent in (
+                    ('drafts/ready', {'name': name, 'seen': seen}),
+                    ('copies', {}), ('run', {'action': 'pause'})):
+                said = self.ask(self.alex, endpoint, {'path': path, **sent}, 409)['error']
+                self.assertEqual(said, engines.CHECKING, endpoint)
+            go.set()
+            for thread in threading.enumerate():
+                if thread.name == 'resuming':
+                    thread.join(30)
+        self.assertIn(self.mark_one(self.alex, root), self.ready(root))
+
     def test_learning_who_drives_what_asks_git_once_for_every_training(self):
         mine = [self.desk_started(), self.desk_started(title='Health checks')]
         self.fetch(self.blake)
@@ -565,6 +858,30 @@ class SlowRemoteTests(Team):
 class PublishTests(Team):
     def tag(self, name: str) -> str:
         return self.git('rev-parse', f'refs/tags/{name}', repo=self.remote)
+
+    def test_the_published_list_asks_git_twice_however_many_there_are(self):
+        trainings = [self.desk_started(), self.desk_started(title='Health checks'),
+                     self.desk_started(title='Blue green')]
+        for root in trainings:
+            self.ask(self.alex, 'publish', {'path': str(root)})
+        self.mark_one(self.alex, trainings[1])
+        with asked() as ran:
+            listed = self.ask(self.alex, 'published')['published']
+        self.assertEqual(ran, ['for-each-ref', 'cat-file'])
+        self.assertEqual({entry['id']: entry['current'] for entry in listed},
+                         {'rolling-restarts': True, 'health-checks': False,
+                          'blue-green': True})
+
+    def test_a_training_that_is_not_ready_is_published_and_says_so(self):
+        root = self.desk_started()
+        made = self.ask(self.alex, 'publish', {'path': str(root)})
+        self.assertEqual((made['revision'], made['ready'], made['shared']), (1, False, True))
+        self.assertIn('Revision 1 was published before this training was ready', made['notice'])
+        listed = self.ask(self.alex, 'published')['published']
+        self.assertEqual((listed[0]['ready'], listed[0]['current']), (False, True))
+        self.mark_one(self.alex, root)
+        self.assertEqual(self.ask(self.alex, 'published')['published'][0]['current'], False,
+                         'the training has changed since that revision')
 
     def test_revisions_are_numbered_pushed_and_never_moved(self):
         root = self.desk_started()
@@ -754,6 +1071,45 @@ class BringTests(Team):
 
 class PageTests(Team):
     """The appendix, field for field, through the page's own addresses."""
+
+    def test_driving_a_training_on_the_page(self):
+        root = self.desk_started()
+        path = str(root)
+        run = self.ask(self.alex, 'run', path=path)
+        self.assertEqual((run['mine'], run['driver']['name'], run['driver']['here']),
+                         (True, 'Alex', True))
+        self.ask(self.blake, 'fetch', {})
+        theirs = str(self.theirs(self.blake, root))
+        run = self.ask(self.blake, 'run', path=theirs)
+        self.assertEqual((run['mine'], run['driver']['here'], run['queue'], run['taken']),
+                         (False, False, None, None))
+        for endpoint, sent in (
+                ('run', {'action': 'stop'}), ('answer', {'id': 'abc', 'answer': 'Yes'}),
+                ('documents', {'action': 'done'}), ('copies', {}), ('drive',
+                                                                    {'action': 'hand-over'}),
+                ('approval', {'mode': 'chat'}), ('publish', {}),
+                ('drafts/ready', {'name': 'blueprint', 'seen': 'abc'})):
+            said = self.ask(self.blake, endpoint, {'path': theirs, **sent}, 409)['error']
+            self.assertIn('Alex has been running this training from another computer since',
+                          said, endpoint)
+        self.assertIn('take, hand-over', self.ask(self.blake, 'drive', {
+            'path': theirs, 'action': 'steal'}, 400)['error'])
+        self.ask(self.blake, 'drive', {'path': str(self.base), 'action': 'take'}, 403)
+
+        taken = self.ask(self.blake, 'drive', {'path': theirs, 'action': 'take'})
+        self.assertEqual((taken['mine'], taken['driver']['name'], taken['state']),
+                         (True, 'Blake', 'done'))
+        self.assertEqual(self.ask(self.alex, 'fetch', {})['reached'], True)
+        lost = self.ask(self.alex, 'run', path=path)
+        self.assertEqual((lost['mine'], lost['taken']['by'], sorted(lost['taken'])),
+                         (False, 'Blake', ['at', 'by', 'kept']))
+        self.assertTrue(lost['taken']['kept'].startswith('refs/training-studio/kept/'))
+        self.assertIn('Blake has been running',
+                      self.ask(self.alex, 'run', {'path': path, 'action': 'stop'}, 409)['error'])
+        handed = self.ask(self.blake, 'drive', {'path': theirs, 'action': 'hand-over'})
+        self.assertEqual((handed['mine'], handed['driver']), (False, None))
+        self.assertIn('Nobody is running this training',
+                      self.ask(self.blake, 'run', {'path': theirs, 'action': 'stop'}, 409)['error'])
 
     def test_the_new_addresses_keep_every_rule_of_the_page(self):
         made = page.RunnerPage(self.PORT, self.engine)

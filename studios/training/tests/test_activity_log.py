@@ -18,6 +18,68 @@ class ActivityLogTests(StudioCase):
         from runner import engine
         return root / engine.ACTIVITY
 
+    def test_a_research_job_shows_its_lines_while_it_works_and_is_logged_when_it_ends(self):
+        seen = {}
+
+        def researching(tools, job):
+            tools.list_inputs()
+            for found in self.engine.trainings():
+                seen['view'] = self.engine.view(found)
+                seen['log'] = self.engine.activity(found)
+                ident = next(one['id'] for one in seen['view']['workers'])
+                seen['lines'] = self.engine.activity(found, job=ident, since=0)['lines']
+                seen['task'] = job.task
+            return self.workers.research_result(tools, job)
+
+        # The desk's first research job: research jobs of every kind run through the engine's
+        # one way to run a worker.
+        self.workers.then('research-result', researching)
+        root = self.start()
+        worker = next(one for one in seen['view']['workers']
+                      if one['id'].startswith('research:'))
+        self.assertEqual((worker['now']['text'], worker['count']),
+                         ('Looking at what it was given', 1))
+        self.assertEqual([line['text'] for line in seen['lines']],
+                         ['Looking at what it was given'])
+        self.assertRegex(worker['now']['at'], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
+        self.assertEqual(seen['log']['running'][0]['id'], worker['id'])
+
+        jobs = self.engine.activity(root)['jobs']
+        research = next(job for job in jobs if job['step'] == worker['id'])
+        self.assertEqual(research['outcome'], 'finished')
+        self.assertEqual(research['words'], 'Finished')
+        self.assertEqual(research['label'], worker['label'])
+        said = [line['text'] for line in self.engine.activity(root, entry=research['id'])['lines']]
+        self.assertEqual(said[0], 'Looking at what it was given')
+        # (The lines a per-question research job said as it handed back each finding were
+        # the saved flow's question queue's; the desk researches as one report.)
+        self.assertTrue(research['started_at'] <= research['ended_at'])
+        # Newest first: the research job came after the research plan.
+        self.assertLess(jobs.index(research),
+                        next(i for i, job in enumerate(jobs) if job['step'] == 'research-plan'))
+
+        # Only plain lines: never the task, the brief or a raw event.
+        written = self.log_path(root).read_text(encoding='utf-8')
+        self.assertNotIn(seen['task'][:60], written)
+        self.assertNotIn('"type"', written)
+        for line in written.splitlines():
+            item = json.loads(line)
+            if 'checkpoint' in item:
+                self.assertEqual(set(item), {'checkpoint', 'unit', 'at'})
+                continue
+            for one in item['lines']:
+                self.assertFalse(one['text'].startswith(('{', '[')))
+
+        # The log is this computer's and never shared: it is in no commit and leaves the
+        # repository clean.
+        repo = self.space.repo
+        tracked = subprocess.run(['git', 'ls-files'], cwd=repo, capture_output=True,
+                                 text=True, check=True).stdout
+        self.assertNotIn('activity-log', tracked)
+        status = subprocess.run(['git', 'status', '--porcelain', '--ignored=no'], cwd=repo,
+                                capture_output=True, text=True, check=True).stdout
+        self.assertNotIn('activity-log', status)
+
     def ending_of(self, act) -> dict:
         self.workers.then('research-plan', act)
         root = self.start()

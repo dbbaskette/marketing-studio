@@ -2526,6 +2526,136 @@ class DeskPageTests(PageCase):
         return [*(card['says'] for card in view['cards']), *view['needs'],
                 view['progress']['line'], view['progress']['doing']]
 
+    def saved(self, state: str = 'research-plan-gate') -> str:
+        """A stored saved training, as the earlier step-by-step flow left it."""
+        import saved_fixtures
+        return str(saved_fixtures.load(self, state))
+
+    def test_a_desk_run_keeps_how_long_its_steps_took_here(self):
+        self.saved()
+        self.assertFalse(drafts.times().exists(), 'a saved training keeps no times')
+        self.desk(levels=['101'], materials=['document', 'brief'])
+        kept = json.loads(drafts.times().read_text(encoding='utf-8'))
+        self.assertEqual(sorted(kept), ['blueprint', 'brief', 'document', 'research'])
+
+    def test_added_sources_have_a_read_only_price_and_authenticated_batch_route(self):
+        path = self.desk(materials=['document', 'brief'])
+        before = self.on_disk()
+        price = self.get('drafts/source-price', path=path)
+        self.assertEqual(price['afterwards'], drafts.AFTERWARDS)
+        self.assertEqual(self.on_disk(), before)
+        sent = {'path': path, 'files': [{'name': 'notes.txt', 'content': base64.b64encode(
+            b'Capacity holds only when more than one instance is running.').decode()}]}
+        self.post('drafts/source', sent, expect=403, token=False)
+        self.assertEqual(self.on_disk(), before)
+        malformed = {**sent, 'files': [sent['files'][0], {'name': 'bad.txt', 'content': '%%%'}]}
+        self.post('drafts/source', malformed, expect=400)
+        self.assertEqual(self.on_disk(), before)
+        added = self.post('drafts/source', sent)
+        self.assertEqual(added['sources']['documents'][0]['name'], 'notes.txt')
+        self.assertTrue(any(card['held'] for card in added['cards']))
+        saved = self.saved()
+        # A change to a saved training is refused by the page's one guard, in its sentence.
+        refused = self.post('drafts/source', {**sent, 'path': saved}, expect=409)
+        self.assertEqual(refused['error'], engines.SAVED_ONLY)
+        self.get('drafts/source-price', path=saved, expect=409)
+        self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers()), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers(token=False)), 64_000)
+
+    def test_bulk_updates_and_stop_are_authenticated_desk_actions(self):
+        path = self.desk(materials=['document', 'brief'], levels=['101', '201'])
+        root = Path(path)
+        self.engine.add_source(root, [{'name': 'notes.txt', 'data': QUOTE.encode()}])
+        before = self.on_disk()
+        self.post('drafts/update-all', {'path': path}, expect=403, token=False)
+        self.assertEqual(self.on_disk(), before)
+        self.post('drafts/update-all', {'path': path, 'level': '999'}, expect=409)
+        self.post('drafts/update-all', {'path': path, 'level': []}, expect=400)
+        with mock.patch.object(self.engine, 'carry_on'):
+            result = self.post('drafts/update-all', {'path': path, 'level': '101'})
+        chain = result['sources']['updates']['chain']['id']
+        self.post('drafts/stop-updates', {'path': path, 'chain': chain}, expect=403, token=False)
+        stopped = self.post('drafts/stop-updates', {'path': path, 'chain': chain})
+        self.assertEqual(stopped['sources']['updates']['chain']['status'], 'stopped')
+        self.assertFalse(drafts.updates(self.record(root)))
+        saved = self.saved()
+        for route, extra in [('update-all', {}), ('stop-updates', {'chain': chain})]:
+            result = self.post('drafts/' + route, {'path': saved, **extra}, expect=409)
+            self.assertEqual(result['error'], engines.SAVED_ONLY)
+
+    def test_finishing_routes_are_authenticated_and_saved_runs_refuse_them(self):
+        path = self.desk(materials=['document', 'brief'], levels=['101'])
+        name = 'document@101'
+        card = self.get('drafts/card', path=path, name=name)
+        sent = {'path': path, 'name': name, 'tool': 'coverage', 'seen': card['revision']}
+        self.post('drafts/finish', sent, expect=403, token=False)
+        checked = self.post('drafts/finish', sent)
+        self.assertIn('coverage', checked['finishing'])
+        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
+            self.post('drafts/finish', {**sent, 'tool': tool}, expect=403, token=False)
+        for route in ('apply', 'skip'):
+            self.post('drafts/' + route, {**sent, 'job': 'a' * 32, 'items': []},
+                      expect=403, token=False)
+        proof = self.get('drafts/proofread', path=path, name=name)
+        self.assertIn('findings', proof)
+        saved = self.saved()
+        for route in ('finish', 'apply', 'skip'):
+            refused = self.post('drafts/' + route, {**sent, 'path': saved}, expect=409)
+            self.assertEqual(refused['error'], engines.SAVED_ONLY)
+        self.get('drafts/proofread', path=saved, name=name, expect=409)
+        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
+            refused = self.post('drafts/finish', {**sent, 'path': saved, 'tool': tool}, expect=409)
+            self.assertEqual(refused['error'], engines.SAVED_ONLY)
+
+    def test_row_159_desk_and_review_routes_refuse_each_other(self):
+        path = self.desk(materials=['document', 'brief'])
+        root = Path(path)
+        saved = self.saved()
+        before, commits = self.on_disk(), self.log()
+        name = 'blueprint'
+        for target, sent in (
+                ('decide', {'artifact': name, 'decision': 'approve',
+                            'seen': hashed(root, name)}),
+                ('outline', {'decision': 'approve'})):
+            with self.subTest(route=target):
+                said = self.post(target, {'path': path, **sent}, 409)
+                self.assertEqual(said['error'], drafts.ON_DESK)
+        said = self.get('gate', 409, path=path, artifact=name)
+        self.assertEqual(said['error'], drafts.ON_DESK)
+        self.assertEqual(self.get('drafts', 409, path=saved)['error'], drafts.NOT_ON_DESK)
+        for route, sent in (('ready', {'name': 'research-plan', 'seen': 'x'}),
+                            ('level-ready', {'level': '', 'seen': {}}),
+                            ('update', {'name': 'research-plan'}),
+                            ('keep', {'name': 'research-plan', 'reason': 'Fine.',
+                                      'seen': 'x'}),
+                            ('send', {'name': 'research-plan'}),
+                            ('save', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
+                                      'text': 'Typed.', 'session': 'ab12'}),
+                            ('restore', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
+                                         'index': 0}),
+                            ('share', {}),
+                            ('note', {'name': 'blueprint', 'seen': 1, 'note': 'Change.'}),
+                            ('revise', {'name': 'document', 'seen': 1, 'note': 'Change.'}),
+                            ('selection', {'name': 'document', 'part': 'opening', 'seen': 1,
+                                           'text': 'word', 'start': 0, 'action': 'shorten'}),
+                            ('stop', {'job': 'unknown'}), ('retry', {'job': 'unknown'})):
+            with self.subTest(route=route):
+                said = self.post(f'drafts/{route}', {'path': saved, **sent}, 409)
+                self.assertEqual(said['error'], engines.SAVED_ONLY)
+        said = self.get('drafts/versions', 409, path=saved, name='blueprint', part='opening')
+        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
+        said = self.get('drafts/card', 409, path=saved, name='blueprint')
+        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
+        self.assertEqual((self.on_disk(), self.log()), (before, commits),
+                         'nothing was changed or committed')
+        # The desk still answers what is its own as it always did; a saved training's gate is
+        # read on its saved record now, not at the gate.
+        self.assertEqual(self.get('gate', 409, path=saved, artifact='research-plan')['error'],
+                         engines.SAVED_ONLY)
+        self.assertEqual(sorted(self.get('drafts', path=path)),
+                         ['cards', 'docs', 'execution', 'flow', 'index_written', 'job', 'levels',
+                          'library', 'needs', 'progress', 'sources', 'standing', 'team', 'title'])
+
     def test_reading_the_desk_changes_nothing(self):
         path = self.desk(levels=['101'], materials=['document', 'brief'])
         root = Path(path)
@@ -2993,15 +3123,19 @@ class DeskTeamTests(TeamCase):
         import saved_fixtures
         with self.be(self.alex):
             root = saved_fixtures.load(self, 'finished')
-            # Its stored record names the computer that made it, so here it waits to be
-            # taken over before it opens on the desk.
-            self.assertIn(self.engine.view(root)['saved_record']['outcome'], ('finished', 'waiting'))
+            # Its stored record names no computer that runs it in this team workspace, so
+            # even here it must be taken before it opens on the desk.
+            shown = self.engine.view(root)['saved_record']
+            self.assertEqual((shown['outcome'], [wait['kind'] for wait in shown['waits']]),
+                             ('waiting', ['owner']))
             self.engine.share()
         self.as_(self.blake, self.blake.engine.fetch)
         theirs = self.theirs(self.blake, root)
         detail = self.ask(self.blake, 'training', path=str(theirs))
         run = self.ask(self.blake, 'run', path=str(theirs))
-        self.assertFalse(detail['run'].get('can_open_desk'))
+        # The list says only what its records prove: saved earlier, with no Open on the desk.
+        self.assertEqual(detail['run'], {'state': 'saved', 'sentence': engines.SAVED_BRIEF,
+                                         'saved': 'saved'})
         self.assertFalse(run['can_open_desk'])
         self.ask(self.blake, 'drafts/open', {'path': str(theirs)}, expect=409)
         claimed = self.ask(self.blake, 'drive', {'path': str(theirs), 'action': 'take'})

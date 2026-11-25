@@ -470,6 +470,10 @@ WAITS_FOR = {
     'running': (None, 'It opens on the desk once that step ends. Check again then.'),
     'opening': ('Opening it on the desk was interrupted part way.', 'Finish opening on the '
                 'desk completes the opening you previewed, or puts it back as it was.'),
+    'journal': ('Opening it on the desk was interrupted part way, and the record of that '
+                'opening cannot be read, so it cannot be finished here.', 'Its files are kept as '
+                'they are. Start new work from this training, or restore that record from your '
+                'workspace history and check again.'),
     'owner': ('Another computer runs this training.', 'Take it over to open it on the desk '
               'here.'),
     'shared': ('Its saved records, or files they depend on, have changes that are not committed '
@@ -7896,8 +7900,9 @@ class Engine(Reviewing):
                 expected = journal.get('expected') if isinstance(journal, dict) else None
             except (OSError, ValueError):
                 expected = None
-            shown.update(waits=[self._waits('opening')], expected=expected
-                         if isinstance(expected, str) else None)
+            usable = isinstance(expected, str)
+            shown.update(waits=[self._waits('opening' if usable else 'journal')],
+                         expected=expected if usable else None)
             sentence = SAVED_WAITING
         if found['outcome'] == 'finished':
             # A finished training keeps what it could do before: published as it stands,
@@ -7916,6 +7921,13 @@ class Engine(Reviewing):
                 found = preview['outcome']
                 shown.update(outcome='read-only', why=found.get('reason'),
                              next=found.get('next') or shown['next'])
+            elif any(self._waiting_on(said) == 'other' for said in preview['blockers']):
+                # A record or dependency the opening cannot read or understand (a native deck
+                # record, a pending local deck, the research bundle): read-only, with why.
+                # Waiting is only for what clears without repairing files by hand.
+                said = next(said for said in preview['blockers']
+                            if self._waiting_on(said) == 'other')
+                shown.update(outcome='read-only', why=(desk_migration.MISSING + ' ' + said).strip())
             elif preview['blockers']:
                 shown.update(outcome='waiting', waits=[
                     self._busy_where(root) if self._waiting_on(said) == 'busy'
@@ -7948,6 +7960,9 @@ class Engine(Reviewing):
         """Which kind of thing a preview's blocker waits for."""
         from runner import desk_migration
         from studio_core.sync_guard import SYNC_WAIT
+        from studio_core.sync_guard import UNCHECKED
+        if said.startswith(UNCHECKED):
+            return 'busy'   # the workspace check could not finish: its own folder and reason
         return {SYNC_WAIT: 'busy', desk_migration.OWNER: 'owner',
                 desk_migration.SHARED: 'shared'}.get(said, 'other')
 

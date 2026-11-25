@@ -268,6 +268,36 @@ class RunTests(StudioCase):
         self.assertEqual(studios_config.read()[0]['research'],
                          {'sites': ['https://other.example.com']})
 
+    def test_row_130_research_keeps_to_the_sites_and_its_stop_says_what_was_refused(self):
+        self.web.page(OTHER, PAGE)
+        tried = []
+
+        def wanders(tools, job):
+            tried.append(tools.save_source(OTHER))
+            return self.workers.research_result(tools, job)
+
+        self.workers.then('research-result', wanders)
+        root = self.start(research_from={'sites': [DOCS], 'web': False})
+        plan, = self.workers.jobs[:1]
+        self.assertEqual(plan[2]['artifacts']['research-plan']['scope'], 'public-web')
+        self.assertIn('Allowed sites: docs.example.com. Pages from anywhere else on the public '
+                      'web are not allowed.', plan[1].task)
+        fetching = [(kind, job, spec) for kind, job, spec in self.workers.jobs[1:]
+                    if spec.get('fetch')]   # the desk's research jobs that look on the web
+        self.assertTrue(fetching)
+        for kind, job, spec in fetching:
+            with self.subTest(kind):
+                self.assertEqual(spec['research'], {'documents': False, 'sites': [DOCS],
+                                                    'web': False})
+                self.assertIn('site:docs.example.com', job.guidance)
+                self.assertIn('Allowed sites: docs.example.com.', job.task)
+        self.assertEqual(tried, [(False, research_sites.refused(OTHER, {'sites': [DOCS]}))])
+        self.assertNotIn(OTHER, [asked for asked, _ in self.web.asked])
+        said = research_sites.outside(1, [DOCS])
+        self.assertEqual(said, '1 page was outside your sites (docs.example.com) and was not saved.')
+        self.assertEqual(self.view(root)['research_from']['outside'], said)
+        # (The saved flow's research gate said it too; the desk has no gate.)
+
     def test_a_training_started_with_the_older_words_researches_as_before(self):
         root = self.start(source_scope='public-web')
         self.assertEqual(self.record(root)['research_from'], WEB)

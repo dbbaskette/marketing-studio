@@ -21,7 +21,7 @@ New trainings run without review stops. The desk shows materials as they arrive;
 | Yoodli, optional | Training Studio | A Yoodli scenario for each scenario file | 8 |
 | Package | Training Studio | The index and a readiness report | |
 
-In a conversation or a saved run made before the desk, at each gate you approved, asked for changes, had it rebuilt, or skipped; such a run is no longer carried on. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
+In a conversation, at each gate you approve, ask for changes, have it rebuilt, or skip. A run the runner saved before the desk worked the same way and is no longer carried on: it opens on its saved record. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
 
 The blueprint is the hub. The document and brief are written from it, and the deck is built from the blueprint and the document. A Yoodli scenario is built from your scenario file, the brief and the blueprint.
 
@@ -157,6 +157,4 @@ together are Harness Research's `mixed` source mode and sites alone `public`. Se
 
 ## Finish from the page
 
-New combined-review runs prepare every level's guide and deck direction first. Balanced waits for the first review; Automatic draft continues under its saved policy. Briefs are written afterwards. Runs made that way are no longer carried on; each opens on its saved record. The first and final combined reviews have timeline beads, and the last decision stays visible while work continues.
-
-Download buttons take away supported made files, Word copies and the finished index. Google changes are looked for, and pulled, only on request: **Look for changes in Google Docs** asks Google, and **Bring the Doc's changes in** brings a change in. When both texts changed, both are kept and a confirmation chooses which text replaces the other; later edits require another pull. Yoodli fields can be copied from the final review and Done.
+Download buttons take away supported made files, Word copies and the finished index. Google changes are looked for, and pulled, only on request: **Look for changes in Google Docs** asks Google, and **Bring the Doc's changes in** brings a change in. When both texts changed, both are kept and a confirmation chooses which text replaces the other; later edits require another pull. Yoodli fields are copied one at a time from each Yoodli layout on the desk.
