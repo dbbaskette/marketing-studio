@@ -288,7 +288,10 @@ function sSavedRecord(found){
     go=fresh();above='Saved blog · Read-only';state=['none','Read-only: it is not continued and not opened on the desk'];next=startWords;
     cards.push(sCard('Why it cannot be continued',sNode('p','',saved.why),sNode('p','quiet','Nothing here changes it. Restored saved records may let it open on the desk; otherwise start new work from it.')));
   }
-  sFrame(found.title,go?[go]:[],above,()=>sRoute('blogs'));
+  // A finished team blog keeps its driver actions and Record in team repository, quiet beside
+  // its Done card's one main action.
+  const team=outcome==='finished'&&found.team?[sButton(found.driver?.here?'Hand over':found.driver?'Take over':'Take this blog',()=>sTeamDecision(found,found.driver?.here?'handover':found.driver?'takeover':'take')),sCanEdit(found)?sButton('Record in team repository',()=>sTeamDecision(found,'publish')):null]:[];
+  sFrame(found.title,go?[go]:team,above,()=>sRoute('blogs'));
   const status=sStatus(...state);status.setAttribute('role','status');
   sPage(sAdd(sNode('div','intro'),sNode('p','lede',found.sentence),status,sNode('p','quiet',next)),...cards,sSavedFiles(found));
 }
