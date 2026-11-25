@@ -1,9 +1,8 @@
 """Every stop the saved step-by-step Blog Studio flow leaves on disk, in its original format.
 
-Each stop is a static fixture (saved_fixtures.py, fixtures/saved/) captured from the saved
-flow itself (runner.create, submit, decide, the page's develop and Continue without research,
-the runner's worker record) and proven against it by test_saved_fixtures.py; none is written as
-a desk record. For each stop the explicit migration preview is checked to change nothing and to
+Each stop is a static fixture (saved_fixtures.py, fixtures/saved/) the saved flow itself wrote
+(runner.create, submit, decide, the page's develop and Continue without research, the
+runner's worker record) while it ran, kept as it wrote it; none is written as a desk record. For each stop the explicit migration preview is checked to change nothing and to
 start nothing, and its one classification is pinned; a stop that migrates is applied and every
 original byte, approval fact and publishing gap is checked; a stop that cannot be moved is
 refused. The earlier flow continues none of them: the page shows each as a saved record (its
@@ -22,12 +21,13 @@ import desk_migration
 import saved_fixtures
 from saved_fixtures import MANUSCRIPT, NOTES
 import studio
+from test_blog_runner import RunnerCase
 
 # Stopped before an outline or draft: read-only, and new work can start from its start form.
 EARLY = ('read-only', 'stopped before an outline or draft was saved', 'copy')
 
 
-class SavedStateCase(saved_fixtures.Maker):
+class SavedStateCase(RunnerCase):
     """A disposable workspace whose blogs are saved step-by-step runs."""
 
     def tree(self):
