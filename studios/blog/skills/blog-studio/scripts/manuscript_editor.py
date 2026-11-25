@@ -170,6 +170,10 @@ def changed_bounds(old, new):
 
 
 def dispatch(root, action, data):
+    import saved_gate
+
+    # Writing to a blog saved by the earlier flow: only a finished one (saved_gate).
+    saved_gate.page(root, 'editor-' + action, data)
     current = guard(root, data)
     ident = current['id']
     directory, record = studio.item(root, 'articles', ident)

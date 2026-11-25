@@ -7,6 +7,7 @@ the private address and the blogs' IDs; it stops with the process.
     python3 studios/blog/tests/ui/saved_fixture.py              # each kind of saved record
     python3 studios/blog/tests/ui/saved_fixture.py conditions   # an older Team Hub workspace
     python3 studios/blog/tests/ui/saved_fixture.py team         # an identity to record by Take
+    python3 studios/blog/tests/ui/saved_fixture.py team-finished  # a finished team blog
 
 The default workspace holds: a saved run with unstructured outline notes, which opens on the
 desk; a page run waiting at its gate with the marker the page worker leaves, which opens on
@@ -15,6 +16,9 @@ the person; and a saved blog whose run record cannot be read, which is read-only
 `conditions` connects the workspace to an older Team Hub: a blog with nothing made is
 read-only, one with a draft waits. `team` makes it a team workspace (the team repository is
 a stand-in in this process; nothing is fetched) with this computer's identity unreadable.
+`team-finished` joins a disposable local team repository (a bare repository in the temporary
+folder) and takes a finished saved blog there: it keeps Record in team repository and is
+never handed over.
 """
 
 import json
@@ -43,6 +47,33 @@ try:
         shown['nothing_made'] = saved_fixtures.load(root, 'brief-only')
         shown['waits'] = saved_fixtures.load(root, 'outline-gate')
         studio.write_json(root / '.team-hub.json', {'schema': 1})
+    elif mode == 'team-finished':
+        import subprocess
+
+        from studio_sync import support
+        from test_desk_team import TeamCase
+
+        team = TeamCase('runTest')
+        team.setUp()
+        case.addCleanup(team.doCleanups)
+        root = team.root
+        tree = saved_fixtures.FIXTURES / 'finished-page'
+        (ident,) = [path.name for path in (tree / 'articles').iterdir()]
+        for path in sorted(tree.rglob('*')):
+            if path.is_file():
+                relative = path.relative_to(tree)
+                if relative.parts[0] == 'articles':
+                    relative = Path(*relative.parts[1:])
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_bytes(path.read_bytes())
+        support.git(team.found.repo, 'add', '-A')
+        subprocess.run(['git', 'commit', '-qm', 'Saved blog'], cwd=team.found.repo, check=True)
+        support.git(team.found.repo, 'push', '-q', 'origin', 'HEAD:main')
+        import blog_runner
+
+        expected = blog_runner.survey(root, ident)['expected']
+        management.dispatch(root, 'team-take', {'id': ident, 'expected': expected, 'confirmed': True})
+        shown['finished'] = ident
     elif mode == 'team':
         from studio_sync import support
         import team_workspace

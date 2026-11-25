@@ -163,6 +163,9 @@ def start(root, route, data, runner=None):
         raise ValueError('Unknown management action.')
     if not isinstance(data, dict):
         raise ValueError('Supply a JSON object.')
+    import saved_gate
+
+    saved_gate.page(root, route, data)  # Refused before a job is saved.
     label, stoppable = ROUTES[route]
     article = data.get('id') if isinstance(data.get('id'), str) else None
     job = {

@@ -571,8 +571,10 @@ class TeamTests(unittest.TestCase):
             desk_jobs._context(other, desk.read(other, found['id']))
 
     def create(self):
-        """A saved step-by-step run, for the tests of the saved flow's own team behaviour."""
-        return blog_runner.create(
+        """A step-by-step run that still goes on, for the tests of a run's team behaviour
+        (driver, takeover, publishing). Only the manuscript editor's own runs go on, so it is
+        marked as one; a run of the earlier flow is a saved record (test_saved_gate)."""
+        found = blog_runner.create(
             self.root,
             {
                 'title': 'Fictional launch',
@@ -582,6 +584,11 @@ class TeamTests(unittest.TestCase):
                 'stop': 'outline',
             },
         )
+        directory, _, run = blog_runner.load(self.root, found['id'])
+        run['editor_check'] = 'revise'
+        studio.write_json(directory / blog_runner.STATE, run)
+        teams.saved(self.root, found['id'])  # Committed, as the editor's check commits it.
+        return blog_runner.survey(self.root, found['id'])
 
     def desk(self, **extra):
         """A blog started on the writing desk in the team workspace, as the page starts one:

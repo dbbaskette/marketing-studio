@@ -36,6 +36,13 @@ classification the migration preview gives (`outcome`, `reason`):
   clear, with new work from it meanwhile. A marker the earlier flow left that no runner
   picks up again keeps nothing waiting.
 
+Every changing command and page action refuses a saved blog, before anything is
+written, with the sentence that names its two ways on. Allowed: the migration preview
+and `desk migrate`, Delete, and `team take`/`takeover` only where taking it lets it
+open on the desk. A finished one also keeps its Done card's actions, `editorial
+schedule`, `team publish`, the Google Doc commands and the `article` commands. A saved
+blog is never handed over.
+
 ## Manuscript editing on the page
 
 **Edit manuscript** supports local Markdown edits, scoped checks, selected findings,

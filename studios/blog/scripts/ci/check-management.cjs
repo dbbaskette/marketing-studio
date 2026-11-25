@@ -6072,10 +6072,15 @@ async function savedRecordStates(){
   assert.equal(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').length,0,'its Done card holds the action');
   said('Finished: it is edited on the writing desk from here on');said('Done');
   nothingContinues();
-  // A finished team blog keeps its driver actions and Record in team repository, quiet.
+  // A finished team blog keeps Record in team repository, quiet; it is never handed over.
   shown={...shown,team:true,driver:{name:'This computer',here:true}};await t.f.run("sRoute('run','saved')");
-  assert.deepEqual(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').map(n=>[n.textContent,n.className.split(' ').includes('button-filled')]),[['Hand over',false],['Record in team repository',false]]);
+  assert.deepEqual(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').map(n=>[n.textContent,n.className.split(' ').includes('button-filled')]),[['Record in team repository',false]]);
+  assert.ok(!t.nodes().some(n=>n.textContent==='Hand over'),'a saved blog is never handed over');
   assert.deepEqual(filled().map(n=>n.textContent),['Open on the desk']);
+  // Another computer drives it: Take over, which it needs to be opened on the desk here.
+  shown={...shown,driver:{name:'Ana',here:false}};await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').map(n=>n.textContent),['Take over']);
+  shown={...shown,driver:{name:'This computer',here:true}};
   // It waits: what clears it is the main action, or new work while nothing here can.
   const waiting=(why,clear,extra={})=>({id:'saved',title:'Synthetic saved blog',status:'wait',expected:'run-v2',team:false,driver:null,sentence:'Waiting.',...extra,saved_record:{...files,outcome:'wait',why,clear,token:clear==='recover'?'bm1.token':null,...(extra.saved||{})}});
   shown=waiting('A step of this blog is under way. Stop it before opening on the desk.','stop');

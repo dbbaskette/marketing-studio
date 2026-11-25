@@ -384,6 +384,11 @@ def _take(root, ident, found):
 
 
 def action(root, ident, action, expected=None):
+    import saved_gate
+
+    # A blog saved by the earlier flow: Take only to open it on the desk, never Hand over,
+    # and publish only a finished one (saved_gate).
+    saved_gate.page(root, 'team-' + str(action), {'id': ident})
     found = space(root)
     if not found:
         raise ValueError('Join a team repository before taking or handing over a blog.')
