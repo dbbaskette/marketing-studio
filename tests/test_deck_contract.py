@@ -1,10 +1,12 @@
 """Both studios make a slide deck the same way: the contract between them, run for real.
 
-Each studio's tests hold a `deck_contract` module that takes one deck through its engine at
-every review level, with stand-ins only (no provider, no network, a disposable home), and
-writes what the deck's workers read and where it paused. They differ only in where an
-outline's words come from, so what is compared is the deck's own guidance and the brand's,
-and the brand's checkpoints.
+Each studio's tests hold a `deck_contract` module that takes one deck through its engine,
+with stand-ins only (no provider, no network, a disposable home), and writes what the deck's
+workers read and, for Training Studio, where it paused at every review level. They differ
+only in where an outline's words come from, so what is compared is the deck's own guidance
+and the brand's. Presentation Studio's deck is a desk deck, which reads no review level: its
+review-level pauses went with its earlier step-by-step flow (GitHub issue #542), so Training
+Studio's are compared with deck_flow alone.
 """
 import json
 import os
@@ -52,14 +54,12 @@ class DeckContractTests(unittest.TestCase):
         self.assertEqual(lacking, [studio for studio, side in (('training', training),
                                    ('presentation', presentation))
                                    if 'design guidance' not in side['outline']])
-        self.assertEqual(training['pauses'], presentation['pauses'])
         self.assertEqual(training['pauses'], {level: list(stops) for level, stops
                                               in deck_flow.PAUSES.items()})
         self.assertIn(deck_flow.BRAND_WORKER, training['composer'])
         # Looks that cannot be rendered: the same pauses, the brand's default taken knowingly
         # where the person is asked, by the policy under Automatic draft, and recorded as a
         # look nobody saw rendered.
-        self.assertEqual(training['failing'], presentation['failing'])
         self.assertEqual({level: entry['by'] for level, entry in training['failing'].items()},
                          {'step_by_step': 'page', 'balanced': 'page',
                           'automatic': 'review-policy'})

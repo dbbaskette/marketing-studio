@@ -4,7 +4,6 @@ What a caller needs to know
 ---------------------------
     saved_fixtures.load(case, 'build')                 # a copy of the stored deck, committed
     saved_fixtures.load(case, 'build', title='Other')  # the same deck under another title
-    python3 tests/saved_fixtures.py --write [STATE ...]   # capture again from the saved flow
 
 - Each state of `STATES` is one folder under tests/fixtures/saved/<state>/, holding the
   deck's folder by its own name, as the saved flow wrote it: run.json, the shared files,
@@ -12,416 +11,51 @@ What a caller needs to know
   disposable workspace and commits it there as one change, so the migration, the
   read-only record and the finished Open on the desk read it as they read a deck that
   was made on this computer.
-- Every state was made by running the real saved flow (`StudioCase.saved_start`, then the
+- Every state was made by running the real saved flow (then `StudioCase.saved_start`, the
   gates decided, a pause taken, a step failed or a question asked as a person or worker
-  would) at the commit that added it. Where the stand-ins cannot reach a saved shape, the
-  maker edits the record the dispatch saved, and says so (`EDITED`).
+  would), with the engine option `at_once=1`, at the commits that added them. Where the
+  stand-ins could not reach a saved shape, the record the dispatch saved was edited
+  (`EDITED`). That flow, and the capture that ran it, went with GitHub issue #542: the
+  stored trees are now the saved work every test reads, and are never written again.
 - Scrubbed at capture, and put back at load: the deck's own folder (`@DECK@`), the
   stand-in brand skill's temporary folder (`@BRAND@`) and the test's temporary folder
   (`@BASE@`). Nothing else changes: no machine name, home folder or real name is held,
-  as the stand-ins and the case's made-up person (Alex) are all a capture sees.
+  as the stand-ins and the case's made-up person (Alex) are all a capture saw. Each
+  state's scrubbed.json holds the SHA-256 each scrubbed file had as written.
 - `load(..., title=)` gives the copy another title and folder name, as two decks of the
   same kind in one workspace have; in a shared workspace the copy is claimed by this
-  computer, as `saved_start` claims the deck it constructs.
-- Captured with the engine option `at_once=1` (one section, or one research question, at
-  a time) where the engine's default is 3: side-by-side jobs otherwise record in whichever
-  order they finish, and stable stored bytes matter more here than the default.
-- tests/test_saved_fixtures.py makes each state again from the saved flow and compares it
-  with the stored tree. It is the proof that the stored files are what the flow writes,
-  and it goes when the saved flow does (GitHub issue #542).
+  computer, as the saved flow claimed the deck it started.
+- tests/test_saved_fixtures.py checks the stored trees against themselves: every pin names
+  the stored bytes, nothing names this computer, and a loaded copy is the stored deck.
 """
 from __future__ import annotations
 
 import hashlib
-import io
 import json
-import os
-import re
-import shutil
-import sys
-import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 STORE = HERE / 'fixtures' / 'saved'
 SCRUBBED = 'scrubbed.json'
 PLACES = ('@DECK@', '@BRAND@', '@BASE@')
-BRAND_HOME = re.compile(r'/[^"\s`\\]*?/brand-stand-in-[A-Za-z0-9_]+')
 
-PASTE = {'kind': 'paste', 'text': 'Notes on rolling restarts.'}
-UPLOAD = {'kind': 'upload', 'name': 'old.pptx'}
 QUESTION = 'Which diagram style should the restart batches use?'
 
-# --- the makers: each runs the real saved flow to one saved state ---------------------------
-
-
-def _existing(case, level, **changes):
-    from test_flow_routes import DECK
-    return case.saved_start(route='existing', level=level, title='Old ' + level,
-                            source=dict(UPLOAD), uploads={'old.pptx': DECK},
-                            **({'selected': 'Shorten slide 2'} if level == 'selected' else {}),
-                            **changes)
-
-
-def _waits(case, root, gate):
-    shown = case.view(root)
-    found = (shown['gate'] or {}).get('name')
-    assert found == gate, (root.name, found, shown['sentence'])
-    return root
-
-
-def _delivered(case, review='step_by_step', **changes):
-    case.review_level = review
-    root = case.gated(**changes)
-    case.decide(root, 'gate:build')
-    from runner import decks
-    assert decks.delivered(root) is not None, case.view(root)['sentence']
-    return root
-
-
-def outline(case):
-    return _waits(case, case.saved_start(), 'gate:outline')
-
-
-def document_outline(case):
-    root = case.saved_start(title='Document outline', route='document', source=dict(PASTE))
-    case.decide(root, 'gate:classify', extra={'kind': 'material'})
-    return _waits(case, root, 'gate:outline')
-
-
-def look(case):
-    root = case.saved_start(title='At the look')
-    case.decide(root, 'gate:outline')
-    return _waits(case, root, 'gate:look')
-
-
-def build(case):
-    return _waits(case, case.gated(), 'gate:build')
-
-
-def balanced(case):
-    case.review_level = 'balanced'
-    return case.saved_start(title='Balanced')
-
-
-def selected(case):
-    return _waits(case, _existing(case, 'selected'), 'gate:classify')
-
-
-def selected_automatic(case):
-    """Selected changes at the Automatic level: its patch planned and drawn, the deck
-    waiting at gate:build."""
-    from test_desk_words import planned
-    case.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-    return _waits(case, case.saved_existing_deck('automatic', 'selected', selected='Shorten slide 2'),
-                  'gate:build')
-
-
-def delivered(case):
-    return _delivered(case)
-
-
-def delivered_pptx(case):
-    return _delivered(case, output='pptx', title='Rolling restarts file')
-
-
-def delivered_balanced(case):
-    return _delivered(case, 'balanced', title='Rolling restarts balanced')
-
-
-def delivered_automatic(case):
-    return _delivered(case, 'automatic', title='Rolling restarts automatic')
-
-
-def delivered_document_balanced(case):
-    return _delivered(case, 'balanced', title='Notes balanced', route='document',
-                      source=dict(PASTE))
-
-
-def delivered_document_automatic(case):
-    return _delivered(case, 'automatic', title='Notes automatic', route='document',
-                      source=dict(PASTE))
-
-
-def delivered_selected(case):
-    from test_desk_words import planned
-    case.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-    root = case.saved_existing_deck('automatic', 'selected',
-                                    selected='Shorten the words on slide 2')
-    case.decide(root, 'gate:build')
-    return root
-
-
-def paused(case):
-    """A real pause: Pause on the page while the outline step works. The step ends after
-    it, as a real worker's does, and the runner keeps the pause with the outline made."""
-    def pausing(tools, job):
-        root = next(path.parent for path in case.space.root.rglob('run.json')
-                    if json.loads(path.read_text()).get('title') == 'Paused mid-step')
-        assert case.engine.act(root, 'pause')['state'] == 'paused'
-        return case.workers.outline(tools, job)
-    case.workers.then('outline', pausing)
-    root = case.saved_start(title='Paused mid-step')
-    assert case.view(root)['state'] == 'paused', case.view(root)['sentence']
-    return root
-
-
-def failed(case):
-    """A step after the outline and the look fails every try, so the run stops failed."""
-    import runner_support
-    case.workers.then('section', *[runner_support.fails()] * 12)
-    root = case.saved_start(title='Failed drawing')
-    case.decide(root, 'gate:outline')
-    shown = case.view(root)
-    if (shown['gate'] or {}).get('name') == 'gate:look':
-        offered = (shown['gate'].get('offered') or (shown['gate'].get('look') or {}).get('offered'))
-        case.decide(root, 'gate:look', 'approve', None,
-                    {'look': offered['looks'][0]['id']} if offered and not offered['chosen'] else None)
-    assert case.view(root)['state'] == 'failed', case.view(root)['sentence']
-    return root
-
-
-def question(case):
-    """The person asks for changes to the drafted outline, and the worker drafting it
-    again asks them a question: the first draft is kept, the outline step unfinished."""
-    import runner_support
-    root = _waits(case, case.saved_start(title='Asked'), 'gate:outline')
-    case.workers.then('outline', runner_support.asks(QUESTION))
-    case.decide(root, 'gate:outline', 'changes', 'Fewer slides on the batches.')
-    assert (case.view(root)['question'] or {}).get('text') == QUESTION, case.view(root)['sentence']
-    return root
-
-
-def question_early(case):
-    """A worker drafting the outline asks the person a question: nothing is made yet."""
-    import runner_support
-    case.workers.then('outline', runner_support.asks(QUESTION))
-    root = case.saved_start(title='Asked early')
-    assert (case.view(root)['question'] or {}).get('text') == QUESTION, case.view(root)['sentence']
-    return root
-
-
-def research_plan(case):
-    return _waits(case, case.saved_start(title='Research plan', research=True), 'gate:research-plan')
-
-
-def research(case):
-    root = case.saved_start(title='Research found', research=True)
-    case.decide(root, 'gate:research-plan')
-    return _waits(case, root, 'gate:research')
-
-
-def document_classify(case):
-    root = case.saved_start(title='Document read', route='document', source=dict(PASTE))
-    return _waits(case, root, 'gate:classify')
-
-
-def existing_brand_only(case):
-    return _waits(case, _existing(case, 'brand-only'), 'gate:classify')
-
-
-def existing_polish(case):
-    return _waits(case, _existing(case, 'polish'), 'gate:classify')
-
-
-def existing_redesign(case):
-    return _waits(case, _existing(case, 'redesign'), 'gate:classify')
-
-
-def existing_rework(case):
-    return _waits(case, _existing(case, 'rework'), 'gate:classify')
-
-
-RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
-
-
-def _author(tools, job):
-    """A research author: saves the case's synthetic page and hands in a dossier of it."""
-    from runner_support import URL
-    from synthesis_fixture import dossier
-    payload = json.loads(tools.read_input('research-task')[1])
-    assert tools.save_source(URL)[0]
-    source = tools._index()[0]
-    accepted = tools.submit_artifact('research-result', json.dumps(
-        dossier(payload['worker'], source['file'], source['url'])))
-    assert accepted[0], accepted
-
-
-def _checker(tools, job):
-    """The independent research reviewer: reads the source and accepts the dossier."""
-    from synthesis_fixture import review
-    payload = json.loads(tools.read_input('research-task')[1])
-    assert tools.read_source('s1')[0]
-    accepted = tools.submit_artifact('research-result', json.dumps(review(payload['review_template'])))
-    assert accepted[0], accepted
-
-
-def _collector(tools, job):
-    """A parallel research worker: investigates, combines or reviews, as its task says."""
-    import copy
-    from runner_support import URL
-    from synthesis_fixture import dossier, review
-    payload = json.loads(tools.read_input('research-task')[1])
-    if 'questions' in payload:
-        assert tools.save_source(URL)[0]
-        source = tools._index()[0]
-        value = dossier(payload['worker'], source['file'], source['url'])
-        value = {**{key: value[key] for key in ('schema', 'sources', 'facts')}, 'gaps': []}
-    elif 'evidence' in payload and 'review_template' not in payload:
-        first = payload['evidence']['facts'][0]['id']
-        value = dossier(payload['worker'])
-        value['findings'] = [{**copy.deepcopy(value['findings'][0]), 'id': question['id'],
-                              'summary': {'text': 'More than one instance keeps capacity.',
-                                          'kind': 'summary', 'refs': [first]},
-                              'support': [first], 'conditions': []}
-                             for question in payload['task']['planning_questions']]
-        value['sections'][0]['blocks'][0]['refs'] = [first]
-        value['brief'][0]['blocks'][0]['refs'] = [value['findings'][0]['id']]
-        value = {key: value[key] for key in ('schema', 'findings', 'sections', 'brief')}
-    else:
-        for source in tools._index():
-            assert tools.read_source(source['id'])[0]
-        value = review(payload['review_template'])
-    accepted = tools.submit_artifact('research-result', json.dumps(value))
-    assert accepted[0], accepted
-
-
-def _researching(case):
-    """The case's research is the pinned Harness Research stand-in the suites name in
-    STUDIO_TEST_RESEARCH_RUNTIME, reading the case's synthetic page."""
-    from runner import research as research_cli
-    from runner_support import URL
-    from synthesis_fixture import TEXT
-    assert RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME to capture a researched state.'
-    case.research = research_cli.Research(Path(RUNTIME))
-    case.web.page(URL, TEXT, 'text/plain')
-
-
-def researched(case):
-    """Schema 3: research asked for at the start, its plan and findings approved at their
-    stops, the research run by the pinned helper, the deck waiting at its drafted outline."""
-    from studio_core import research_contract
-    _researching(case)
-    case.workers.then('research-result', _author, _checker)
-    root = case.saved_start(title='Researched', research=True,
-                            saved_contract=research_contract.snapshot(case.research))
-    _waits(case, root, 'gate:research-plan')
-    case.decide(root, 'gate:research-plan')
-    _waits(case, root, 'gate:research')
-    case.decide(root, 'gate:research')
-    return _waits(case, root, 'gate:outline')
-
-
-def _parallel_start(case, title):
-    """A saved start of schema 4: as `researched`'s, with the parallel research collection
-    the engine pins when its helper offers one. `saved_start` builds a saved record of
-    schema 1 to 3, so the record is given the execution pin the engine writes
-    (`research_session.execution`) before the saved flow is woken for it."""
-    from unittest import mock
-    from runner import decks
-    from studio_core import research_contract, research_session
-    _researching(case)
-    case.engine.parallel_research = True
-    case.workers.then('research-result', *[_collector] * 12)
-    with mock.patch.object(case.engine, 'wake'):
-        root = case.saved_start(title=title, research=True,
-                                saved_contract=research_contract.snapshot(case.research))
-    record = decks.read_run(root)
-    execution = research_session.execution(case.research.runtime)
-    assert execution, 'The pinned helper offers no parallel research collection.'
-    record.update(schema=4, research_execution=execution)
-    decks.write_run(root, record)
-    case.engine._commit(root, 'pin its parallel research collection')
-    case.engine.wake(root)
-    return _waits(case, root, 'gate:research-plan')
-
-
-def parallel_research(case):
-    """Schema 4 at its research plan: nothing researched or drafted yet."""
-    return _parallel_start(case, 'Parallel research plan')
-
-
-def researched_parallel(case):
-    """Schema 4: its plan and findings approved, the research collected in parallel by the
-    pinned helper, the deck waiting at its drafted outline."""
-    root = _parallel_start(case, 'Researched in parallel')
-    case.decide(root, 'gate:research-plan')
-    _waits(case, root, 'gate:research')
-    case.decide(root, 'gate:research')
-    return _waits(case, root, 'gate:outline')
-
-
-def unleveled(case):
-    """EDITED: a deck at its outline whose record says schema 2 but has lost its review
-    level, which the runner refuses."""
-    from runner import decks
-    root = case.saved_start(title='Unleveled')
-    record = case.record(root)
-    record['schema'] = 2
-    record.pop('review_policy', None)
-    decks.write_run(root, record)
-    return root
-
-
-def corrupt(case):
-    """EDITED: a deck at its outline whose run.json no longer parses."""
-    root = case.saved_start(title='Corrupt')
-    (root / 'run.json').write_text('{not json')
-    return root
-
-
-STATES = {name.replace('_', '-'): maker for name, maker in (
-    ('outline', outline), ('document_outline', document_outline), ('look', look),
-    ('build', build), ('balanced', balanced), ('selected', selected),
-    ('selected_automatic', selected_automatic), ('delivered', delivered),
-    ('delivered_pptx', delivered_pptx), ('delivered_balanced', delivered_balanced),
-    ('delivered_automatic', delivered_automatic),
-    ('delivered_document_balanced', delivered_document_balanced),
-    ('delivered_document_automatic', delivered_document_automatic),
-    ('delivered_selected', delivered_selected), ('paused', paused), ('failed', failed),
-    ('question', question), ('question_early', question_early),
-    ('research_plan', research_plan), ('research', research),
-    ('document_classify', document_classify), ('existing_brand_only', existing_brand_only),
-    ('existing_polish', existing_polish), ('existing_redesign', existing_redesign),
-    ('existing_rework', existing_rework), ('parallel_research', parallel_research),
-    ('researched', researched),
-    ('researched_parallel', researched_parallel), ('unleveled', unleveled), ('corrupt', corrupt))}
+STATES = ('outline', 'document-outline', 'look', 'build', 'balanced', 'selected',
+          'selected-automatic', 'delivered', 'delivered-pptx', 'delivered-balanced',
+          'delivered-automatic', 'delivered-document-balanced',
+          'delivered-document-automatic', 'delivered-selected', 'paused', 'failed',
+          'question', 'question-early', 'research-plan', 'research', 'document-classify',
+          'existing-brand-only', 'existing-polish', 'existing-redesign', 'existing-rework',
+          'parallel-research', 'researched', 'researched-parallel', 'unleveled', 'corrupt')
 EDITED = ('unleveled', 'corrupt')
-# States made with the pinned Harness Research helper the suites name in
-# STUDIO_TEST_RESEARCH_RUNTIME: captured, and compared again, only where it is set.
-RESEARCHED = ('parallel-research', 'researched', 'researched-parallel')
 
 
-# --- capture, compare and load ----------------------------------------------------------------
+# --- load -------------------------------------------------------------------------------------
 
 
 def _places(case, root):
     return (('@DECK@', str(root)), ('@BRAND@', str(case.brand.run.home)), ('@BASE@', str(case.base)))
-
-
-def capture(case, state: str) -> tuple[str, dict, dict]:
-    """Run the saved flow to `state` in `case`'s disposable workspace: the deck's folder
-    name, each of its files by relative path, scrubbed, and the SHA-256 each scrubbed file
-    had as written (`load` needs it to find where another file names it)."""
-    root = STATES[state](case)
-    files, digests = {}, {}
-    for path in sorted(root.rglob('*')):
-        if path.is_symlink() or not path.is_file():
-            continue
-        relative = path.relative_to(root).as_posix()
-        data = path.read_bytes()
-        try:
-            text = data.decode('utf-8')
-        except UnicodeDecodeError:
-            files[relative] = data
-            continue
-        for mark, place in _places(case, root):
-            text = text.replace(place, mark)
-        text = BRAND_HOME.sub('@BRAND@', text)
-        files[relative] = text.encode('utf-8')
-        if files[relative] != data:
-            digests[relative] = hashlib.sha256(data).hexdigest()
-    return root.name, files, digests
 
 
 def scrubbed(state: str) -> dict:
@@ -436,76 +70,6 @@ def stored(state: str) -> tuple[str, dict]:
     deck = decks[0]
     return deck.name, {path.relative_to(deck).as_posix(): path.read_bytes()
                        for path in sorted(deck.rglob('*')) if path.is_file()}
-
-
-def write(state: str, name: str, files: dict, digests: dict) -> None:
-    folder = STORE / state
-    if folder.exists():
-        shutil.rmtree(folder)
-    for relative, data in files.items():
-        target = folder / name / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-    (folder / SCRUBBED).write_text(json.dumps(digests, indent=1, sort_keys=True) + '\n')
-
-
-# What differs between two runs of the same flow, each named. Everything else must match.
-# 1. When: every time a record keeps (a run's start, a step's tries, an answer, a commit).
-TIMES = re.compile(rb'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?')
-# 2. For how long: the seconds a step, a research attempt or the run's own clock measured
-#    ("seconds", "active_seconds", "elapsed_seconds" and the like).
-DURATIONS = re.compile(rb'"(\w*seconds|elapsed|duration|took)": ?[0-9.]+(?:e-?\d+)?')
-# 3. The slides stand-in's numbering of the Google decks it makes in one process.
-GOOGLE = re.compile(rb'stand-in-deck-\d+')
-# 4. Digests and random names. What is hashed holds a time (the stand-in brand contract's
-#    export, the outline, a drawing round), and some names are picked at random (a round's
-#    folder, a job's or a research worker's ID). They are not masked: each distinct value is
-#    named by the order it first appears in, the same on both sides, so a pin must still
-#    name the same thing as on the other side. A digest is a run of 6 to 64 lowercase hex
-#    characters with a letter in it; the random round names of 6 and the job IDs of 12 may
-#    be digits alone, so those are matched by where they stand.
-TOKENS = re.compile(rb'(?<![0-9A-Za-z])(?=[0-9]*[a-f])[0-9a-f]{6,64}(?![0-9A-Za-z])'
-                    rb'|(?:(?<=whole-)|(?<=-0-)|(?<=outline-)|(?<="drawn": "))[0-9a-f]{6}(?![0-9A-Za-z])'
-                    rb'|(?<="id":")[0-9a-f]{12}(?![0-9A-Za-z])')
-
-
-def _unzipped(data: bytes) -> bytes:
-    """A zip's members and their contents, in the order it holds them, without the times
-    it keeps for each."""
-    if not data.startswith(b'PK\x03\x04'):
-        return data
-    try:
-        with zipfile.ZipFile(io.BytesIO(data)) as kept:
-            return b'\n'.join(member.encode() + b'\0' + kept.read(member)
-                              for member in kept.namelist())
-    except zipfile.BadZipFile:
-        return data
-
-
-def normal(files: dict) -> list:
-    """The files, each (name, data), with what differs between runs put aside as TIMES,
-    DURATIONS, GOOGLE and TOKENS name it, in an order that does not depend on those values.
-    Nothing is re-ordered inside a file: lists, slides and history keep their order."""
-    timed = {}
-    for name, data in files.items():
-        data = _unzipped(data)
-        for pattern, said in ((TIMES, b'<when>'), (DURATIONS, rb'"\1": <seconds>'),
-                              (GOOGLE, b'stand-in-deck-<n>')):
-            data = pattern.sub(said, data)
-        timed[name] = data
-    blind = {name: (TOKENS.sub(b'*', name.encode()), TOKENS.sub(b'*', data))
-             for name, data in timed.items()}
-    named = {}
-
-    def rename(found):
-        return named.setdefault(found.group(), b'<%d>' % len(named))
-
-    # Contents first, in an order that does not depend on the values: a value is named by
-    # where a record first mentions it, never by the order of files that differ only by it
-    # (the drawing progress pictures, named by their own digests).
-    order = sorted(timed, key=lambda name: blind[name])
-    contents = {name: TOKENS.sub(rename, timed[name]) for name in order}
-    return sorted((TOKENS.sub(rename, name.encode()).decode(), contents[name]) for name in order)
 
 
 def _replace(placed: dict, old: str, new: str) -> None:
@@ -597,39 +161,3 @@ def load(case, state: str, title: str | None = None, engine=None) -> Path:
         with engine.files:
             engine._claimed(root, space)
     return root
-
-
-def _case():
-    import runner_support
-
-    class Capture(runner_support.DeskCase):
-        def runTest(self):
-            pass
-    case = Capture()
-    case.setUp()
-    # One section, or one research question, at a time: the runner's own option, so that
-    # what side-by-side jobs record does not depend on which of them finished first.
-    case.engine = case.make(at_once=1)
-    return case
-
-
-def main(argv) -> int:
-    states = [name for name in argv if not name.startswith('-')] or list(STATES)
-    if '--write' not in argv:
-        print(__doc__)
-        return 2
-    for state in states:
-        case = _case()
-        try:
-            name, files, digests = capture(case, state)
-        finally:
-            case.doCleanups()
-        write(state, name, files, digests)
-        print(state, name, len(files), 'files', sum(len(data) for data in files.values()), 'bytes')
-    return 0
-
-
-if __name__ == '__main__':
-    sys.path[:0] = [str(HERE.parent), str(HERE)]
-    import helpers  # noqa: F401  the disposable data folder, as every test has
-    sys.exit(main(sys.argv[1:]))

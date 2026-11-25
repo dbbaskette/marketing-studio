@@ -15,7 +15,7 @@ import runner_support
 import saved_fixtures
 import test_desk_page
 import test_runner_page
-from runner import decks, desk_chat, desk_migration
+from runner import decks, desk, desk_chat, desk_migration
 from studio_core.sync_guard import SYNC_WAIT
 from studio_core import research_session, sync_guard
 import test_running_check_records as running_check
@@ -133,6 +133,11 @@ class GatedSavedStateTests(runner_support.DeskCase):
                         ask()
                     if state != 'unleveled':
                         self.assertEqual(str(refused.exception), self.engines.SAVED_FLOW_ENDED)
+                # The desk's own routes are for desk work: they refuse it with their sentence.
+                with self.assertRaises(desk_chat.WorkspaceError) as refused:
+                    self.engine.desk_stop(root)
+                if state != 'unleveled':
+                    self.assertEqual(str(refused.exception), desk.NOT_ON_DESK)
                 self.assertEqual(self.snapshot(self.space.root), before)
         listed = {brief['id']: brief for kind in self.engine.decks().values() for brief in kind}
         self.assertEqual(listed['unleveled']['title'], 'Unleveled')
@@ -366,30 +371,6 @@ class GatedSavedStateTests(runner_support.DeskCase):
                 self.assertEqual(shown['saved_record']['state'], 'read-only')
                 self.assertEqual(shown['saved_record']['why'], why)
                 self.assertEqual(shown['saved_record']['next'], 'copy')
-
-    def test_a_pause_taken_mid_step_waits_for_its_step(self):
-        # A real pause: Pause on the page (`act`) while the outline step is working. The
-        # worker carries on after it, as a real one does; while it does, the step's lock is
-        # in hand and the run is busy, so the preview says to wait. This runs the saved
-        # flow, as the running step is what it tests; it goes with the flow.
-        seen = {}
-
-        def pausing(tools, job):
-            root = next(path.parent for path in self.space.root.rglob('run.json')
-                        if json.loads(path.read_text()).get('title') == 'Paused mid-step')
-            seen['root'] = root
-            seen['shown'] = self.engine.act(root, 'pause')['state']
-            seen['locked'] = (root / self.engines.IN_HAND).is_file()
-            seen['preview'] = desk_chat.migration_preview(self.engine, root)
-            return self.workers.outline(tools, job)
-
-        self.workers.then('outline', pausing)
-        root = self.saved_start(title='Paused mid-step')
-        self.assertEqual(seen['root'], root)
-        self.assertEqual(seen['shown'], 'paused')
-        self.assertTrue(seen['locked'])
-        self.assertIn(SYNC_WAIT, seen['preview']['blockers'])
-        self.assertEqual(seen['preview']['writes'], [])
 
     def test_a_pause_taken_mid_step_then_opens_losslessly(self):
         root = self.load_saved('paused')

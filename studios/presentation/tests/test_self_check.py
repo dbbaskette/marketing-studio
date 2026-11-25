@@ -111,7 +111,8 @@ class TextCheckTests(DeskCase):
         self.assertEqual(shown['gate']['slides'][1]['title'], LONG_OUTLINE['slides'][1]['title'])
 
     def test_a_deck_saved_before_keeps_the_steps_it_began_with(self):
-        root = self.gated()
+        # The stored deck the earlier step-by-step flow left at its deck (GitHub issue #542).
+        root = self.load_saved('build')
         self.assertNotIn('outline-check', [step.name for step in stages.steps(self.record(root))])
         self.assertEqual(self.workers.of('text-check'), [])
 

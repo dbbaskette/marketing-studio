@@ -103,11 +103,6 @@ class DeskGateTests(DeskCase):
         self.assertEqual(plan['scope'], 'public-web')
         self.assertTrue(research_contract)
 
-    def test_a_gated_deck_still_stops_at_every_gate(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertNotIn('flow', self.record(root))
-
 
 class DeskRefusalTests(DeskCase):
     """A desk deck is changed only on the desk, and a gated deck only on its own screen."""
@@ -152,15 +147,6 @@ class DeskRefusalTests(DeskCase):
         told = [job.task for job in self.workers.of('section')
                 if 'Slide 3: Name the batch size.' in job.task]
         self.assertEqual(len(told), 1)
-
-    def test_a_gated_deck_refuses_every_desk_route(self):
-        root = self.gated()
-        for name, given in self.ROUTES:
-            with self.subTest(route=name):
-                with self.assertRaises(WorkspaceError) as caught:
-                    getattr(self.engine, name)(root, *given)
-                self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
-        self.assertEqual(self.waiting(root), 'gate:build')
 
 
 BLOCKED = {'status': 'BLOCKED', 'warnings': [],
@@ -229,10 +215,6 @@ class DeskViewTests(DeskCase):
         self.assertIsNone(seen[0]['minutes_left'], 'nothing was recorded here yet')
         self.assertGreaterEqual(seen[1]['minutes_left'], 1)
         self.assertTrue(seen[1]['started_at'])
-
-    def test_a_gated_deck_has_no_desk_view(self):
-        root = self.saved_start()
-        self.assertIsNone(self.view(root)['desk'])
 
     def test_notes_sent_while_drawing_are_not_sent_again_after_arrival(self):
         sent = []
@@ -761,13 +743,6 @@ class DeliverTests(DeskCase):
         self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1, 2])
         self.assertEqual(self.names(), ['Rolling restarts', 'Rolling restarts (revision 2)'])
 
-    def test_a_gated_deck_still_delivers_with_its_first_draft_title(self):
-        root = self.gated(initial_review='user-first')
-        self.decide(root, 'gate:build')
-        self.assertEqual(self.names(), ['Rolling restarts — first draft, not checked'])
-        name, _ = self.engine.download(root)
-        self.assertEqual(name, f'{root.name}-unreviewed-first-draft.pptx')
-
 
 class DeskTeamTests(DeskCase, runner_support.TeamCase):
     """The team claim holds on the desk: only the computer that drives a deck changes it,
@@ -1028,12 +1003,6 @@ class SecondReviewTests(DeskCase):
         self.assertTrue(shown['working']['halted'])
         self.assertFalse(shown['deliverable'])
 
-    def test_the_older_note_for_the_next_step_is_refused_on_the_desk(self):
-        root = self.deck()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.note(root, 'Keep it short.')
-        self.assertEqual(str(caught.exception), desk.ON_DESK)
-
     def test_a_whole_deck_note_before_the_desk_says_so(self):
         said = []
 
@@ -1113,12 +1082,6 @@ class SourceTests(DeskCase):
             self.engine.desk_source(root, None, text='   ', title='Empty')
         self.assertIn('holds no text', str(caught.exception))
         self.assertEqual(len(self.desk_view(root)['sources']), 1)
-
-    def test_a_gated_deck_adds_no_source_on_the_desk(self):
-        root = self.gated()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.desk_source(root, 'notes.md', b'Two at a time.')
-        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
 
     def test_research_again_is_priced_before_it_runs(self):
         from studio_core import research_contract

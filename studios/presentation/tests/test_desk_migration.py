@@ -690,14 +690,6 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
             with gitstate.workspace_locked(self.space, self.engine.files, configured=True):
                 self.fail('older configured writer admitted')
 
-    def test_policy_continuation_cannot_approve_after_migration(self):
-        from runner import stages
-        root = self.load_saved('build')
-        self.migrate(root)
-        before = self.snapshot(root)
-        self.engine._policy_gate(root, stages.BY_NAME['gate:outline'])
-        self.assertEqual(self.snapshot(root), before)
-
     def test_saved_schemas_one_two_three_prepare_without_rewriting_input(self):
         root = self.load_saved('build')
         original = (root / 'run.json').read_bytes()

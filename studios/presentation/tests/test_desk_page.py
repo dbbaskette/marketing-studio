@@ -885,15 +885,6 @@ class ProgressTests(DeskPageCase):
         self.assertEqual(self.posts(result), [('/api/build-feedback', {
             'path': path, 'ref': 'a' * 32, 'note': 'Fewer words.', 'number': 3})])
 
-    def test_a_gated_deck_keeps_its_own_screen(self):
-        path = self.saved_started()
-        result = self.open_deck(path, self.run_of(path), [{'snapshot': 'gated'}])
-        shot = result['snapshots']['gated']
-        self.assertIsNone(self.run_of(path)['desk'])
-        self.assertEqual(shot['filled'], ['Approve'])
-        self.assertNotIn(NOTHING_NEEDED, shot['text'])
-        self.assertNotIn('Section 1', shot['headings'])
-
 
 class DeskTests(DeskPageCase):
     """Task 1.14: the desk, with its cards, notes, Stop, the Outline tab and Deliver."""

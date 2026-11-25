@@ -27,10 +27,6 @@ STARTED = 'Rolling restarts: set up its run, driven by Alex'
 
 
 class Team(TeamCase):
-    def started(self, person=None, **changes) -> Path:
-        person = person or self.alex
-        with self.be(person):
-            return self.saved_start(engine=person.engine, **changes)
 
     def begun(self, person=None, **changes) -> Path:
         """A desk deck started by `person` (Alex unless named), resting on the desk."""
@@ -240,19 +236,6 @@ class DriverTests(Team):
             self.blake.engine.desk_draw_here(self.theirs(self.blake, root))
         self.assertEqual(self.seen(self.blake, root)['gate']['name'], 'gate:build')
 
-    def test_my_delivered_deck_is_changed_without_taking_it(self):
-        root = self.started()
-        with self.be(self.alex):
-            self.to_end(root)
-            self.assertEqual(self.record(root)['delivered_by'], team.computer())
-            self.assertTrue(self.alex.engine.view(root)['mine'])
-            self.alex.engine.decide(root, 'gate:build', 'changes', 'Shorter.')
-            self.assertEqual(self.record(root)['driver']['computer'], team.computer())
-        self.fetch(self.blake)
-        theirs = self.seen(self.blake, root)
-        self.assertFalse(theirs['mine'])
-        self.assertEqual(theirs['driver']['name'], 'Alex')
-
     def test_a_teammate_downloads_the_delivered_powerpoint(self):
         root = self.begun(output='pptx')
         self.delivered(self.alex, root)
@@ -311,22 +294,6 @@ class DriverTests(Team):
         self.drive(self.blake, root)
         self.changed(self.blake, root)
         self.assertEqual(self.seen(self.blake, root)['gate']['name'], 'gate:build')
-
-    def test_a_deck_taken_at_its_brand_draws_its_sample_again_here(self):
-        root = self.started()
-        self.approve(self.alex, root, 'gate:outline')
-        self.drive(self.alex, root, 'hand-over')
-        self.fetch(self.blake)
-        theirs = self.theirs(self.blake, root)
-        self.assertFalse((theirs / 'work').exists(), 'what it made on the way stays there')
-        self.drive(self.blake, root)
-        view = self.seen(self.blake, root)
-        self.assertEqual(view['gate']['name'], 'gate:look')
-        self.assertEqual(view['gate']['picture'], {'kind': 'look', 'ref': 'sample'})
-        with self.be(self.blake):
-            self.blake.engine.picture(theirs, 'look', 'sample')
-        self.assertIn("Rolling restarts: carry on here: draw the brand's looks again",
-                      self.git('log', '--format=%s', repo=self.blake.space.repo))
 
     def test_an_upload_kept_on_the_computer_that_started_the_deck_stops_it_elsewhere(self):
         # Taken before its outline is drafted: the outline's assistant could not be used here.
@@ -641,18 +608,6 @@ class NotifyTests(StudioCase):
         self.assertEqual((settings.load().notify, self.engine.tell(), self.notifier.sent),
                          (False, [], []))
 
-    def test_each_thing_that_needs_a_decision_is_told_once(self):
-        self.on()
-        root = self.saved_start()
-        self.assertEqual(self.engine.tell(), ['Rolling restarts'])
-        self.assertEqual(self.engine.tell(), [])
-        self.assertEqual(self.make().tell(), [], 'nor again after the runner is started again')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.engine.tell(), ['Rolling restarts'], 'the next gate is new')
-        self.engine.act(root, 'stop')
-        self.assertEqual(self.engine.tell(), [], 'a deck its person stopped needs nothing')
-        self.assertEqual(self.notifier.sent, ['Rolling restarts'] * 2)
-
     def test_nothing_is_told_while_a_page_is_open(self):
         self.on()
         self.start()
@@ -688,28 +643,6 @@ class SlowRemoteTests(Team):
                 yield reached, go
             finally:
                 go.set()
-
-    def test_a_decision_is_not_held_up_by_a_slow_push_or_fetch(self):
-        root = self.started()
-        with self.be(self.alex):
-            gitstate.share_when('asked')    # so the decision itself sends nothing
-        for name, sharing, gate in (('push', self.engine.share, 'gate:outline'),
-                                    ('fetch', self.engine.fetch, 'gate:look')):
-            with self.subTest(name), self.be(self.alex), self.held_up(name) as (reached, go):
-                behind = threading.Thread(target=sharing, daemon=True)
-                behind.start()
-                self.assertTrue(reached.wait(30), f'the {name} was never asked for')
-                before, made = self.head(self.alex), []
-                deciding = threading.Thread(target=lambda: made.append(
-                    self.decide(root, gate)), daemon=True)
-                deciding.start()
-                deciding.join(30)
-                self.assertFalse(deciding.is_alive(), f'the decision waited for the {name}')
-                self.assertTrue(behind.is_alive(), f'the {name} is still held up')
-                self.assertNotEqual(self.head(self.alex), before, 'and it was committed')
-                go.set()
-                behind.join(30)
-        self.assertEqual(self.as_(self.alex, self.engine.share)['shared'], True)
 
     def test_nothing_is_changed_until_the_first_look_after_starting(self):
         root = self.begun()
