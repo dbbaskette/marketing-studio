@@ -506,6 +506,7 @@ class RunnerPage(desk.Page):
                 root, name, part)))
         if path == '/api/gate':
             self.not_on_desk(one('path'))
+            self.not_saved(one('path'))
             return desk.as_json(HTTPStatus.OK, self.gate(one('path'), one('artifact')))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
@@ -709,6 +710,13 @@ class RunnerPage(desk.Page):
             raise desk.Refusal(HTTPStatus.CONFLICT, drafts.NOT_ON_DESK)
         return root
 
+    def not_saved(self, path: str) -> None:
+        """Refuse, in one sentence naming the two ways on, any route that continued a
+        training the earlier step-by-step flow saved: it no longer continues."""
+        root = self.engine.driven(path)
+        if root is not None and self.engine.saved_kind(root) is not None:
+            raise desk.Refusal(HTTPStatus.CONFLICT, engines.SAVED_ONLY)
+
     def not_on_desk(self, path: str) -> None:
         """Refuse a review screen's route for a desk training, which has none: it is
         changed on the desk. Any other training is answered as it always was."""
@@ -810,8 +818,8 @@ class RunnerPage(desk.Page):
         desk.registered(path)
         root = self.engine.driven(path)
         # Asked of the two small records and the one file only, never the whole folder.
-        if root is None or self.engine.refused(root) is None:
-            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'This training is not a read-only record.')
+        if root is None or self.engine.saved_kind(root) is None:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'This training is not a saved record.')
         if name not in self.engine._saved_files(root):
             raise desk.Refusal(HTTPStatus.FORBIDDEN, 'That is not one of its saved files.')
         try:
@@ -835,19 +843,35 @@ class RunnerPage(desk.Page):
     # --- the desk's lists ----------------------------------------------------------------
 
     def trainings(self) -> list[dict]:
-        return [self.with_run(item) for item in super().trainings()]
+        return [self.listed(item) for item in super().trainings()]
 
     def detail(self, path: str) -> dict:
-        return self.with_run(super().detail(path))
+        return self.listed(super().detail(path))
+
+    def listed(self, item: dict) -> dict:
+        """`with_run`, for one training of a list: no single training, whatever its records
+        hold, takes the list down. One that cannot be read is listed as its own row, with
+        the runner's refusal as its sentence."""
+        try:
+            return self.with_run(item)
+        except desk.Refusal:
+            raise
+        except Exception as failure:  # noqa: BLE001  one record never ends the list
+            said = str(failure) if isinstance(failure, WorkspaceError) \
+                else f'Its records cannot be read: {type(failure).__name__}.'
+            item.update(run={'state': 'failed', 'sentence': said}, state='needs-you',
+                        sentence=said, waiting=None)
+            return item
 
     def with_run(self, item: dict) -> dict:
         """Add a training's run to what the desk says about it. A run with a question or
         a problem makes the training one that needs the person."""
         found = self.engine.brief(item['path'])
         item['run'] = found and {'state': found['state'], 'sentence': found['sentence']}
-        if found and found.get('read_only'):
-            # A read-only record: it opens on its run, which says why; nothing else is read.
-            item['run']['read_only'] = True
+        if found and found.get('saved'):
+            # Saved by the earlier flow, or its run record cannot be read: said from its two
+            # small records; whether it opens on the desk is said when it is opened.
+            item['run']['saved'] = found['saved']
             item.update(driver=found['driver'], mine=found['mine'], notice=None,
                         last_shared=None, state='saved', sentence=found['sentence'],
                         waiting=None)
@@ -937,6 +961,7 @@ class RunnerPage(desk.Page):
         committed, shared if that is wanted, and the run is woken. A desk training has no
         gates: it is refused, and changed on the desk."""
         self.not_on_desk(path)
+        self.not_saved(path)
         if self.engine.driven(path) is None:
             return super().decide(path, target, decision, note, seen, refresh)
         with self.engine.files:
@@ -1136,11 +1161,14 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.answered(sent))
         if path == '/api/note':
             path = desk.text(sent, 'path')
+            self.not_saved(path)
             self.run(path)
             return desk.as_json(HTTPStatus.OK, self.engine.note(
                 path, desk.text(sent, 'text'), desk.text(sent, 'expected')))
         if path == DOCUMENTS:
             return desk.as_json(HTTPStatus.OK, self.supplied(sent))
+        if path in (LIBRARY_ADD, LIBRARY_UPDATE, LIBRARY_UPLOAD):
+            self.not_saved(desk.text(sent, 'path'))
         if path in (LIBRARY_ADD, LIBRARY_UPDATE):
             training = self.known(sent)
             if path == LIBRARY_ADD:
@@ -1362,6 +1390,7 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.part(path, sent))
         if path == '/api/review':
             self.not_on_desk(desk.text(sent, 'path'))
+            self.not_saved(desk.text(sent, 'path'))
             self.run(desk.text(sent, 'path'))
             looks = sent.get('looks')
             if looks is not None and not isinstance(looks, dict):
@@ -1446,6 +1475,7 @@ class RunnerPage(desk.Page):
     def outline(self, sent: dict) -> dict:
         """Record what the person decided about what a deck says: approve it, or say
         what should change. It is theirs alone to decide, and decided here."""
+        self.not_saved(desk.text(sent, 'path'))
         if not (self.run(desk.text(sent, 'path')).get('outline') or {}).get('content_first'):
             self.not_on_desk(desk.text(sent, 'path'))
         path, decision = desk.text(sent, 'path'), desk.text(sent, 'decision')
@@ -1471,6 +1501,7 @@ class RunnerPage(desk.Page):
         """Record the look the person chose for a deck from the brand's samples, with their
         words. It is theirs alone to choose, and chosen here."""
         self.not_on_desk(desk.text(sent, 'path'))
+        self.not_saved(desk.text(sent, 'path'))
         path, choice = desk.text(sent, 'path'), desk.text(sent, 'choice')
         level, words = desk.text(sent, 'level', False), desk.text(sent, 'words', False)
         self.run(path)
@@ -1555,6 +1586,7 @@ class RunnerPage(desk.Page):
         if action not in engines.ACTIONS:
             raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'A run can be asked to: '
                                + ', '.join(engines.ACTIONS) + '.')
+        self.not_saved(path)
         self.run(path)
         return self.engine.act(path, action)
 
@@ -1563,6 +1595,7 @@ class RunnerPage(desk.Page):
         answer = desk.text(sent, 'answer')
         if not answer.strip():
             raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Write an answer first.')
+        self.not_saved(path)
         self.run(path)
         return self.engine.answer(path, ident, answer)
 
@@ -1583,6 +1616,7 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'That document did not arrive '
                                    'whole. Add it again.')
         keep = kept(sent) if action == 'add' else False
+        self.not_saved(path)
         self.run(path)
         found = self.engine.supply(path, action, name, data, **({'impact': sent.get('impact')} if sent.get('impact') is not None else {}))
         # Kept in the Document Library too, when the person chose to, once the training took it.
@@ -1590,6 +1624,7 @@ class RunnerPage(desk.Page):
 
     def copied(self, sent: dict) -> dict:
         path = desk.text(sent, 'path')
+        self.not_saved(path)
         self.run(path)
         if 'pull' in sent:
             artifact = desk.text(sent, 'pull')

@@ -1018,6 +1018,8 @@ class BringTests(Team):
         return root
 
     def test_a_training_is_copied_in_taken_and_carried_on_at_its_waiting_gate(self):
+        # Carried on as the earlier step-by-step flow did: no runner does so any more.
+        self.saved_flow_on()
         chat = self.chat()
         before = tree(chat)
         self.assertEqual(workspace.load(chat)['settings']['approval'], 'chat')

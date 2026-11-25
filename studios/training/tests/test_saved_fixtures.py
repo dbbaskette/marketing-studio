@@ -322,6 +322,33 @@ class StoredTreeTests(StudioCase):
             # Every stored state past its intake holds at least one real approval.
             self.assertTrue(checked, state)
 
+    def test_every_input_digest_is_the_stored_inputs(self):
+        """Each digest a stored tree keeps of what a material was built from, and of what
+        its approval was given for, is the digest of that input as stored: a tree whose
+        approval inputs no longer match their files fails here."""
+        import workspace
+        checked = set()
+        for state in saved_fixtures.names():
+            root = saved_fixtures.load(self, state)
+            session = workspace.load(root)
+            for name, entry in session['artifacts'].items():
+                current = workspace.inputs(root, session, name)
+                for where, digests in (('built_from', entry.get('built_from') or {}),
+                                       ('approved', (entry.get('approved') or {}).get('inputs') or {})):
+                    for key, value in digests.items():
+                        with self.subTest(state=state, artifact=name, where=where, input=key):
+                            self.assertIn(key, current)
+                            self.assertEqual(value, current[key])
+                            checked.add(key)
+            # A changed input is told apart: the check is not one that always holds.
+            if 'blueprint' in session['artifacts']:
+                report = root / '.harness-research' / 'research-report.md'
+                before = workspace.inputs(root, session, 'blueprint')['research']
+                report.write_text(report.read_text() + '\nChanged.\n')
+                self.assertNotEqual(workspace.inputs(root, session, 'blueprint')['research'],
+                                    before)
+        self.assertLessEqual({'intake', 'research', 'blueprint'}, checked)
+
     def test_the_comparison_tells_a_stale_approval_and_reordered_attempts_apart(self):
         """What the comparison settles is only what varies between runs: an approval digest
         that no longer names its material, or a step's attempts in another order, differ."""

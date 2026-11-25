@@ -3343,8 +3343,11 @@ function paintTraining(fresh) {
   () => show('gate', { path: training.path, artifact: waiting.artifact }), 'lead') : null;
   // A training that runs on its own is watched on its run. This view keeps the detail.
   const known = listed(training.path) || training;
-  const watch = training.run || watched(known) ? capsule('Watch the run', '',
-    () => show('run', { path: training.path }), 'watch') : null;
+  // A saved-flow training runs nothing: its record is the one way on from here.
+  const savedRun = Boolean(training.run && training.run.saved);
+  const watch = training.run || watched(known) ? capsule(savedRun ? 'Open its saved record'
+    : 'Watch the run', savedRun ? 'filled' : '', () => show('run', { path: training.path }),
+  'watch') : null;
   const openDesk = training.run && (training.run.can_open_desk || training.run.can_migrate_desk)
     ? openDeskButton(training.path, lead && !theirs ? '' : 'filled', !training.run.can_open_desk) : null;
   place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead, openDesk] },
@@ -3448,8 +3451,12 @@ function deckLeft(training) {
 // Where a training stands, as a shape and words. A run knows more than the list does about
 // one that is working, paused or stopped.
 function standingOf(training) {
-  // A read-only record is neither working nor waiting: it is only read.
-  if (training.run && training.run.read_only) return ['off', 'Read-only'];
+  // A saved-flow training runs nothing: the list says what its two small records prove, and
+  // its record says, once opened, whether it opens on the desk.
+  if (training.run && training.run.saved) {
+    return training.run.saved === 'unread' ? ['off', 'Cannot be read']
+      : ['off', 'Saved earlier'];
+  }
   // What a teammate runs is never said to be working or waiting: that is not known here.
   if (elsewhere(training)) return ['none', 'Run by ' + nameOf(training.driver)];
   if (unclaimed(training)) return ['off', 'Nobody is running it'];
@@ -7046,41 +7053,111 @@ function combinedReview(run, leads) {
   return node;
 }
 
-// --- a read-only record ------------------------------------------------------------------
-// A training the earlier gated flow saved whose records the runner refuses. Nothing on this
-// screen continues it or opens it on the desk: it is read, and new work starts from it.
+// --- a saved record ---------------------------------------------------------------------
+// A training the earlier step-by-step flow saved, or one whose run record cannot be read.
+// The earlier flow no longer continues: the screen says which way on it has, with one filled
+// action. It opens on the desk (the explicit preview), keeps its finished Open on the desk,
+// waits for something that clears, or is read and new work starts from it.
 const SAVED_FILES = { 'intake.md': 'Read intake', 'research-report.md': 'Read research report',
   'blueprint.md': 'Read teaching plan', 'document.md': 'Read learner guide',
   'product-brief.md': 'Read product brief', 'competitive-brief.md': 'Read competitive brief',
   'scenario.md': 'Read practice scenario', 'deck-link.md': 'Read deck link' };
+// The bead and its words for each way on. Said once, in the intro.
+const SAVED_STANDING = {
+  migrates: ['current', 'Opens on the desk'],
+  finished: ['done', 'Finished by the earlier flow'],
+  waiting: ['late', 'Waiting before it opens on the desk'],
+  'read-only': ['off', 'Read-only: it is not continued and not opened on the desk'],
+};
 
 function paintSavedRecord(run, fresh) {
   const saved = run.saved_record;
   const title = run.title || 'Untitled';
-  // What it is is said once, by the shared state bead with its words in the intro.
-  placeParts({ title, back: true, actions: [], mark: [title, saved.why, saved.next] }, [
-    ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
-    ['saved-why', [saved.why, saved.refusal], () => add(card('Why it cannot be continued'),
-      make('p', '', saved.why),
-      saved.refusal && saved.refusal !== saved.why ? make('p', 'quiet', saved.refusal) : null,
-      make('p', 'quiet', 'Nothing here changes it. Restore its saved records from your '
-        + 'workspace history to continue it, or start new work from it.'))],
+  const waits = list(saved.waits);
+  placeParts({ title, back: true, actions: [], mark: [title, saved.outcome, saved.why,
+    saved.next, waits.map((wait) => wait.kind)] }, [
+    ['saved-intro', [run.sentence, saved.outcome, saved.next, run.can_open_desk,
+      run.can_migrate_desk, waits.map((wait) => wait.kind), Boolean(view.sheet)],
+    () => savedRecordIntro(run)],
+    saved.outcome === 'migrates' ? ['saved-opens', [saved.targets, saved.retained],
+      () => savedOpensPart(run)] : null,
+    saved.outcome === 'waiting' ? ['saved-waits', [waits], () => savedWaitsPart(run)] : null,
+    saved.outcome === 'read-only' ? ['saved-why', [saved.why, saved.refusal],
+      () => add(card('Why it cannot be continued'), make('p', '', saved.why),
+        saved.refusal && saved.refusal !== saved.why ? make('p', 'quiet', saved.refusal) : null,
+        make('p', 'quiet', 'Nothing here changes it. Restore its saved records from your '
+          + 'workspace history to open it on the desk, or start new work from it.'))] : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
+    deletable(run) ? ['delete', [title], () => deleteCard()] : null,
   ], fresh);
+}
+
+// The one filled action of a saved record, by the way on it has. While a sheet is open it
+// holds the filled button, so nothing under it is filled.
+function savedLead(run) {
+  const saved = run.saved_record;
+  const kind = view.sheet || view.after ? '' : 'filled';
+  if (saved.outcome === 'migrates' && run.can_migrate_desk) {
+    return capsule('Open on the desk', kind, () => {
+      previewTrainingMigration(run.path);
+      paintRun(false);
+    }, 'open-desk');
+  }
+  if (saved.outcome === 'finished' && run.can_open_desk) {
+    return openDeskButton(run.path, kind, false);
+  }
+  if (saved.outcome === 'waiting' && list(saved.waits).some((wait) => wait.take)) {
+    return capsule('Take it over', kind, askTeam('take', 'take'), 'take');
+  }
+  const copying = saved.next === 'copy';
+  const go = capsule(copying ? 'Start new work from this' : 'Start a new training', kind,
+    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
+      : openNew('saved-next', false, go)), 'saved-next');
+  return go;
 }
 
 function savedRecordIntro(run) {
   const saved = run.saved_record;
+  const [shape, words] = SAVED_STANDING[saved.outcome] || SAVED_STANDING['read-only'];
   const copying = saved.next === 'copy';
-  const go = capsule(copying ? 'Start new work from this' : 'Start a new training', 'filled',
-    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
-      : openNew('saved-next', false, go)), 'saved-next');
-  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
-    state('off', 'Read-only: it is not continued and not opened on the desk'),
-    make('p', 'quiet', copying ? 'Start new work from this opens the start form with its '
-      + 'setup and documents. This saved training is kept as it is.'
-      : 'Its start form cannot be read, so a new training starts from an empty form. This '
-        + 'saved training is kept as it is.'));
+  const said = {
+    migrates: 'Open on the desk shows a preview of what opens and what stays in History. '
+      + 'Nothing is changed until you apply it.',
+    finished: 'Open on the desk keeps every material you approved ready, and the training '
+      + 'is then changed on the desk.',
+    waiting: 'Nothing here changes it. Once what it waits for clears, it opens on the desk.',
+  }[saved.outcome] || (copying ? 'Start new work from this opens the start form with its '
+    + 'setup and documents. This saved training is kept as it is.'
+    : 'Its start form cannot be read, so a new training starts from an empty form. This '
+      + 'saved training is kept as it is.');
+  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence),
+    [savedLead(run)]), state(shape, words), make('p', 'quiet', said));
+}
+
+// What the preview will list: the materials that open on the desk and what stays in History.
+function savedOpensPart(run) {
+  const saved = run.saved_record;
+  return add(card('What opens on the desk'),
+    make('p', '', 'These open for editing in conversation, and these stay in History:'),
+    bullets(list(saved.retained)),
+    make('p', 'quiet', 'Its original files stay as they are.'));
+}
+
+// What a saved record waits for, and what clears each thing. Where nothing on this page
+// clears it, new work can start from it meanwhile.
+function savedWaitsPart(run) {
+  const saved = run.saved_record;
+  const node = card('What it waits for');
+  for (const wait of list(saved.waits)) add(node, make('p', '', wait.what),
+    make('p', 'quiet', wait.clears));
+  const taking = list(saved.waits).some((wait) => wait.take);
+  const copying = saved.next === 'copy';
+  const again = capsule('Check again', 'quiet', () => drawRun(true), 'saved-again');
+  // Taking it over is the filled action; new work can still start from it meanwhile.
+  const start = taking ? capsule(copying ? 'Start new work from this' : 'Start a new training',
+    'quiet', () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-other',
+      start) : openNew('saved-other', false, start)), 'saved-other') : null;
+  return add(node, add(make('div', 'bar'), again, start));
 }
 
 function savedFilesPart(run) {
@@ -7112,8 +7189,8 @@ function savedFilesPart(run) {
 
 function paintRun(fresh) {
   const run = view.run;
-  // A training the earlier flow saved, whose records the runner cannot read, is a read-only
-  // record: what it is, why, its saved files, and one way on.
+  // A training the earlier flow saved, or whose run record cannot be read, is a saved record:
+  // what it is, which way on it has, its saved files, and one filled action.
   if (run.saved_record) return paintSavedRecord(run, fresh);
   // A training started on the desk is drawn by drafts.js. Every other run keeps this screen.
   if (onTheDesk(run)) {
@@ -7230,6 +7307,14 @@ async function drawRun(fresh) {
   if (fresh) {
     place({ title: 'Opening', back: true }, [make('p', 'quiet', 'Reading the run.')], true);
   }
+  // A saved record runs nothing: it is not read again at the list's pace, only when its
+  // two small records change in the list, or when the person asks.
+  if (!fresh && view.run && view.run.saved_record && view.run.path === view.path
+      && [savedOf(listed(view.path)), ''].includes(view.savedSeen)) {
+    // Read before the list was: what the list now says is what it was read at.
+    view.savedSeen = savedOf(listed(view.path));
+    return;
+  }
   try {
     // The training's own files and record are read again only when the list says they
     // changed. The run is what moves while it works, so it is read each time.
@@ -7240,6 +7325,7 @@ async function drawRun(fresh) {
     if (turn !== view.turn) return;
     const first = fresh || !view.run;
     view.run = run;
+    view.savedSeen = run.saved_record ? savedOf(listed(view.path)) : null;
     if (training) {
       view.training = training;
       view.recorded = record;
@@ -7574,6 +7660,14 @@ async function decideOutline(decision, note, problem, pressed) {
 
 function listed(path) {
   return list(view.listing).find((training) => training.path === path) || null;
+}
+
+// What the list says of a saved record's two small records: whether it is saved or unread,
+// who drives it and its title. A change there has its open record read again.
+function savedOf(training) {
+  if (!training) return '';
+  return JSON.stringify([training.run && training.run.saved, training.title, training.driver,
+    training.mine]);
 }
 
 // What the list says of a training's own record: when it last changed, and where it stands.
@@ -8027,8 +8121,8 @@ const COPY_REPLACES = 'This studio keeps one unfinished form. Discard it and cop
 
 // Offered for a training a run drives here, which is one the runner can read the setup of.
 function copyAsNewButton(training) {
-  // A read-only record offers its own way on, on its screen.
-  if (!view.runner || training.error || !training.run || training.run.read_only) return null;
+  // A saved record offers its own way on, on its screen.
+  if (!view.runner || training.error || !training.run || training.run.saved) return null;
   const key = 'copy ' + training.path;
   const node = capsule('Copy as new', 'quiet', () => copyAsNew(training, key, node), key);
   node.setAttribute('aria-label', 'Copy as new: ' + (training.title || 'Untitled')
