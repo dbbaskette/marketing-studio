@@ -1,14 +1,7 @@
-"""The stored saved decks are what the earlier step-by-step flow writes.
-
-PROOF OF FIDELITY, TO BE DELETED WITH THE SAVED FLOW (GitHub issue #542, phase C): each
-test makes one state of `saved_fixtures.STATES` again by running the saved flow in a
-disposable workspace, and compares it with the tree stored under tests/fixtures/saved/.
-Only what differs between runs is put aside, each item named in saved_fixtures (TIMES,
-DURATIONS, GOOGLE, TOKENS); digests and random names are matched consistently, not masked,
-and nothing inside a file is re-ordered. The researched states need the pinned Harness
-Research helper the suites name in STUDIO_TEST_RESEARCH_RUNTIME, and are compared only
-where it is set. To capture a state again after a change to the flow:
-`python3 tests/saved_fixtures.py --write STATE`.
+"""The stored saved decks under tests/fixtures/saved/ agree with themselves: every pin names the
+stored bytes, nothing names this computer or a temporary folder, and a loaded copy is the
+stored deck. (The capture that compared each state with a fresh run of the earlier
+step-by-step flow went with that flow: GitHub issue #542.)
 """
 import hashlib
 import json
@@ -75,56 +68,6 @@ def pins(files: dict) -> list:
 
 class SavedFixtureFidelityTests(runner_support.DeskCase):
 
-    def test_every_stored_state_is_what_the_saved_flow_writes(self):
-        self.assertEqual(sorted(path.name for path in saved_fixtures.STORE.iterdir()),
-                         sorted(saved_fixtures.STATES))
-        for state in saved_fixtures.STATES:
-            # What each scrubbed file held as written is a digest, nothing more.
-            for relative, digest in saved_fixtures.scrubbed(state).items():
-                self.assertRegex(digest, '^[0-9a-f]{64}$', f'{state}: {relative}')
-        for state in saved_fixtures.STATES:
-            with self.subTest(state):
-                if state in saved_fixtures.RESEARCHED and not saved_fixtures.RUNTIME:
-                    self.skipTest('Set STUDIO_TEST_RESEARCH_RUNTIME to capture researched states.')
-                case = saved_fixtures._case()
-                try:
-                    name, made, _ = saved_fixtures.capture(case, state)
-                finally:
-                    case.doCleanups()
-                kept_name, kept = saved_fixtures.stored(state)
-                self.assertEqual(name, kept_name)
-                made, kept = saved_fixtures.normal(made), saved_fixtures.normal(kept)
-                self.assertEqual([name for name, _ in made], [name for name, _ in kept])
-                for (relative, data), (_, stored) in zip(made, kept):
-                    self.assertEqual(data, stored, f'{state}: {relative}')
-
-    def test_the_comparison_sees_a_broken_pin_and_a_changed_order(self):
-        _, files = saved_fixtures.stored('build')
-        kept = saved_fixtures.normal(files)
-        self.assertEqual(saved_fixtures.normal(dict(files)), kept)
-        # A pin that no longer names what the other records name: the brand contract's
-        # revision, as the design guide states it.
-        revision = json.loads(files['brand/brand-contract.json'])['revision'].encode()
-        self.assertIn(revision, files['brand/DESIGN.md'])
-        broken = {**files, 'brand/DESIGN.md': files['brand/DESIGN.md'].replace(revision, b'0' * 63 + b'a')}
-        self.assertNotEqual(saved_fixtures.normal(broken), kept)
-        # A pin that no longer names the bytes of the file it names: the comparison of two
-        # captures cannot see it, as both name their own; the pin check over the stored
-        # trees does (test_every_pin_in_a_stored_deck_names_its_stored_bytes).
-        here, target, digest = next(pin for pin in pins(files)
-                                    if pin[0] == 'work/build/start/presentation-brief.md')
-        self.assertEqual(digest, hashlib.sha256(files[target]).hexdigest())
-        # Two slides of the outline the other way round.
-        outline = json.loads(files['outline.json'])
-        outline['slides'][1], outline['slides'][2] = outline['slides'][2], outline['slides'][1]
-        swapped = {**files, 'outline.json': (json.dumps(outline, indent=2) + '\n').encode()}
-        self.assertNotEqual(saved_fixtures.normal(swapped), kept)
-        # Only what varies between runs is put aside: a time and a measured duration.
-        record = files['run.json'].decode()
-        when = re.search(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', record).group()
-        later = {**files, 'run.json': record.replace(when, '2030-01-01T00:00:00Z', 1).encode()}
-        self.assertEqual(saved_fixtures.normal(later), kept)
-
     def test_every_pin_in_a_stored_deck_names_its_stored_bytes(self):
         counted = {}
         for state in saved_fixtures.STATES:
@@ -157,7 +100,8 @@ class SavedFixtureFidelityTests(runner_support.DeskCase):
         self.assertEqual(root.name, name)
         self.assertEqual((root / 'run.json').read_bytes(), files['run.json'])
         self.assertEqual(self.git('status', '--porcelain'), '')
-        self.assertEqual(self.view(root)['gate']['name'], 'gate:build')
+        # Its saved stop is kept as the flow left it; the page shows it as a saved record.
+        self.assertEqual(self.record(root)['gates']['gate:build']['state'], 'waiting')
         other = saved_fixtures.load(self, 'build', title='Another copy')
         self.assertEqual(other.name, 'another-copy')
         record = json.loads((other / 'run.json').read_text())

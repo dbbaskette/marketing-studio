@@ -30,14 +30,11 @@ CONSEQUENCES += (' This workspace will require Presentation Studio 4.8.1 or newe
                  'running instances before applying; already configured older runners may ignore '
                  'that requirement. Nothing is installed or updated.')
 CONSEQUENCES += (' Shared work requires every retained shared file in this deck and the workspace '
-                 'record to match its committed version and staging index. Record intended changes '
-                 'through the existing saved flow or commit them with Git, then preview again. '
+                 'record to match its committed version and staging index. Commit intended changes '
+                 'with Git, then preview again. '
                  'Private ignored inputs stay local. Local-only migration is not a complete Git backup.')
 CHANGED = 'The deck or its saved inputs changed. Preview Open on the desk again.'
-CONTINUE = 'Continue with its saved flow first.'
 # A deck stopped before its outline was drafted has no slide parts to open on the desk.
-NO_OUTLINE = ('This deck has no outline yet. Continue it in its saved flow until its outline '
-              'is drafted, then open it on the desk.')
 NOTHING_MADE = ('This deck was stopped before its outline was drafted, so nothing was made '
                 'that can be opened on the desk.')
 UNSUPPORTED = 'This saved run format is not supported.'
@@ -63,11 +60,10 @@ QUESTION = ('The saved worker question remains in History, unanswered. Conversat
 
 class Kept(ValueError):
     """A saved deck the migration cannot open on the desk. `why` is the reason its read-only
-    record gives; the message is what the preview says while its saved flow still
-    continues it (GitHub issue #542: the read-only record serves it once the flow goes)."""
+    record gives, and what the preview says of it (GitHub issue #542)."""
 
-    def __init__(self, why: str, said: str | None = None):
-        super().__init__(said or why)
+    def __init__(self, why: str):
+        super().__init__(why)
         self.why = why
 
 
@@ -82,14 +78,16 @@ class Elsewhere(ValueError):
 
 
 SHARED = ('Retained shared files in this deck and the existing workspace record must first match '
-          'their committed versions and staging index. Record intended changes through the existing '
-          'saved flow or commit them with Git, then preview again. Migration does not commit those edits.')
+          'their committed versions and staging index. Commit intended changes with Git, then '
+          'preview again. Migration does not commit those edits.')
+# A deck another computer runs, or nobody does, in a shared workspace: taken here first.
+NOT_OURS = 'This computer does not run this deck. Take it first, then open it on the desk.'
 
 
 def _json(files, name, required=False):
     if name not in files:
         if required:
-            raise Kept(f'{name} is missing.', f'{name} is missing. {CONTINUE}')
+            raise Kept(f'{name} is missing.')
         return None
     return json.loads(files[name])
 
@@ -97,15 +95,14 @@ def _json(files, name, required=False):
 def materials(record, files):
     """Strictly read retained material/dependencies; no repair, conversion or acceptance."""
     if not format.supported(record):
-        raise Kept(UNSUPPORTED, UNSUPPORTED + ' Keep using its saved flow.')
+        raise Kept(UNSUPPORTED)
     format.shared_material('run.json', files.get('run.json'))
     if record['route'] == 'existing':
         if existing.SOURCE not in files or not files[existing.SOURCE].startswith(b'PK\x03\x04'):
-            raise Kept(NOT_HERE if existing.SOURCE not in files else UNREADABLE_DECK,
-                       f'The original deck is missing or unreadable. {CONTINUE}')
+            raise Kept(NOT_HERE if existing.SOURCE not in files else UNREADABLE_DECK)
         if 'classify.json' not in files:
             # Stopped before the deck it started from was read: nothing made yet.
-            raise Kept(NOTHING_READ, f'classify.json is missing. {CONTINUE}')
+            raise Kept(NOTHING_READ)
         inventory = _json(files, 'classify.json', True)
         format.shared_material('classify.json', files.get('classify.json'))
         slides = inventory.get('slides') if isinstance(inventory, dict) else None
@@ -129,7 +126,7 @@ def materials(record, files):
             raise ValueError('The original deck differs from its saved inventory.')
     if not desk.selected(record):
         if 'outline.json' not in files:
-            raise Kept(NOTHING_MADE, NO_OUTLINE)
+            raise Kept(NOTHING_MADE)
         format.shared_material('outline.json', files.get('outline.json'))
         saved = _json(files, 'outline.json', True)
         slides = saved.get('slides') if isinstance(saved, dict) else None
@@ -158,20 +155,18 @@ def materials(record, files):
                 raise ValueError('A saved source entry cannot be read.')
             text, original = documents._files(item['id'], Path(item['name']).suffix.lower())
             if original not in files or (item.get('readable') is True and text not in files):
-                raise Kept('A required saved source is missing.',
-                           f'A required saved source is missing. {CONTINUE}')
+                raise Kept('A required saved source is missing.')
             if item.get('sha256') and hashlib.sha256(files[original]).hexdigest() != item['sha256']:
-                raise Kept('A pinned source changed.', f'A pinned source changed. {CONTINUE}')
+                raise Kept('A pinned source changed.')
     if record['route'] == 'document' and not index:
-        raise Kept('The imported source document is missing.',
-                   f'The imported source document is missing. {CONTINUE}')
+        raise Kept('The imported source document is missing.')
     # Existing research's consumer validates complete captured bundles on the bounded copy.
     if record.get('research_contract') and (record['steps'].get('research-report') or {}).get('done') \
             and 'research/output.json' not in files:
         raise ValueError('The pinned research bundle is missing.')
     for name in ('work/build/state.json', 'work/patch-plan.json', 'brand/contract.json'):
         if name in files and not isinstance(_json(files, name), dict):
-            raise Kept(UNREADABLE_DRAWING, f'{name} cannot be read.')
+            raise Kept(UNREADABLE_DRAWING)
     return 'Selected changes' if desk.selected(record) else 'Outline and slide parts'
 
 
@@ -192,8 +187,7 @@ def _assess(record, files, retained: list) -> None:
     halted = record.get('halted')
     if halted:
         if not isinstance(halted, dict) or halted.get('state') not in HALTS:
-            raise Kept('This deck’s saved runner stop cannot be read.',
-                       f'This saved runner stop cannot be interpreted. {CONTINUE}')
+            raise Kept('This deck’s saved runner stop cannot be read.')
         retained.append(HALTS[halted['state']])
     if record.get('question'):
         retained.append(QUESTION)
@@ -220,7 +214,7 @@ def outcome(record, files, refusal=None) -> dict:
       file it needs cannot be read or understood. `why` is the reason its read-only record
       gives, `next` its one next action ('copy': Start new work from this, where its start
       form can be read; 'new': start a new deck). `preview` is what the migration preview
-      says of it while its saved flow still continues it.
+      says of it.
 
     What is transient (a step in hand, another computer driving, shared files not yet
     committed) is the preview's own check, not this one. Only reads."""
@@ -304,7 +298,7 @@ def _snapshot(engine, path):
         if not isinstance(who, dict) or who.get('schema') != 1 or not isinstance(driver, dict) \
                 or re.fullmatch(r'[0-9a-f]{16}', str(who.get('id'))) is None \
                 or who.get('id') != driver.get('computer'):
-            blockers.append('This computer does not own this deck. Use its saved team controls first.')
+            blockers.append(NOT_OURS)
     guard['shared'], dirty = _shared_basis(space, root, files)
     blockers.extend(dirty)
     return space, root, record, files, guard, blockers

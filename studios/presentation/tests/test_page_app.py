@@ -157,22 +157,6 @@ class MarkupTests(unittest.TestCase):
                     self.assertNotIn(risky, script)
             self.assertIn('textContent', script)
 
-    def test_the_one_html_surface_is_the_storyboard_framed_from_its_own_address(self):
-        # The page writes no HTML anywhere: the storyboard is the shared panel's sandboxed
-        # frame, opened at /api/deck-draft with a ticket, under that address's own policy.
-        script = read('app.js')
-        self.assertIn('window.DeckPanels.storyboard(', script)
-        self.assertNotIn('srcdoc', script)
-        self.assertNotIn('iframe', script)
-        panels = (Path(__file__).resolve().parents[3] / 'core' / 'studio_core' / 'deck_web'
-                  / 'deck-panels.js').read_text(encoding='utf-8')
-        self.assertIn("frame.setAttribute('sandbox', '');", panels)
-        self.assertNotIn('srcdoc', panels)
-        self.assertEqual(page.RunnerPage.framed, ('/api/deck-draft',))
-        policy = server.SECURITY_HEADERS['Content-Security-Policy']
-        self.assertEqual(policy, "default-src 'self'; img-src 'self' blob:")
-        self.assertNotIn('unsafe-inline', policy)
-
     def test_a_document_is_drawn_by_the_vendored_markdown_only(self):
         script = read('app.js')
         self.assertIn('window.StudioMarkdown.render(', script)

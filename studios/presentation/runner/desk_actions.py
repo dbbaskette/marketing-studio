@@ -8,11 +8,11 @@ What a caller needs to know
   Every action begins with `_held` and refuses a deck that is not on the desk
   (`desk.NOT_ON_DESK`). Each records what was asked and, where something is to be drawn
   again, reopens gate:build (`desk.reopen`); the engine's own steps then do the work.
-  `open_on_desk` is the one way onto the desk for a saved deck: a deck delivered the gated
-  way opens there, still delivered.
-- `_desk_gate` meets a stop the desk deck continues past (`desk.passes`) as `_policy_gate`
-  meets one a review level continues past: with what the stop shows, a desk receipt and a
-  commit, and never as a person's approval.
+  `open_on_desk` is the finished Open on the desk: a deck delivered the gated way opens
+  there, still delivered. Every other saved deck opens through the explicit migration
+  (`desk_migration`).
+- `_desk_gate` meets a stop the desk deck continues past (`desk.passes`): with what the stop
+  shows, a desk receipt and a commit, and never as a person's approval.
 """
 from __future__ import annotations
 

@@ -774,12 +774,6 @@ class ResearchAccountTests(DeckCase):
         with self.assertRaisesRegex(WorkspaceError, 'at most 8'):
             Engine()._add_questions(self.root, {'research_contract': {'schema': 2}}, ['What next?'])
 
-    def test_leave_out_price_uses_only_the_last_outline_and_look_tries(self):
-        from runner.engine import Engine
-        record = {'steps': {'outline': {'tries': [{'seconds': 1200}, {'seconds': 60}]},
-                            'look-preview': {'tries': [{'seconds': 1200}, {'seconds': 60}]}}}
-        self.assertEqual(Engine._leave_out_price(record)['words'], 'Leaving findings out redraws the outline and the look samples without researching again. They last took 2 minutes.')
-
     def test_a_contract_research_gate_carries_the_account(self):
         from runner.engine import Engine
         from synthesis_fixture import research_stop
@@ -890,10 +884,3 @@ class SynthesisStartTests(StudioCase):
         self.assertEqual(len(self.workers.of('research-result')), 2, self.view(root))
         contract.read_bundle(root / 'research')
         self.assertFalse((root / '.harness-research/research.json').exists())
-
-    def test_saved_queue_setup_never_calls_public_start_and_resumes_saved_reader(self):
-        with mock.patch.object(self.engine, 'start', side_effect=AssertionError('public start')):
-            root = self.saved_start(research=True) if hasattr(self, 'settings') else self.saved_start()
-        self.assertNotIn('research_contract', self.record(root))
-        self.assertIsNotNone(self.view(root).get('gate') if hasattr(self, 'settings') else __import__('workspace').status(root)['gate'])
-        self.assertEqual(len(self.workers.of('research-result')), 0)

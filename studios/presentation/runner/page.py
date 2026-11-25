@@ -31,11 +31,6 @@ What a caller needs to know
   - `/api/download?path=`: the rendered deck, only what `engine.download` gives, as an
     attachment named for the deck; with `&revision=N`, that delivered revision's PowerPoint
     file while it is kept beside the deck (`deliver.receipt_file`).
-  - `/api/storyboard?path=&expected=` (and POST, with the unsaved `slides`): the outline
-    drawn as a wireframe storyboard, kept in the deck's work/drafts/, answered as {"src",
-    "expected", "milliseconds"}. `src` is `/api/deck-draft?ticket=`, which the page's
-    sandboxed frame opens without the key, for that one file, for two minutes, as HTML under
-    the framed page's own policy (`server.framed_html`).
   - `/api/file?path=&name=`: one of a deck's shared files, by name, only from FILES:
     {"name", "size", "text", "truncated"}. A file that leads out of the deck's folder is
     refused.
@@ -67,8 +62,6 @@ What a caller needs to know
     PICTURE_LIMIT bytes, and only with the key.
   - `/api/picture-remove` {"path", "slide", "expected"}: take that picture off its slide
     while the outline waits; answers {"slide"}.
-  - `/api/note` {"path", "expected", "text"}: a note for the next step, which goes with
-    the next job that starts and stops nothing; `expected` is the view's `note.expected`.
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
     `/api/publish` {"path"}, `/api/delete` {"path", "title"}, `/api/bring` {"path"}: a
     deck this computer knows from outside the workspace, copied in (`engine.bring`).
@@ -166,7 +159,7 @@ modules.bind(globals(), _shared, _shared.NAMES)
 
 READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
-         '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
+         '/api/delete', '/api/file', '/api/known-decks',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
 # The desk's changes: each is an engine method by the same name, with what it is sent.
 DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
@@ -207,8 +200,8 @@ WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
-          '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-          '/api/note', '/api/research-site', '/api/picture',
+          '/api/deliver', '/api/build-feedback', '/api/progress-seen',
+          '/api/research-site', '/api/picture',
           '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
 COPY = '/api/deck-copy'   # a deck's setup, for the start form to make a new one from
 WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready', COPY)
@@ -227,7 +220,6 @@ ONE_DOCUMENT = ('This folder holds more than one document, among them {names}. A
                 'with research and add the folder to its sources.')
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
-DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
 PICTURE = '/api/picture'
 PICTURE_LIMIT = 28_000_000   # bytes: a picture of up to 20 MB for a slide, in base64
@@ -251,7 +243,6 @@ class RunnerPage(server.Page):
     """What the page may ask the runner."""
     reads = (*server.READS, *READS)
     writes = (*server.WRITES, *WRITES)
-    framed = (DRAFT,)   # opened by the storyboard's frame, with a ticket
 
     # Each request is answered knowing whether the network bridge carried it
     # (`studio_core.shared_runner.caller`): a phone may not read this computer's folders.
@@ -327,9 +318,6 @@ class RunnerPage(server.Page):
             if revision is not None and not re.fullmatch(r'[0-9]+', revision):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'A revision is a whole number.')
             return self.download(one('path'), int(revision) if revision else None)
-        if path == '/api/storyboard':
-            return server.as_json(HTTPStatus.OK, self.framing(one('path'), self.engine.storyboard(
-                self.deck(one('path')), None, one('expected'))))
         if path == '/api/file':
             return server.as_json(HTTPStatus.OK, self.file(one('path'), one('name')))
         if path == '/api/desk-versions':
@@ -347,27 +335,6 @@ class RunnerPage(server.Page):
         if path == '/api/delete':
             return server.as_json(HTTPStatus.OK, self.engine.leaving(self.deck(one('path'))))
         return super().read(path, one)
-
-    def framing(self, path: str, drawn: dict) -> dict:
-        """A storyboard the runner drew, as the page frames it: the address of DRAFT with a
-        ticket for that one file of that one deck. Called only for a request that sent the
-        key."""
-        ticket = self.ticket(DRAFT, {'path': path, 'draft': drawn['draft']})
-        return {'src': f'{DRAFT}?ticket={ticket}', 'expected': drawn['expected'],
-                'milliseconds': drawn['milliseconds']}
-
-    def read_framed(self, path: str, scope) -> tuple:
-        """A framed page whose ticket held: the storyboard it was issued for, served under its
-        own sandboxed policy. Only the file the runner wrote in that deck's work/drafts/ is
-        read; nothing the request names is."""
-        if path != DRAFT or not isinstance(scope, dict):
-            return super().read_framed(path, scope)
-        try:
-            body = self.engine.storyboard_page(scope.get('path'), scope.get('draft'))
-        except (OSError, WorkspaceError):
-            raise server.Refusal(HTTPStatus.NOT_FOUND, 'That draft is not here any more. '
-                                                       'Show it again from the page.')
-        return server.framed_html(body)
 
     def deck(self, path: str) -> str:
         """A deck of this workspace, or 404 for any other folder, whatever it holds."""
@@ -576,14 +543,6 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.start(sent))
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.act(sent))
-        if path == '/api/storyboard':
-            return server.as_json(HTTPStatus.OK, self.framing(
-                server.text(sent, 'path'), self.engine.storyboard(
-                    self.deck(server.text(sent, 'path')), sent.get('slides'),
-                    server.text(sent, 'expected'))))
-        if path == '/api/review-draft':
-            return server.as_json(HTTPStatus.OK, self.engine.review_draft(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'expected')))
         if path == '/api/progress-seen':
             return server.as_json(HTTPStatus.OK, self.engine.progress_seen(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'ref')))
@@ -612,10 +571,6 @@ class RunnerPage(server.Page):
             deck = self.deck(server.text(sent, 'path'))
             return server.as_json(HTTPStatus.OK, self.desk(
                 lambda: self.engine.desk_outline_price(deck, sent.get('slides'))))
-        if path == '/api/note':
-            return server.as_json(HTTPStatus.OK, self.engine.note(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'text'),
-                server.text(sent, 'expected')))
         if path == '/api/research-site':
             # A site for one deck's research, checked here as the deck's form will be.
             return server.as_json(HTTPStatus.OK, shaped(setup.research_site, sent))
@@ -825,15 +780,7 @@ class RunnerPage(server.Page):
         if extra is not None and not isinstance(extra, dict):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send what comes with a decision as '
                                  'one JSON object.')
-        # Another brand, a slide whose words go back to the outline, a corrected reading
-        # of the document, or a line against a slide: each says what should change itself.
-        noted, target = (extra or {}).get('slide_notes'), (extra or {}).get('direction_target')
-        wordless = gate == 'gate:look' \
-            or (gate == 'gate:outline' and target in ('gate:look', 'gate:classify')) \
-            or (gate == 'gate:build' and target == 'gate:outline') \
-            or (gate == 'gate:build' and isinstance(noted, dict)
-                and any(str(line or '').strip() for line in noted.values()))
-        if decision == 'changes' and not wordless and not (note or '').strip() \
+        if decision == 'changes' and not (note or '').strip() \
                 and not (gate in marks.REVIEWED and marks.asks(extra or {})):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, engines.NO_NOTE)
         return self.engine.decide(self.deck(path), gate, decision, note, extra,
