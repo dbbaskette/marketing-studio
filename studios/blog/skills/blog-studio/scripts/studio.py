@@ -900,6 +900,10 @@ def article_record(root, args, value):
 
 
 def article_command(root, args):
+    import saved_gate
+
+    # A blog saved by the earlier flow is written only when it finished (saved_gate).
+    saved_gate.command(root, args)
     if args.action == 'create':
         value = identifier(args.id) if args.id else new_id(args.title)
         directory = inside(root, 'articles', value)
@@ -1352,6 +1356,11 @@ def main():
     from hub_store import HubError
 
     try:
+        import saved_gate
+
+        # Every subcommand: a blog saved by the earlier flow is changed only as saved_gate
+        # allows, before anything is fetched or written.
+        saved_gate.command(root, args)
         if args.group == 'saved-work':
             from saved_work import scan
 

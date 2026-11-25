@@ -12,7 +12,9 @@ A local writing workspace remains usable without Git or a team repository.
 `team status` reads the connection. `team sync` shares pending commits and brings
 in teammates’ changes. A blog has one driver. `team take --id <id>` takes an
 unclaimed blog; `team takeover --id <id>` explicitly replaces its current driver;
-`team handover --id <id>` shares its release. Never edit or run work claimed by
+`team handover --id <id>` shares its release. A blog saved by the earlier
+step-by-step flow is taken only to open it on the desk, never handed over, and
+published only when finished. Never edit or run work claimed by
 another computer. New claims must reach the remote before work starts. A current
 driver may save offline and retry sharing. A takeover keeps the old computer’s
 unshared commits under `refs/blog-studio/kept/` when it reconnects. Local changes

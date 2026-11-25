@@ -760,6 +760,11 @@ stopped the next time Blog Studio starts, so sharing no longer waits for it. Onl
 computer's record of the step changes; the blog's own files stay as they are, and no step
 starts again.
 
+Nothing else changes a blog saved step by step: every other change, on the page or in
+chat, is refused before anything is written, with the same two ways on. What may change
+one is opening it on the desk, Delete, and taking it in a team only so that it can open on
+the desk; a finished one also keeps what its Done card offers. It is never handed over.
+
 The manuscript editor's own checks still run as review and revise runs: **Edit
 manuscript** starts and reads them. A finished one reads on its run and its review pages.
 
@@ -857,7 +862,9 @@ saved records the earlier flow no longer continues (see *Blogs started step by s
 
 Join from **Settings** or **Status**. The page switches to its own team clone.
 Blogs have one driver, with **Take this blog**, **Take over**, **Hand over**, and
-**Record in team repository** controls. **Share now** retries pending decisions.
+**Record in team repository** controls. A blog saved step by step is taken only to open
+it on the desk, is never handed over, and is recorded only when it finished.
+**Share now** retries pending decisions.
 See [team workspaces and migration](team-workspace.md) and the
 [shared studios settings](shared-studios.md). Settings saves shared values to
 that file directly, with no local override or additional consent toggle. Missing

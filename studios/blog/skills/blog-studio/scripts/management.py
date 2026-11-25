@@ -2394,6 +2394,11 @@ def intake_draft(root, data):
 
 
 def dispatch(root, route, data):
+    import saved_gate
+
+    # A blog saved by the earlier step-by-step flow is changed only as saved_gate allows,
+    # before anything is read, fetched or written.
+    saved_gate.page(root, route, data)
     if route == 'desk-create':
         from studio_core import intake_drafts
         from studio_core.process_lock import ProcessRLock

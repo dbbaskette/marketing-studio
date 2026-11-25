@@ -2747,7 +2747,8 @@ class Engine:
         """Start-up recovery for a saved run of the earlier flow: a `working` marker that no
         worker of this process runs is a step a stopped process left. Nothing takes such a run
         up again, and the repository's running-step check would read it as busy for good, so
-        it is settled as stopped in this computer's runner record under .blog-runs only.
+        it is settled as stopped in this computer's runner record under .blog-runs only, as
+        is one whose blog's session record cannot be read or whose folder is gone.
         Nothing in the blog's own folder changes and no work starts. A run the manuscript
         editor's check made keeps its own recovery: the loop takes its step up again."""
         import desk_migration
@@ -2761,10 +2762,13 @@ class Engine:
                 state = self.local(ident)
                 if not isinstance(state, dict) or state.get('status') != 'working':
                     continue
-                directory, _ = studio.item(self.root, 'articles', ident)
-                run = desk_migration.saved_run(directory)
-                if run is None or continues(run):
-                    continue
+                # Read without the blog's session record: one that cannot be read, or a blog
+                # whose folder is gone, leaves nothing that could run the step either.
+                directory = studio.inside(self.root, 'articles', studio.identifier(ident))
+                if os.path.lexists(directory):
+                    run = desk_migration.saved_run(directory)
+                    if not isinstance(run, dict) or continues(run):
+                        continue
             except (ValueError, OSError):
                 continue
             state.update(enabled=False, status='stopped')
