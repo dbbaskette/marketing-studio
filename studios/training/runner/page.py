@@ -726,6 +726,8 @@ class RunnerPage(desk.Page):
         if sent.get('action') == 'read' or not isinstance(sent.get('path'), str):
             return
         if route in SAVED_ALLOWED and not (route == '/api/drive' and sent.get('action') != 'take'):
+            if route in ('/api/drive', '/api/publish'):
+                self.saved_standing(route, sent['path'])
             return
         folder = Path(sent['path'])
         root = self.engine.driven(folder)
@@ -738,6 +740,21 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.CONFLICT, engines.SAVED_ONLY)
             return
         if self.engine.saved_kind(root) is not None:
+            raise desk.Refusal(HTTPStatus.CONFLICT, engines.SAVED_ONLY)
+
+    def saved_standing(self, route: str, path: str) -> None:
+        """The two allowed routes that depend on what a saved record holds: Take over only
+        where it would open on the desk once taken, and publish only a finished one."""
+        from runner import desk_migration
+        root = self.engine.driven(Path(path))
+        kind = self.engine.saved_kind(root) if root is not None else None
+        if kind is None or kind == 'opening':
+            return
+        found = None if kind == 'unread' else desk_migration.outcome(self.engine, root)
+        nature = (found or {}).get('outcome', 'read-only')
+        if route == '/api/drive' and nature == 'read-only':
+            raise desk.Refusal(HTTPStatus.CONFLICT, engines.NOTHING_TO_TAKE)
+        if route == '/api/publish' and nature != 'finished':
             raise desk.Refusal(HTTPStatus.CONFLICT, engines.SAVED_ONLY)
 
     def not_saved(self, path: str) -> None:

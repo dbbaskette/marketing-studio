@@ -463,6 +463,9 @@ UNREAD_BRIEF = 'Its run record cannot be read. Open it to read its saved files.'
 # Said by every route that continued a saved-flow training: what is left to do with it.
 SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which no longer '
               'continues. Open it on the desk, or start new work from it.')
+# Taking a saved training is only ever for opening it on the desk.
+NOTHING_TO_TAKE = ('This training cannot be opened on the desk, so there is nothing to take it '
+                   'for: nothing continues it. Start new work from it instead.')
 # What clears each thing a saved training can wait for before it opens on the desk.
 WAITS_FOR = {
     'busy': ('Something else in this workspace is in progress or was interrupted.',

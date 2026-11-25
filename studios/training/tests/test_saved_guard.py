@@ -77,7 +77,21 @@ class SavedGuardTests(StudioCase):
                     body = {'path': path, 'action': 'change', 'name': 'blueprint',
                             'level': '', 'expected': 'x'}
                     if route in page.SAVED_ALLOWED:
-                        native.saved_gate(route, {**body, 'action': 'take'})
+                        # Two allowed routes depend on what the record holds: Take over only
+                        # where it would open on the desk, publish only a finished one.
+                        refused = {'/api/drive': engines.NOTHING_TO_TAKE
+                                   if state == 'research-plan-gate' else None,
+                                   '/api/publish': engines.SAVED_ONLY
+                                   if state != 'finished' else None}.get(route)
+                        before, head = self.folder(root), self.git('rev-parse', 'HEAD')
+                        if refused is None:
+                            native.saved_gate(route, {**body, 'action': 'take'})
+                        else:
+                            with self.assertRaises(page.desk.Refusal) as caught:
+                                native.write(route, {**body, 'action': 'take'})
+                            self.assertEqual((caught.exception.status, str(caught.exception)),
+                                             (409, refused))
+                        self.assert_untouched(root, before, head, route)
                         continue
                     before, head = self.folder(root), self.git('rev-parse', 'HEAD')
                     with self.assertRaises(page.desk.Refusal) as caught:
