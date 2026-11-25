@@ -131,7 +131,8 @@ def originals(session_bytes, run_bytes, ident=None):
         raise ValueError('The original Training Studio records cannot be verified.')
     session, run = json.loads(session_bytes), json.loads(run_bytes)
     if not session_supported(session) or not run_supported(run) or ident is not None and session['id'] != ident:
-        raise ValueError('The original Training Studio saved format is unsupported. Keep using its saved flow.')
+        raise ValueError('The original Training Studio saved format is unsupported. Read its saved files, '
+                         'or start new work from it.')
     return session, run
 
 

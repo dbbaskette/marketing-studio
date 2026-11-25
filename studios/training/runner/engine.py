@@ -460,17 +460,16 @@ SAVED_WAITING = ('This training was saved by the earlier step-by-step flow, whic
                  'continues. It opens on the desk once what it waits for clears.')
 SAVED_BRIEF = 'Saved by the earlier step-by-step flow. Open it to see what can be done with it.'
 UNREAD_BRIEF = 'Its run record cannot be read. Open it to read its saved files.'
-# A saved run record whose layout could not be kept when only its driver changes.
-SAVED_TAKE = ('This saved training’s run record cannot be changed by its driver alone, so it '
-              'was not taken. Start new work from it instead.')
 # Said by every route that continued a saved-flow training: what is left to do with it.
 SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which no longer '
               'continues. Open it on the desk, or start new work from it.')
 # What clears each thing a saved training can wait for before it opens on the desk.
 WAITS_FOR = {
-    'busy': ('A step of the earlier flow, or a lock it took, is still marked as in progress in '
-             'it.', 'If nothing is still working on it, the next start of Training Studio clears '
-             'a leftover marker. Check again then.'),
+    'busy': ('Something else in this workspace is in progress or was interrupted.',
+             'Check again once it is done, or start new work from this training meanwhile.'),
+    'running': (None, 'It opens on the desk once that step ends. Check again then.'),
+    'opening': ('Opening it on the desk was interrupted part way.', 'Finish opening on the '
+                'desk completes the opening you previewed, or puts it back as it was.'),
     'owner': ('Another computer runs this training.', 'Take it over to open it on the desk '
               'here.'),
     'shared': ('Its saved records, or files they depend on, have changes that are not committed '
@@ -1251,12 +1250,7 @@ class Engine(Reviewing):
                                 'looked. Take it over from them if you mean to.')
             mine = team.claim(space)
             record['driver'] = mine
-            if self.saved_kind(root) is not None:
-                # A saved record is taken only to open it on the desk: its run record gains
-                # this computer as its driver and nothing else changes in its folder.
-                self._store_driver(root, mine)
-            else:
-                self._store(root, record)
+            self._store(root, record)
             run.gone = False
             self._commit(root, f"{mine['name']} takes this training" + (
                 f" over from {now.get('name') or 'someone'}" if now else ''))
@@ -1272,31 +1266,6 @@ class Engine(Reviewing):
                                      + (report.get('notice') or ''))
             self._ours_again(root, run)
         return kept
-
-    @staticmethod
-    def _store_driver(root: Path, driver: dict) -> None:
-        """Write only the driver entry of a saved run record: every other key keeps its value
-        and its place, and the file keeps its layout. Refused, with nothing written, where the
-        record could not be written back that narrowly."""
-        import collections
-        path = root / RECORD
-        before = path.read_bytes()
-        record = json.loads(before, object_pairs_hook=collections.OrderedDict)
-        if not isinstance(record, dict) or 'driver' not in record:
-            raise WorkspaceError(SAVED_TAKE)
-        indent = 2 if before.startswith(b'{\n  "') else None
-        same = json.dumps(record, indent=indent, ensure_ascii=False)
-        ending = b'\n' if before.endswith(b'\n') else b''
-        if (same.encode() + ending) != before:
-            same = json.dumps(record, indent=indent)
-            if (same.encode() + ending) != before:
-                raise WorkspaceError(SAVED_TAKE)
-            ascii_only = True
-        else:
-            ascii_only = False
-        record['driver'] = driver
-        workspace.write_atomic(path, json.dumps(record, indent=indent,
-                                                ensure_ascii=ascii_only).encode() + ending)
 
     @staticmethod
     def _first(space: gitstate.Workspace, record: dict) -> str:
@@ -1732,6 +1701,8 @@ class Engine(Reviewing):
         if space is None:
             return ours
         for root in self.trainings():
+            if self._run(root).busy:
+                continue   # a step running in this process is never touched
             try:
                 with gitstate.workspace_locked(space, self.files, configured=True):
                     gitstate.inside(space, root / IN_HAND)
@@ -1763,7 +1734,13 @@ class Engine(Reviewing):
                             self._store(root, resumed)
                             self._commit(root, 'keep interrupted desk changes ready to try again')
             except (WorkspaceError, OSError):
-                continue  # its view says what is wrong; the others still run
+                # A training whose run record cannot be read at all keeps no leftover marker:
+                # only the marker file goes. Its view says what is wrong; the others still run.
+                if self.saved_kind(root) == 'unread':
+                    marker = root / IN_HAND
+                    if marker.is_file() and not marker.is_symlink():
+                        marker.unlink()
+                continue
             ours.append(root)
         return ours
 
@@ -7692,7 +7669,7 @@ class Engine(Reviewing):
         more. Nothing waits for the person and nothing runs; whether it opens on the desk is
         said when it is opened."""
         driver, mine = self._saved_driver(root)
-        return {'state': 'saved', 'sentence': SAVED_BRIEF if kind == 'saved' else UNREAD_BRIEF,
+        return {'state': 'saved', 'sentence': UNREAD_BRIEF if kind == 'unread' else SAVED_BRIEF,
                 'needs': False, 'question': None, 'mine': mine, 'driver': driver,
                 'last_shared': None, 'notice': None, 'busy_since': None, 'saved': kind}
 
@@ -7845,6 +7822,10 @@ class Engine(Reviewing):
         from runner import desk_migration
         if (root / drafts.RECORD).is_symlink():
             return None
+        # An opening on the desk that was interrupted waits for the person to finish it.
+        pending = root / desk_migration.format.PENDING
+        if pending.is_file() and not pending.is_symlink():
+            return 'opening'
         kind = desk_migration.record_kind(root)
         return None if kind == 'desk' else kind
 
@@ -7893,7 +7874,9 @@ class Engine(Reviewing):
         title = title if isinstance(title, str) and title.strip() else root.name
         driver, mine = self._saved_driver(root)
         refusal = self._refusal(root)
-        if kind == 'unread':
+        if kind == 'opening':
+            found = {'outcome': 'waiting', 'next': self._next(root)}
+        elif kind == 'unread':
             found = {'outcome': 'read-only', 'reason': desk_migration.UNREAD, 'next': 'new'}
         else:
             found = desk_migration.outcome(self, root) or {
@@ -7905,6 +7888,17 @@ class Engine(Reviewing):
         sentence = UNREAD_RECORD if kind == 'unread' else SAVED_RECORD
         can_open = can_migrate = False
         finished = None
+        if kind == 'opening':
+            # The token of the opening the person previewed, kept in its journal: finishing
+            # runs the existing recovery with it, and never applies anything else.
+            try:
+                journal = json.loads((root / desk_migration.format.PENDING).read_bytes())
+                expected = journal.get('expected') if isinstance(journal, dict) else None
+            except (OSError, ValueError):
+                expected = None
+            shown.update(waits=[self._waits('opening')], expected=expected
+                         if isinstance(expected, str) else None)
+            sentence = SAVED_WAITING
         if found['outcome'] == 'finished':
             # A finished training keeps what it could do before: published as it stands,
             # read by a teammate, its files read and downloaded in place.
@@ -7924,7 +7918,8 @@ class Engine(Reviewing):
                              next=found.get('next') or shown['next'])
             elif preview['blockers']:
                 shown.update(outcome='waiting', waits=[
-                    self._waits(self._waiting_on(said), said)
+                    self._busy_where(root) if self._waiting_on(said) == 'busy'
+                    else self._waits(self._waiting_on(said), said)
                     for said in dict.fromkeys(preview['blockers'])])
                 sentence = SAVED_WAITING
             else:
@@ -7959,7 +7954,21 @@ class Engine(Reviewing):
     @staticmethod
     def _waits(kind: str, said: str | None = None) -> dict:
         what, clears = WAITS_FOR[kind]
-        return {'kind': kind, 'what': what or said, 'clears': clears, 'take': kind == 'owner'}
+        return {'kind': kind, 'what': what or said, 'clears': clears, 'take': kind == 'owner',
+                'finish': kind == 'opening'}
+
+    def _busy_where(self, root: Path) -> dict:
+        """Why the workspace check is busy for a saved record, saying only what is known: a
+        step running now in a named training of this studio, or something else in the
+        workspace that is in progress or was interrupted."""
+        for other in self.trainings():
+            if self._run(other).busy:
+                try:
+                    title = workspace.load(other)['title']
+                except (WorkspaceError, OSError):
+                    title = other.name
+                return self._waits('running', f'A step is running now in “{title}”.')
+        return self._waits('busy')
 
     def _next(self, root: Path) -> str:
         """'copy' where a saved training's start form can be read, else 'new'."""

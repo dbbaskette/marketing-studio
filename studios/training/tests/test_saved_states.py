@@ -365,20 +365,44 @@ class ClassificationTests(SavedStopTests):
         (root / engines_module.IN_HAND).write_text('blueprint')
         self.assertEqual(self.outcome(root)['outcome'], 'migrates')
         self.assertTrue(self.preview(root)['blockers'])
-        # Its record says what it waits for and what clears it, and offers new work
-        # meanwhile, since nothing on the page clears a marker.
+        # Its record says only what is known: something in the workspace is in progress or
+        # was interrupted. It offers new work meanwhile.
         shown = self.record_of(root)
         self.assertEqual(shown['saved_record']['outcome'], 'waiting')
         self.assertEqual(shown['sentence'], engines.SAVED_WAITING)
-        self.assertEqual([(wait['kind'], wait['take']) for wait in shown['saved_record']['waits']],
-                         [('busy', False)])
+        self.assertEqual([(wait['kind'], wait['what']) for wait in shown['saved_record']['waits']],
+                         [('busy', engines.WAITS_FOR['busy'][0])])
         self.assertEqual(shown['saved_record']['next'], 'copy')
         self.assertFalse(shown['can_migrate_desk'])
-        # A leftover marker is cleared by the next start, without the saved flow; it then
-        # opens on the desk.
-        self.engine._tidy()
+        # Start-up recovers the interrupted step as it always did, and never starts work:
+        # the leftover marker goes and nothing runs.
+        jobs = len(self.workers.jobs)
+        self.engine.resume()
         self.assertFalse((root / engines_module.IN_HAND).exists())
+        self.assertEqual(len(self.workers.jobs), jobs)
         self.assertEqual(self.record_of(root)['saved_record']['outcome'], 'migrates')
+
+    def test_another_trainings_marker_is_said_only_as_what_is_known(self):
+        from runner import engine as engines_module
+        root = self.stopped_at('blueprint')
+        other = self.stopped_at('research')
+        (other / engines_module.IN_HAND).write_text('research')
+        wait, = self.record_of(root)['saved_record']['waits']
+        self.assertEqual((wait['kind'], wait['what']), ('busy', engines.WAITS_FOR['busy'][0]))
+        self.assertNotIn('ends by itself', wait['clears'])
+        # The other one made nothing yet: it is read-only whatever its workspace holds.
+        self.assertEqual(self.record_of(other)['saved_record']['outcome'], 'read-only')
+
+    def test_start_up_takes_only_the_leftover_marker_of_a_record_that_cannot_be_read(self):
+        from runner import engine as engines_module
+        root = self.stopped_at('blueprint')
+        (root / RUN).write_text('{not a run record')
+        (root / engines_module.IN_HAND).write_text('blueprint')
+        before = self.snapshot(root)
+        self.engine.resume()
+        after = self.snapshot(root)
+        self.assertNotIn(engines_module.IN_HAND, after)
+        self.assertEqual({**after, engines_module.IN_HAND: b'blueprint'}, before)
 
     def test_desk_work_and_an_opening_s_recovery_are_not_saved_flow_work(self):
         root = self.stopped_at('blueprint')
@@ -505,7 +529,7 @@ class RefusedDeskWorkTests(SavedStopTests):
                 (root / RUN).write_text(json.dumps({**record, **change}))
                 self.assert_desk_refusal(root, refusal)
 
-    def test_an_opened_training_and_an_interrupted_opening_are_desk_work(self):
+    def test_an_opened_training_is_desk_work(self):
         root = self.stopped_at('blueprint')
         shown = self.preview(root)
         desk_chat.migrate(self.engine, root, shown['expected'])
@@ -513,13 +537,39 @@ class RefusedDeskWorkTests(SavedStopTests):
         (root / RUN).write_text('{a changed original')
         self.assertIsNone(self.engine.saved_record(root))
         self.assertEqual(desk_migration.outcome(self.engine, root)['outcome'], 'desk')
-        other = self.stopped_at('research')
-        pending = other / desk_migration.format.PENDING
-        pending.parent.mkdir(parents=True, exist_ok=True)
-        pending.write_text('{interrupted')
-        (other / RUN).write_text('{not a run record')
-        self.assertIsNone(self.engine.saved_record(other))
-        self.assertEqual(desk_migration.outcome(self.engine, other)['outcome'], 'desk')
+
+    def test_an_interrupted_opening_waits_and_finishing_completes_what_was_previewed(self):
+        """An opening interrupted after its commit is a waiting saved record with one way on:
+        Finish opening on the desk, the existing recovery with the previewed token."""
+        from pathlib import Path
+        from unittest import mock
+        root = self.stopped_at('blueprint')
+        shown = self.preview(root)
+        pending = root / desk_migration.format.PENDING
+        real = Path.unlink
+
+        def interrupted(path, *args, **kwargs):
+            if path == pending and not interrupted.__dict__.get('done'):
+                interrupted.done = True
+                raise OSError('Interrupted by the test.')
+            return real(path, *args, **kwargs)
+        with mock.patch.object(Path, 'unlink', interrupted), self.assertRaises(OSError):
+            desk_chat.migrate(self.engine, root, shown['expected'])
+        self.assertTrue(pending.exists())
+        record = self.engine.view(root)
+        self.assertEqual(record['saved_record']['outcome'], 'waiting')
+        self.assertEqual([(wait['kind'], wait['finish']) for wait in record['saved_record']['waits']],
+                         [('opening', True)])
+        self.assertEqual(record['saved_record']['expected'], shown['expected'])
+        self.assertEqual(self.engine.brief(root)['saved'], 'opening')
+        native = page.RunnerPage(8765, self.engine)
+        with self.assertRaises(page.desk.Refusal):   # never anything the person did not preview
+            native.write('/api/drafts/migrate', {'path': str(root), 'expected': 'tm1.other'})
+        self.assertTrue(pending.exists())
+        opened = json.loads(native.write('/api/drafts/migrate', {
+            'path': str(root), 'expected': record['saved_record']['expected']})[2])
+        self.assertEqual(opened['flow'], 'desk')
+        self.assertFalse(pending.exists())
 
 
 class NothingContinuesTests(SavedStopTests):
@@ -683,22 +733,19 @@ class SavedTeamTests(TeamCase):
                                         for wait in shown['saved_record']['waits']])
         self.assertFalse(shown['mine'])
         self.assertFalse(shown['can_migrate_desk'])
-        # Taking it over clears it: it then opens on the desk from here. Only the run
-        # record's driver entry changes: every other key keeps its value and place, the
-        # session record and every other file are as they were.
-        files = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*')
-                 if p.is_file()}
+        # Taking it over is the team's own action, as it always was: this computer becomes
+        # its driver in its run record, the take is a commit of the team's history, its
+        # session record and materials are as they were, and nothing runs.
+        session = (root / SESSION).read_bytes()
+        old, jobs = self.record(root), len(self.workers.jobs)
         self.engine.drive(root, 'take')
-        after = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*')
-                 if p.is_file()}
-        self.assertEqual(set(after), set(files))
-        changed = [name for name in files if after[name] != files[name]]
-        self.assertEqual(changed, [RUN])
-        old, new = json.loads(files[RUN]), json.loads(after[RUN])
-        self.assertEqual(list(old), list(new))
+        new = self.record(root)
+        self.assertEqual((root / SESSION).read_bytes(), session)
         self.assertEqual({k: v for k, v in old.items() if k != 'driver'},
                          {k: v for k, v in new.items() if k != 'driver'})
         self.assertNotEqual(old['driver'], new['driver'])
+        self.assertIn('takes this training over from Blake', self.git('log', '-1', '--format=%s'))
+        self.assertEqual(len(self.workers.jobs), jobs)
         shown = self.engine.view(root)
         self.assertEqual(shown['saved_record']['outcome'], 'migrates')
         self.assertTrue(shown['can_migrate_desk'])
@@ -947,24 +994,26 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         self.assertIn('Finished by the earlier flow', shot['text'])
         self.assert_no_continuing(shot, result)
 
-    def test_a_waiting_record_says_what_clears_it_and_offers_new_work(self):
+    def test_a_waiting_record_says_what_is_known_and_offers_new_work(self):
         from runner import engine as engines_module
         fixture = self.fixture('blueprint-gate', lambda root: (
             root / engines_module.IN_HAND).write_text('blueprint'))
         for narrow in (False, True):
             with self.subTest(narrow=narrow):
-                result = self.run_page(self.answers(fixture), [{'snapshot': 'record'}],
-                                       state={'screen': 'run', 'path': fixture['path']},
-                                       narrow=narrow)
+                result = self.run_page(self.answers(fixture), [
+                    {'snapshot': 'record'}, {'click': 'Check again'}],
+                    state={'screen': 'run', 'path': fixture['path']}, narrow=narrow)
                 shot = result['snapshots']['record']
                 self.assertEqual(shot['filled'], ['Start new work from this'])
                 self.assertIn(engines.SAVED_WAITING, shot['text'])
                 self.assertIn('What it waits for', shot['text'])
                 self.assertIn(engines.WAITS_FOR['busy'][0], shot['text'])
                 self.assertIn(engines.WAITS_FOR['busy'][1], shot['text'])
-                self.assertIn('Check again', shot['buttons'])
                 self.assertNotIn('Open on the desk', shot['buttons'])
                 self.assert_no_continuing(shot, result)
+                # Check again is the person's own act: the record is read again.
+                self.assertEqual(len([r for r in result['requests']
+                                      if r['address'].startswith('/api/run')]), 2)
 
     # --- what the earlier flow's run screen offered, moved onto the saved record (#542) ---
 
@@ -1048,6 +1097,9 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
             state={'screen': 'run', 'path': fixture['path']})
         shots = result['snapshots']
         self.assertEqual(shots['theirs']['filled'], ['Take it over'])
+        # Its confirmation says what taking it does: nothing in it is continued or made.
+        self.assertIn('This computer is recorded as the one running it', shots['asked']['sheet'])
+        self.assertIn('Nothing in it is continued or made.', shots['asked']['sheet'])
         for shown in ('Another computer runs this training.', 'Read intake', 'Its materials',
                       'Publish it'):
             self.assertIn(shown, shots['theirs']['text'] + ' '.join(shots['theirs']['buttons']))
@@ -1099,7 +1151,8 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         self.assertEqual(len(runs), 1, runs)
         self.assertGreater(len(lists), 3)
         self.assertEqual(result['snapshots']['later']['filled'], ['Open on the desk'])
-        # Its small records changed in the list: the record is read again.
+        # Something changed in the list: the open record keeps what it was found to be.
+        # Only the person's Check again reads it again (on a record that waits).
         moved = json.loads(json.dumps(fixture['listing']))
         self.listed({'listing': moved, 'path': fixture['path']})['run']['saved'] = 'unread'
         answers = {**self.answers(fixture),
@@ -1107,4 +1160,4 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [{'snapshot': 'record'}, {'poll': True}],
                                state={'screen': 'run', 'path': fixture['path']})
         self.assertEqual(len([r for r in result['requests']
-                              if r['address'].startswith('/api/run')]), 2)
+                              if r['address'].startswith('/api/run')]), 1)

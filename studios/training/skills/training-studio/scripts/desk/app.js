@@ -6057,6 +6057,20 @@ function savedLead(run) {
   if (saved.outcome === 'waiting' && list(saved.waits).some((wait) => wait.take)) {
     return capsule('Take it over', kind, askTeam('take', 'take'), 'take');
   }
+  // An opening that was interrupted is finished by the existing recovery, with the token of
+  // the opening the person previewed; nothing else is ever applied.
+  if (saved.outcome === 'waiting' && list(saved.waits).some((wait) => wait.finish)
+      && saved.expected) {
+    const finish = capsule('Finish opening on the desk', kind, async () => {
+      finish.disabled = true;
+      try {
+        view.run = await send('drafts/migrate', { path: run.path, expected: saved.expected });
+        show('run', { path: run.path });
+      } catch (failure) { toast(failure.message); drawRun(true); }
+    }, 'finish-opening');
+    return finish;
+  }
+
   const copying = saved.next === 'copy';
   const go = capsule(copying ? 'Start new work from this' : 'Start a new training', kind,
     () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
@@ -6101,8 +6115,10 @@ function savedWaitsPart(run) {
   const taking = list(saved.waits).some((wait) => wait.take);
   const copying = saved.next === 'copy';
   const again = capsule('Check again', 'quiet', () => drawRun(true), 'saved-again');
-  // Taking it over is the filled action; new work can still start from it meanwhile.
-  const start = taking ? capsule(copying ? 'Start new work from this' : 'Start a new training',
+  // Taking it over or finishing the opening is the filled action; new work can still start
+  // from it meanwhile.
+  const acting = taking || list(saved.waits).some((wait) => wait.finish && saved.expected);
+  const start = acting ? capsule(copying ? 'Start new work from this' : 'Start a new training',
     'quiet', () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-other',
       start) : openNew('saved-other', false, start)), 'saved-other') : null;
   return add(node, add(make('div', 'bar'), again, start));
@@ -6149,14 +6165,9 @@ async function drawRun(fresh) {
   if (fresh) {
     place({ title: 'Opening', back: true }, [make('p', 'quiet', 'Reading the run.')], true);
   }
-  // A saved record runs nothing: it is not read again at the list's pace, only when its
-  // two small records change in the list, or when the person asks.
-  if (!fresh && view.run && view.run.saved_record && view.run.path === view.path
-      && [savedOf(listed(view.path)), ''].includes(view.savedSeen)) {
-    // Read before the list was: what the list now says is what it was read at.
-    view.savedSeen = savedOf(listed(view.path));
-    return;
-  }
+  // A saved record runs nothing: it keeps what it was found to be when it was opened until
+  // the person acts on it or presses Check again. It is never read again by itself.
+  if (!fresh && view.run && view.run.saved_record && view.run.path === view.path) return;
   try {
     // The training's own files and record are read again only when the list says they
     // changed. The run is what moves while it works, so it is read each time.
@@ -6167,7 +6178,6 @@ async function drawRun(fresh) {
     if (turn !== view.turn) return;
     const first = fresh || !view.run;
     view.run = run;
-    view.savedSeen = run.saved_record ? savedOf(listed(view.path)) : null;
     if (training) {
       view.training = training;
       view.recorded = record;
@@ -6504,14 +6514,6 @@ function listed(path) {
   return list(view.listing).find((training) => training.path === path) || null;
 }
 
-// What the list says of a saved record's two small records: whether it is saved or unread,
-// who drives it and its title. A change there has its open record read again.
-function savedOf(training) {
-  if (!training) return '';
-  return JSON.stringify([training.run && training.run.saved, training.title, training.driver,
-    training.mine]);
-}
-
 // What the list says of a training's own record: when it last changed, and where it stands.
 // A run's words change while it works, and are read from the run, so they are left out.
 function recordOf(training) {
@@ -6755,6 +6757,12 @@ function teamAsks(kind, title) {
         + 'from this computer.'),
       make('p', '', 'What this computer made and never shared is set aside. It is kept on '
         + 'this computer and can be brought back; nothing is deleted.')] };
+  }
+  if (kind === 'take' && run.saved_record) {
+    return { title: 'Take ' + title + ' over?', send: 'Take it over',
+      says: [make('p', '', 'This computer is recorded as the one running it, in its run '
+        + 'record and in your team’s shared history. Nothing in it is continued or made.'),
+      make('p', 'quiet', 'You can then open it on the desk from here.')] };
   }
   if (kind === 'take' && run.driver) {
     const name = nameOf(run.driver);
