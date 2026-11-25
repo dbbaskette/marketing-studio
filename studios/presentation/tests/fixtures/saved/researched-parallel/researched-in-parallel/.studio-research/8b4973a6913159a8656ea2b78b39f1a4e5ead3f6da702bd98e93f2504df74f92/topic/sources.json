@@ -1,0 +1,23 @@
+{
+  "owner": "harness-research-asset",
+  "schema": 1,
+  "asset": "topic-afde0488165546e29e239768c1c609d0",
+  "input_fingerprint": "1d1c41a37fefbe0f07503511560e658daad0ededc406a54a7a3a69816cede091",
+  "entries": [
+    {
+      "id": "source-2731816a31aa90a4c1df1938",
+      "type": "url",
+      "role": "discovered",
+      "origin": "https://docs.example.com/restarts",
+      "permission": "public",
+      "outcome": "captured",
+      "capture_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+      "capture_sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+      "accessed_at": "2026-11-24T23:35:39.469+00:00",
+      "evidence_ids": [
+        "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445"
+      ],
+      "used_in_digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a"
+    }
+  ]
+}

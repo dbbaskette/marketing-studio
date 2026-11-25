@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "request_digest": "c61e7ce1e19296ef1cbf9020e9cef09b68f0f7545f3d650cffd720fefd77d1b6",
+  "generation": 1,
+  "workstream": "area1",
+  "investigator": "investigator-c49a0b17b23f53ba4c9314b4",
+  "attempt": 1,
+  "sources": [
+    {
+      "id": "source-a",
+      "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+      "origin": "https://docs.example.com/restarts",
+      "title": "Synthetic source",
+      "publisher": "Synthetic publisher",
+      "permission": "public",
+      "context": "full",
+      "original_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.raw"
+    }
+  ],
+  "facts": [
+    {
+      "id": "fact-a",
+      "statement": "More than one instance keeps capacity.",
+      "author": "investigator-c49a0b17b23f53ba4c9314b4",
+      "citations": [
+        {
+          "source": "source-a",
+          "quote": "More than one instance keeps capacity."
+        }
+      ]
+    }
+  ],
+  "limitations": [],
+  "gaps": []
+}

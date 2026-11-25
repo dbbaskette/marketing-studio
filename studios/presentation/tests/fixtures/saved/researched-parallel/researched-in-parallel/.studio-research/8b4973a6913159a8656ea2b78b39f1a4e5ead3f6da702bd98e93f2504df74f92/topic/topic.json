@@ -1,0 +1,28 @@
+{
+  "owner": "harness-research-asset",
+  "schema": 1,
+  "id": "topic-afde0488165546e29e239768c1c609d0",
+  "title": "Researched in parallel",
+  "description": "",
+  "tags": [],
+  "created_at": "2026-11-24T23:35:39.072Z",
+  "updated_at": "2026-11-24T23:35:39.877Z",
+  "current": {
+    "digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a",
+    "status": "complete",
+    "inputFingerprint": "1d1c41a37fefbe0f07503511560e658daad0ededc406a54a7a3a69816cede091",
+    "author": "synthesizer-e57091d4d9e98a0f2478bc18",
+    "reviewer": "reviewer-3adcb1adbba947db9835cbf6",
+    "updated_at": "2026-11-24T23:35:39.877Z"
+  },
+  "revisions": [
+    {
+      "digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a",
+      "status": "complete",
+      "inputFingerprint": "1d1c41a37fefbe0f07503511560e658daad0ededc406a54a7a3a69816cede091",
+      "author": "synthesizer-e57091d4d9e98a0f2478bc18",
+      "reviewer": "reviewer-3adcb1adbba947db9835cbf6",
+      "updated_at": "2026-11-24T23:35:39.877Z"
+    }
+  ]
+}
