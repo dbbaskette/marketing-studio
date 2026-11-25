@@ -737,66 +737,31 @@ and an existing blog keeps the revision it was started with.
 
 ## Blogs started step by step
 
-Saved blogs started before the writing desk can keep their
-step-by-step path: research (when chosen), outline, draft, review and a handoff, each made
-by your assistant and brought back for a decision where the blog's review level says. A
-finished one offers **Open on the desk** on its Done card, which Home's **Finished
-drafts**, **Blogs** and the manuscript editor all open; it brings the manuscript onto the
-desk, including edits made since in the editor, and the run stays readable as it ended.
+Blogs started before the writing desk went step by step: research (when chosen), outline,
+draft, review and a handoff, each made by your assistant and brought back for a decision.
+That earlier flow no longer continues any of them. Each one is a saved record that says
+what becomes of it, with one main action:
 
-Research in a run reads **your documents** (its selected sources), **your sites** (the list
-in Marketing Studio's Shared settings, or a site added for that blog only) and/or **the
-public web**. Your sites are searched with the assistant's web search, and only pages under
-them are saved. That check is Harness Research's, so without it (see Status) your sites
-alone are refused. The runner uses your CLI account. No writing, research or finishing step is ended for
-how long it takes: it runs until it finishes or you press **Stop**. It
-does not hold an API key and has no spending limit; your account's usage charges or limits
-still apply.
+| The saved blog | Its record says | Its main action |
+| --- | --- | --- |
+| Saved an outline, a draft, a review or a handoff | It continues on the writing desk | **Open on the desk**, which shows what stays with it before anything changes |
+| Finished | It is edited on the desk from here on | **Open on the desk** in its Done card, beside copy, download, a Google Doc, pre-publish and repurposing |
+| Waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), **Finish opening on the desk**, or new work from it while nothing here clears it |
+| Stopped before an outline or draft, or cannot be read | Why it is read-only | **Start new work from this**: a new blog from its title, point and audience; nothing it researched is carried |
 
-While a step runs, the run shows what its assistant is doing now and **Show activity**, and
-its **Activity log** keeps each step's job, as on the desk (see *What the assistant is
-doing, and the Activity log*).
+Each record lists its saved files to read in place. **Blogs** and Home say the same in
+words beside each one. Opening on the desk keeps every original file and decision; it
+invents no approval and starts no step. A blog whose outline was notes the desk could not
+read as sections shows those notes on the desk, to shape the outline from.
 
-| It makes | You decide |
-| --- | --- |
-| Research questions, when research is chosen | Are these the right questions? |
-| Research findings | Is the evidence sufficient? What is still unknown? |
-| An outline | Is this the argument you want? |
-| A draft | Does it say what you mean, in your voice? |
-| A review | Which findings need changes? |
-| The handoff | Are the title, excerpt and links ready to hand over? |
+The manuscript editor's own checks still run as review and revise runs: **Edit
+manuscript** starts and reads them. A finished one reads on its run and its review pages.
 
-A saved run keeps the review level it started with. One
-line under a run's stages says how many steps are left, where it next stops and what
-its jobs have cost so far. **Ask for changes** says what is drawn again and what those
-steps took the last time they ran. The default, **Balanced**, stops for you
-twice: at the outline, with the research questions and findings beside it, and
-at the run's last step (the handoff or your chosen stop), with the steps
-since the outline beside it. The steps between continue on their own; Blog Studio
-records that the review level accepted them, never that you approved them.
-**Step by step** stops at every row, and **Automatic draft** only at the last
-step. Without an outline, as when revising a draft, Balanced also stops only at
-the last step.
-
-Choose an earlier stage under **Ask for changes** to revise the draft or outline
-after reviewing it, including one the review level accepted. The assistant edits
-that saved document, changing only what you asked. The later stages are made
-again and reach you at their usual stops. You can stop at outline, draft or
-review instead of making a package. Review mode keeps the manuscript as written;
-revision makes a new draft while retaining the original.
-
-**Blogs** shows every blog, on the desk or step by step, and saved writing. Each card has **Delete**, as
-each blog in Home's lists does, which asks for the blog's title, stops anything running for it and keeps it for
-30 days under **Recently deleted**, where **Restore** brings it back. Open a run
-to see steps and made files. Each review page renders the saved Markdown as a
-paper document, with **Checked for you**, **Worth a look** and **What changed**
-alongside it.
-Comparisons use the exact last approved version. **Approve** opens a confirmation
-sheet; **Ask for changes** lets you select an earlier stage. A finished or
-paused run returns to **Resume** when you request a revision. A changed version
-stays separate from the document you are reading until you choose to reload it.
-The editorial pipeline, library, findings and memory tools remain available under
-**Library and team tools** on Blogs.
+**Blogs** shows every blog, on the desk, saved step by step, and saved writing. Each card
+has **Delete**, as each blog in Home's lists does, which asks for the blog's title, stops
+anything running for it and keeps it for 30 days under **Recently deleted**, where
+**Restore** brings it back. The editorial pipeline, library, findings and memory tools
+remain available under **Library and team tools** on Blogs.
 
 ## The Team library
 
@@ -879,8 +844,8 @@ tools. Only the runner saves their returned documents.
 Ask for a focused outline, research, passage or check on the writing desk. The assistant
 starts a conversation without starting a worker, reads the checked context and saves only
 the requested scope. Broader work requires your explicit request. Hand work to the page
-or back to the conversation deliberately; only you approve. Saved guided runs can still
-continue through their existing controls.
+or back to the conversation deliberately; only you approve. Blogs saved step by step are
+saved records the earlier flow no longer continues (see *Blogs started step by step*).
 
 ## Shared studios repository
 
@@ -910,9 +875,7 @@ is `derived/blog-run.json`; earlier writing and decisions remain in history.
 Changing an input or an approved document invalidates affected decisions.
 An old page cannot approve a newer version. If someone edits while a worker is
 running, that edit is kept and its late result is refused.
-An edited saved document is never regenerated automatically. Choose **Review
-this saved version** to bring your edit back for approval, ask for changes, or
-continue in chat.
+An edited saved document is never regenerated automatically.
 
 Runs use the existing selected Team Hub and its ordinary save, offline queue,
 retry and conflict protections. Execution controls stay local and never travel
@@ -933,7 +896,8 @@ existing create/join, intake, saves, reviews and cross-clone protections.
 
 ## Research stops and supplied material
 
-This section is about blogs run step by step. Runs that research your documents only, with selected facts/material, map the claims in that material
+This section is about how blogs run step by step researched; the earlier flow no longer
+continues them (see *Blogs started step by step*). Runs that research your documents only, with selected facts/material, map the claims in that material
 instead of running research. Each claim names a source ID and an exact passage. The runner
 checks words against that source (ignoring whitespace and line breaks), allows one
 correction and stops on another failure. Later writers receive the map and keep the
@@ -946,8 +910,8 @@ together and checked independently. The research review leads with the authored 
 checker's note, gaps, source limitations and findings mapped to questions. Report and
 evidence are folded below. Ask for changes says before sending that the full research
 runs again, what its last try recorded and which saved later stages it will make again.
-Saved older runs continue through their original research pipeline: supplied-only reads
-as your documents, web-allowed as your documents and the public web.
+A saved older run's research reads the same way: supplied-only as your documents,
+web-allowed as your documents and the public web.
 
 Source discovery searches your sites first, with `site:` queries, and uses the wider web
 only for gaps when the public web is ticked too. Every page and every redirect is checked

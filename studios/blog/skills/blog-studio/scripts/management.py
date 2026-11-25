@@ -3028,6 +3028,13 @@ def view(root, name, query):
                 ):
                     # A blog on the writing desk has no run: its address opens the desk.
                     return {'id': arg('id'), 'on_desk': True}
+                if not blog_runner.continues(desk_migration.saved_run(directory)):
+                    # The earlier step-by-step flow continues only the manuscript editor's own
+                    # runs: any other saved run is a saved record (desk work and a blog opened
+                    # on the desk keep their screens).
+                    shown = desk_migration.saved_record(root, arg('id'))
+                    if shown is not None:
+                        return shown
                 return blog_runner.engine(root).describe(arg('id'))
             except (ValueError, OSError, KeyError, TypeError, AttributeError) as refusal:
                 # A saved blog whose records cannot be read or understood is shown as a

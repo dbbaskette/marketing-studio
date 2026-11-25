@@ -402,6 +402,11 @@ class ToneWhileOffTests(EnforcementCase):
             },
             'page',
         )
+        # Runner code the manuscript editor's own runs still use: this run is marked as the
+        # editor's, the only saved runs the runner goes on with.
+        directory, _, state = blog_runner.load(self.root, found['id'])
+        state['editor_check'] = 'revise'
+        studio.write_json(directory / blog_runner.STATE, state)
         blog_runner.settings(
             self.root, self.form(features={'voice': False}, features_before={'voice': True})
         )

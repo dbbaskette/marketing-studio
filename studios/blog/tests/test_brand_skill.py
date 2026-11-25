@@ -544,6 +544,11 @@ class BrandSkillTests(unittest.TestCase):
             },
             'page',
         )
+        # Runner code the manuscript editor's own runs still use: this run is marked as the
+        # editor's, the only saved runs the runner goes on with.
+        directory, _, state = blog_runner.load(self.root, run['id'])
+        state['editor_check'] = 'revise'
+        studio.write_json(directory / blog_runner.STATE, state)
         worker = unittest.mock.Mock(return_value={'content': '# Synthetic outline', 'notes': ''})
         engine = blog_runner.Engine(self.root, worker)
         engine.control(run['id'], 'resume')
