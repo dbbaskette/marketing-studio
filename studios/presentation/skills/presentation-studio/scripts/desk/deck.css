@@ -28,33 +28,9 @@
   max-width: 16rem;
 }
 
-.review-bar {
-  margin-top: 1rem;
-  padding-top: 0.8rem;
-}
-
 /* A slide's points and notes, folded under its row, spaced as the row is. */
 .outline-slide > details > * + * {
   margin-top: 0.6rem;
-}
-
-/* The outline engine's self-contained wireframe is isolated from the page, so it cannot
-   report its own height. It fills the reading column, and on a phone the screen above the
-   bottom bar, rather than nesting a short scroll area. */
-.storyboard {
-  display: block;
-  width: 100%;
-  height: min(80vh, 56rem);
-  margin-top: 0.75rem;
-  background: var(--paper);
-  border: 1px solid var(--paper-line);
-  border-radius: 14px;
-}
-
-@media (max-width: 52rem) {
-  .storyboard {
-    height: calc(100dvh - 12rem);
-  }
 }
 
 /* The new-deck sheet's options: a plain disclosure, its summary as tall as any control. */

@@ -26,6 +26,7 @@ def main():
     else:
         case = DeskCase()
     web, engine = None, None
+    done = threading.Event()
     try:
         with contextlib.redirect_stdout(sys.stderr):
             case.setUp()
@@ -96,6 +97,41 @@ def main():
                                cwd=STUDIO, env={**os.environ, 'PYTHONPATH': '.:tests'},
                                capture_output=True, text=True, timeout=30)
                 print(json.dumps({'beside': str(beside)}), file=sys.stderr, flush=True)
+            if '--saved-restarted' in sys.argv:
+                # A saved deck beside two whose steps a runner that stopped left marked (one
+                # with a change half-made, one read-only), and Presentation Studio started
+                # again: start-up recovers them, so the first opens on the desk.
+                root = case.load_saved('build', title='Saved beside them')
+                stopped = case.load_saved('outline', title='Stopped mid-step')
+                nothing = case.load_saved('research-plan', title='Nothing made, marked')
+                for marked in (stopped, nothing):
+                    (marked / 'work').mkdir(exist_ok=True)
+                    (marked / 'work/step.lock').write_text('outline\n')
+                with open(stopped / 'outline.md', 'a') as stream:
+                    stream.write('\nA line the stopped step left.\n')
+                case.engine.resume()
+                print(json.dumps({'stopped': str(stopped), 'nothing': str(nothing),
+                                  'markers': [(marked / 'work/step.lock').exists()
+                                              for marked in (stopped, nothing)]}),
+                      file=sys.stderr, flush=True)
+            if '--saved-desk-working' in sys.argv:
+                # A saved deck, and a desk deck in the same workspace that starts a step 20
+                # seconds after the page is served (this process runs it): its run record is
+                # written and the workspace fetched, as a step and the background fetch do.
+                root = case.load_saved('build', title='Saved while a desk deck works')
+                working = case.start_desk(look='default', title='Desk deck at work')
+
+                def works():
+                    if done.wait(20):
+                        return
+                    from runner import decks
+                    case.engine._active_steps.add(str(working))
+                    (working / 'work').mkdir(exist_ok=True)
+                    (working / 'work/step.lock').write_text('build\n')
+                    decks.write_run(working, decks.read_run(working))
+                    case.engine._fetched += 1
+                    print(json.dumps({'working': str(working)}), file=sys.stderr, flush=True)
+                threading.Thread(target=works, daemon=True).start()
             if '--saved-taken' in sys.argv:
                 # Alex runs a saved deck; the page is Blake's, who takes it over to open it.
                 taken = case.load_saved('build', title='Run by Alex')
@@ -111,7 +147,6 @@ def main():
         web = server.Desk(page=lambda port: page.RunnerPage(port, served))
         web.start()
         print(json.dumps({'url': web.url, 'path': str(root)}), flush=True)
-        done = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: done.set())
         signal.signal(signal.SIGINT, lambda *_: done.set())
         done.wait()

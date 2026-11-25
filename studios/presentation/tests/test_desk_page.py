@@ -76,7 +76,11 @@ class DeskPageCase(test_desk.ScriptedPage, PageCase):
         return path
 
     def open_deck(self, path: str, view: dict, steps: list, **more) -> dict:
-        """The deck's own screen, opened as a reload opens it, with `view` as its run."""
+        """The deck's own screen, opened as a reload opens it, with `view` as its run. A saved
+        record is checked as its screen opens, and the check answers `view` unless `more`
+        says otherwise."""
+        if (view or {}).get('saved_record'):
+            more = {'POST /api/saved-check': [ok(view)], **more}
         return self.run_page(self.answers(**{'GET /api/run': [ok(view)], **more}), steps,
                              state={'screen': 'deck', 'path': path})
 
@@ -2635,13 +2639,16 @@ class OpenOnDeskPageTests(DeskPageCase):
         opened = self.post('desk-open', {'path': path})
         result = self.open_deck(path, view, [
             {'snapshot': 'delivered'}, {'click': 'Open on the desk'}, {'snapshot': 'desk'}],
-            **{'POST /api/desk-open': [ok(opened)], 'GET /api/run': [ok(view), ok(view), ok(opened)]})
+            # Its screen checks it as it opens, and looks at the run again after that.
+            **{'POST /api/desk-open': [ok(opened)],
+               'GET /api/run': [ok(view), ok(view), ok(view), ok(opened)]})
         delivered, desk = result['snapshots']['delivered'], result['snapshots']['desk']
         self.assertIn('Open on the desk', delivered['buttons'])
         # The one filled action of a finished saved deck (fix round, ruling 3).
         self.assertEqual(delivered['filled'], ['Open on the desk'])
         self.assertIn('Delivered', delivered['text'])
-        self.assertEqual(self.posts(result), [('/api/desk-open', {'path': path})])
+        self.assertEqual(self.posts(result), [('/api/saved-check', {'path': path}),
+                                              ('/api/desk-open', {'path': path})])
         # The screen is the desk now: the navigator and the slide chosen, still delivered.
         self.assertIn('Previous slide', desk['buttons'])
         self.assertIn('Delivered as revision 1 to Google Slides.', desk['text'])
@@ -3088,7 +3095,8 @@ class MigrationPageTests(DeskPageCase):
         self.assertIn('Apply', shot['filled'])
         self.assertEqual(shot['sheetCards'], 1)
         self.assertNotIn(preview['expected'], shot['sheet'])
-        self.assertEqual(self.posts(result), [])
+        # Only the check its screen makes as it opens (fix round 2): nothing else is sent.
+        self.assertEqual(self.posts(result), [('/api/saved-check', {'path': path})])
 
     def test_apply_then_explicit_ready_without_delivery(self):
         path, view = self.saved()
@@ -3109,12 +3117,13 @@ class MigrationPageTests(DeskPageCase):
                 'POST /api/desk-migrate': [ok(opened)],
                 'GET /api/desk-ready-context': [ok(context)],
                 'POST /api/desk-ready': [ok(approved)],
-                'GET /api/run': [ok(view), ok(view), ok(opened), ok(approved)]})
+                # Its screen checks it as it opens, and looks at the run again after that.
+                'GET /api/run': [ok(view), ok(view), ok(view), ok(opened), ok(approved)]})
         self.assertNotIn('Deliver', result['snapshots']['desk']['buttons'])
         self.assertEqual(result['snapshots']['approval']['sheetCards'], 1)
         self.assertIn('nothing has been delivered', result['snapshots']['ready']['text'])
         self.assertEqual([address for address, _ in self.posts(result)],
-                         ['/api/desk-migrate', '/api/desk-ready'])
+                         ['/api/saved-check', '/api/desk-migrate', '/api/desk-ready'])
 
 
 if __name__ == '__main__':

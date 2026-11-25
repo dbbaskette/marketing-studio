@@ -75,8 +75,7 @@ What a caller needs to know
   - A deck the earlier step-by-step flow saved: `/api/saved-check` {"path"} finds what becomes
     of it now (read-only; run when its screen opens or the person asks, never by a poll);
     `/api/saved-finish` {"path"} finishes an interrupted opening on the desk with the
-    migration's own recovery; `/api/saved-clear-marker` {"path"} removes the step markers a
-    dead step left and nothing else. Each answers the view; a refusal is 409.
+    migration's own recovery. Each answers the view; a refusal is 409.
   - The desk, for a deck started from the desk's start (`engine.desk_*`), each answering the
     deck's view: `/api/desk-note` {"path", "number", "note", "expected"} redraws one slide's
     section with the note; `/api/desk-deck-note` {"path", "note", "expected"} every section;
@@ -204,10 +203,9 @@ WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/
 COPY = '/api/deck-copy'   # a deck's setup, for the start form to make a new one from
 WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready', COPY)
 # A deck the earlier step-by-step flow saved (GitHub issue #542): what becomes of it, found
-# when it is opened or the person asks; an interrupted opening on the desk finished; and a
-# step marker a dead step left cleared. Each answers the deck's view.
-SAVED = {'/api/saved-check': 'saved_check', '/api/saved-finish': 'finish_opening',
-         '/api/saved-clear-marker': 'clear_marker'}
+# when it is opened or the person asks; and an interrupted opening on the desk finished. Each
+# answers the deck's view.
+SAVED = {'/api/saved-check': 'saved_check', '/api/saved-finish': 'finish_opening'}
 WRITES = (*WRITES, *SAVED)
 # Browsing the shared Document Library: it reads, and selects nothing for a deck.
 WRITES = (*WRITES, *library_context.ROUTES)

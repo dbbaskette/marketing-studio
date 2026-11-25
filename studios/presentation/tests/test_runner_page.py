@@ -59,7 +59,7 @@ POSTS = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/a
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/build-feedback', '/api/progress-seen',
          '/api/research-site', '/api/desk-outline-price', '/api/deck-copy', *DESK_POSTS,
-         '/api/saved-check', '/api/saved-finish', '/api/saved-clear-marker',
+         '/api/saved-check', '/api/saved-finish',
          *LIBRARY_POSTS, '/api/document-intake')
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer',
         '/api/desk-outline-price')

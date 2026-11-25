@@ -1321,9 +1321,8 @@ const DELIVERED = [['', 'Any'], ['yes', 'Delivered'], ['no', 'Not delivered yet'
 const STANDS = [['', 'Any'], ['needs', 'Needs you'], ['working', 'In progress'],
   ['finished', 'Finished'], ['elsewhere', 'Run by your teammates'],
   ['saved', 'Saved by the earlier flow']];
-// A saved record on a list, by what its last current check found: never more than that.
-const SAVED_LISTED = { unchecked: ['none', 'Saved earlier'], migrates: ['review', 'Opens on the desk'],
-  waiting: ['out', 'Waiting'], 'read-only': ['off', 'Read-only'],
+// A saved record on a list, by what its small record proves: never what a check found.
+const SAVED_LISTED = { unchecked: ['none', 'Saved earlier'], 'read-only': ['off', 'Read-only'],
   interrupted: ['late', 'Opening interrupted'] };
 const BEGAN = [['', 'Any'], ...ROUTES.map(([route, name]) => [route, name])];
 
@@ -3806,17 +3805,39 @@ const SAVED_STANDS = {
   'read-only': ['off', 'Read-only: it is not continued and not opened on the desk'],
   interrupted: ['late', 'Opening on the desk was interrupted'],
 };
+// What taking a saved deck does, as the team's take does it.
+const SAVED_TAKE_SAYS = 'Its saved record is written again naming you as its driver, and the '
+  + 'deck’s folder is committed and shared as it is on this computer, with any change to its '
+  + 'files that was not shared yet. Changes this computer committed to it and never shared '
+  + 'are set aside first, and kept on this computer.';
 const SAVED_DELETE_SAYS = 'If you no longer want this saved deck, delete it: its folder, with '
   + 'every saved file listed above, goes from this computer and from your team’s workspace. '
   + 'Nothing else deletes it.';
 
-function paintSavedRecord(run, fresh) {
+// What the screen says while it checks a saved deck it has just opened (the runner's
+// SAVED_UNCHECKED).
+const SAVED_CHECKING = 'This deck was saved by the earlier step-by-step flow, which no longer '
+  + 'continues it. Checking how it goes on from here.';
+
+// A saved record as this opening of its screen may show it: what a check made before it was
+// opened found is not shown, since it is checked again as it opens. From then on the screen
+// keeps what that check found until the person acts on the deck or checks again.
+function savedAsOpened(run, turn) {
+  const saved = run.saved_record;
+  if (!saved.checked_at || view.savedSeen === turn) return run;
+  return Object.assign({}, run, { sentence: SAVED_CHECKING, state: 'saved',
+    saved_record: Object.assign({}, saved, { state: 'unchecked', why: null, remedy: null,
+      waiting: [], retained: [], action: null, holder: null, checked_at: null }) });
+}
+
+function paintSavedRecord(found, fresh) {
+  // What becomes of it is found once when the screen opens it, never on a poll.
+  const turn = found.path + '#' + view.turn;
+  const run = savedAsOpened(found, turn);
   const saved = run.saved_record;
   const title = run.title || 'Untitled';
   const kind = saved.state || 'read-only';
   const read = theirs(run);
-  // What becomes of it is found once when the screen opens it, never on a poll.
-  const turn = run.path + '#' + view.turn;
   if (kind === 'unchecked' && view.savedChecked !== turn) {
     view.savedChecked = turn;
     savedAct(run, 'saved-check', null);
@@ -3848,8 +3869,8 @@ function paintSavedRecord(run, fresh) {
   ], fresh);
 }
 
-// Ask the runner about this saved deck: check it again, finish its interrupted opening, or
-// clear a marker a dead step left. The screen is drawn again from the answer.
+// Ask the runner about this saved deck: check it again, or finish its interrupted opening.
+// The screen is drawn again from the answer.
 async function savedAct(run, address, pressed) {
   if (view.busy) return;
   const turn = view.turn;
@@ -3858,6 +3879,7 @@ async function savedAct(run, address, pressed) {
   try {
     const found = await send(address, { path: run.path });
     if (turn !== view.turn) return;
+    if (address === 'saved-check') view.savedSeen = run.path + '#' + turn;
     view.run = found;
     if (found.opening === 'opened') toast('It is open on the desk now.');
     if (found.opening === 'put back') toast('The interrupted opening was put back as it was. '
@@ -3906,8 +3928,8 @@ function savedRecordIntro(run) {
   } else if (kind === 'finished' && theirs(run)) {
     go = take();
     next = (run.driver ? nameOf(run.driver) + ' runs it from another computer. ' : 'Nobody runs '
-      + 'it now. ') + 'Take it to open it on the desk here; only its driver changes in its '
-      + 'saved record.';
+      + 'it now. ') + 'Take it to open it on the desk here; its confirmation says what taking '
+      + 'it does.';
   } else if (kind === 'finished') {
     go = capsule(view.opening ? 'Opening…' : 'Open on the desk', filled,
       () => openOnDesk(run, go), 'desk-open');
@@ -3919,15 +3941,11 @@ function savedRecordIntro(run) {
       + 'material. This saved deck is kept as it is.'
       : 'Its start form cannot be read, so a new deck starts from an empty form. This saved '
         + 'deck is kept as it is.';
-  } else if (saved.action === 'clear-marker') {
-    go = capsule('Clear the step marker', filled,
-      () => savedAct(run, 'saved-clear-marker', go), 'saved-clear-marker');
-    next = 'Only the marker file is removed; every saved file stays as it is.';
   } else if (saved.action === 'take') {
     go = take();
     next = (run.driver ? nameOf(run.driver) + ' runs it from another computer; ' + nameOf(run.driver)
       + ' is told who took it. ' : 'Nobody runs it now. ') + 'Take it to open it on the desk '
-      + 'here; only its driver changes in its saved record.';
+      + 'here; its confirmation says what taking it does.';
   } else if (saved.action === 'open' && saved.holder) {
     go = capsule('Open ' + saved.holder.title, filled, () => show('deck',
       { path: saved.holder.path }), 'saved-holder');
@@ -3936,7 +3954,7 @@ function savedRecordIntro(run) {
   } else if (saved.action === 'check') {
     go = capsule(view.busy ? 'Checking…' : 'Check again', filled,
       () => savedAct(run, 'saved-check', go), 'saved-check');
-    next = 'A step is in hand somewhere in this workspace. It ends by itself; check again then.';
+    next = 'Checking again reads its saved files and changes nothing.';
   } else {
     go = copy('saved-copy');
     next = 'Nothing in the studio clears this by itself. Once it is cleared, this deck still '
@@ -4160,6 +4178,18 @@ function teamAsks(kind, title) {
       make('p', '', 'What this computer made and never shared is set aside. It is kept on '
         + 'this computer and can be brought back; nothing is deleted.')] };
   }
+  // A saved record is offered Take only where it must be taken to open it on the desk. It is
+  // the team's own take, and its confirmation says all that it does.
+  if (kind === 'take' && run.saved_record) {
+    const name = run.driver ? nameOf(run.driver) : '';
+    return { title: 'Take ' + title + (name ? ' over from ' + name : '') + '?',
+      send: name ? 'Take it over' : 'Take it',
+      says: [make('p', '', (name ? 'It is ' + name + '’s, and runs from another computer. '
+        : 'Nobody runs it now. ') + 'Taking it makes it this computer’s, so that it can be '
+        + 'opened on the desk here. Nothing continues it until you open it there.'),
+      make('p', '', SAVED_TAKE_SAYS),
+      name ? make('p', 'quiet', name + ' is told who took it and when.') : null] };
+  }
   if (kind === 'take' && run.driver) {
     const name = nameOf(run.driver);
     const dated = !Number.isNaN(Date.parse(run.driver.since));
@@ -4174,9 +4204,8 @@ function teamAsks(kind, title) {
   }
   if (kind === 'take') {
     return { title: 'Take ' + title + '?', send: 'Take it',
-      says: [make('p', '', run.saved_record ? 'Nobody is running it. From then on it is this '
-        + 'computer’s, and it can be opened on the desk here.' : 'Nobody is running it. From '
-        + 'then on it runs from this computer, and carries on from where it stands.'),
+      says: [make('p', '', 'Nobody is running it. From then on it runs from this computer, and '
+        + 'carries on from where it stands.'),
       run.state === 'finished' ? make('p', 'quiet', 'It is finished, so nothing more is made '
         + 'until you ask for changes. When you are done, hand it over, so that nobody is '
         + 'shown as running it.') : null] };
@@ -4237,7 +4266,8 @@ async function settleTeam(kind, problem, pressed) {
     view.run = found;
     // A saved record taken here is checked again as it is drawn: what it waits for changed.
     view.savedChecked = '';
-    toast(kind === 'take' ? found.notice || 'It runs from this computer now.'
+    toast(kind === 'take' ? found.notice || (found.saved_record ? 'It is this computer’s now.'
+      : 'It runs from this computer now.')
       : 'Handed over. Anyone on your team may take it now.');
   }
   drawSheet();
@@ -4256,8 +4286,11 @@ async function settleTeam(kind, problem, pressed) {
 // person presses the button that names the deck.
 
 // Whether a deck may be offered for deletion here, the open one or one on a list. The runner
-// decides; this only keeps the offer off a deck someone else runs.
+// decides; this only keeps the offer off a deck someone else runs, and off a deck whose
+// opening on the desk was interrupted until that opening is finished.
 function deletable(run) {
+  if (run && (run.saved === 'interrupted'
+    || (run.saved_record && run.saved_record.state === 'interrupted'))) return false;
   return Boolean(run && (run.mine !== false || (run.state === 'finished' && !run.driver)));
 }
 
