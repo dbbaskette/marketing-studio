@@ -103,20 +103,29 @@ class SavedStateCase(saved_fixtures.Maker):
         self.assertEqual((saved['outcome'], saved['next']), (outcome, next_action), saved['why'])
         return shown
 
-    def resume(self, found):
-        """The page's Resume for a saved blog."""
+    def page(self, found, action, **data):
+        """One of the page's run actions for a saved blog (Resume, Approve, Ask for changes)."""
         with studio.locked(self.root):
             return runner.dispatch(
-                self.root, 'resume', {'id': found['id'], 'expected': found['expected']}
+                self.root, action, {'id': found['id'], 'expected': found['expected'], **data}
             )
 
+    def chat(self, found, *command):
+        """One of the command line's run commands for a saved blog (parsed as the CLI does)."""
+        with patch('sys.stderr'):
+            return self.command('run', *command, '--id', found['id'])
+
     def not_continued(self, ident, *attempts):
-        """Each way the earlier flow continued this blog is refused with the two exits, and its
-        worker never starts a step: nothing in the workspace changes."""
+        """Each way the earlier flow continued this blog from the page is refused with the two
+        exits, the command line has no run decision left to continue it, and its worker never
+        starts a step: nothing in the workspace changes."""
         before = self.tree()
         for attempt in attempts:
             with self.nothing_starts(), self.assertRaisesRegex(ValueError, 'no longer continues'):
                 attempt()
+        for command in ('submit', 'approve', 'changes', 'handoff', 'choose'):
+            with self.nothing_starts(), self.assertRaises(SystemExit):
+                self.chat({'id': ident}, command)
         engine = runner.engine(self.root)
         with (
             self.nothing_starts(),
@@ -170,8 +179,7 @@ class EarlyStopTests(SavedStateCase):
         self.assertEqual(self.record(found['id'], 'read-only', 'copy')['title'], found['title'])
         self.not_continued(
             found['id'],
-            lambda: self.submit(found, self.ANGLES, page=True),
-            lambda: self.resume(found),
+            lambda: self.page(found, 'resume'),
         )
 
     def test_new_work_from_files_without_an_angle_carries_no_placeholder(self):
@@ -195,33 +203,21 @@ class EarlyStopTests(SavedStateCase):
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.record(found['id'], 'read-only', 'copy')
 
-        def develop():
-            with studio.locked(self.root):
-                runner.dispatch(
-                    self.root,
-                    'develop',
-                    {
-                        'id': found['id'],
-                        'expected': found['expected'],
-                        'request': 'Retries are a budget',
-                    },
-                )
-
-        self.not_continued(found['id'], develop)
+        self.not_continued(found['id'], lambda: self.page(found, 'approve'))
 
     def test_research_questions_gate_is_a_read_only_record(self):
         found = self.saved('research-questions')
         self.assertEqual((found['next'], found['awaits']), ('research-plan', 'decision'))
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.record(found['id'], 'read-only', 'copy')
-        self.not_continued(found['id'], lambda: self.approve(found, page=True))
+        self.not_continued(found['id'], lambda: self.page(found, 'approve'))
 
     def test_research_findings_stop_is_a_read_only_record(self):
         found = self.saved('research-findings')
         self.assertEqual((found['next'], found['awaits']), ('research', 'decision'))
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.record(found['id'], 'read-only', 'copy')
-        self.not_continued(found['id'], lambda: self.approve(found, page=True))
+        self.not_continued(found['id'], lambda: self.page(found, 'approve'))
 
     def test_claims_map_gate_is_a_read_only_record(self):
         found = self.saved('claims-map-gate')
@@ -229,14 +225,14 @@ class EarlyStopTests(SavedStateCase):
         self.assertEqual(found['awaits'], 'decision')
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.record(found['id'], 'read-only', 'copy')
-        self.not_continued(found['id'], lambda: self.approve(found))
+        self.not_continued(found['id'], lambda: self.page(found, 'approve'))
 
     def test_brief_only_start_is_a_read_only_record(self):
         found = self.saved('brief-only')
         self.assertEqual((found['next'], found['awaits']), ('outline', 'submission'))
         self.refused(found['id'], 'no usable manuscript or supported outline', EARLY)
         self.record(found['id'], 'read-only', 'copy')
-        self.not_continued(found['id'], lambda: self.submit(found))
+        self.not_continued(found['id'], lambda: self.page(found, 'resume'))
 
 
 class MaterialStopTests(SavedStateCase):
@@ -462,9 +458,7 @@ class KeptStopTests(SavedStateCase):
         self.assertTrue(shown['complete'])
         self.not_continued(
             found['id'],
-            lambda: runner.decide(
-                self.root, found['id'], found['expected'], 'changes', 'Tighter.', target='draft'
-            ),
+            lambda: self.page(found, 'changes', request='Tighter.', stage='draft'),
         )
 
     def test_working_or_queued_page_run_waits_for_its_step(self):
@@ -476,7 +470,7 @@ class KeptStopTests(SavedStateCase):
                 # it opens on the desk.
                 shown = self.record(found['id'], 'wait')
                 self.assertEqual(shown['saved_record']['clear'], 'stop')
-                self.not_continued(found['id'], lambda found=found: self.resume(found))
+                self.not_continued(found['id'], lambda found=found: self.page(found, 'resume'))
                 with studio.locked(self.root):
                     runner.dispatch(
                         self.root, 'stop', {'id': found['id'], 'expected': shown['expected']}

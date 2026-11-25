@@ -58,7 +58,7 @@ class SharedSitesCase(RunnerCase):
         return self.config.read_bytes()
 
     def start(self, page=True, **extra):
-        return runner.create(
+        found = runner.create(
             self.root,
             {
                 'title': 'Synthetic gateway guide',
@@ -68,6 +68,7 @@ class SharedSitesCase(RunnerCase):
             },
             'page' if page else 'conversation',
         )
+        return self.editors(found) if self.EDITOR else found
 
 
 class StartFormTests(SharedSitesCase):
@@ -692,6 +693,10 @@ class GateTests(SharedSitesCase):
 class WithoutHarnessResearchTests(SharedSitesCase):
     """Your sites never become the open web: without Harness Research, research from your
     sites alone is refused, and no worker is given web search for it."""
+
+    # Runner code the manuscript editor's own runs still use: its runs are marked as the
+    # editor's (RunnerCase.EDITOR), the only saved runs the runner goes on with.
+    EDITOR = 'revise'
 
     def setUp(self):
         super().setUp()
