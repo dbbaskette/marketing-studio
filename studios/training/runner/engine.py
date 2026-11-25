@@ -460,6 +460,9 @@ SAVED_WAITING = ('This training was saved by the earlier step-by-step flow, whic
                  'continues. It opens on the desk once what it waits for clears.')
 SAVED_BRIEF = 'Saved by the earlier step-by-step flow. Open it to see what can be done with it.'
 UNREAD_BRIEF = 'Its run record cannot be read. Open it to read its saved files.'
+# A saved run record whose layout could not be kept when only its driver changes.
+SAVED_TAKE = ('This saved training’s run record cannot be changed by its driver alone, so it '
+              'was not taken. Start new work from it instead.')
 # Said by every route that continued a saved-flow training: what is left to do with it.
 SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which no longer '
               'continues. Open it on the desk, or start new work from it.')
@@ -1255,7 +1258,12 @@ class Engine(Reviewing):
                                 'looked. Take it over from them if you mean to.')
             mine = team.claim(space)
             record['driver'] = mine
-            self._store(root, record)
+            if self.saved_kind(root) is not None:
+                # A saved record is taken only to open it on the desk: its run record gains
+                # this computer as its driver and nothing else changes in its folder.
+                self._store_driver(root, mine)
+            else:
+                self._store(root, record)
             run.gone = False
             self._commit(root, f"{mine['name']} takes this training" + (
                 f" over from {now.get('name') or 'someone'}" if now else ''))
@@ -1271,6 +1279,31 @@ class Engine(Reviewing):
                                      + (report.get('notice') or ''))
             self._ours_again(root, run)
         return kept
+
+    @staticmethod
+    def _store_driver(root: Path, driver: dict) -> None:
+        """Write only the driver entry of a saved run record: every other key keeps its value
+        and its place, and the file keeps its layout. Refused, with nothing written, where the
+        record could not be written back that narrowly."""
+        import collections
+        path = root / RECORD
+        before = path.read_bytes()
+        record = json.loads(before, object_pairs_hook=collections.OrderedDict)
+        if not isinstance(record, dict) or 'driver' not in record:
+            raise WorkspaceError(SAVED_TAKE)
+        indent = 2 if before.startswith(b'{\n  "') else None
+        same = json.dumps(record, indent=indent, ensure_ascii=False)
+        ending = b'\n' if before.endswith(b'\n') else b''
+        if (same.encode() + ending) != before:
+            same = json.dumps(record, indent=indent)
+            if (same.encode() + ending) != before:
+                raise WorkspaceError(SAVED_TAKE)
+            ascii_only = True
+        else:
+            ascii_only = False
+        record['driver'] = driver
+        workspace.write_atomic(path, json.dumps(record, indent=indent,
+                                                ensure_ascii=ascii_only).encode() + ending)
 
     @staticmethod
     def _first(space: gitstate.Workspace, record: dict) -> str:
@@ -7941,7 +7974,11 @@ class Engine(Reviewing):
                  'targets': []}
         sentence = UNREAD_RECORD if kind == 'unread' else SAVED_RECORD
         can_open = can_migrate = False
+        finished = None
         if found['outcome'] == 'finished':
+            # A finished training keeps what it could do before: published as it stands,
+            # read by a teammate, its files read and downloaded in place.
+            finished = self._finished_shown(root)
             if not mine:
                 shown.update(outcome='waiting', waits=[self._waits('owner')])
                 sentence = SAVED_WAITING
@@ -7967,7 +8004,19 @@ class Engine(Reviewing):
         return {'path': str(root), 'title': title, 'state': 'saved', 'flow': None,
                 'execution': 'saved', 'mine': mine, 'driver': driver, 'sentence': sentence,
                 'can_open_desk': can_open, 'can_migrate_desk': can_migrate,
-                'saved_record': shown}
+                'finished': finished, 'saved_record': shown}
+
+    def _finished_shown(self, root: Path) -> dict | None:
+        """What a finished saved training's record says of it as finished: whether it is
+        ready to use, and its index, for Publish. None where its records cannot be read."""
+        try:
+            record = self._load(root)
+            report = self.index.readiness(root, self._wanted(root, record))
+        except (WorkspaceError, OSError, ValueError):
+            return None
+        return {'ready': bool(report['ready']), 'index': report['file'],
+                'limitations': list(report['limitations']),
+                'blocking': list(report['blocking'])}
 
     @staticmethod
     def _waiting_on(said: str) -> str:

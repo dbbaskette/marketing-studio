@@ -9370,6 +9370,28 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Take it over', shot['buttons'])
         self.assertIn('Export & share', shot['buttons'])
 
+    def test_a_teammate_s_desk_training_is_taken_over_after_a_confirmation(self):
+        """Moved from TeamScreenTests.test_a_training_is_taken_over_and_handed_over_each_after_
+        a_confirmation (its taking over): the training is a desk training now. Handing over
+        was offered only on the earlier flow's run screen."""
+        cards = [a_card(f'{base}@101', actions=('download',)) for base, _ in DESK_KINDS]
+        run = a_team_run('elsewhere', 'Run by Pat.', a_driver('Pat', False, hours=2), False,
+                         last_shared=last_shared('Shared the plan.', hours=2))
+        run['body']['flow'] = 'desk'
+        mine = a_team_run('working', 'Researching.', a_driver('Dana', True, minutes=0), True)
+        mine['body']['flow'] = 'desk'
+        result = self.open_desk(self.on_desk(a_desk(*cards, levels=('101',), ours=False), run,
+                                             **{'POST /api/drive': [mine]}),
+                                [{'click': 'Take it over'}, {'snapshot': 'asked'},
+                                 {'click': 'Take it over'}, {'snapshot': 'taken'}])
+        shots = result['snapshots']
+        self.assertIn('Take Rolling restarts over from Pat?', shots['asked']['sheet'])
+        self.assertEqual(shots['asked']['filled'], ['Take it over'])
+        self.assertEqual(self.posts(result), [('/api/drive', {'path': str(self.root),
+                                                              'action': 'take'})])
+        self.assertIn('It runs from this computer now.', shots['taken']['toasts'])
+        self.assertEqual(shots['taken']['sheet'], '')
+
     def test_the_desk_on_a_phone(self):
         result = self.open_desk(self.on_desk(a_desk()), [
             {'snapshot': 'cards'}, {'click': 'Research & sources'}, {'snapshot': 'sources'}], narrow=True)
@@ -10453,13 +10475,22 @@ class TeamScreenTests(ScriptedPage, PageCase):
         self.at_the_blueprint_gate()
         copy = WORKSPACE['path'] + '/trainings/rolling-restarts'
         already = 'A training with this name is already in the workspace.'
-        carried = 'The blueprint is waiting for your review.'
+        # The copy is a saved record now (#542): it opens on its record, which opens it on
+        # the desk; it is no longer carried on at the gate that was waiting.
+        from runner import engine as engines
+        carried = engines.SAVED_MIGRATES
+        saved = {'path': copy, 'title': 'Rolling restarts', 'state': 'saved', 'flow': None,
+                 'execution': 'saved', 'mine': True, 'driver': None, 'sentence': carried,
+                 'can_open_desk': False, 'can_migrate_desk': True, 'finished': None,
+                 'saved_record': {'outcome': 'migrates', 'why': None, 'refusal': None,
+                                  'next': 'copy', 'files': ['intake.md', 'blueprint.md'],
+                                  'waits': [], 'retained': ['the blueprint'],
+                                  'targets': ['the blueprint']}}
         answers = self.answers(**{
             'GET /api/trainings': [self.listed(None)],
             'GET /api/training': [self.read('training', path=str(self.root))],
             'POST /api/adopt': [refused(already), ok({'path': copy, 'id': 'rolling-restarts'})],
-            'GET /api/run': [a_team_run('waiting', carried, a_driver('Dana', True, minutes=0),
-                                        True, steps=steps(*['done'] * 6, 'waiting'))]})
+            'GET /api/run': [ok(saved)]})
         result = self.run_page(answers, [
             {'click': 'Trainings'}, {'click': 'Open Rolling restarts'}, {'snapshot': 'training'},
             {'click': 'Run this from here'}, {'snapshot': 'asked'},
@@ -10488,8 +10519,8 @@ class TeamScreenTests(ScriptedPage, PageCase):
                       no['sheet'])
         self.assertEqual(no['focus'], 'Copy it and run it here')
 
-        # Then the copy's run: where the copy is, where the original still is, and the run
-        # carrying on at the gate that was waiting.
+        # Then the copy's saved record: where the copy is, where the original still is, and
+        # its way on.
         run = shots['copy']
         self.assertEqual((run['heading'], run['sheet']), ('Rolling restarts', ''))
         self.assertIn('Copied. The copy is the one to work on from now.', run['toasts'])
@@ -11755,8 +11786,7 @@ class TrainingNamesTests(unittest.TestCase):
                     'Use the brand’s default look',
                     'a fixed estimate per slide, not this computer', 'Reference brief',
                     'Yoodli scenarios', 'Not ready to use yet', 'Leave the deck out',
-                    'stops where its review level says, for your decision.',
-                    'A training brought in runs Step by step.',
+                    'the copy opens on its saved record',
                     'A copy that is out of date must be sent again before the training is '
                     'ready.', 'A change to the deck writes its outline again and draws every '
                     'slide again.', 'Run by your teammates'):

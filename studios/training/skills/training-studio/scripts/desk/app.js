@@ -7084,6 +7084,9 @@ function paintSavedRecord(run, fresh) {
     ['saved-intro', [run.sentence, saved.outcome, saved.next, run.can_open_desk,
       run.can_migrate_desk, waits.map((wait) => wait.kind), Boolean(view.sheet)],
     () => savedRecordIntro(run)],
+    // A training just brought in says where the copy is and where its original stays.
+    view.adopted && view.adopted.path === view.path ? ['brought', view.adopted,
+      () => broughtPart(view.adopted)] : null,
     saved.outcome === 'migrates' ? ['saved-opens', [saved.targets, saved.retained],
       () => savedOpensPart(run)] : null,
     saved.outcome === 'waiting' ? ['saved-waits', [waits], () => savedWaitsPart(run)] : null,
@@ -7093,8 +7096,37 @@ function paintSavedRecord(run, fresh) {
         make('p', 'quiet', 'Nothing here changes it. Restore its saved records from your '
           + 'workspace history to open it on the desk, or start new work from it.'))] : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
+    // A finished training keeps its files to download and Publish, for anyone to read.
+    run.finished ? ['saved-made', [view.training && view.training.view
+      && view.training.view.files], () => savedMadePart(run)] : null,
+    run.finished ? ['publish', [run.finished.ready, issuedHere(), teamSpace()],
+      () => publishCard(run, issuedHere())] : null,
     deletable(run) ? ['delete', [title], () => deleteCard()] : null,
   ], fresh);
+}
+
+// What this page last published of the open training, as the runner answered.
+function issuedHere() {
+  return view.issued && view.issued.path === view.path ? view.issued : null;
+}
+
+// A finished saved training's materials, each downloaded as it is saved.
+function savedMadePart(run) {
+  const made = list(view.training && view.training.view && view.training.view.files)
+    .filter((file) => !['not-started', 'skipped', 'unavailable'].includes(file.status));
+  const node = card('Its materials');
+  if (!made.length) return add(node, make('p', 'quiet', 'Its materials cannot be listed here.'));
+  const items = make('ul', 'rows');
+  for (const file of made) {
+    const save = capsule('Download', 'quiet', (event) => downloadFile(run.path,
+      { artifact: file.artifact }, file.file.split('/').pop(), event.currentTarget),
+    'download-' + file.artifact);
+    save.setAttribute('aria-label', 'Download ' + lower(file.label));
+    add(items, add(make('li', 'row'), bead(FILE_BEADS[file.status] || 'none'),
+      add(make('div', 'row-text'), make('p', 'step-name', file.label),
+        make('p', 'quiet', capital(file.words || ''))), save));
+  }
+  return add(node, items);
 }
 
 // The one filled action of a saved record, by the way on it has. While a sheet is open it
@@ -7953,8 +7985,8 @@ function adoptCard(training) {
   if (!adoptable(training)) return null;
   return add(card('Run it from this page'),
     make('p', '', 'This training is not run from this page: it lives in a folder of its '
-      + 'own, outside your workspace. Training Studio can carry it on from here instead, '
-      + 'working on its own, and stops where its review level says, for your decision.'),
+      + 'own, outside your workspace. Bring it in to keep it with your trainings: the copy '
+      + 'opens on its saved record, to open on the desk or to start new work from.'),
     add(make('div', 'bar'), capsule('Run this from here', '', askTeam('adopt', 'adopt'),
       'adopt')));
 }
@@ -8009,13 +8041,13 @@ function teamAsks(kind, title) {
           + 'ready.')] };
   }
   return { title: 'Run ' + title + ' from here?', send: 'Copy it and run it here',
-    says: [make('p', '', 'It is copied into your workspace as a new training. Training '
-      + 'Studio carries the copy on from wherever the training has got to, with each '
-      + 'decision made on this page.'),
+    says: [make('p', '', 'It is copied into your workspace as a new training. The copy '
+      + 'opens on its saved record: open it on the desk from there if it has a plan, or '
+      + 'start new work from it.'),
     make('p', '', 'The original folder is left exactly as it was, with nothing deleted. '
       + 'Its own Git history stays where it is.'),
     make('p', '', 'From then on the copy is the one to work on, and this page takes you '
-      + 'to it. A training brought in runs Step by step.')] };
+      + 'to it.')] };
 }
 
 function teamSheet(kind) {

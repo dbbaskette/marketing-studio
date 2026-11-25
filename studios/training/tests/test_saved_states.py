@@ -682,8 +682,22 @@ class SavedTeamTests(TeamCase):
                                         for wait in shown['saved_record']['waits']])
         self.assertFalse(shown['mine'])
         self.assertFalse(shown['can_migrate_desk'])
-        # Taking it over clears it: it then opens on the desk from here.
+        # Taking it over clears it: it then opens on the desk from here. Only the run
+        # record's driver entry changes: every other key keeps its value and place, the
+        # session record and every other file are as they were.
+        files = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*')
+                 if p.is_file()}
         self.engine.drive(root, 'take')
+        after = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*')
+                 if p.is_file()}
+        self.assertEqual(set(after), set(files))
+        changed = [name for name in files if after[name] != files[name]]
+        self.assertEqual(changed, [RUN])
+        old, new = json.loads(files[RUN]), json.loads(after[RUN])
+        self.assertEqual(list(old), list(new))
+        self.assertEqual({k: v for k, v in old.items() if k != 'driver'},
+                         {k: v for k, v in new.items() if k != 'driver'})
+        self.assertNotEqual(old['driver'], new['driver'])
         shown = self.engine.view(root)
         self.assertEqual(shown['saved_record']['outcome'], 'migrates')
         self.assertTrue(shown['can_migrate_desk'])
@@ -950,6 +964,108 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                 self.assertIn('Check again', shot['buttons'])
                 self.assertNotIn('Open on the desk', shot['buttons'])
                 self.assert_no_continuing(shot, result)
+
+    # --- what the earlier flow's run screen offered, moved onto the saved record (#542) ---
+
+    def test_a_saved_record_is_deleted_only_after_a_confirmation_and_the_page_goes_home(self):
+        """Moved from DeleteScreenTests.test_a_paused_training_is_deleted_after_a_
+        confirmation_and_the_page_goes_home: the training is a saved record now."""
+        fixture = self.fixture('blueprint-gate')
+        path = fixture['path']
+        answers = {**self.answers(fixture),
+                   'GET /api/trainings': [ok(fixture['listing']), ok({**fixture['listing'],
+                                                                     'trainings': []})],
+                   'GET /api/delete': [ok(self.get('delete', path=path))],
+                   'POST /api/delete': [ok({'deleted': True, 'title': 'Stop blueprint',
+                                            'shared': None, 'notice': None})]}
+        result = self.run_page(answers, [
+            {'snapshot': 'run'}, {'click': 'Delete this training'}, {'snapshot': 'asked'},
+            {'click': 'Cancel'}, {'snapshot': 'cancelled'},
+            {'click': 'Delete this training'}, {'click': 'Delete Stop blueprint'},
+            {'snapshot': 'deleted'}], state={'screen': 'run', 'path': path})
+        shots = result['snapshots']
+        self.assertEqual([(r['address'], r['body']) for r in result['requests']
+                          if r['method'] == 'POST'],
+                         [('/api/delete', {'path': path, 'title': 'Stop blueprint'})])
+        run = shots['run']
+        self.assertIn('Delete this training', run['buttons'])
+        self.assertIn('If you no longer want this training, delete it.', run['text'])
+        self.assertEqual(run['filled'], ['Open on the desk'], 'deleting is never the thing to do first')
+        asked = shots['asked']
+        for said in ('Delete Stop blueprint?', 'What goes',
+                     'Its folder in your workspace, with every file in it.', 'What stays'):
+            self.assertIn(said, asked['sheet'])
+        self.assertEqual(asked['filled'], [], 'nothing filled invites a press')
+        self.assertEqual((shots['cancelled']['sheet'], shots['cancelled']['posts']), ('', 0))
+        self.assertEqual(shots['deleted']['heading'], 'Home')
+        self.assertIn('Deleted Stop blueprint.', shots['deleted']['toasts'])
+
+    def test_a_finished_saved_record_is_published_and_its_materials_downloaded(self):
+        """Moved from TeamScreenTests.test_a_finished_training_is_published_after_saying_what_
+        that_does and RunnerScreenTests.test_made_files_and_word_copies_have_download_
+        controls: a finished saved training keeps Publish and its materials to download."""
+        fixture = self.fixture('finished')
+        self.assertTrue(fixture['run']['finished'])
+        answers = {**self.answers(fixture),
+                   'POST /api/publish': [ok({'revision': 1, 'ready': True, 'shared': False,
+                                             'notice': None})],
+                   'GET /api/download': [{'status': 200, 'picture': 'IyBHdWlkZQo=',
+                                          'type': 'text/markdown'}]}
+        result = self.run_page(answers, [
+            {'snapshot': 'record'}, {'click': 'Publish'}, {'snapshot': 'asked'},
+            {'click': 'Publish it'}, {'snapshot': 'published'},
+            {'click': 'Download the learner guide'}, {'snapshot': 'saved'}],
+            state={'screen': 'run', 'path': fixture['path']})
+        shots = result['snapshots']
+        self.assertEqual(shots['record']['filled'], ['Open on the desk'])
+        self.assertIn('Publish it', shots['record']['text'])
+        self.assertIn('Its materials', shots['record']['text'])
+        self.assertIn('Publish Finished saved?', shots['asked']['sheet'])
+        self.assertIn('Published as revision 1.', shots['published']['toasts'])
+        self.assertEqual([(r['address'], r['body']) for r in result['requests']
+                          if r['method'] == 'POST'],
+                         [('/api/publish', {'path': fixture['path']})])
+        sent = next(r for r in result['requests'] if r['address'].startswith('/api/download?'))
+        self.assertIn('artifact=document', sent['address'])
+
+    def test_a_teammates_finished_saved_record_is_read_and_taken_over_to_open_it(self):
+        """Moved from TeamScreenTests.test_open_a_finished_saved_training_after_taking_it and
+        test_a_finished_training_nobody_runs_is_published_and_is_taken_to_change_it: a
+        teammate reads it and its materials, and takes it over only to open it on the desk.
+        Hand over is never offered on a saved record."""
+        fixture = self.fixture('finished')
+        theirs = json.loads(json.dumps(fixture['run']))
+        theirs.update(mine=False, can_open_desk=False,
+                      driver={'name': 'Pat', 'here': False, 'since': home.now()},
+                      sentence=engines.SAVED_WAITING)
+        theirs['saved_record'].update(outcome='waiting', waits=[engines.Engine._waits('owner')])
+        answers = {**self.answers(fixture), 'GET /api/run': [ok(theirs), ok(fixture['run'])],
+                   'POST /api/drive': [ok(fixture['run'])]}
+        result = self.run_page(answers, [
+            {'snapshot': 'theirs'}, {'click': 'Take it over'}, {'snapshot': 'asked'},
+            {'click': 'Take it over'}, {'snapshot': 'taken'}],
+            state={'screen': 'run', 'path': fixture['path']})
+        shots = result['snapshots']
+        self.assertEqual(shots['theirs']['filled'], ['Take it over'])
+        for shown in ('Another computer runs this training.', 'Read intake', 'Its materials',
+                      'Publish it'):
+            self.assertIn(shown, shots['theirs']['text'] + ' '.join(shots['theirs']['buttons']))
+        for absent in ('Hand it over', 'Open on the desk'):
+            self.assertNotIn(absent, shots['theirs']['buttons'])
+        self.assertEqual([(r['address'], r['body']) for r in result['requests']
+                          if r['method'] == 'POST'],
+                         [('/api/drive', {'path': fixture['path'], 'action': 'take'})])
+        self.assertEqual(shots['taken']['filled'], ['Open on the desk'])
+
+    def test_status_lists_a_saved_record_in_words(self):
+        """Moved from TeamScreenTests.test_status_shows_every_run_here_and_what_teammates_
+        run_apart: Status lists a saved record with what its records prove."""
+        fixture = self.fixture('blueprint-gate')
+        answers = {**self.answers(fixture), 'GET /api/status': [ok(self.get('status'))]}
+        result = self.run_page(answers, [{'snapshot': 'status'}], state={'screen': 'status'})
+        text = result['snapshots']['status']['text']
+        self.assertIn('Stop blueprint', text)
+        self.assertIn(engines.SAVED_BRIEF, text)
 
     def test_home_and_trainings_say_a_saved_record_in_words(self):
         """Home lists saved records apart, each with the words its two small records prove,
