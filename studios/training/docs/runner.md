@@ -165,7 +165,7 @@ New trainings continue without review stops and show materials as they arrive. R
 
 ### Review levels
 
-Trainings started before the desk keep their saved review level. Balanced brings combined reviews, Automatic draft continues intermediate work under its saved policy, and Step by step asks at each stage. A drawn deck and finished materials still come to you. These saved runs retain their own screens until a finished training is opened on the desk.
+Trainings started before the desk were made by the earlier step-by-step flow, which no longer continues them: each opens on its saved record (see [the desk](the-desk.md)), from which it opens on the desk, keeps its finished Open on the desk, waits for what clears it, or is read-only. The rest of this section describes how that flow made them, for reading their saved records.
 
 ### The steps in a saved run
 
@@ -340,7 +340,7 @@ This is separate from the older [team hub](team-hub.md), which is used from a co
 
 New conversation work is created in the configured workspace with `studio desk create`. The assistant reads checked context and submits work with `studio desk context` and `studio desk submit`; creation starts no worker, conversation work needs no nested assistant, and submission does not approve or mark work Ready. Only a person can approve or answer for the person. To transfer execution to the runner, explicitly request a handoff. The assistant reads the handoff context and uses `studio desk handoff`, which checks the remaining plan, pinned runtime, scope and readiness. A page visit or restart does not transfer ownership. See the [conversation instructions](../skills/training-studio/references/conversation.md) for the exact inputs.
 
-**Saved-work compatibility.** An older conversation training in its own folder can be opened on the page and brought in with "Run this from here". It is copied into the workspace as a new training, named from its title. The copy's decisions are made on the page, and it carries on from wherever the saved training had got to, including a waiting gate. Older saved seven-stop reviews remain on their saved path.
+**Saved-work compatibility.** An older conversation training in its own folder can be opened on the page and brought in with "Run this from here". It is copied into the workspace as a new training, named from its title, and the folder it came from is left as it was. Once brought in, it is a saved record like any other: it opens on the desk or is read-only, and it is not carried on at its gates.
 
 The original folder is left exactly as it was, with nothing deleted. From then on the copy is the one to work on, and the page says where both are. It is refused, with the reason, when the workspace already has a training of that name, when the training's record cannot be read, or when the folder holds something a workspace does not take. See [saved-work compatibility](../../../docs/saved-work-compatibility.md).
 
