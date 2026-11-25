@@ -193,6 +193,22 @@ SAVED_RECORD = ('This deck was saved by the earlier step-by-step flow, and its s
                 'Its saved files are kept as they are.')
 UNREAD_RECORD = ('This deck’s saved record cannot be read, so it can be neither continued nor '
                  'opened on the desk. Its saved files are kept as they are.')
+# GitHub issue #542: nothing continues a deck the earlier step-by-step flow saved. Each one is
+# a saved record: it opens on the desk (the explicit migration, or the finished Open on the
+# desk), waits for what stops that to clear, or is read-only with its reason.
+SAVED_FLOW_ENDED = ('The earlier step-by-step flow no longer continues the decks it saved. Open '
+                    'this one on the desk, or start new work from it.')
+SAVED_OPENS = ('This deck was saved by the earlier step-by-step flow, which no longer continues '
+               'it. It continues on the desk: open it there to carry on.')
+SAVED_WAITS = ('This deck was saved by the earlier step-by-step flow, which no longer continues '
+               'it. It can be opened on the desk once what it waits for clears.')
+SAVED_READ_ONLY = ('This deck was saved by the earlier step-by-step flow, which no longer '
+                   'continues it, and it cannot be opened on the desk. Its saved files are kept '
+                   'as they are.')
+# How a list says each saved record stands.
+SAVED_SAYS = {'migrates': 'Saved by the earlier step-by-step flow. Open it on the desk to '
+                          'carry on.',
+              'read-only': 'Read-only: {why}'}
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
 # opened the same way.
@@ -394,6 +410,8 @@ class Engine(Jobs, Researching, DeskActions):
         self._deferred_share = False
         self._fetched = 0
         self._as_of: dict[tuple, tuple[int, object]] = {}
+        # What becomes of each deck the earlier step-by-step flow saved, kept by its files.
+        self._outcomes: dict[str, tuple[tuple, tuple]] = {}
         self._tags_unsent = True
         self._looked: tuple[float, dict] | None = None
         self._looking = threading.Lock()
@@ -1141,6 +1159,13 @@ class Engine(Jobs, Researching, DeskActions):
                 thread.join(timeout=15)
 
     # --- one step after another --------------------------------------------------------------
+
+    @staticmethod
+    def _not_saved(record: dict) -> None:
+        """Refuse to continue a deck the earlier step-by-step flow saved: nothing does any
+        more (GitHub issue #542). It opens on the desk, or new work starts from it."""
+        if not decks.on_desk(record):
+            raise WorkspaceError(SAVED_FLOW_ENDED)
 
     @staticmethod
     def _resting(record: dict) -> bool:
@@ -2175,6 +2200,7 @@ class Engine(Jobs, Researching, DeskActions):
         with it. Once the section is done, or the build has moved on, the note is kept for
         the deck's gate instead, as that slide's mark, when the slide's `number` is given."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         note = self._note(note)
         if not note:
             raise WorkspaceError('Say what should change on this slide.')
@@ -2239,6 +2265,7 @@ class Engine(Jobs, Researching, DeskActions):
     def review_draft(self, path, expected: str) -> dict:
         """Explicitly request normal AI review for the exact native draft on screen."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         desk.refuse_on_desk(self._load(root))   # a desk deck is reviewed from Finishing
         with self.files:
             record = self._load(root)
@@ -2303,6 +2330,7 @@ class Engine(Jobs, Researching, DeskActions):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
+        self._not_saved(saved)
         if gate == slide_story.GATE:
             if not isinstance(extra, dict):
                 raise WorkspaceError('Send the edited story with the decision.')
@@ -2775,6 +2803,7 @@ class Engine(Jobs, Researching, DeskActions):
     def act(self, path, action: str) -> dict:
         """Pause, resume, stop, try again or undo the last step, as the person asks."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         if action not in ACTIONS:
             raise WorkspaceError('A run can be asked to: ' + ', '.join(ACTIONS) + '.')
         run = self._run(root)
@@ -2848,6 +2877,7 @@ class Engine(Jobs, Researching, DeskActions):
     def answer(self, path, ident: str, text: str) -> dict:
         """Record a person's answer to a worker's question. The step runs again with it."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         if not isinstance(text, str) or not text.strip():
             raise WorkspaceError('Write an answer first.')
         with self.files:
@@ -2868,6 +2898,7 @@ class Engine(Jobs, Researching, DeskActions):
         this deck, and stops nothing; a second note before then replaces the first. `expected`
         is the note's version the page read: a page that read an older one is refused."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         # A desk deck's notes are on its cards: the next step's note would reach a composer
         # by a second way.
         desk.refuse_on_desk(self._load(root))
@@ -3392,6 +3423,7 @@ class Engine(Jobs, Researching, DeskActions):
             raise WorkspaceError('There is no deck there.')
         with self.files:
             record = self._load(root)
+            self._not_saved(record)
             gate = self._gate_view(root, record)
             if not gate or gate.get('name') != 'gate:outline' or gate.get('expected') != expected:
                 raise WorkspaceError('The outline changed. Reload it before previewing again.')
@@ -3465,6 +3497,7 @@ class Engine(Jobs, Researching, DeskActions):
         `expected` is the outline gate's `expected`, as the page read it. Returns {'asset',
         'slide'}; nothing is generated."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         if not isinstance(data, (bytes, bytearray)) or not data.startswith(PICTURE_STARTS):
             raise WorkspaceError('A picture is a PNG or a JPEG file.')
         if len(data) > PICTURE_MOST:
@@ -3519,6 +3552,7 @@ class Engine(Jobs, Researching, DeskActions):
         asset is never rewritten. `expected` is the outline gate's `expected`, as the page
         read it. Returns {'slide'}."""
         root = self._held(path)
+        self._not_saved(self._load(root))
         with self.files:
             record = self._load(root)
             gate = self._gate_view(root, record)
@@ -3649,13 +3683,127 @@ class Engine(Jobs, Researching, DeskActions):
                 # Which flow made a record that cannot be read at all is not known.
                 'sentence': SAVED_RECORD if raw else UNREAD_RECORD,
                 'gate': None, 'desk': None, 'deliver': None,
-                'saved_record': {'why': found['why'], 'files': self._saved_files(root),
-                                 'next': found['next']}}
+                'saved_record': {'state': 'read-only', 'why': found['why'],
+                                 'files': self._saved_files(root), 'next': found['next'],
+                                 'waiting': [], 'retained': []}}
+
+    def _saved_outcome(self, root: Path) -> tuple[dict | None, str | None]:
+        """What becomes of a deck the earlier step-by-step flow saved
+        (`desk_migration.outcome`, over its files as the migration reads them), or the
+        sentence that says why its files cannot be read as a whole. Kept while the deck's
+        files are unchanged, so a list asks it again only of a deck that changed. Only
+        reads."""
+        from runner import desk_migration
+        from runner.desk_chat import _files
+        try:
+            seen = tuple(sorted((path.relative_to(root).as_posix(), *self._stat_of(path))
+                                for folder, folders, names in os.walk(root, followlinks=False)
+                                for path in (Path(folder) / name for name in folders + names)))
+        except OSError:
+            seen = None
+        kept = self._outcomes.get(str(root))
+        if seen is not None and kept is not None and kept[0] == seen:
+            return kept[1]
+        try:
+            files = _files(root)
+        except (OSError, WorkspaceError) as error:
+            found = (None, str(error) or 'The deck could not be read completely.')
+        else:
+            try:
+                raw = json.loads(files['run.json'])
+            except (KeyError, ValueError):
+                raw = None
+            found = (desk_migration.outcome(raw if isinstance(raw, dict) else None, files), None)
+        if seen is not None:
+            self._outcomes[str(root)] = (seen, found)
+        return found
+
+    @staticmethod
+    def _stat_of(path: Path) -> tuple:
+        details = path.lstat()
+        return details.st_size, details.st_mtime_ns, details.st_mode
+
+    def _saved_view(self, root: Path, record: dict) -> dict:
+        """What the page shows of a deck the earlier step-by-step flow saved, whose record
+        the runner reads (GitHub issue #542): a saved record, never a run. It says what it
+        is and its one way on, as `saved_record['state']` names it:
+
+        - 'migrates': the explicit migration opens it on the desk; it lists what the
+          migration preview lists as kept.
+        - 'waiting': it would open on the desk, but the preview says it waits for something
+          (a step still in hand, another computer running it, shared files not committed, a
+          record elsewhere in the workspace that cannot be understood); `waiting` holds each
+          sentence, which says what clears it.
+        - 'finished': delivered by that flow; the finished Open on the desk opens it, and
+          its delivery can be read and downloaded as before.
+        - 'read-only': nothing was made that can be opened on the desk, or a file it needs
+          cannot be read; `why` says which, `next` its one next action.
+
+        Every state lists the saved files it holds, to read in place. Nothing here writes."""
+        found, unread = self._saved_outcome(root)
+        run = self._run(root)
+        state, sentence = self._state(root, record, run)
+        mine, who, state, sentence, last = self._whose(root, record, state, sentence)
+        said = decks.delivered(root)
+        saved = {'files': self._saved_files(root), 'why': None, 'next': None,
+                 'waiting': [], 'retained': [],
+                 'halted': record.get('halted') or None, 'question': record.get('question')}
+        if unread is not None:
+            saved.update(state='waiting', waiting=[unread], next='copy')
+        elif found['outcome'] == 'read-only':
+            saved.update(state='read-only', why=found['why'], next=found['next'])
+        elif found.get('by') == 'finished':
+            saved.update(state='finished')
+        else:
+            from runner import desk_migration
+            preview = desk_migration.migration_preview(self, root)
+            saved.update(waiting=list(dict.fromkeys(preview['blockers'])),
+                         retained=list(preview['retained']), next='copy')
+            saved['state'] = 'waiting' if saved['waiting'] else 'migrates'
+        if saved['state'] == 'waiting':
+            # What clears each wait: a step still in hand ends by itself (or reopening the
+            # studio recovers its marker), and a deck another computer runs is taken here.
+            # Nothing in the studio clears the rest, so new work may start from it meanwhile.
+            from runner import desk_migration
+            saved['take'] = desk_migration.NOT_OURS in saved['waiting']
+            saved['offer_copy'] = any(said not in (desk_migration.NOT_OURS,
+                                                   desk_migration.SYNC_WAIT)
+                                      for said in saved['waiting'])
+        if saved['state'] != 'finished':
+            state = 'saved'
+            sentence = {'migrates': SAVED_OPENS, 'waiting': SAVED_WAITS,
+                        'read-only': SAVED_READ_ONLY}[saved['state']]
+        return {
+            'id': record.get('id') or root.name, 'path': str(root), 'title': record['title'],
+            'execution': 'saved', 'route': record['route'],
+            'level': (record.get('form') or {}).get('level'),
+            'output': (record.get('form') or {}).get('output'),
+            'unreviewed': decks.user_first(record),
+            'state': state, 'sentence': sentence, 'timeline': [], 'gate': None,
+            'driver': who, 'mine': mine, 'notice': self._notice(root, record),
+            'taken': None if mine else team.taken(root), 'last_shared': last,
+            'kept': self._set_aside(root), 'clash': root.name in self._clash, 'queue': None,
+            'spent': dict(zip(('dollars', 'tokens'), spent(record))), 'ahead': None,
+            'review_level': stages.level(record), 'workers': [], 'build_progress': None,
+            'research_progress': None, 'question': None, 'problem': None, 'note': None,
+            'deliver': ({**said, 'revisions': list(record.get('revisions') or []),
+                         'receipts': delivering.receipts(root, record),
+                         'download': self._rendered(root, record),
+                         'slides': self._delivered_slides(root),
+                         'last_build': self._last_build(record),
+                         'to_google': said.get('output') == 'pptx',
+                         'file': self._pptx_where(root, record, said),
+                         **({'not_here': NOT_HERE} if self._pptx_where(root, record, said)
+                            == 'maker' else {})}
+                        if said else None),
+            'contactSheet': (root / build.SHEET).is_file(), 'desk': None, 'undo': False,
+            'saved_record': saved}
 
     def view(self, path) -> dict | None:
         """Everything the page shows for one deck. None when there is no deck there. A deck
-        saved by the earlier gated flow whose record the runner refuses is shown as a
-        read-only record (`saved_record`)."""
+        saved by the earlier gated flow is shown as a saved record (`saved_record`): read-only
+        when its record the runner refuses (`saved_record`), and otherwise as `_saved_view`
+        says (GitHub issue #542)."""
         root = self.driven(path)
         if root is None:
             return None
@@ -3666,6 +3814,8 @@ class Engine(Jobs, Researching, DeskActions):
             if shown is None:
                 raise
             return shown
+        if not decks.on_desk(record):
+            return self._saved_view(root, record)
         run = self._run(root)
         state, sentence = self._state(root, record, run)
         mine, who, state, sentence, last = self._whose(root, record, state, sentence)
@@ -3904,8 +4054,18 @@ class Engine(Jobs, Researching, DeskActions):
         try:
             record = self._load(root)
         except WorkspaceError as failure:
-            return {'path': str(root), 'id': root.name, 'title': root.name, 'route': None,
-                    'level': None, 'state': 'failed', 'sentence': str(failure),
+            # A deck the earlier step-by-step flow saved is listed by its title where its
+            # record can be read that far, as the read-only record it is.
+            raw = self._saved_original(root)
+            title = raw.get('title') if raw and isinstance(raw.get('title'), str) \
+                and raw['title'].strip() else root.name
+            return {'path': str(root), 'id': root.name, 'title': title,
+                    'route': raw.get('route') if raw and raw.get('route') in decks.ROUTES
+                    else None, 'level': None,
+                    'state': 'failed' if raw is None else 'saved',
+                    'sentence': str(failure) if raw is None
+                    else SAVED_SAYS['read-only'].format(why=str(failure)),
+                    **({} if raw is None else {'saved': 'read-only'}),
                     'needs': True, 'mine': True, 'driver': None, 'notice': None,
                     'link': None, 'contactSheet': False, 'last_shared': None}
         run = self._run(root)
@@ -3913,6 +4073,14 @@ class Engine(Jobs, Researching, DeskActions):
         halted = record.get('halted') or {}
         needs = bool(record.get('question') or state == 'waiting'
                      or (halted and halted.get('state') == 'failed'))
+        saved = None
+        if not decks.on_desk(record) and state != 'finished':
+            # GitHub issue #542: a saved record, never a run; it says how it stands.
+            found, unread = self._saved_outcome(root)
+            saved = 'read-only' if found and found['outcome'] == 'read-only' else 'migrates'
+            state, needs = 'saved', True
+            sentence = SAVED_SAYS['read-only'].format(why=found['why']) \
+                if saved == 'read-only' else SAVED_SAYS['migrates']
         mine, who, state, sentence, last = self._whose(root, record, state, sentence)
         said = decks.delivered(root) or {}
         return {'path': str(root), 'id': root.name, 'title': record.get('title'),
@@ -3922,7 +4090,8 @@ class Engine(Jobs, Researching, DeskActions):
                 'notice': self._notice(root, record), 'link': said.get('url'),
                 'pptx': bool(said.get('pptx')), 'revision': said.get('revision'),
                 'pptx_where': self._pptx_where(root, record, said),
-                'contactSheet': (root / build.SHEET).is_file(), 'last_shared': last}
+                'contactSheet': (root / build.SHEET).is_file(), 'last_shared': last,
+                **({'saved': saved} if saved else {})}
 
     def decks(self) -> dict:
         """Every deck in the workspace, in the page's four lists: `needs` a decision of this
@@ -3985,7 +4154,10 @@ class Engine(Jobs, Researching, DeskActions):
     @staticmethod
     def _needs(record: dict) -> str | None:
         """The one thing a deck needs its person for now, named so that the same thing is
-        never taken for a new one."""
+        never taken for a new one. A deck the earlier step-by-step flow saved needs nothing
+        told: nothing continues it (GitHub issue #542)."""
+        if not decks.on_desk(record):
+            return None
         halted, asked = record.get('halted') or {}, record.get('question')
         if halted:
             return f"problem:{halted.get('at')}" if halted.get('state') == 'failed' else None

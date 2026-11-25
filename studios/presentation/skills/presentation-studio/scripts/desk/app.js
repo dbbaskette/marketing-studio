@@ -79,6 +79,8 @@ const RUN_WORDS = {
   failed: ['late', 'Stopped: something went wrong'],
   finished: ['done', 'Finished'],
   ready: ['done', 'Ready'],
+  // A deck the earlier step-by-step flow saved: nothing continues it (GitHub issue #542).
+  saved: ['off', 'Saved earlier'],
   // A deck a teammate's computer runs: only what was last shared is known here.
   elsewhere: ['none', 'Run from another computer'],
 };
@@ -1343,7 +1345,8 @@ function deckRow(brief, kind) {
   go.setAttribute('aria-label', go.textContent + ' ' + title);
   const row = make('li', 'row' + (kind === 'needs' ? ' row-needs' : '')
     + (brief.state === 'working' && !elsewhere(brief) ? ' working' : ''));
-  const shape = kind === 'needs' ? (brief.state === 'failed' ? 'late' : 'review')
+  const shape = kind === 'needs' ? (brief.state === 'failed' ? 'late'
+    : brief.saved === 'read-only' ? 'off' : 'review')
     : kind === 'finished' ? 'done' : null;
   const others = [copyAsNewButton(brief), deleteButton(brief)].filter(Boolean);
   return add(row, shape ? bead(shape) : null, text,
@@ -5115,7 +5118,8 @@ function deliverPart(run) {
   if (found.not_here) add(node, make('p', 'quiet', found.not_here));
   if (found.notice) add(node, make('p', 'fix', found.notice));
   // A saved deck, delivered the gated way, opens on the desk, still delivered.
-  const desk = !run.desk && !theirs(run) ? capsule(view.opening ? 'Opening…' : 'Open on the desk',
+  // A saved record offers it as its one filled action (savedRecordIntro).
+  const desk = !run.desk && !theirs(run) && !run.saved_record ? capsule(view.opening ? 'Opening…' : 'Open on the desk',
     '', () => openOnDesk(run, desk), 'desk-open') : null;
   // What the desk lets change, as the deck's level allows: Brand only and Polish keep the
   // deck's own words, and Selected changes changes them only on a copy.
@@ -5161,7 +5165,8 @@ function deliverPart(run) {
     add(node, add(make('div', 'thumb'), pictureAt(pictureOf(view.path,
       { kind: 'build', ref: 'contact-sheet' }), 'Every slide of the deck', found.revision)));
   }
-  if (!theirs(run)) {
+  // A saved record is changed on the desk, once it is opened there.
+  if (!theirs(run) && !run.saved_record) {
     const slides = list(found.slides).map((one) => ({ number: one.number, title: one.title,
       where: pictureOf(view.path, one.image || { kind: 'build', ref: one.number }),
       mark: found.revision }));
@@ -5938,40 +5943,126 @@ function paintDeck(fresh) {
   tidyPictures();
 }
 
-// --- a read-only record ------------------------------------------------------------------
-// A deck saved by the earlier gated flow whose record the runner refuses. Nothing on this
-// screen continues it or opens it on the desk: it is read, and new work starts from it.
+// --- a saved record ------------------------------------------------------------------------
+// A deck the earlier step-by-step flow saved. Nothing continues it any more (GitHub issue
+// #542): it opens on the desk, waits for what stops that to clear, is a finished deck the
+// finished Open on the desk opens, or is read-only with its reason. Its saved files are read
+// in place, and nothing on this screen changes them.
 const SAVED_FILES = { 'README.md': 'Read the deck’s summary', 'intake.md': 'Read intake',
   'classify.md': 'Read source classification', 'outline.md': 'Read saved outline',
   'look.md': 'Read the look', 'research/plan.md': 'Read research plan',
   'research/report.md': 'Read research report', 'research/review.md': 'Read research review' };
+// How each saved state stands, as a bead and words.
+const SAVED_STANDS = {
+  migrates: ['review', 'Saved earlier: opens on the desk'],
+  waiting: ['out', 'Saved earlier: waiting before it can open on the desk'],
+  finished: ['done', 'Delivered earlier: opens on the desk'],
+  'read-only': ['off', 'Read-only: it is not continued and not opened on the desk'],
+};
 
 function paintSavedRecord(run, fresh) {
   const saved = run.saved_record;
   const title = run.title || 'Untitled';
-  placeParts({ title, above: [make('span', '', [routeWords(run), 'Read-only'].filter(Boolean)
-    .join(' · '))], back: true, actions: [], mark: [title, saved.why, saved.next] }, [
-    ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
-    ['saved-why', [saved.why], () => add(card('Why it cannot be continued'),
+  const kind = saved.state || 'read-only';
+  const read = theirs(run);
+  placeParts({ title, above: [make('span', '', [routeWords(run), kind === 'read-only'
+    ? 'Read-only' : 'Saved earlier'].filter(Boolean).join(' · '))], back: true, actions: [],
+  mark: [title, kind, saved.why, saved.next, read, run.driver] }, [
+    // While a sheet is open it holds the one filled button, so nothing under it is filled.
+    ['saved-intro', [run.sentence, kind, saved.next, saved.take, read, view.opening,
+      Boolean(view.sheet)], () => savedRecordIntro(run)],
+    kind === 'waiting' ? ['saved-waiting', [saved.waiting, saved.take, saved.offer_copy,
+      run.driver, Boolean(view.sheet)], () => savedWaitingPart(run)] : null,
+    kind === 'migrates' ? ['saved-kept', [saved.retained, saved.question],
+      () => savedKeptPart(run)] : null,
+    kind === 'read-only' ? ['saved-why', [saved.why], () => add(card('Why it cannot be continued'),
       make('p', '', saved.why),
       make('p', 'quiet', 'Nothing here changes it. Restore its saved record from your workspace '
-        + 'history to continue it, or start new work from it.'))],
+        + 'history to open it, or start new work from it.'))] : null,
+    kind === 'finished' && read ? ['theirs', [run.driver, run.last_shared, title],
+      () => (run.driver ? theirsPart(run, false) : finishedFreePart())] : null,
+    kind === 'finished' && run.deliver ? ['deliver', [run.deliver, run.contactSheet, read,
+      view.downloading], () => deliverPart(run)] : null,
+    kind === 'finished' && (!read || !run.driver) ? ['publish', [teamSpace()],
+      () => publishCard(run, view.issued && view.issued.path === view.path ? view.issued : null)]
+      : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
+    deletable(run) ? ['delete', [title], () => deleteCard()] : null,
   ], fresh);
 }
 
+// What it is, how it stands, and its one way on: the one filled button of the screen.
 function savedRecordIntro(run) {
   const saved = run.saved_record;
+  const kind = saved.state || 'read-only';
   const copying = saved.next === 'copy';
-  const go = capsule(copying ? 'Start new work from this' : 'Start a new deck', 'filled',
-    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
-      : openNew(undefined, false, go)), 'saved-next');
-  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
-    state('off', 'Read-only: it is not continued and not opened on the desk'),
-    make('p', 'quiet', copying ? 'Start new work from this opens the start form with its '
-      + 'setup and material. This saved deck is kept as it is.'
+  const filled = view.sheet ? '' : 'filled';
+  let go = null, next = '';
+  if (kind === 'migrates') {
+    go = capsule('Open on the desk', filled, () => openDeskPreview(run, 'migration'),
+      'unfinished-desk-open');
+    next = 'Open on the desk shows first what it keeps and what it changes. Nothing changes '
+      + 'until you apply it, and every saved file is kept as it is.';
+  } else if (kind === 'finished' && !theirs(run)) {
+    // The finished Open on the desk, as it always was: plain, beside the delivery.
+    go = capsule(view.opening ? 'Opening…' : 'Open on the desk', '',
+      () => openOnDesk(run, go), 'desk-open');
+    next = (OPEN_SAYS[run.level] || OPEN_SAYS.other) + ' It stays delivered until you change '
+      + 'it; a change makes the next revision.';
+  } else if (kind === 'finished') {
+    next = 'It can be opened on the desk on the computer that runs it, or once you take it.';
+  } else if (kind === 'read-only') {
+    go = capsule(copying ? 'Start new work from this' : 'Start a new deck', filled,
+      () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
+        : openNew(undefined, false, go)), 'saved-next');
+    next = copying ? 'Start new work from this opens the start form with its setup and '
+      + 'material. This saved deck is kept as it is.'
       : 'Its start form cannot be read, so a new deck starts from an empty form. This saved '
-        + 'deck is kept as it is.'));
+        + 'deck is kept as it is.';
+  } else {
+    next = saved.take ? 'Take it on this computer, then open it on the desk.'
+      : 'This screen looks again by itself, and offers Open on the desk once nothing stops it.';
+  }
+  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
+    state(...SAVED_STANDS[kind]), make('p', 'quiet', next));
+}
+
+// What stops it opening on the desk, each in the preview's own words, which say what clears
+// it; and what to do meanwhile.
+function savedWaitingPart(run) {
+  const saved = run.saved_record;
+  const node = card('What it waits for');
+  const said = bullets(list(saved.waiting));
+  said.setAttribute('role', 'status');
+  add(node, said);
+  if (saved.take) {
+    const name = run.driver ? nameOf(run.driver) : '';
+    add(node, make('p', '', name ? name + ' runs it from another computer. Take it over to open '
+      + 'it on the desk here; ' + name + ' is told who took it.'
+      : 'Nobody runs it now. Take it to open it on the desk here.'),
+    add(make('div', 'bar'), capsule(name ? 'Take it over' : 'Take it', view.sheet ? '' : 'filled',
+      openSheet('take', 'take'), 'take')));
+  }
+  if (saved.offer_copy) {
+    const go = capsule('Start new work from this', '', () => copyAsNew({ path: run.path,
+      title: run.title }, 'saved-copy', go), 'saved-copy');
+    add(node, make('p', 'quiet', 'Nothing in the studio clears this by itself. Once it is '
+      + 'cleared, this deck still opens on the desk; meanwhile new work can start from it.'),
+    add(make('div', 'bar'), go));
+  }
+  return node;
+}
+
+// What opening it on the desk keeps, as the preview lists it, and a question its saved run
+// left unanswered.
+function savedKeptPart(run) {
+  const saved = run.saved_record;
+  const node = add(card('What opening it keeps'), bullets(list(saved.retained)));
+  if (saved.question) {
+    add(node, make('p', '', 'A worker asked: “' + String(saved.question.text || '') + '”'),
+      make('p', 'quiet', 'It stays in History, unanswered, and its step stays unfinished.'));
+  }
+  return node;
 }
 
 function savedFilesPart(run) {
@@ -6207,8 +6298,9 @@ function teamAsks(kind, title) {
   }
   if (kind === 'take') {
     return { title: 'Take ' + title + '?', send: 'Take it',
-      says: [make('p', '', 'Nobody is running it. From then on it runs from this computer, '
-        + 'and carries on from where it stands.'),
+      says: [make('p', '', run.saved_record ? 'Nobody is running it. From then on it is this '
+        + 'computer’s, and it can be opened on the desk here.' : 'Nobody is running it. From '
+        + 'then on it runs from this computer, and carries on from where it stands.'),
       run.state === 'finished' ? make('p', 'quiet', 'It is finished, so nothing more is made '
         + 'until you ask for changes. When you are done, hand it over, so that nobody is '
         + 'shown as running it.') : null] };

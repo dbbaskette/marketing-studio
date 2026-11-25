@@ -1,6 +1,6 @@
-"""Every saved state the earlier gated flow leaves, in its original format, and what the
-explicit migration says of each: opened on the desk, kept in its saved flow for now, or shown
-as a read-only record. Each deck is loaded from tests/fixtures/saved/ (`load_saved`): the
+"""Every saved state the earlier gated flow leaves, in its original format, and what becomes
+of each now that nothing continues it (GitHub issue #542): opened on the desk, waiting for what
+stops that to clear, or shown as a read-only record. Each deck is loaded from tests/fixtures/saved/ (`load_saved`): the
 files the real saved-run dispatch wrote for that state, captured by tests/saved_fixtures.py
 and checked against the flow by tests/test_saved_fixtures.py. Where the stand-ins cannot
 reach a saved shape (an unreadable record), the capture edited the record the dispatch
@@ -13,6 +13,7 @@ from unittest import mock
 
 import runner_support
 import saved_fixtures
+import test_desk_page
 import test_runner_page
 from runner import decks, desk_chat, desk_migration
 from studio_core.sync_guard import SYNC_WAIT
@@ -31,7 +32,7 @@ MIGRATION_KEYS = {'flow', 'execution', 'conversation_scope', 'unfinished_migrati
                   'halted', 'migration_saved_status', 'question', 'migration_saved_question'}
 USE_DESK = 'Use this deck’s existing desk or finished Open on the desk action.'
 METADATA = 'This deck already has desk metadata or pending recovery.'
-UNSUPPORTED = 'This saved run format is not supported. Keep using its saved flow.'
+UNSUPPORTED = 'This saved run format is not supported.'
 
 # What becomes of each stored state (`desk_migration.outcome`): migrates through the
 # migration or the finished Open on the desk, or a read-only record with its reason.
@@ -67,7 +68,12 @@ class GatedSavedStateTests(runner_support.DeskCase):
                                     sync_guard.UNKNOWN_DECK)
 
     def waits_at(self, root, gate):
-        self.assertEqual((self.view(root)['gate'] or {}).get('name'), gate)
+        """The stop its saved flow left is kept in its record; the page shows a saved record,
+        never the stop (GitHub issue #542)."""
+        self.assertEqual(self.record(root)['gates'][gate]['state'], 'waiting')
+        shown = self.view(root)
+        self.assertIsNone(shown['gate'])
+        self.assertEqual(shown['state'], 'saved')
 
     def outcome_of(self, root):
         files = desk_chat._files(root)
@@ -93,6 +99,65 @@ class GatedSavedStateTests(runner_support.DeskCase):
                     # Its start form can be read, so it offers Start new work from this.
                     self.assertEqual(found['next'], 'new' if state == 'corrupt' else 'copy')
                 self.assertEqual(self.snapshot(root), before)
+
+    def test_every_saved_state_is_a_saved_record_that_nothing_continues(self):
+        # GitHub issue #542: the page shows each one as a saved record in its outcome's state,
+        # never a stop to decide, a question to answer or a problem to try again; the routes
+        # that continued it refuse, naming its two ways on; and a list says how it stands.
+        states = {'migration': 'migrates', 'finished': 'finished'}
+        for state, expected in OUTCOMES.items():
+            with self.subTest(state):
+                root = self.load_saved(state)
+                before = self.snapshot(self.space.root)
+                shown = self.view(root)
+                saved = shown['saved_record']
+                self.assertEqual(saved['state'], states.get(expected, 'read-only'))
+                self.assertEqual((shown['gate'], shown['desk']), (None, None))
+                self.assertIsNone(shown.get('question'))
+                self.assertIsNone(shown.get('problem'))
+                self.assertTrue(saved['files'])
+                if saved['state'] == 'read-only' and state not in saved_fixtures.EDITED:
+                    # (A record the runner refuses gives the runner's refusal as its reason.)
+                    self.assertEqual(saved['why'], expected)
+                if saved['state'] == 'migrates':
+                    self.assertEqual(saved['waiting'], [])
+                    self.assertIn('Original files, History, source and guidance pins, Google '
+                                  'records and earlier decisions', saved['retained'])
+                if state == 'corrupt':
+                    continue        # its record cannot be read: the runner refuses it first
+                for ask in (lambda: self.engine.act(root, 'resume'),
+                            lambda: self.engine.act(root, 'retry'),
+                            lambda: self.engine.answer(root, 'q1', 'An answer.'),
+                            lambda: self.engine.decide(root, 'gate:outline', 'approve')):
+                    with self.assertRaises(desk_chat.WorkspaceError) as refused:
+                        ask()
+                    if state != 'unleveled':
+                        self.assertEqual(str(refused.exception), self.engines.SAVED_FLOW_ENDED)
+                self.assertEqual(self.snapshot(self.space.root), before)
+        listed = {brief['id']: brief for kind in self.engine.decks().values() for brief in kind}
+        self.assertEqual(listed['unleveled']['title'], 'Unleveled')
+        self.assertEqual(listed['unleveled']['sentence'], 'Read-only: This run is missing its '
+                         'saved review level. Restore its run record.')
+        self.assertEqual(listed['corrupt']['state'], 'saved')
+        for brief in listed.values():
+            if brief.get('saved') == 'migrates':
+                self.assertEqual(brief['sentence'], self.engines.SAVED_SAYS['migrates'])
+            elif brief['state'] != 'finished':
+                self.assertTrue(brief['sentence'].startswith('Read-only: '), brief)
+
+    def test_a_saved_deck_that_waits_says_what_for_and_what_clears_it(self):
+        # A step in hand ends by itself; a record elsewhere in the workspace that cannot be
+        # understood is cleared by nothing in the studio, so new work may start from it.
+        root = self.load_saved('build', title='Waits')
+        with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
+            saved = self.view(root)['saved_record']
+        self.assertEqual((saved['state'], saved['waiting'], saved['take'], saved['offer_copy']),
+                         ('waiting', [SYNC_WAIT], False, False))
+        refused = self.load_saved('unleveled', title='No review level')
+        saved = self.view(root)['saved_record']
+        self.assertEqual((saved['state'], saved['waiting'], saved['offer_copy']),
+                         ('waiting', [self.refused(refused)], True))
+        self.assertEqual(saved['next'], 'copy')
 
     def test_the_runners_refusal_is_the_read_only_reason(self):
         root = self.load_saved('unleveled')
@@ -155,8 +220,7 @@ class GatedSavedStateTests(runner_support.DeskCase):
         (root / 'sources/original.pptx').unlink()
         found = self.outcome_of(root)
         self.assertEqual((found['outcome'], found['why']), ('read-only', desk_migration.NOT_HERE))
-        self.assertEqual(found['preview'], 'The original deck is missing or unreadable. '
-                                           'Continue with its saved flow first.')
+        self.assertEqual(found['preview'], desk_migration.NOT_HERE)
         (root / 'sources/original.pptx').write_bytes(b'not a deck')
         self.assertEqual(self.outcome_of(root)['why'], desk_migration.UNREADABLE_DECK)
         (root / 'sources/original.pptx').write_bytes(original)
@@ -164,13 +228,13 @@ class GatedSavedStateTests(runner_support.DeskCase):
         (root / 'classify.json').unlink()    # stopped before the deck given was read
         found = self.outcome_of(root)
         self.assertEqual(found['why'], desk_migration.NOTHING_READ)
-        self.assertEqual(found['preview'], 'classify.json is missing. Continue with its saved flow first.')
+        self.assertEqual(found['preview'], desk_migration.NOTHING_READ)
         (root / 'classify.json').write_bytes(inventory)
         build = self.load_saved('build', title='Unreadable drawing')
         (build / 'work/build/state.json').write_text('[]')
         found = self.outcome_of(build)
         self.assertEqual(found['why'], desk_migration.UNREADABLE_DRAWING)
-        self.assertEqual(found['preview'], 'work/build/state.json cannot be read.')
+        self.assertEqual(found['preview'], desk_migration.UNREADABLE_DRAWING)
         for said in (desk_migration.NOT_HERE, desk_migration.UNREADABLE_DECK,
                      desk_migration.NOTHING_READ, desk_migration.UNREADABLE_DRAWING):
             self.assertNotIn('.json', said)
@@ -287,16 +351,21 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.assertFalse(record['steps'][asked['step']].get('done'))
         self.assertEqual(record['gates']['gate:outline']['state'], 'changes')
 
-    # --- states that keep their saved flow for now ------------------------------------------
+    # --- states that are read-only records ---------------------------------------------------
 
-    def test_stops_before_an_outline_keep_their_saved_flow(self):
+    def test_stops_before_an_outline_are_read_only_records(self):
         for state in NOTHING:
             with self.subTest(state):
                 root = self.load_saved(state)
-                self.assertEqual(self.preview(root)['blockers'], [desk_migration.NO_OUTLINE])
+                why = desk_migration.NOTHING_MADE
+                self.assertEqual(self.preview(root)['blockers'], [why])
                 shown = self.view(root)
-                # It continues as it was saved: at its stop, or with its question waiting.
-                self.assertTrue(shown['gate'] is not None or shown['question'] is not None)
+                # Read-only: no stop, no question to answer, nothing to continue.
+                self.assertIsNone(shown['gate'])
+                self.assertIsNone(shown['question'])
+                self.assertEqual(shown['saved_record']['state'], 'read-only')
+                self.assertEqual(shown['saved_record']['why'], why)
+                self.assertEqual(shown['saved_record']['next'], 'copy')
 
     def test_a_pause_taken_mid_step_waits_for_its_step(self):
         # A real pause: Pause on the page (`act`) while the outline step is working. The
@@ -331,7 +400,7 @@ class GatedSavedStateTests(runner_support.DeskCase):
                          ('paused', None, 'Paused on the page.'))
         self.assertTrue(record['steps']['outline']['done'])
         self.assertFalse((root / self.engines.IN_HAND).exists())
-        self.assertEqual(self.view(root)['state'], 'paused')
+        self.assertEqual(self.view(root)['saved_record']['state'], 'migrates')
         before = self.snapshot(root)
         found = self.preview(root)
         self.assertEqual(found['blockers'], [])
@@ -369,20 +438,20 @@ class GatedSavedStateTests(runner_support.DeskCase):
         # says which deck's folder holds it.
         refused = self.load_saved('unleveled', title='No review level')
         self.assertEqual(self.preview(ready)['blockers'], [self.refused(refused)])
-        self.waits_at(ready, 'gate:outline')    # it still continues in its saved flow
+        self.waits_at(ready, 'gate:outline')    # its saved stop is kept as it was
 
     def test_parallel_research_opens_once_its_outline_is_drafted(self):
-        # Schema 4: at its research plan nothing is made yet, and it keeps its saved flow;
-        # with its research done and its outline drafted it opens on the desk.
+        # Schema 4: at its research plan nothing is made yet, and it is read-only; with its
+        # research done and its outline drafted it opens on the desk.
         root = self.load_saved('parallel-research')
         self.assertEqual(self.record(root)['schema'], 4)
-        self.assertEqual(self.preview(root)['blockers'], [desk_migration.NO_OUTLINE])
+        self.assertEqual(self.preview(root)['blockers'], [desk_migration.NOTHING_MADE])
         self.waits_at(root, 'gate:research-plan')
         drafted = self.load_saved('researched-parallel')
         self.waits_at(drafted, 'gate:outline')
         self.assertEqual(self.preview(drafted)['blockers'], [])
 
-    def test_a_missing_pinned_research_bundle_keeps_its_saved_flow(self):
+    def test_a_missing_pinned_research_bundle_is_a_read_only_record(self):
         root = self.load_saved('build', title='Research pinned')
         record = self.record(root)
         record.update(schema=3, research_contract={'schema': 2, 'version': '1.0.0', 'digest': '1' * 64})
@@ -392,6 +461,9 @@ class GatedSavedStateTests(runner_support.DeskCase):
         blockers = self.preview(root)['blockers']
         self.assertEqual(len(blockers), 1)
         self.assertIn('output.json', blockers[0])
+        saved = self.view(root)['saved_record']
+        self.assertEqual((saved['state'], saved['why']),
+                         ('read-only', 'The pinned research bundle is missing.'))
 
     # --- records the runner cannot read ------------------------------------------------------
 
@@ -483,6 +555,53 @@ class GatedSavedStateTests(runner_support.DeskCase):
         self.preview(root)
         self.assertEqual((root / 'run.json').read_bytes(), raw)
         self.assertEqual(json.loads(raw), record)
+
+
+class SavedRecordScreenTests(test_desk_page.DeskPageCase):
+    """GitHub issue #542: each saved state's screen says what is happening and offers its one
+    way on, and never Continue, Try again, Answer or a stop to decide."""
+
+    CONTINUING = ('Approve', 'Resume', 'Try again', 'Answer', 'Ask for changes',
+                  'Change what they say')
+
+    def screen(self, root, view=None) -> dict:
+        path = str(root)
+        shot = self.open_deck(path, view or self.run_of(path), [{'snapshot': 'saved'}])
+        shot = shot['snapshots']['saved']
+        for name in self.CONTINUING:
+            self.assertNotIn(name, shot['buttons'])
+        self.assertLayout(shot)
+        return shot
+
+    def test_a_deck_that_opens_on_the_desk_offers_it_as_its_one_filled_action(self):
+        shot = self.screen(self.load_saved('question'))
+        self.assertEqual(shot['filled'], ['Open on the desk'])
+        self.assertIn('It continues on the desk: open it there to carry on.', shot['text'])
+        self.assertIn('What opening it keeps', shot['text'])
+        self.assertIn('A worker asked: “' + saved_fixtures.QUESTION + '”', shot['text'])
+        self.assertIn('Read saved outline', shot['buttons'])
+
+    def test_a_read_only_deck_offers_new_work_from_it(self):
+        shot = self.screen(self.load_saved('research-plan'))
+        self.assertEqual(shot['filled'], ['Start new work from this'])
+        self.assertIn(desk_migration.NOTHING_MADE, shot['text'])
+        self.assertNotIn('Open on the desk', shot['buttons'])
+
+    def test_a_waiting_deck_says_what_it_waits_for(self):
+        root = self.load_saved('build', title='Waits')
+        with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
+            view = self.run_of(str(root))
+        shot = self.screen(root, view)
+        self.assertEqual(shot['filled'], [])
+        self.assertIn('What it waits for', shot['text'])
+        self.assertIn(SYNC_WAIT, shot['text'])
+        self.assertNotIn('Open on the desk', shot['buttons'])
+        # Nothing in the studio clears a record elsewhere it cannot understand: new work may
+        # start from this one meanwhile.
+        self.load_saved('unleveled', title='No review level')
+        shot = self.screen(root)
+        self.assertIn('Start new work from this', shot['buttons'])
+        self.assertEqual(shot['filled'], [])
 
 
 class ReadOnlyRecordPageTests(test_runner_page.PageCase):
