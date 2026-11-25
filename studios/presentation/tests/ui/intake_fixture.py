@@ -16,7 +16,17 @@ import server
 
 
 def main():
-    case, web = DeskCase(), None
+    if '--saved-taken' in sys.argv:
+        # Two people sharing one team repository: the page is Blake's, over a deck Alex runs.
+        from runner_support import TeamCase
+
+        class Team(DeskCase, TeamCase):
+            pass
+        case = Team()
+    else:
+        case = DeskCase()
+    web, engine = None, None
+    done = threading.Event()
     try:
         with contextlib.redirect_stdout(sys.stderr):
             case.setUp()
@@ -55,23 +65,88 @@ def main():
                         case.workers.queued['outline'] = [read_word_for_word(case)] * 4
             if '--saved' in sys.argv:
                 # A deck the earlier gated flow saved, waiting at its deck: it opens on the desk.
-                root = case.gated(title='Saved gated deck')
+                root = case.load_saved('build', title='Saved gated deck')
+            if '--saved-question' in sys.argv:
+                # A deck the earlier gated flow saved with a worker's question unanswered after
+                # its outline was drafted: it opens on the desk with the question kept in its
+                # saved runner history.
+                root = case.load_saved('question', title='Saved deck with a question')
             if '--saved-read-only' in sys.argv:
                 # A deck the earlier gated flow saved whose record the runner cannot read (its
                 # review level is missing), shown as a read-only record. It is served on its
                 # own: an unreadable record stops the shared worker scan, and with it the
                 # opening of every other deck in the workspace on the desk.
-                unread = root = case.saved_start(title='Unreadable saved deck')
-                from runner import decks
-                record = decks.read_run(unread)
-                record['schema'] = 2
-                record.pop('review_policy', None)
-                decks.write_run(unread, record)
+                unread = root = case.load_saved('unleveled', title='Unreadable saved deck')
                 print(json.dumps({'read_only': str(unread)}), file=sys.stderr, flush=True)
-        web = server.Desk(page=lambda port: page.RunnerPage(port, case.engine))
+            if '--saved-delivered' in sys.argv:
+                # Delivered by the earlier flow: the finished Open on the desk opens it.
+                root = case.load_saved('delivered', title='Delivered earlier')
+            if '--saved-nothing' in sys.argv:
+                # Stopped at its research plan, before anything was made: read-only.
+                root = case.load_saved('research-plan', title='Stopped before its outline')
+            if '--saved-interrupted' in sys.argv:
+                # Its opening on the desk stopped in the middle, after the commit, as a runner
+                # that ended there leaves it; and another saved deck that waits for it.
+                import subprocess
+                from runner import desk_chat
+                from test_saved_records import CRASH, STUDIO
+                beside = case.load_saved('outline', title='Waiting beside it')
+                root = case.load_saved('build', title='Interrupted opening')
+                token = desk_chat.migration_preview(case.engine, root)['expected']
+                subprocess.run([sys.executable, '-c', CRASH, str(root), token, 'commit'],
+                               cwd=STUDIO, env={**os.environ, 'PYTHONPATH': '.:tests'},
+                               capture_output=True, text=True, timeout=30)
+                print(json.dumps({'beside': str(beside)}), file=sys.stderr, flush=True)
+            if '--saved-restarted' in sys.argv:
+                # A saved deck beside two whose steps a runner that stopped left marked (one
+                # with a change half-made, one read-only), and Presentation Studio started
+                # again: start-up recovers them, so the first opens on the desk.
+                root = case.load_saved('build', title='Saved beside them')
+                stopped = case.load_saved('outline', title='Stopped mid-step')
+                nothing = case.load_saved('research-plan', title='Nothing made, marked')
+                for marked in (stopped, nothing):
+                    (marked / 'work').mkdir(exist_ok=True)
+                    (marked / 'work/step.lock').write_text('outline\n')
+                with open(stopped / 'outline.md', 'a') as stream:
+                    stream.write('\nA line the stopped step left.\n')
+                case.engine.resume()
+                print(json.dumps({'stopped': str(stopped), 'nothing': str(nothing),
+                                  'markers': [(marked / 'work/step.lock').exists()
+                                              for marked in (stopped, nothing)]}),
+                      file=sys.stderr, flush=True)
+            if '--saved-desk-working' in sys.argv:
+                # A saved deck, and a desk deck in the same workspace that starts a step 20
+                # seconds after the page is served (this process runs it): its run record is
+                # written and the workspace fetched, as a step and the background fetch do.
+                root = case.load_saved('build', title='Saved while a desk deck works')
+                working = case.start_desk(look='default', title='Desk deck at work')
+
+                def works():
+                    if done.wait(20):
+                        return
+                    from runner import decks
+                    case.engine._active_steps.add(str(working))
+                    (working / 'work').mkdir(exist_ok=True)
+                    (working / 'work/step.lock').write_text('build\n')
+                    decks.write_run(working, decks.read_run(working))
+                    case.engine._fetched += 1
+                    print(json.dumps({'working': str(working)}), file=sys.stderr, flush=True)
+                threading.Thread(target=works, daemon=True).start()
+            if '--saved-taken' in sys.argv:
+                # Alex runs a saved deck; the page is Blake's, who takes it over to open it.
+                taken = case.load_saved('build', title='Run by Alex')
+                case.engine.share()
+                blake = mock.patch.dict(os.environ, case.blake.env)
+                blake.start()
+                case.addCleanup(blake.stop)
+                studios_config.update({'local': {'root': str(case.blake.space.root)}})
+                preferences.finish(studios_config, lambda _: None)
+                case.blake.engine.fetch()
+                engine, root = case.blake.engine, case.theirs(case.blake, taken)
+        served = engine or case.engine
+        web = server.Desk(page=lambda port: page.RunnerPage(port, served))
         web.start()
         print(json.dumps({'url': web.url, 'path': str(root)}), flush=True)
-        done = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: done.set())
         signal.signal(signal.SIGINT, lambda *_: done.set())
         done.wait()

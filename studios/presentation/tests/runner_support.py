@@ -1051,6 +1051,13 @@ class StudioCase(unittest.TestCase):
         engine.wake(root)
         return root
 
+    def load_saved(self, state: str, title: str | None = None, engine=None) -> Path:
+        """A deck the earlier step-by-step flow saved, in its original format, copied from
+        tests/fixtures/saved/<state>/ into this workspace and committed there
+        (`saved_fixtures.load`). Nothing of the saved flow runs."""
+        import saved_fixtures
+        return saved_fixtures.load(self, state, title, engine)
+
     def view(self, root: Path) -> dict:
         return self.engine.view(root)
 
@@ -1067,19 +1074,12 @@ class StudioCase(unittest.TestCase):
                               source={'kind': 'upload', 'name': 'old.pptx'},
                               uploads={'old.pptx': DECK}, **changes)
 
-
-    def saved_existing_deck(self, review: str, level: str, **changes) -> Path:
-        """A saved deck started at `level` under the review level `review`, read word
-        for word by the extract worker, as test_flow_routes reads one."""
-        from unittest import mock
-
-        from test_flow_routes import DECK
-        self.workers.queued['outline'] = [read_word_for_word(self)] * 4
-        with mock.patch('studio_core.review_policy.capture',
-                        return_value={'schema': 1, 'level': review}):
-            return self.saved_start(route='existing', level=level, title='Old deck',
-                              source={'kind': 'upload', 'name': 'old.pptx'},
-                              uploads={'old.pptx': DECK}, **changes)
+    def deliver_desk(self, root: Path, engine=None) -> dict:
+        """Deliver a desk deck that rests on the desk, as the desk's Deliver does: bound to
+        the deck the desk shows (`expected`) and to the brand check's blockers it shows."""
+        engine = engine or self.engine
+        shown = engine.view(root)['desk']
+        return engine.desk_deliver(root, shown['expected'], shown.get('blockers_seen'))
 
 
     def state(self, root: Path) -> str:
@@ -1095,27 +1095,6 @@ class StudioCase(unittest.TestCase):
         gate = gate or engine.view(root)['gate']['name']
         shown = engine.view(root)['gate'] or {}
         return engine.decide(root, gate, decision, note, extra, shown.get('expected'))
-
-    def to_gate(self, root: Path, gate: str) -> None:
-        """Approve what is waiting until `gate` is the one waiting."""
-        for _ in range(20):
-            waiting = self.waiting(root)
-            self.assertIsNotNone(waiting, self.view(root)['sentence'])
-            if waiting == gate:
-                return
-            self.decide(root, waiting)
-        self.fail(f'{gate} never came up')
-
-    def to_end(self, root: Path) -> list[str]:
-        """Approve everything put to the person until nothing is, and say what that was."""
-        approved = []
-        for _ in range(20):
-            waiting = self.waiting(root)
-            if waiting is None:
-                return approved
-            self.decide(root, waiting)
-            approved.append(waiting)
-        self.fail('The deck never stopped asking')
 
     def git(self, *args: str, repo: Path | None = None) -> str:
         import subprocess
@@ -1162,21 +1141,6 @@ class DeskCase(StudioCase):
 
     def desk_view(self, root: Path) -> dict:
         return self.view(root)['desk']
-
-    def gated(self, **changes) -> Path:
-        """A deck started the gated way, approved stop by stop, with the first look where
-        one is asked for, until its deck waits at gate:build."""
-        root = self.saved_start(**changes)
-        for _ in range(12):
-            gate = self.view(root)['gate']
-            assert gate is not None, self.view(root)['sentence']
-            if gate['name'] == 'gate:build':
-                return root
-            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
-            self.decide(root, gate['name'], 'approve', None,
-                        {'look': offered['looks'][0]['id']}
-                        if offered and not offered['chosen'] else None)
-        self.fail('gate:build never came up')
 
 
 class Notifier:

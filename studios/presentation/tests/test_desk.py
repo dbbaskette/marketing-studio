@@ -295,13 +295,9 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['saved']['heading'], 'Home')
 
     def test_home_puts_each_deck_where_it_stands_and_a_finished_one_with_its_link(self):
-        waiting = self.saved_started(title='Waiting deck')
-        done = self.saved_started(title='Finished deck')
-        for _ in range(20):
-            gate = self.run_of(done)['gate']
-            if gate is None:
-                break
-            self.decided(done)
+        waiting = self.started(title='Waiting deck')
+        done = self.started(title='Finished deck')
+        self.deliver_desk(Path(done))
         result = self.run_page(self.answers(), [{'see': 'Every slide of'},
                                                 {'snapshot': 'home'}])
         home = result['snapshots']['home']
@@ -531,126 +527,6 @@ class ScreenTests(ScriptedPage, PageCase):
                                                              'http://not-https.example.com']}}))
         self.assertEqual(self.get('setup')['research_sites'], ['blog.example.com/platform'])
 
-    def test_the_research_stop_names_the_sites_a_page_was_refused_from(self):
-        from synthesis_fixture import research_stop
-        # The stand-in worker saves a page from docs.example.com, which is under the site.
-        path = self.saved_started(research=True, research_from={'sites': ['docs.example.com']})
-        self.decided(path, 'gate:research-plan')
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path))
-        record['research_contract'] = {'schema': 2}
-        record['research'] = {**(record.get('research') or {}), 'outside': [
-            {'url': 'https://elsewhere.example.com/a', 'redirected_from': None},
-            {'url': 'https://elsewhere.example.com/b', 'redirected_from': None}]}
-        self.engine._store(Path(path), record)
-        text = self.deck_screen(path, [{'snapshot': 'research'}])['snapshots']['research']['text']
-        self.assertIn('Research from 1 of your sites (docs.example.com).', text)
-        self.assertIn('2 pages were outside your sites (docs.example.com) and were not saved.',
-                      text)
-
-    def test_the_research_stop_leads_with_the_brief_and_the_check(self):
-        from synthesis_fixture import research_stop
-        from studio_core import research_view
-        path = self.saved_started(research=True)
-        self.decided(path, 'gate:research-plan')
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path))
-        record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [{'snapshot': 'research'}, {'click': 'Leave out “Capacity condition”'}, {'snapshot': 'left'}])
-        text = result['snapshots']['research']['text']
-        positions = [text.index(words) for words in ('Prioritized handoff', research_view.CHECKED, 'An honest account.', 'What the research could not settle', 'Unknown range.', '3 sources: 2 of yours, 1 public.', 'Your questions', 'Capacity condition', 'Also found')]
-        self.assertEqual(positions, sorted(positions))
-        self.assertIn('2 findings', text)
-        self.assertIn('1 left out', result['snapshots']['left']['text'])
-        self.assertNotIn('answered by the sources', text)
-        self.assertNotIn('0 to look at', text)
-
-    def test_the_direction_review_triages_the_research(self):
-        from studio_core import review_policy
-        from synthesis_fixture import research_stop
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started(research=True)
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'Leave out “Capacity condition”'},
-                                        {'snapshot': 'left'}, {'click': 'Redraw the direction'}],
-                                  **{'POST /api/decide': [ok(self.run_of(path))]})
-        self.assertIn('Prioritized handoff', result['snapshots']['direction']['text'])
-        self.assertNotIn('Research findings', result['snapshots']['direction']['text'])
-        self.assertNotIn('Ask for changes to this finding', result['snapshots']['direction']['text'])
-        self.assertIn('Leaving findings out redraws the outline and the look samples without researching again.', result['snapshots']['left']['text'])
-        body = self.posts(result)[0][1]
-        self.assertEqual(body['decision'], 'changes')
-        self.assertEqual(body['extra'], {'direction_target': 'gate:research', 'left_out': ['instance-min--capacity']})
-
-    def test_asking_about_a_finding_says_the_whole_research_runs_again(self):
-        from synthesis_fixture import research_stop
-        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [{'click': 'Ask for changes to this finding: “Capacity condition”'}, {'snapshot': 'finding'},
-                                        {'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
-        self.assertIn('What is wrong with “Capacity condition”?', result['snapshots']['finding']['text'])
-        self.assertIn('Asking for changes runs the research again', result['snapshots']['sheet']['sheet'])
-        self.assertIn('up to 3 rounds of writing and checking.', result['snapshots']['sheet']['sheet'])
-
-    def test_the_research_sheet_offers_to_bring_the_evidence_up_to_date(self):
-        from synthesis_fixture import research_stop
-        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [
-            {'click': 'Ask for changes'}, {'snapshot': 'sheet'},
-            {'tick': 'Bring the evidence up to date'}, {'click': 'Send for changes'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        sheet = result['snapshots']['sheet']
-        self.assertIn('Bring the evidence up to date', sheet['sheet'])
-        self.assertIn('Re-reads the sources and checks the report again: about as long and as '
-                      'costly as the research was.', sheet['sheet'])
-        # A setting sent with the request, so a native checkbox, off unless asked.
-        self.assertNotIn('Bring the evidence up to date', sheet['ticked'], 'off unless asked')
-        posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
-        self.assertEqual(posted[-1]['decision'], 'changes')
-        self.assertIs(posted[-1]['extra']['refresh'], True)
-        # What the page sent is taken by the runner, with no note of its own.
-        from studio_core import research_contract
-        from workspace import WorkspaceError
-        with mock.patch.object(research_contract, 'native', side_effect=WorkspaceError(
-                'Stopped by the test before any job.')) as native:
-            self.post('decide', posted[-1])
-        self.assertIs(self.engine._load(Path(path))['gates']['gate:research']['refresh'], True)
-        self.assertIs(native.call_args[0][3]['refresh'], True)
-
-    def test_sending_a_marked_finding_shows_the_research_price_before_it_posts(self):
-        from synthesis_fixture import research_stop
-        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [
-            {'click': 'Ask for changes to this finding: “Capacity condition”'},
-            {'snapshot': 'before-sending'}, {'click': 'Send 1 change'}])
-        text = result['snapshots']['before-sending']['text']
-        self.assertIn('Asking for changes runs the research again', text)
-        self.assertIn('up to 3 rounds of writing and checking.', text)
-        posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
-        self.assertEqual(len(posted), 1)
-        self.assertEqual(posted[0]['decision'], 'changes')
-        self.assertIn('instance-min--capacity', posted[0]['extra']['again'])
-
-    def test_the_direction_review_prices_its_research_request(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started(research=True)
-        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [{'snapshot': 'research'}])
-        self.assertIn('Asking for changes runs the research again', result['snapshots']['research']['text'])
-
     def test_the_start_has_no_stops_or_first_draft_and_folds_the_options(self):
         from studio_core import review_policy
         self.assertIn(self.get('setup')['review_level'], review_policy.LEVELS)
@@ -729,24 +605,6 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertIn('Next', result['snapshots']['unset']['buttons'])
                 self.assertEqual(result['snapshots']['unset']['posts'], 0)
 
-    def test_the_plan_says_where_each_question_is_answered_from(self):
-        path = self.saved_started(research=True)
-        shown = self.run_of(path)
-        self.assertEqual(shown['gate']['name'], 'gate:research-plan')
-        self.assertIn('looks', shown['gate'])
-        for looks, said in (({'documents': True, 'sites': [], 'web': False},
-                             'read from your documents'),
-                            ({'documents': False, 'sites': ['docs.example.com'], 'web': False},
-                             'read from your sites')):
-            gate = {**shown['gate'], 'looks': looks,
-                    'questions': [{**one, 'search': None} for one in shown['gate']['questions']]}
-            result = self.deck_screen(path, [{'snapshot': 'plan'}],
-                                      **{'GET /api/run': [ok({**shown, 'gate': gate})]})
-            with self.subTest(said=said):
-                text = result['snapshots']['plan']['text']
-                self.assertIn(said, text)
-                self.assertNotIn('searched on the web', text)
-
     def test_the_route_card_says_how_a_document_is_read(self):
         result = self.run_page(self.answers(), [
             {'click': 'New deck'}, {'snapshot': 'routes'}, {'click': 'A document'},
@@ -814,19 +672,6 @@ class ScreenTests(ScriptedPage, PageCase):
                     'It takes two or three short steps'):
             self.assertNotIn(old, text)
 
-    def test_a_step_the_level_passes_is_not_called_your_decision(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started()
-        shown = self.run_of(path)
-        look = next(row for row in shown['timeline'] if row['name'] == 'gate:look')
-        self.assertIs(look.get('automatic'), True)
-        result = self.deck_screen(path, [{'snapshot': 'deck'}])
-        lines = result['snapshots']['deck']['text'].split('\n')
-        at = lines.index(look['label'])
-        self.assertNotIn('Your decision', lines[at + 1])
-
     def test_the_set_up_says_what_each_stop_shows(self):
         described = self.get('setup')
         fresh = {**described, 'configured': False, 'workspace': None}
@@ -845,12 +690,6 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Where new work stops', result['snapshots']['settings']['text'])
         self.assertFalse(any(address == '/api/review-level' for address, _ in self.posts(result)))
 
-    def test_a_deck_calls_its_look_stage_look(self):
-        path = self.saved_started(title='Rolling restarts')
-        result = self.deck_screen(path, [{'snapshot': 'deck'}])
-        self.assertIn('Look: Still to come', result['snapshots']['deck']['text'].split('\n'))
-        self.assertNotIn('Check the brand', result['snapshots']['deck']['text'])
-
     def test_the_new_deck_form_asks_once_whether_it_is_a_talk_or_a_handout(self):
         answers = self.answers(**{'GET /api/run': [{'status': 404,
                                                     'body': {'error': 'There is no deck there.'}}]})
@@ -867,62 +706,10 @@ class ScreenTests(ScriptedPage, PageCase):
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertEqual(posted[0]['form']['delivery'], 'reading')
 
-    def test_the_goal_text_does_not_flip_the_first_draft_in_the_runner(self):
-        path = self.saved_started(goal='Skip AI review on the first build.')
-        self.assertFalse(self.run_of(path)['unreviewed'])
-        self.assertNotIn('initial_review', json.loads((Path(path) / 'run.json').read_text())
-                         .get('form', {}))
-
-    def test_a_working_deck_says_what_it_does_now_and_for_how_long(self):
-        import datetime
-        path = self.saved_started()
-        shown = self.run_of(path)
-        current = next(row for row in shown['timeline'] if row['state'] != 'done')
-        current['state'] = 'current'
-        started = (datetime.datetime.now(datetime.timezone.utc)
-                   - datetime.timedelta(minutes=3)).isoformat()
-        shown.update(state='working', gate=None, sentence='Drafting the outline.',
-                     spent={'dollars': 0.42, 'tokens': 1200},
-                     workers=[{'id': 'w1', 'label': 'Outline writer', 'started_at': started,
-                               'lines': ['Reading the brief.']}])
-        # A dollar amount an older runner still sends is never said as a limit.
-        limits = {**(self.get('setup')['limits'] or {}), 'deck_dollars': 5}
-        result = self.deck_screen(path, [{'snapshot': 'working'}],
-                                  **{'GET /api/run': [ok(shown)],
-                                     'GET /api/setup': [self.setup_with(limits=limits)]})
-        text = result['snapshots']['working']['text']
-        self.assertIn(current['label'] + ' · 3 minutes · $0.42 so far', text)
-        for never in ('stops at', 'warns at', '$5.00'):
-            self.assertNotIn(never, text)
-        self.assertIn('Stop loses the step in hand; Pause lets it finish.', text)
-
-    def test_jobs_after_finished_research_show_in_their_own_card(self):
-        # Research done in parallel leaves its progress at "complete" for good: later jobs are
-        # not drawn into the "Research is ready" panel, but in Assistant jobs now (#294).
-        path = self.saved_started()
-        shown = self.run_of(path)
-        worker = {'id': 'outline', 'label': 'Drafting the outline', 'count': 1,
-                  'started_at': '2030-01-02T03:04:00Z',
-                  'now': {'at': '2030-01-02T03:04:05Z', 'text': 'Reading brief'}}
-        title = shown['title']
-        needs = any(brief['path'] == path for brief in self.get('decks')['needs'])
-        for phase, own_card in (('complete', True), ('investigate', False)):
-            with self.subTest(phase=phase):
-                shown.update(state='working', gate=None, sentence='Drafting the outline.',
-                             workers=[worker], research_progress={'phase': phase})
-                result = self.run_page(self.answers(**{'GET /api/run': [ok(shown)]}), [
-                    {'click': ('Review ' if needs else 'Open ') + title},
-                    {'snapshot': 'working'}], researchPanel=True)
-                text = result['snapshots']['working']['text']
-                self.assertIn('Research panel: ' + phase, text)
-                self.assertEqual('Assistant jobs now' in text, own_card)
-                self.assertEqual('with the assistants working now' in text, not own_card)
-                self.assertIn('Now: Reading brief' if own_card else 'Research panel', text)
-
     def test_a_working_deck_shows_what_the_assistant_is_doing_and_its_activity_log(self):
         # Its latest line as "Now:", Show activity with every line so far, and the deck's
         # Activity log, read only when it is opened (#294).
-        path = self.saved_started()
+        path = self.started(flow='desk', look='default')   # re-based on a desk deck (GitHub issue #542)
         shown = self.run_of(path)
         lines = [{'at': '2030-01-02T03:04:00Z', 'text': 'Looking at what it was given'},
                  {'at': '2030-01-02T03:04:05Z', 'text': 'Reading brief'}]
@@ -960,53 +747,9 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertFalse([request for request in result['requests']
                           if request['method'] == 'POST'], 'reading activity starts nothing')
 
-    def test_a_note_for_the_next_step_is_sent_from_the_deck_screen_and_replaced(self):
-        path = self.saved_started()
-        shown = self.run_of(path)
-        shown.update(state='working', gate=None, sentence='Drafting the outline.')
-        noted = {**shown, 'note': {'pending': {'text': 'Lead with the risks.', 'at': 'now'},
-                                   'used': [], 'expected': '1'}}
-        box = 'Note for the next step'
-        result = self.deck_screen(path, [
-            {'snapshot': 'working'}, {'click': 'Send the note'}, {'snapshot': 'empty'},
-            {'fill': box, 'value': 'Lead with', 'stay': True}, {'poll': True},
-            {'snapshot': 'typing'}, {'fill': box, 'value': '  Lead with the risks.  '},
-            {'click': 'Send the note'}, {'snapshot': 'noted'}],
-            **{'GET /api/run': [ok(shown), ok(shown), ok(noted)], 'POST /api/note': [ok(noted)]})
-        shots = result['snapshots']
-        self.assertIn('It goes with the next job that starts, and stops nothing.',
-                      shots['working']['text'])
-        self.assertEqual(shots['working']['fields'][box], '')
-        self.assertEqual((shots['empty']['invalid'], shots['empty']['posts']), ([box], 0))
-        self.assertIn('Write the note first.', shots['empty']['text'])
-        self.assertEqual(shots['typing']['fields'][box], 'Lead with',
-                         'a refresh leaves what is being typed')
-        self.assertEqual(self.posts(result), [('/api/note', {
-            'path': path, 'expected': '0', 'text': 'Lead with the risks.'})])
-        sent = shots['noted']
-        self.assertIn('Noted. It goes with the next job that starts.', sent['toasts'])
-        self.assertIn('Noted for the next step: Lead with the risks.', sent['text'])
-        self.assertIn('Sending another replaces it.', sent['text'])
-        self.assertIn('Replace the note', sent['buttons'])
-        self.assertEqual(sent['fields'][box], '')
-
-    def test_a_used_note_is_listed_with_the_saved_inputs_and_a_finished_deck_takes_none(self):
-        path = self.saved_started()
-        self.to_end(Path(path))
-        shown = self.run_of(path)
-        self.assertEqual(shown['state'], 'finished')
-        shown['note'] = {'pending': None, 'expected': '2', 'used': [
-            {'text': 'Lead with the risks.', 'at': 'now', 'step': 'build-sections:section-1'}]}
-        result = self.deck_screen(path, [{'click': 'Saved inputs, outline and run details'},
-                                         {'snapshot': 'done'}], **{'GET /api/run': [ok(shown)]})
-        done = result['snapshots']['done']
-        self.assertNotIn('Note for the next step', done['fields'])
-        self.assertNotIn('Send the note', done['buttons'])
-        self.assertIn('Notes for the next step', done['text'])
-        self.assertIn('Lead with the risks. Went with: Build the slides.', done['text'])
-
     def test_a_retry_says_what_it_re_runs_and_what_the_last_try_took(self):
-        path = self.saved_started()
+        self.brand.run.offers_looks = True   # re-based on a desk deck (GitHub issue #542),
+        path = self.started(flow='desk', look='pick')   # which waits for its look, unbuilt
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True, seconds=120, dollars=0.3)
@@ -1020,7 +763,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'took 2 minutes and $0.30.', shot['text'])
 
     def test_an_unusable_assistant_offers_open_status(self):
-        path = self.saved_started()
+        path = self.started(flow='desk', look='default')   # re-based on a desk deck (GitHub issue #542)
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True)
@@ -1038,7 +781,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['status']['heading'], 'Status')
 
     def test_a_step_that_ran_out_of_time_offers_more_time(self):
-        path = self.saved_started()
+        path = self.started(flow='desk', look='default')   # re-based on a desk deck (GitHub issue #542)
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True, seconds=2700, dollars=0.9)
@@ -1059,7 +802,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/run', {'path': path, 'action': 'more-time'})])
 
     def test_a_research_stop_opens_every_objection(self):
-        path = self.saved_started()
+        path = self.started(flow='desk', look='default')   # re-based on a desk deck (GitHub issue #542)
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True)
@@ -1075,7 +818,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('f01: Too broad.', result['snapshots']['read']['text'])
 
     def test_a_research_retry_carries_on_from_the_draft_and_lists_what_was_kept(self):
-        path = self.saved_started()
+        path = self.started(flow='desk', look='default')   # re-based on a desk deck (GitHub issue #542)
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True, seconds=2880, dollars=9.8)
@@ -1100,7 +843,8 @@ class ScreenTests(ScriptedPage, PageCase):
                       'the last round took 50 seconds.', result['snapshots']['failed']['text'])
 
     def test_a_build_retry_says_how_many_sections_are_kept(self):
-        path = self.saved_started()
+        self.brand.run.offers_looks = True   # re-based on a desk deck (GitHub issue #542),
+        path = self.started(flow='desk', look='pick')   # which waits for its look, unbuilt
         shown = self.run_of(path)
         self.assertIsNone(shown['build_sections'], 'nothing built yet')
         row = next(row for row in shown['timeline'] if row['stage'] == 'build')
@@ -1116,17 +860,9 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Try again keeps 2 of 4 sections; the rest are drawn again; the tries so '
                       'far took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
 
-    def test_one_approve_decides_and_the_review_bar_only_counts(self):
-        path = self.saved_started()
-        result = self.deck_screen(path, [{'snapshot': 'gate'}])
-        shot = result['snapshots']['gate']
-        self.assertEqual(shot['buttons'].count('Approve'), 1)
-        self.assertEqual(shot['filled'], ['Approve'])
-        self.assertIn('0 slides to change', shot['text'])
-
     def test_home_says_where_an_older_powerpoint_file_is(self):
-        path = self.saved_started(output='pptx')
-        self.to_end(Path(path))
+        path = self.started(output='pptx')
+        self.deliver_desk(Path(path))
         listed = self.get('decks')
         for where, said in (('maker', 'A .pptx on the computer that made it.'),
                             ('shared', 'A .pptx, to download from its own screen.')):
@@ -1139,115 +875,6 @@ class ScreenTests(ScriptedPage, PageCase):
                                    [{'click': 'Decks'}, {'snapshot': 'decks'}])
             with self.subTest(where=where):
                 self.assertIn(said, result['snapshots']['decks']['text'])
-
-    def test_undo_is_not_offered_once_the_last_step_is_shared(self):
-        path = self.saved_started()
-        shown = self.run_of(path)
-        self.assertIs(shown['undo'], True)
-        shown['undo'] = False
-        result = self.deck_screen(path, [{'snapshot': 'deck'}], narrow=True,
-                                  **{'GET /api/run': [ok(shown)]})
-        self.assertNotIn('Undo the last step', result['snapshots']['deck']['buttons'])
-
-    def test_undo_names_the_last_step_with_its_time_and_cost(self):
-        path = self.saved_started()
-        shown = self.run_of(path)
-        shown['undo'] = True
-        done = [row for row in shown['timeline'] if row['state'] == 'done'][-1]
-        done.update(seconds=180, dollars=0.6)
-        result = self.deck_screen(path, [{'click': 'Undo the last step'}, {'snapshot': 'undo'}],
-                                  **{'GET /api/run': [ok(shown)]})
-        self.assertIn('Undo: ' + done['label'] + ' (3 minutes, $0.60)',
-                      result['snapshots']['undo']['sheet'])
-
-    def test_the_timeline_captions_the_stage_it_is_at_for_a_phone(self):
-        path = self.saved_started()
-        result = self.deck_screen(path, [{'snapshot': 'gate'}])
-        self.assertEqual(result['snapshots']['gate']['captions'], ['Outline: Waiting for you'])
-
-    def test_outline_rows_keep_one_button_and_fold_the_rest(self):
-        path = self.saved_started()
-        first = self.run_of(path)['gate']['slides'][0]['title']
-        result = self.deck_screen(path, [{'snapshot': 'closed'}, {'click': f'More for “{first}”'},
-                                         {'snapshot': 'open'}])
-        closed, opened = result['snapshots']['closed'], result['snapshots']['open']
-        self.assertIn(f'Ask for changes to “{first}”', closed['buttons'])
-        self.assertNotIn(f'Move down: “{first}”', closed['buttons'])
-        self.assertIn(f'Move down: “{first}”', opened['buttons'])
-
-    def test_the_deck_says_steps_left_its_next_stop_and_what_it_has_spent(self):
-        path = self.saved_started()
-        shown = self.run_of(path)
-        ahead = shown['ahead']
-        result = self.deck_screen(path, [{'snapshot': 'deck'}])
-        self.assertIn(f"{ahead['steps_left']} steps left · Next stop: the outline · So far "
-                      f"{ahead['spent']}", result['snapshots']['deck']['text'])
-        self.assertNotIn('$0.00', result['snapshots']['deck']['text'])
-        # A Codex deck that has worked three minutes, on a phone: the line wraps under the
-        # beads and the toolbar keeps its one decision.
-        codex = {**shown, 'ahead': {**ahead, 'seconds': 180, 'dollars': None,
-                                    'spent': '3 minutes; the assistant reported no cost'}}
-        result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True,
-                                  **{'GET /api/run': [ok(codex)]})
-        phone = result['snapshots']['phone']
-        self.assertIn('So far 3 minutes; the assistant reported no cost', phone['text'])
-        self.assertEqual(phone['filled'], ['Approve'])
-        # A saved deck from before: no ahead, and the screen draws without it.
-        old = {key: value for key, value in shown.items() if key != 'ahead'}
-        result = self.deck_screen(path, [{'snapshot': 'old'}], **{'GET /api/run': [ok(old)]})
-        self.assertNotIn('steps left', result['snapshots']['old']['text'])
-
-    def test_asking_for_changes_at_the_deck_stop_with_nothing_marked_says_the_whole_deck_is_drawn_again(self):
-        path = self.saved_started()
-        for _ in range(10):
-            if self.run_of(path)['gate']['name'] == 'gate:build':
-                break
-            self.decided(path)
-        shown = self.run_of(path)
-        self.assertEqual(shown['gate']['name'], 'gate:build')
-        priced = {**shown, 'gate': {**shown['gate'],
-                                    'last_build': {'dollars': 7.2, 'seconds': 1080,
-                                                   'sections': 1}}}
-        result = self.deck_screen(path, [{'click': 'Ask for changes'}, {'snapshot': 'sheet'}],
-                                  **{'GET /api/run': [ok(priced)]})
-        self.assertIn('No slides marked: the whole deck is drawn again (about $7.20 and 18 '
-                      'minutes, as the last build took).', result['snapshots']['sheet']['sheet'])
-
-    def test_the_whole_deck_sentence_says_when_no_cost_was_reported(self):
-        path = self.saved_started()
-        for _ in range(10):
-            if self.run_of(path)['gate']['name'] == 'gate:build':
-                break
-            self.decided(path)
-        shown = self.run_of(path)
-        for dollars in (None, 0):
-            with self.subTest(dollars=dollars):
-                quiet = {**shown, 'gate': {**shown['gate'], 'last_build': {
-                    'dollars': dollars, 'seconds': 1080, 'sections': 1}}}
-                result = self.deck_screen(path, [{'click': 'Ask for changes'},
-                                                 {'snapshot': 'sheet'}],
-                                          **{'GET /api/run': [ok(quiet)]})
-                sheet = result['snapshots']['sheet']['sheet']
-                self.assertIn('No slides marked: the whole deck is drawn again (about 18 '
-                              'minutes, as the last build took; the assistant reported no '
-                              'cost).', sheet)
-                self.assertNotIn('$0.00', sheet)
-
-    def test_a_now_line_never_says_nothing_was_spent(self):
-        path = self.saved_started()
-        shown = self.run_of(path)
-        working = {**shown, 'state': 'working', 'gate': None,
-                   'spent': {**shown['spent'], 'dollars': 0}}
-        result = self.deck_screen(path, [{'snapshot': 'deck'}],
-                                  **{'GET /api/run': [ok(working)]})
-        self.assertNotIn('$0.00', result['snapshots']['deck']['text'])
-
-    def test_asking_for_changes_at_the_outline_says_what_is_drawn_again(self):
-        path = self.saved_started()
-        shown = self.run_of(path)
-        self.assertEqual(shown['gate']['name'], 'gate:outline')
-        result = self.deck_screen(path, [{'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
-        self.assertIn(shown['gate']['redo']['says'], result['snapshots']['sheet']['sheet'])
 
     def test_a_preview_pool_is_said_as_it_is(self):
         described = self.get('setup')
@@ -1263,871 +890,9 @@ class ScreenTests(ScriptedPage, PageCase):
                                    [{'snapshot': 'first'}])
             self.assertIn(said, result['snapshots']['first']['text'])
 
-    def test_a_deck_says_only_what_it_does(self):
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        shown = self.run_of(path)
-        progress = {'incomplete': False, 'slides': [
-            {'ref': 'r1', 'number': 1, 'revision': '3f2a1c9b0d4e5f6a', 'title': 'Cover'}]}
-        receipts = [{'purpose': 'outline', 'profile': 'main', 'model': None, 'effort': None,
-                     'reason': None, 'actual_model': None}]
-        view = {**shown, 'gate': None, 'state': 'working', 'build_progress': progress,
-                'model_jobs': receipts, 'build_timing': {'first_preview': '12 s'}}
-        result = self.deck_screen(path, [{'snapshot': 'deck'}], **{'GET /api/run': [ok(view)]})
-        deck = result['snapshots']['deck']
-        for gone in ('Rehearse with Yoodli', 'Coming later', 'Render 3f2a1c9b0d4e'):
-            self.assertNotIn(gone, deck['text'])
-        # What only troubleshooting needs is in a disclosure of its own, closed.
-        self.assertIn('Details for troubleshooting', deck['text'])
-        self.assertIn('Details for troubleshooting', deck['buttons'])
-
-    def test_a_refused_approval_is_said_beside_the_gate(self):
-        path = self.saved_started()
-        refused = {'status': 409, 'body': {'error': 'The outline changed since you opened it.'}}
-        result = self.deck_screen(path, [{'click': 'Approve'}, {'snapshot': 'refused'}],
-                                  **{'POST /api/decide': [refused]})
-        shot = result['snapshots']['refused']
-        self.assertIn('The outline changed since you opened it. Nothing was decided.',
-                      shot['text'])
-        self.assertEqual(shot['focus'], 'gate-problem')
-
-    def test_google_slides_without_google_says_it_makes_a_powerpoint_file(self):
-        said = ('Google is not connected on this computer, so approving makes a PowerPoint '
-                'file. Sign in to Google (Status → Check this computer says how), then choose '
-                'Send to Google Slides.')
-        path = self.saved_started(output='google')
-        self.to_gate(Path(path), 'gate:build')
-        unsigned = self.setup_with(google=False)
-        result = self.deck_screen(path, [{'snapshot': 'deck'}],
-                                  **{'GET /api/setup': [unsigned]})
-        self.assertIn(said, result['snapshots']['deck']['text'])
-        result = self.run_page(self.answers(**{'GET /api/setup': [unsigned],
-                                               'GET /api/run': [{'status': 404, 'body': {
-                                                   'error': 'There is no deck there.'}}]}), [
-            {'click': 'New deck'}, {'click': 'An idea'},
-            {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'click': 'Brand, output and assistant'}, {'snapshot': 'options'}])
-        self.assertIn(said, result['snapshots']['options']['text'])
-        result = self.deck_screen(path, [{'snapshot': 'signed'}],
-                                  **{'GET /api/setup': [self.setup_with(google=True)]})
-        self.assertNotIn(said, result['snapshots']['signed']['text'])
-
-    def test_a_phone_wraps_every_toolbar_action_under_the_title(self):
-        path = self.saved_started()
-        result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True)
-        phone = result['snapshots']['phone']
-        self.assertEqual(phone['filled'], ['Approve'])
-        # No More menu: the rest wrap in the toolbar, and a stop reviewed item by item is
-        # sent from its review bar, above the tab bar.
-        self.assertNotIn('Approve', [control['name'] for control in phone['toolbar']])
-        self.assertIn('Ask for changes', [control['name'] for control in phone['toolbar']])
-        self.assertIn('Ask for changes', phone['buttons'])
-        self.assertIn('Undo the last step', phone['buttons'])
-        self.assertNotIn('More', phone['buttons'])
-
-    def test_every_gate_of_a_deck_from_scratch_is_drawn_and_decided(self):
-        path = self.saved_started(research=True)
-        seen = []
-        for _ in range(12):
-            gate = self.run_of(path)['gate']
-            if gate is None:
-                break
-            name = gate['name']
-            seen.append(name)
-            steps = [{'see': 'Slide'}, {'see': 'The cover'}, {'snapshot': 'gate'}]
-            if name == 'gate:look':
-                steps += [{'click': 'Choose another brand'}, {'snapshot': 'rebrand'},
-                          {'click': 'Use this brand'}, {'snapshot': 'same'},
-                          {'click': 'Cancel'}]
-            if name == 'gate:outline':
-                steps += [{'fill': 'Title of slide 2', 'value': 'Batches, one at a time'}]
-            if name == 'gate:build':
-                steps += [{'click': 'Next slide'}, {'click': 'Draw it again'},
-                          {'click': 'Ask for changes'}, {'type': 'Make it shorter.'},
-                          {'click': 'Send for changes'}]
-            # One click approves: no second question.
-            steps += [{'click': 'Approve'}, {'snapshot': 'approved'}]
-            answer = ok(self.run_of(path))
-            result = self.deck_screen(path, steps, **{'POST /api/decide': [answer]})
-            shot = result['snapshots']['gate']
-            with self.subTest(gate=name):
-                self.assertEqual(shot['heading'], 'Rolling restarts')
-                self.assertIn('Where it is', shot['text'])
-                self.assertNotIn('Rehearse with Yoodli', shot['text'])
-                self.assertNotIn('Coming later', shot['text'])
-                self.assertEqual(shot['filled'], ['Approve'])
-                self.assertIn('Choose another brand' if name == 'gate:look'
-                              else 'Ask for changes', shot['buttons'])
-                self.assertIn(gate['label'] + '.', shot['text'])
-                self.assertIn('Approve, and ', shot['text'])
-                approved = result['snapshots']['approved']
-                self.assertEqual(approved['sheet'], '')
-                self.assertTrue(any(said.startswith('Approved. It carries on by itself.')
-                                    for said in approved['toasts']), approved['toasts'])
-                decided = [body for address, body in self.posts(result)
-                           if address == '/api/decide']
-                approval = decided[-1]
-                self.assertEqual((approval['gate'], approval['decision']), (name, 'approve'))
-                self.assertEqual(len([body for body in decided
-                                      if body['decision'] == 'approve']), 1)
-            if name in ('gate:research-plan', 'gate:research'):
-                self.assertIn('research', shot['text'].lower())
-            if name == 'gate:look':
-                # The brand's own name, as New deck says it (#255).
-                self.assertIn('Made in Example Co (light).', shot['text'])
-                self.assertIn('too old to offer looks', shot['text'])
-                self.assertTrue(any('kind=look&name=sample' in picture['of']
-                                    for picture in shot['pictures']), shot['pictures'])
-                asked = result['snapshots']['rebrand']['sheet']
-                for said in ('Choose another brand', 'The brand’s variant', 'Use this brand'):
-                    self.assertIn(said, asked)
-                self.assertIn('It is made in example (light) already.',
-                              result['snapshots']['same']['sheet'])
-                self.assertNotIn('extra', approval)
-                self.assertEqual(len(decided), 1, 'the same brand is never sent')
-            if name == 'gate:outline':
-                edited = approval['extra']['edited']
-                self.assertEqual(edited[1]['title'], 'Batches, one at a time')
-                self.assertEqual([one['id'] for one in edited],
-                                 [one['id'] for one in gate['slides']])
-                # The scripted workers draw the outline they are given, as it now stands.
-                self.workers.outline_said = {**self.workers.outline_said, 'slides': edited}
-            if name == 'gate:build':
-                changes = decided[0]
-                self.assertEqual((changes['decision'], changes['note'], changes['extra']),
-                                 ('changes', 'Make it shorter.', {'slides': [2]}))
-                self.assertTrue(shot['pictures'])
-                self.assertIn('Slide 1 of', shot['text'])
-            # What the page sent is what moves the deck on, for real.
-            self.post('decide', approval)
-        self.assertEqual(seen, ['gate:research-plan', 'gate:research', 'gate:outline',
-                                'gate:look', 'gate:build'])
-        view = self.run_of(path)
-        self.assertEqual(view['state'], 'finished')
-        result = self.deck_screen(path, [{'snapshot': 'delivered'}, {'click': 'Download .pptx'},
-                                         {'snapshot': 'downloaded'}],
-                                  **{'GET /api/download': [PICTURE]})
-        shot = result['snapshots']['delivered']
-        self.assertIn('Delivered', shot['text'])
-        self.assertIn('Revision 1.', shot['text'])
-        self.assertTrue(any(link['name'] == 'Open Rolling restarts in Google Slides, in a new tab'
-                            and link['href'].startswith('https://') for link in shot['links']))
-        self.assertIn('Publish', shot['buttons'])
-        self.assertIn('The deck is downloaded.', result['snapshots']['downloaded']['toasts'])
-        self.assertIn('/api/download?path=', ' '.join(
-            request['address'] for request in result['requests']))
-
-    def test_a_question_dropped_on_the_page_goes_with_the_approval(self):
-        path = self.saved_started(research=True)
-        result = self.deck_screen(path, [
-            {'snapshot': 'plan'}, {'click': 'Drop “Health checks”'}, {'snapshot': 'dropped'},
-            {'click': 'Approve without 1 question'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        plan = result['snapshots']['plan']
-        for said in ('2 questions', 'Instance min', 'Searched for: rolling restart minimum '
-                     'instances', 'Read the full plan'):
-            self.assertIn(said, plan['text'])
-        dropped = result['snapshots']['dropped']
-        self.assertIn('1 dropped · 0 reworded · 0 added', dropped['text'])
-        # The focus stays on the row, on the way to undo the drop.
-        self.assertEqual(dropped['focus'], 'Keep “Health checks”')
-        # The last question left cannot be dropped too, and the row says why.
-        self.assertIn('Drop “Instance min”', dropped['off'])
-        self.assertIn('The last question left cannot be dropped', dropped['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['decision'], body['extra']),
-                         ('approve', {'dropped': ['health-checks']}))
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:research')
-
-    def test_a_reworded_and_an_added_question_are_sent_as_changes(self):
-        path = self.saved_started(research=True)
-        result = self.deck_screen(path, [
-            {'click': 'Reword “Instance min”'}, {'snapshot': 'rewording'},
-            {'hold': 'Keep the wording of “Instance min”'},
-            {'fill': 'New wording for “Instance min”',
-             'value': 'How many instances keep capacity?', 'stay': True},
-            {'snapshot': 'typing'},
-            {'fill': 'A question to add', 'value': 'What does a restart cost?'},
-            {'click': 'Add the question'}, {'snapshot': 'marked'},
-            {'click': 'Send 2 changes'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        shots = result['snapshots']
-        # Pressing Reword takes the focus to the new wording, and typing in it leaves the
-        # questions as they are.
-        self.assertEqual(shots['rewording']['focus'], 'reword-instance-min')
-        self.assertEqual(shots['typing']['still'], ['Keep the wording of “Instance min”'])
-        self.assertEqual(shots['typing']['focus'], 'reword-instance-min')
-        self.assertIn('Questions you added', shots['marked']['text'])
-        (_, body), = self.posts(result)
-        self.assertNotIn('note', body)
-        self.assertEqual((body['decision'], body['extra']), ('changes', {
-            'dropped': [], 'reword': {'instance-min': 'How many instances keep capacity?'},
-            'add': ['What does a restart cost?']}))
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['round'], 2)
-
-    def test_a_question_can_be_added_at_the_synthesis_research_stop(self):
-        from synthesis_fixture import research_stop
-        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
-        research_stop(Path(path) / 'research')
-        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
-        self.engine._store(Path(path), record)
-        shown = self.run_of(path)
-        result = self.deck_screen(path, [
-            {'snapshot': 'stop'}, {'fill': 'A question to add', 'value': 'What about drains?'},
-            {'click': 'Add the question'}, {'snapshot': 'before-sending'},
-            {'click': 'Send 1 change'}], **{'POST /api/decide': [ok(shown)]})
-        self.assertIn('A question to add', result['snapshots']['stop']['text'])
-        self.assertIn(shown['gate']['research_price']['words'],
-                      result['snapshots']['before-sending']['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual(body['extra']['add'], ['What about drains?'])
-        full = {**shown, 'gate': {**shown['gate'], 'room': 0}}
-        result = self.deck_screen(path, [{'snapshot': 'full'}],
-                                  **{'GET /api/run': [ok(full)]})
-        self.assertIn(f'The plan holds {worker_tools.PLAN_MOST} questions, the most it can.',
-                      result['snapshots']['full']['text'])
-        self.assertIn('Add the question', result['snapshots']['full']['off'])
-
-    def test_no_more_questions_are_added_than_the_runner_takes_at_once(self):
-        path = self.saved_started(research=True)
-        steps = []
-        for number in range(1, marks.ADDED + 1):
-            steps += [{'fill': 'A question to add', 'value': f'Question {number}?'},
-                      {'click': 'Add the question'}]
-        sending = f'Send {marks.ADDED} changes'
-        result = self.deck_screen(path, [*steps, {'snapshot': 'full'}, {'click': sending}],
-                                  **{'POST /api/decide': [ok(self.run_of(path))]})
-        full = result['snapshots']['full']
-        self.assertIn('Add the question', full['off'])
-        self.assertIn('as many as can be added at once', full['text'])
-        self.assertIn(sending, full['buttons'])
-        (_, body), = self.posts(result)
-        self.assertEqual(len(body['extra']['add']), marks.ADDED)
-        # The runner takes exactly as many as the page lets the person add.
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['round'], 2)
-
-    def test_a_line_takes_as_many_characters_as_the_runner_does(self):
-        path = self.saved_started(research=True)
-        result = self.deck_screen(path, [{'click': 'Reword “Instance min”'},
-                                         {'snapshot': 'rewording'}])
-        limits = result['snapshots']['rewording']['limits']
-        for label in ('New wording for “Instance min”', 'A question to add'):
-            self.assertEqual(limits[label], marks.LINE)
-
-    def test_findings_that_need_a_look_come_first_and_marks_go_as_changes(self):
-        self.workers.then('question', unsettled(self.workers, 'health-checks'),
-                          unsettled(self.workers, 'health-checks'))
-        path = self.saved_started(research=True)
-        self.decided(path, 'gate:research-plan')
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:research')
-        result = self.deck_screen(path, [
-            {'snapshot': 'found'},
-            {'click': 'Research again: “Health checks”'}, {'snapshot': 'asking'},
-            {'fill': 'What was wrong with “Health checks” (optional)',
-             'value': 'Look for the platform docs.'},
-            {'click': 'Instance min'}, {'click': 'Sources for “Instance min” (1)'},
-            {'snapshot': 'opened'}, {'click': 'Leave out “Instance min”'},
-            {'snapshot': 'marked'}, {'click': 'Send 2 changes'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        found = result['snapshots']['found']['text']
-        for said in ('Look at these first', 'Not settled',
-                     'No page says what starts the next batch.',
-                     'Not known: Only one page was found.', 'Answered', 'Read the full report'):
-            self.assertIn(said, found)
-        self.assertLess(found.index('Health checks'), found.index('Instance min'))
-        # Pressing Research again takes the focus to the box for what was wrong.
-        self.assertEqual(result['snapshots']['asking']['focus'], 'again-health-checks')
-        opened = result['snapshots']['opened']
-        self.assertIn(QUOTE, opened['text'])
-        self.assertTrue(any(link['href'] == URL for link in opened['links']))
-        self.assertIn('1 to research again · 1 left out · 0 added',
-                      result['snapshots']['marked']['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['decision'], body['extra']), ('changes', {
-            'left_out': ['instance-min'],
-            'again': {'health-checks': 'Look for the platform docs.'}, 'add': []}))
-
-    def test_the_last_finding_kept_cannot_be_left_out(self):
-        path = self.saved_started(research=True)
-        self.decided(path, 'gate:research-plan')
-        result = self.deck_screen(path, [
-            {'click': 'Health checks'}, {'click': 'Leave out “Health checks”'},
-            {'snapshot': 'left out'}, {'click': 'Instance min'}, {'snapshot': 'one left'},
-            {'click': 'Approve, leaving out 1 finding'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        # The focus stays on the row, now drawn again, on the way to bring it back.
-        self.assertEqual(result['snapshots']['left out']['focus'],
-                         'Bring it back: “Health checks”')
-        left = result['snapshots']['one left']
-        # The outline needs a finding, so the last one kept cannot be left out, and says why.
-        self.assertIn('Leave out “Instance min”', left['off'])
-        self.assertIn('The last finding kept cannot be left out', left['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['decision'], body['extra']),
-                         ('approve', {'left_out': ['health-checks']}))
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
-
-    def test_a_finding_researched_again_is_sent_without_the_leave_outs(self):
-        path = self.saved_started(research=True)
-        self.decided(path, 'gate:research-plan')
-        result = self.deck_screen(path, [
-            {'click': 'Health checks'}, {'click': 'Research again: “Health checks”'},
-            {'click': 'Keep it as it is: “Health checks”'}, {'snapshot': 'undone'},
-            {'click': 'Research again: “Health checks”'}, {'click': 'Send 1 change'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        # Taking the mark back leaves the focus on the way to make it again.
-        self.assertEqual(result['snapshots']['undone']['focus'],
-                         'Research again: “Health checks”')
-        (_, body), = self.posts(result)
-        # Nothing was left out or brought back here, so no leave-out is asked for again.
-        self.assertEqual((body['decision'], body['extra']),
-                         ('changes', {'again': {'health-checks': ''}, 'add': []}))
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['round'], 2)
-
-    def test_a_picture_is_given_to_a_slide_at_the_outline(self):
-        path = self.saved_started()
-        gate = self.run_of(path)['gate']
-        content = next(one for one in gate['slides'] if one.get('kind') == 'content')
-        closing = next(one for one in gate['slides'] if one.get('kind') == 'closing')
-        title = content['title']
-        picture = b'synthetic picture, as the browser read it'
-        result = self.deck_screen(path, [
-            {'snapshot': 'gate'},
-            {'click': f'Add a picture to “{title}”'}, {'snapshot': 'form'},
-            {'attach': 'The picture, a PNG or JPEG file',
-             'files': [{'name': 'rack.png', 'type': 'image/png',
-                        'bytes': picture.decode('latin-1')}]},
-            {'fill': 'What it shows', 'value': 'A rack of servers in our lab.'},
-            {'fill': 'Where it came from', 'value': 'Our own photograph.'},
-            {'click': 'Add the picture'}],
-            **{'POST /api/picture': [ok({'asset': f"pic-{content['id']}",
-                                         'slide': content['id']})]})
-        shots = result['snapshots']
-        self.assertIn(f'Add a picture to “{title}”', shots['gate']['buttons'])
-        self.assertNotIn(f"Add a picture to “{closing['title']}”", shots['gate']['buttons'])
-        for words in ('The picture, a PNG or JPEG file', 'What it shows', 'Where it came from'):
-            self.assertIn(words, shots['form']['text'])
-        (address, body), = [(address, body) for address, body in self.posts(result)
-                            if address == '/api/picture']
-        self.assertEqual({key: body[key] for key in ('path', 'slide', 'name', 'alt', 'source',
-                                                     'expected')},
-                         {'path': path, 'slide': content['id'], 'name': 'rack.png',
-                          'alt': 'A rack of servers in our lab.', 'source': 'Our own photograph.',
-                          'expected': gate.get('expected')})
-        self.assertEqual(base64.b64decode(body['content']), picture)
-        self.assertIn('Pictures you give a slide stay on this computer', shots['form']['text'])
-
-    def test_a_picture_is_taken_off_a_slide_at_the_outline(self):
-        path = self.saved_started()
-        run = self.run_of(path)
-        gate = run['gate']
-        content = next(one for one in gate['slides'] if one.get('kind') == 'content')
-        other = next(one for one in gate['slides'] if one.get('kind') == 'content'
-                     and one['id'] != content['id'])
-        title = content['title']
-        pictured = {**run, 'gate': {**gate, 'pictures': {content['id']: {
-            'asset': f"pic-{content['id']}", 'alt': 'A rack of servers in our lab.',
-            'source': 'Our own photograph.', 'name': 'rack.png'}}}}
-        result = self.deck_screen(path, [
-            {'snapshot': 'gate'}, {'click': f'Remove the picture from “{title}”'},
-            {'snapshot': 'after'}],
-            **{'GET /api/run': [ok(pictured), ok(run)],
-               'POST /api/picture-remove': [ok({'slide': content['id']})]})
-        shots = result['snapshots']
-        self.assertIn('Picture: A rack of servers in our lab.', shots['gate']['text'])
-        self.assertIn(f'Remove the picture from “{title}”', shots['gate']['buttons'])
-        self.assertNotIn(f"Remove the picture from “{other['title']}”", shots['gate']['buttons'])
-        (address, body), = [(address, body) for address, body in self.posts(result)
-                            if address == '/api/picture-remove']
-        self.assertEqual(body, {'path': path, 'slide': content['id'],
-                                'expected': gate.get('expected')})
-        self.assertNotIn('Picture: A rack of servers in our lab.', shots['after']['text'])
-        # A removal refused says why beside the picture, and the picture stays.
-        said = 'The outline changed. Reload it before removing a picture.'
-        result = self.deck_screen(path, [
-            {'click': f'Remove the picture from “{title}”'}, {'snapshot': 'refused'}],
-            **{'GET /api/run': [ok(pictured)],
-               'POST /api/picture-remove': [{'status': 409, 'body': {'error': said}}]})
-        refused = result['snapshots']['refused']
-        self.assertIn(said, refused['text'])
-        self.assertIn('Picture: A rack of servers in our lab.', refused['text'])
-        self.assertNotIn(f'Remove the picture from “{title}”', refused['off'])
-
-    def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
-        path = self.saved_started(delivery='reading')   # a handout: an added slide needs no notes
-        drafted = self.run_of(path)['gate']['slides']
-        title = 'Watch each batch of the restart closely'
-        result = self.deck_screen(path, [
-            {'fill': 'A new slide’s title', 'value': title}, {'click': 'Add the slide'},
-            {'click': f'More for “{title}”'}, {'click': f'Move up: “{title}”'},
-            {'click': 'Approve'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        approval = [body for address, body in self.posts(result)
-                    if address == '/api/decide'][-1]
-        edited = approval['extra']['edited']
-        added = edited[-2]
-        self.assertEqual([one['id'] for one in edited[:-2]],
-                         [one['id'] for one in drafted[:-1]])
-        self.assertEqual(edited[-1]['id'], drafted[-1]['id'])
-        self.assertEqual((added['kind'], added['title']), ('content', title))
-        self.assertRegex(added['id'], r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$')
-        # The scripted workers draw the outline they are given, as it now stands.
-        self.workers.outline_said = {**self.workers.outline_said, 'slides': edited}
-        # What the page sent is checked by the slides tool and kept, for real.
-        self.post('decide', approval)
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
-        kept = json.loads((Path(path) / 'outline.json').read_text())
-        self.assertEqual([one['id'] for one in kept['slides']], [one['id'] for one in edited])
-
-    def test_a_slide_added_to_a_deck_presented_live_carries_its_notes(self):
-        title = 'Watch each batch of the restart closely'
-        said = 'Say why each batch is watched.'
-        with mock.patch.object(build, 'DELIVERY', 'live'):
-            self.workers.outline_said = {**self.workers.outline_said, 'delivery': 'live'}
-            path = self.saved_started()
-            self.assertEqual(self.run_of(path)['gate']['delivery'], 'live')
-            result = self.deck_screen(path, [
-                {'fill': 'A new slide’s title', 'value': title}, {'click': 'Add the slide'},
-                {'snapshot': 'unnoted'},
-                {'fill': 'What the presenter says on it', 'value': said},
-                {'click': 'Add the slide'}, {'snapshot': 'added'},
-                {'click': 'Approve'}],
-                **{'POST /api/decide': [ok(self.run_of(path))]})
-            self.assertIn('A deck presented live needs what the presenter says on each slide.',
-                          result['snapshots']['unnoted']['text'])
-            self.assertIn('Notes: ' + said, result['snapshots']['added']['text'])
-            approval = [body for address, body in self.posts(result)
-                        if address == '/api/decide'][-1]
-            added = approval['extra']['edited'][-1]
-            self.assertEqual((added['title'], added['notes'], added['rhythm']),
-                             (title, said, 'breathing'))
-            self.workers.outline_said = {**self.workers.outline_said,
-                                         'slides': approval['extra']['edited']}
-            # What the page sent is checked by the slides tool and kept, for real.
-            self.post('decide', approval)
-            self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
-            kept = json.loads((Path(path) / 'outline.json').read_text())
-            self.assertEqual(kept['slides'][-1]['notes'], said)
-
-    def test_a_slide_marked_on_the_page_is_sent_with_what_should_change(self):
-        path = self.saved_started()
-        second = self.run_of(path)['gate']['slides'][1]
-        result = self.deck_screen(path, [
-            {'snapshot': 'outline'},
-            {'click': f"Ask for changes to “{second['title']}”"}, {'snapshot': 'asking'},
-            {'fill': f"What should change on “{second['title']}”", 'value': 'Split it in two.'},
-            {'snapshot': 'marked'}, {'click': 'Send 1 change'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        self.assertIn('Points and notes', result['snapshots']['outline']['text'])
-        # Pressing Ask for changes takes the focus to the box for what should change, and
-        # the way to take the mark back names the slide.
-        asking = result['snapshots']['asking']
-        self.assertEqual(asking['focus'], f"slide-note-{second['id']}")
-        self.assertIn(f"Keep it as it is: “{second['title']}”", asking['buttons'])
-        self.assertIn('1 slide to change', result['snapshots']['marked']['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['decision'], body['extra']),
-                         ('changes', {'slides': {second['id']: 'Split it in two.'}}))
-        self.post('decide', body)
-        self.assertIn(f"- Slide `{second['id']}`: Split it in two.",
-                      self.workers.of('outline')[-1].task)
-
-    def test_typing_in_a_slide_s_box_or_its_title_leaves_the_rows_as_they_are(self):
-        path = self.saved_started()
-        second = self.run_of(path)['gate']['slides'][1]
-        keep = f"Keep it as it is: “{second['title']}”"
-        result = self.deck_screen(path, [
-            {'click': f"Ask for changes to “{second['title']}”"}, {'hold': keep},
-            {'fill': f"What should change on “{second['title']}”", 'value': 'Split it.',
-             'stay': True},
-            {'snapshot': 'noting'},
-            {'fill': 'Title of slide 3', 'value': 'Capacity holds', 'stay': True},
-            {'hold': 'Put it back as drafted'},
-            {'fill': 'Title of slide 3', 'value': 'Capacity holds with several', 'stay': True},
-            {'snapshot': 'retitling'}])
-        shots = result['snapshots']
-        self.assertEqual(shots['noting']['still'], [keep])
-        self.assertEqual(shots['noting']['focus'], f"slide-note-{second['id']}")
-        # The line that says the outline is edited is drawn once, not again at every key.
-        self.assertEqual(shots['retitling']['still'], [keep, 'Put it back as drafted'])
-        self.assertEqual(shots['retitling']['focus'], 'outline-title-2')
-        self.assertIn('1 slide to change · edited here', shots['retitling']['text'])
-        self.assertEqual(self.posts(result), [])
-
-    def test_a_mark_follows_its_slide_and_goes_when_the_slide_is_removed(self):
-        path = self.saved_started()
-        drafted = self.run_of(path)['gate']['slides']
-        second, fourth = drafted[1], drafted[3]
-        result = self.deck_screen(path, [
-            {'click': f"Ask for changes to “{second['title']}”"},
-            {'fill': f"What should change on “{second['title']}”", 'value': 'Shorter.'},
-            {'click': f"Ask for changes to “{fourth['title']}”"},
-            {'fill': f"What should change on “{fourth['title']}”", 'value': 'Drop it.'},
-            {'click': f"More for “{second['title']}”"},
-            {'click': f"Move down: “{second['title']}”"}, {'snapshot': 'moved'},
-            {'click': f"More for “{fourth['title']}”"},
-            {'click': f"Remove “{fourth['title']}”"}, {'snapshot': 'removed'},
-            {'click': 'Send 1 change'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        moved = result['snapshots']['moved']
-        self.assertEqual(moved['focus'], f"Move down: “{second['title']}”")
-        self.assertEqual(moved['fields'][f"What should change on “{second['title']}”"],
-                         'Shorter.')
-        self.assertIn('2 slides to change · edited here', moved['text'])
-        removed = result['snapshots']['removed']
-        self.assertIn('1 slide to change · edited here', removed['text'])
-        self.assertNotIn(f"What should change on “{fourth['title']}”", removed['fields'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['decision'], body['extra']['slides']),
-                         ('changes', {second['id']: 'Shorter.'}))
-        self.assertEqual([one['id'] for one in body['extra']['edited']],
-                         [drafted[0]['id'], drafted[2]['id'], second['id'], drafted[4]['id'],
-                          drafted[5]['id']])
-        self.post('decide', body)
-        said = self.workers.of('outline')[-1].task
-        self.assertIn(f"- Slide `{second['id']}`: Shorter.", said)
-        self.assertNotIn(fourth['id'], said)
-
-    def test_storyboard_preview_sends_the_current_unsaved_outline(self):
-        path = self.saved_started()
-        gate = self.run_of(path)['gate']
-        result = self.deck_screen(path, [
-            {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
-            {'click': 'Refresh now'}, {'snapshot': 'shown'}],
-            **{'POST /api/storyboard': [ok({'src': '/api/deck-draft?ticket=shown',
-                                            'expected': gate['expected']})]})
-        (_, body), = self.posts(result)
-        self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
-        self.assertEqual(body['expected'], gate['expected'])
-        self.assertIn('A clearer proposed title', result['snapshots']['shown']['fields'].values())
-
-    def test_unreviewed_native_draft_offers_review_or_explicit_as_is_export(self):
-        path = self.saved_started(initial_review='user-first', output='pptx')
-        for _ in range(8):
-            gate = self.run_of(path)['gate']
-            if gate['name'] == 'gate:build': break
-            self.decided(path)
-        shown = self.run_of(path)
-        result = self.deck_screen(path, [{'snapshot': 'draft'}, {'click': 'Check the deck'}],
-            **{'POST /api/review-draft': [ok(shown)]})
-        self.assertIn('First draft, not checked', result['snapshots']['draft']['text'])
-        self.assertIn('Use this first draft', result['snapshots']['draft']['buttons'])
-        for old in ('Unreviewed first draft', 'AI review', 'AI critique', 'as-is'):
-            self.assertNotIn(old, result['snapshots']['draft']['text']
-                             + '\n'.join(result['snapshots']['draft']['buttons']))
-        self.assertNotIn('The check has nothing left to raise', result['snapshots']['draft']['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual(body, {'path': path, 'expected': shown['gate']['expected_deck']})
-
-    def test_an_outline_put_back_as_drafted_is_approved_as_it_was(self):
-        path = self.saved_started()
-        second = self.run_of(path)['gate']['slides'][1]
-        result = self.deck_screen(path, [
-            {'click': f"Ask for changes to “{second['title']}”"},
-            {'fill': f"What should change on “{second['title']}”", 'value': 'Split it.'},
-            {'click': f"More for “{second['title']}”"}, {'click': f"Remove “{second['title']}”"},
-            {'fill': 'Title of slide 2', 'value': 'Batches, one at a time'},
-            {'snapshot': 'edited'}, {'click': 'Put it back as drafted'}, {'snapshot': 'back'},
-            {'click': 'Approve'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        edited = result['snapshots']['edited']['text']
-        self.assertIn('0 slides to change · edited here', edited)
-        self.assertIn('Your edits go with your decision', edited)
-        # The tally follows the outline put back, the slide removed with its mark comes back
-        # unmarked, and nothing edited goes with the approval.
-        back = result['snapshots']['back']
-        self.assertNotIn('edited here', back['text'])
-        self.assertIn(f"Ask for changes to “{second['title']}”", back['buttons'])
-        (_, body), = self.posts(result)
-        self.assertEqual(body['decision'], 'approve')
-        self.assertNotIn('extra', body)
-
-    def test_approved_keeps_its_time_once_the_deck_no_longer_waits(self):
-        """#256: the deck's waiting toast goes once it is decided; Approved stays its time."""
-        path = self.saved_started()
-        listed = self.get('decks')
-        self.assertEqual([brief['path'] for brief in listed['needs']], [path])
-        moved = json.loads(json.dumps(listed))
-        moved['working'], moved['needs'] = moved['needs'], []
-        moved['working'][0].update(state='working', needs=False, sentence='Drafting the deck.')
-        result = self.deck_screen(path, [
-            {'poll': True}, {'click': 'Approve'}, {'poll': True}, {'snapshot': 'after'}],
-            **{'POST /api/decide': [ok(self.run_of(path))],
-               'GET /api/decks': [ok(listed), ok(listed), ok(moved)]})
-        toasts = result['snapshots']['after']['toasts']
-        self.assertTrue(any(said.startswith('Approved. It carries on by itself.')
-                            for said in toasts), toasts)
-
-    def test_a_deck_made_as_powerpoint_is_sent_to_google_slides_from_its_screen(self):
-        path = self.saved_started()
-        self.slides.run.drive = False
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            self.decided(path, gate)
-        before = self.run_of(path)
-        self.slides.run.drive = True
-        sent = self.post('deliver', {'path': path})
-        result = self.deck_screen(path, [
-            {'snapshot': 'fallback'}, {'click': 'Send to Google Slides'}, {'snapshot': 'asked'},
-            {'click': 'Cancel'}, {'snapshot': 'cancelled'}, {'click': 'Send to Google Slides'},
-            {'click': 'Send to Google Slides'}, {'snapshot': 'sent'}],
-            **{'GET /api/run': [ok(before), ok(sent)],
-               'POST /api/deliver': [ok(sent)]})
-        fallback = result['snapshots']['fallback']
-        self.assertIn("Google isn't connected, so this deck was made as a PowerPoint file.",
-                      fallback['text'])
-        self.assertIn('Send to Google Slides', fallback['buttons'])
-        # Nothing goes to Google on the first press (#257): its sheet says what goes, and as
-        # which revision, and Cancel sends nothing.
-        self.assertIn('Revision 1, delivered as a PowerPoint file, goes to Google Slides as '
-                      'revision 2.', result['snapshots']['asked']['sheet'])
-        self.assertEqual(result['snapshots']['asked']['posts'], 0)
-        self.assertEqual(result['snapshots']['cancelled']['posts'], 0)
-        self.assertEqual([body for address, body in self.posts(result)],
-                         [{'path': path}])
-        shot = result['snapshots']['sent']
-        self.assertIn('Revision 2 is in Google Slides now.', shot['toasts'])
-        self.assertNotIn('Send to Google Slides', shot['buttons'])
-        self.assertIn('Revision 2.', shot['text'])
-        # Both revisions keep their receipts, each opened its own way.
-        self.assertEqual([(one['revision'], one['format']) for one in sent['deliver']['receipts']],
-                         [(1, 'pptx'), (2, 'google')])
-        self.assertIn('Revision 2 · Google Slides', shot['text'])
-        self.assertIn('Revision 1 · PowerPoint file', shot['text'])
-        self.assertIn('Download revision 1', shot['buttons'])
-        self.assertIn('Open revision 2 in Google Slides, in a new tab',
-                      [link['name'] for link in shot['links']])
-
-    def test_powerpoint_by_choice_offers_google_and_an_explicit_change_sheet(self):
-        path = self.saved_started(output='pptx')
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            self.decided(path, gate)
-        shown = {**self.run_of(path), 'driver': None, 'mine': True}
-        result = self.deck_screen(path, [{'snapshot': 'done'}, {'click': 'Ask for changes'},
-            {'snapshot': 'changes'}], **{'GET /api/run': [ok(shown)]})
-        self.assertIn('Send to Google Slides', result['snapshots']['done']['buttons'])
-        self.assertIn('It runs from this computer again, and your team sees that.', result['snapshots']['changes']['text'])
-
-    def test_an_existing_deck_shows_its_slides_at_classify(self):
-        path = self.saved_started(route='existing', level='polish',
-                            source={'kind': 'upload', 'name': 'old.pptx'},
-                            uploads={'old.pptx': DECK})
-        result = self.deck_screen(path, [{'snapshot': 'classify'}])
-        shot = result['snapshots']['classify']
-        # Its slides are read by code that takes no note: there is nothing to ask it.
-        self.assertNotIn('Ask for changes', shot['buttons'])
-        self.assertIn('To read another deck, stop this one and start a new deck from it.',
-                      shot['text'])
-        self.assertIn('Your deck has 3 slides.', shot['text'])
-        self.assertIn('Slide 1 of 3', shot['text'])
-        self.assertTrue(shot['pictures'])
-        for picture in shot['pictures']:
-            self.assertIn('kind=original&number=1', picture['of'])
-
-    def test_the_build_gate_shows_a_slide_s_note(self):
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        view = self.run_of(path)
-        said = ("This slide is drawn with a title because its picture can't be carried onto "
-                'a layout without one.')
-        view['gate']['slides'][0]['note'] = said
-        answers = self.answers(**{'GET /api/run': [ok(view)]})
-        result = self.run_page(answers, [{'click': 'Review Rolling restarts'},
-                                         {'see': said}, {'snapshot': 'build'}])
-        self.assertIn(said, result['snapshots']['build']['text'])
-
-    def test_live_previews_are_unreviewed_without_another_approval_gate(self):
-        path = self.saved_started()
-        view = self.run_of(path)
-        view.update(state='working', gate=None, build_progress={
-            'incomplete': True, 'slides': [{'number': 3, 'id': 'first', 'title': 'First slide',
-                                          'ref': 'a' * 32, 'revision': 'b' * 64}]})
-        result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}),
-            [{'click': 'Review Rolling restarts'}, {'snapshot': 'progress'}])
-        shot = result['snapshots']['progress']
-        for text in ('Slides taking shape', 'Unreviewed', 'render stopped',
-                     'Slide 3 · 1 preview available'):
-            self.assertIn(text, shot['text'])
-        self.assertNotIn('Render ' + 'b' * 12, shot['text'], 'no render hash under a slide')
-        self.assertTrue(any('kind=progress&name=' + 'a' * 32 in image['of']
-                            for image in shot['pictures']))
-        self.assertFalse(any(endpoint == '/api/decide' for endpoint, _ in self.posts(result)))
-
-    def test_a_deck_built_from_an_existing_one_shows_each_slide_before_and_after(self):
-        # The stand-in workers cannot rebuild the stand-in deck, so the build gate of a deck
-        # from scratch is given the before and after an existing deck's gate has.
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        view = self.run_of(path)
-        view['gate']['pairs'] = [{'number': 1, 'before': {'kind': 'original', 'ref': 1},
-                                  'after': {'kind': 'build', 'ref': 1}}]
-        view['gate']['changed'] = [1]
-        answers = self.answers(**{'GET /api/run': [ok(view)]})
-        result = self.run_page(answers, [{'click': 'Review Rolling restarts'},
-                                         {'see': 'Slide 1 before'}, {'snapshot': 'build'}])
-        shot = result['snapshots']['build']
-        for shown in ('Before', 'After', 'Changed', 'Built again after your changes: slide 1.'):
-            self.assertIn(shown, shot['text'])
-        kinds = {picture['of'].split('kind=')[1].split('&')[0] for picture in shot['pictures']}
-        self.assertEqual(kinds, {'original', 'build'})
-
-    def test_another_brand_chosen_on_the_page_has_its_cover_drawn_again(self):
-        path = self.saved_started()
-        self.decided(path, 'gate:outline')
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
-        result = self.deck_screen(path, [
-            {'click': 'Choose another brand'}, {'fill': 'The brand’s variant', 'value': 'dark'},
-            {'click': 'Use this brand'}, {'snapshot': 'sent'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        (address, body), = self.posts(result)
-        self.assertEqual((address, body['gate'], body['decision'], body['extra']),
-                         ('/api/decide', 'gate:look', 'changes',
-                          {'brand': 'example', 'variant': 'dark'}))
-        self.assertNotIn('note', body)
-        self.assertEqual(result['snapshots']['sent']['sheet'], '')
-        # What the page sent is what the runner takes: the cover comes back in the new brand.
-        self.post('decide', body)
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['made_in'], gate['round']),
-                         ('gate:look', 'example (dark)', 2))
-
-    def test_the_brands_looks_are_shown_and_the_pick_is_sent_in_the_persons_words(self):
-        self.brand.run.offers_looks = True
-        path = self.saved_started()
-        self.decided(path, 'gate:outline')
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
-        result = self.deck_screen(path, [
-            {'see': 'Every look'}, {'see': 'Clear'}, {'see': 'Bold'},
-            {'click': 'Bold'},
-            {'fill': 'Your words, kept with your choice (optional)', 'value': 'Bold for a launch.'},
-            {'snapshot': 'looks'}, {'click': 'Approve'}, {'snapshot': 'sent'}],
-            **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
-        shot = result['snapshots']['looks']
-        for shown in ('Choose the look', 'Clear', 'the brand’s default', 'Bold',
-                      'Launches and keynotes.', 'Rendered on this computer with LibreOffice.'):
-            self.assertIn(shown, shot['text'])
-        self.assertNotIn('too old to offer looks', shot['text'])
-        refs = {picture['of'].split('kind=look&')[1] for picture in shot['pictures']
-                if 'kind=look' in picture['of']}
-        self.assertTrue({'name=sheet', 'number=1', 'number=2'} <= refs, refs)
-        (address, body), = self.posts(result)
-        self.assertEqual((address, body['gate'], body['decision'], body['extra'], body['note']),
-                         ('/api/decide', 'gate:look', 'approve', {'look': 'example-bold'},
-                          'Bold for a launch.'))
-        # What the page sent is what the runner takes: the deck goes on in the bold look.
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
-
-    def test_direction_approval_needs_a_pick_until_the_outline_is_edited(self):
-        from unittest import mock
-        from studio_core import review_policy
-        self.brand.run.offers_looks = True
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started()
-        result = self.deck_screen(path, [{'snapshot': 'unpicked'}, {'see': 'Every look'},
-            {'see': 'Clear'}, {'click': 'Clear'}, {'snapshot': 'picked'},
-            {'fill': 'Title of slide 2', 'value': 'An edited synthetic claim'}, {'snapshot': 'edited'}],
-            **{'GET /api/slide': [PICTURE] * 3})
-        shots = result['snapshots']
-        self.assertIn('Approve', shots['unpicked']['off'])
-        self.assertIn('1 look to pick', shots['unpicked']['text'])
-        self.assertNotIn('Approve', shots['picked']['off'])
-        self.assertNotIn('Approve', shots['edited']['off'])
-        self.assertIn('You edited the outline, so the looks will be drawn again from it.', shots['edited']['text'])
-
-    def test_the_direction_review_hosts_the_look_pick(self):
-        from unittest import mock
-        from studio_core import review_policy
-        self.brand.run.offers_looks = True
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started()
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
-        result = self.deck_screen(path, [
-            {'see': 'Every look'}, {'see': 'Clear'}, {'see': 'Bold'},
-            {'click': 'Bold'}, {'snapshot': 'review'}, {'click': 'Approve'}],
-            **{'POST /api/decide': [ok(self.run_of(path))], 'GET /api/slide': [PICTURE] * 3})
-        self.assertIn('Choose the look', result['snapshots']['review']['text'])
-        (address, body), = self.posts(result)
-        self.assertEqual((body['gate'], body['decision'], body['extra']),
-                         ('gate:outline', 'approve', {'look': 'example-bold'}))
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
-
-    def test_looks_that_cannot_be_rendered_offer_to_try_again_or_carry_on(self):
-        self.brand.run.offers_looks = True
-        self.brand.run.unrenderable = 'No renderer here.'
-        path = self.saved_started()
-        self.decided(path, 'gate:outline')
-        result = self.deck_screen(path, [
-            {'snapshot': 'failed'}, {'click': 'Try again'},
-            {'click': 'Carry on in the brand’s default look'}],
-            **{'POST /api/decide': [ok(self.run_of(path)), ok(self.run_of(path))]})
-        text = result['snapshots']['failed']['text']
-        self.assertIn("The brand's looks could not be rendered here (No renderer here.)", text)
-        sent = [body for _, body in self.posts(result)]
-        self.assertEqual([(body['decision'], body['extra']) for body in sent],
-                         [('changes', {'look': 'again'}), ('approve', {'look': 'default'})])
-        self.post('decide', sent[1])
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
-        # The deck's own gate says its look was chosen without being seen rendered.
-        from studio_core import deck_flow
-        shot = self.deck_screen(path, [{'snapshot': 'deck'}])['snapshots']['deck']
-        self.assertIn(deck_flow.UNREVIEWED, shot['text'])
-
-    def test_an_older_brand_says_it_offers_no_looks(self):
-        path = self.saved_started()
-        self.decided(path, 'gate:outline')
-        result = self.deck_screen(path, [{'snapshot': 'look'}])
-        self.assertIn('too old to offer looks', result['snapshots']['look']['text'])
-
-    def test_an_approval_that_is_refused_is_said_on_the_deck_s_screen(self):
-        path = self.saved_started()
-        refused = {'status': 409, 'body': {'error': 'The outline is not waiting for a '
-                                                    'decision.'}}
-        result = self.deck_screen(path, [{'click': 'Approve'}, {'snapshot': 'refused'}],
-                                  **{'POST /api/decide': [refused]})
-        shot = result['snapshots']['refused']
-        self.assertEqual(shot['sheet'], '')
-        self.assertIn('The outline is not waiting for a decision. Nothing was decided.',
-                      shot['text'])
-        self.assertIn('Approve', shot['buttons'])
-
-    def test_a_document_said_to_be_wrong_is_corrected_with_the_approval(self):
-        path = self.saved_started(route='document', research=False,
-                            source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['verdict']), ('gate:classify', 'material'))
-        result = self.deck_screen(path, [{'snapshot': 'gate'},
-                                         {'click': 'A finished script for the slides'},
-                                         {'snapshot': 'wrong'},
-                                         {'click': 'Take it as a finished script for the slides'}],
-                                  **{'POST /api/decide': [ok(self.run_of(path))]})
-        # Approve says what it now does: it takes the document as the other kind.
-        self.assertEqual(result['snapshots']['gate']['filled'], ['Approve'])
-        self.assertEqual(result['snapshots']['wrong']['filled'],
-                         ['Take it as a finished script for the slides'])
-        self.assertIn('It reads as material to build from.',
-                      result['snapshots']['gate']['text'])
-        # An explicit choice naming the kind Approve takes it as, not an action-like chip.
-        self.assertIn('Material to build from', result['snapshots']['gate']['pressed'])
-        self.assertIn('A finished script for the slides',
-                      result['snapshots']['wrong']['pressed'])
-        self.assertIn('It will be taken as a finished script for the slides instead.',
-                      result['snapshots']['wrong']['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual(body['extra'], {'kind': 'spec'})
-        self.post('decide', body)
-        self.assertEqual(self.record(Path(path))['classified'], 'spec')
-
     def test_decks_status_settings_and_published_are_drawn_from_the_runners_answers(self):
-        self.saved_started(title='Rolling restarts')
-        self.saved_started(title='Capacity planning')
+        self.started(title='Rolling restarts')
+        self.started(title='Capacity planning')
         answers = self.answers(**{'GET /api/status': [ok(self.get('status'))],
                                   'GET /api/published': [ok(self.get('published'))]})
         result = self.run_page(answers, [
@@ -2152,8 +917,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_search_and_jump_finds_a_deck_by_name_and_opens_it(self):
-        path = self.saved_started(title='Capacity planning')
-        self.saved_started(title='Rolling restarts')
+        path = self.started(title='Capacity planning')
+        self.started(title='Rolling restarts')
         answers = self.answers(**{'GET /api/run': [ok(self.run_of(path))]})
         result = self.run_page(answers, [{'snapshot': 'home'}, {'command': 'Capacity planning'},
                                          {'snapshot': 'deck'}], shell=True)
@@ -2165,8 +930,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotEqual(result['snapshots']['home']['heading'], 'Capacity planning')
 
     def test_a_deck_is_deleted_from_the_decks_list_through_its_own_sheet(self):
-        path = self.saved_started(title='Rolling restarts')
-        self.saved_started(title='Capacity planning')
+        path = self.started(title='Rolling restarts')
+        self.started(title='Capacity planning')
         before = self.get('decks')
         leaving = self.get('delete', path=path)
         deleted = self.post('delete', {'path': path, 'title': 'Rolling restarts'})
@@ -2206,8 +971,8 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_a_list_offers_delete_only_where_the_runner_would_allow_it_and_says_its_refusal(
             self):
-        path = self.saved_started(title='Rolling restarts')
-        other = self.saved_started(title='Capacity planning')
+        path = self.started(title='Rolling restarts')
+        other = self.started(title='Capacity planning')
         listed = self.get('decks')
         theirs = next(brief for brief in listed['needs'] + listed['working']
                       if brief['path'] == other)
@@ -2263,17 +1028,6 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual([address for address, _ in self.posts(result)[1:]],
                          ['/api/setup/check'])
 
-    def test_a_deck_is_paused_and_a_refusal_changes_nothing(self):
-        path = self.saved_started()
-        refused = {'status': 409, 'body': {'error': 'Only a deck that is working can be '
-                                                    'paused. This one is waiting for you.'}}
-        result = self.deck_screen(path, [{'snapshot': 'waiting'}, {'click': 'Stop'},
-                                         {'snapshot': 'stopped'}],
-                                  **{'POST /api/run': [refused]})
-        self.assertIn('Undo the last step', result['snapshots']['waiting']['buttons'])
-        self.assertIn('Nothing was changed.', result['snapshots']['stopped']['text'])
-        self.assertEqual(self.posts(result), [('/api/run', {'path': path, 'action': 'stop'})])
-
 
     def brand_upkeep(self) -> dict:
         """What the runner's own upkeep reports with a brand skill's repository named and no
@@ -2295,7 +1049,7 @@ class ScreenTests(ScriptedPage, PageCase):
         said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
          'Marketing Studio release and run marketing-studio update --from <the '
          'unpacked folder> --yes.')
-        self.saved_started()
+        self.started()
         found = self.brand_upkeep()
         found = {**found, 'update': {**found['update'], 'offered': False},
                  'versions': {**found['versions'], 'suite': 'marketing-studio'}}
@@ -2311,7 +1065,7 @@ class ScreenTests(ScriptedPage, PageCase):
                     self.assertNotIn(button, shot['buttons'])
 
     def test_home_offers_the_brand_skill_and_asks_before_it_is_installed(self):
-        self.saved_started()
+        self.started()
         found = self.brand_upkeep()
         offer = found['versions']['brand']
         self.assertEqual((offer['offered'], offer['action'], offer['commit']),
@@ -2441,226 +1195,6 @@ class ScreenTests(ScriptedPage, PageCase):
 
     # --- what a slide says, after the deck is built -----------------------------------------
 
-    def test_a_slide_whose_words_are_wrong_goes_back_to_the_outline_marked(self):
-        self.workers.found = [lambda slides: [{
-            'slide': slides[1]['id'], 'question': 1, 'severity': 'major', 'about': 'content',
-            'note': 'The title claims more than the points say.'}]]
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        second = self.run_of(path)['gate']['slides'][1]
-        result = self.deck_screen(path, [
-            {'click': 'Next slide'}, {'snapshot': 'second'},
-            {'click': 'Change what it says'}, {'snapshot': 'saying'},
-            {'click': 'Change what they say'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        shot = result['snapshots']['second']
-        self.assertIn('About what it says', shot['text'])
-        self.assertIn('Change what it says, and its words go back to the outline', shot['text'])
-        self.assertIn('Change what it says', shot['buttons'])
-        saying = result['snapshots']['saying']
-        self.assertIn('Words to change: slide 2.', saying['text'])
-        self.assertIn('Change what they say', saying['buttons'])
-        (address, body), = self.posts(result)
-        self.assertEqual((address, body['gate'], body['decision'], body['extra']),
-                         ('/api/decide', 'gate:build', 'changes',
-                          {'direction_target': 'gate:outline', 'slides': [2]}))
-        self.assertNotIn('note', body)
-        # What the page sent reopens the outline for real, with the slide marked on it.
-        self.post('decide', body)
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['saying']), ('gate:outline', {second['title'] and
-                                                                           gate['slides'][1]['id']: ''}))
-        result = self.deck_screen(path, [
-            {'snapshot': 'outline'},
-            {'fill': f"What should change on “{gate['slides'][1]['title']}”",
-             'value': 'Claim only what the points say.'},
-            {'click': 'Send 1 change'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        shot = result['snapshots']['outline']
-        self.assertIn('Back from the deck: slide 2 says the wrong thing.', shot['text'])
-        self.assertIn(f"What should change on “{gate['slides'][1]['title']}”", shot['fields'])
-        self.assertIn(f"Keep it as it is: “{gate['slides'][1]['title']}”", shot['buttons'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['decision'], body['extra']['slides']),
-                         ('changes', {gate['slides'][1]['id']: 'Claim only what the points say.'}))
-
-    def test_a_slide_is_marked_to_be_drawn_again_or_to_say_something_else_not_both(self):
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        result = self.deck_screen(path, [
-            {'snapshot': 'unmarked'}, {'click': 'Draw it again'},
-            {'fill': 'What should change on slide 1', 'value': 'Calmer.'},
-            {'click': 'Change what it says'}, {'snapshot': 'saying'},
-            {'click': 'Draw it again'}, {'snapshot': 'marked'},
-            {'click': 'No change'}, {'snapshot': 'none'}])
-        # One exclusive choice per slide: no change, drawn again, or its words changed.
-        self.assertIn('No change', result['snapshots']['unmarked']['pressed'])
-        saying = result['snapshots']['saying']
-        self.assertIn('Change what it says', saying['pressed'])
-        self.assertNotIn('Draw it again', saying['pressed'])
-        self.assertIn('Words to change: slide 1.', saying['text'])
-        self.assertNotIn('Marked for changes', saying['text'])
-        self.assertNotIn('What should change on slide 1', saying['fields'])
-        marked = result['snapshots']['marked']
-        self.assertIn('Draw it again', marked['pressed'])
-        self.assertNotIn('Change what it says', marked['pressed'])
-        self.assertNotIn('Marked for changes', result['snapshots']['none']['text'])
-        self.assertNotIn('Words to change', result['snapshots']['none']['text'])
-        self.assertNotIn('Words to change', marked['text'])
-        self.assertEqual(marked['fields']['What should change on slide 1'], '')
-        self.assertEqual(self.posts(result), [])
-
-    def test_a_deck_without_an_outline_offers_no_change_to_what_a_slide_says(self):
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        view = self.run_of(path)
-        # As an existing deck polished has it: no outline step in its timeline.
-        view['timeline'] = [row for row in view['timeline'] if row['name'] != 'gate:outline']
-        result = self.run_page(self.answers(**{'GET /api/run': [ok(view)]}),
-                               [{'click': 'Review Rolling restarts'}, {'snapshot': 'build'}])
-        shot = result['snapshots']['build']
-        self.assertIn('Draw it again', shot['buttons'])
-        self.assertNotIn('Change what it says', shot['buttons'])
-
-    def test_a_delivered_deck_marks_slides_and_says_what_a_whole_build_costs(self):
-        self.workers.cost = 0.25
-        path = self.saved_started()
-        self.to_end(Path(path))
-        result = self.deck_screen(path, [
-            {'snapshot': 'delivered'}, {'click': 'Ask for changes'}, {'snapshot': 'whole'},
-            {'click': 'Cancel'}, {'click': 'Draw it again'},
-            {'click': 'Ask for changes'}, {'snapshot': 'marked'}, {'type': 'Tighter.'},
-            {'click': 'Send for changes'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        shot = result['snapshots']['delivered']
-        self.assertIn('Slide 1 of 6', shot['text'])
-        for name in ('No change', 'Draw it again', 'Change what it says', 'Ask for changes'):
-            self.assertIn(name, shot['buttons'])
-        self.assertIn('No slides marked: the whole deck is drawn again (about $0.50 and '
-                      '1 minute, as the last build took).', result['snapshots']['whole']['sheet'])
-        self.assertIn('slide 1, which you marked', result['snapshots']['marked']['sheet'])
-        self.assertNotIn('No slides marked', result['snapshots']['marked']['sheet'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['gate'], body['decision'], body['note'], body['extra']),
-                         ('gate:build', 'changes', 'Tighter.', {'slides': [1]}))
-
-    def test_a_delivered_slide_s_words_go_back_to_the_outline(self):
-        path = self.saved_started()
-        self.to_end(Path(path))
-        result = self.deck_screen(path, [
-            {'click': 'Next slide'}, {'click': 'Change what it says'},
-            {'click': 'Change what they say'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        (_, body), = self.posts(result)
-        self.assertEqual((body['gate'], body['decision'], body['extra']),
-                         ('gate:build', 'changes',
-                          {'direction_target': 'gate:outline', 'slides': [2]}))
-        self.post('decide', body)
-        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
-
-    def test_that_s_wrong_asks_first_and_says_its_price(self):
-        from studio_core import review_policy
-        self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
-                                   'slides': 2}
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started(route='document', research=True, research_sources='both',
-                                source={'kind': 'paste', 'text': 'A slide script.'})
-        gate = self.run_of(path)['gate']
-        price = gate['reclassify_price']['says']
-        result = self.deck_screen(path, [
-            {'click': 'That’s wrong'}, {'snapshot': 'asked'}, {'click': 'Cancel'},
-            {'snapshot': 'cancelled'}, {'click': 'That’s wrong'}, {'click': 'Read it again'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        asked = result['snapshots']['asked']
-        self.assertIn('Read it as material to build from?', asked['sheet'])
-        self.assertIn(price, asked['sheet'])
-        self.assertIn('Read it again', asked['buttons'])
-        self.assertIn('Cancel', asked['buttons'])
-        self.assertEqual(result['snapshots']['cancelled']['posts'], 0)
-        (address, body), = self.posts(result)
-        self.assertEqual(address, '/api/decide')
-        self.assertEqual(body['extra'], {'direction_target': 'gate:classify', 'kind': 'material'})
-
-    def test_the_direction_review_shows_how_the_document_was_read(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.saved_started(route='document', research=True, research_sources='both',
-                                source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['classify']['verdict']), ('gate:outline', 'material'))
-        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'That’s wrong'},
-                                         {'click': 'Read it again'}],
-                                  **{'POST /api/decide': [ok(self.run_of(path))]})
-        shot = result['snapshots']['direction']
-        self.assertIn('Your document was read as material to build from.', shot['text'])
-        self.assertIn('That’s wrong: it is a finished script for the slides', shot['buttons'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['gate'], body['decision'], body['expected'], body['extra']),
-                         ('gate:outline', 'changes', gate['expected'],
-                          {'direction_target': 'gate:classify', 'kind': 'spec'}))
-        self.post('decide', body)
-        self.assertEqual(self.record(Path(path))['classified'], 'spec')
-        self.assertIn('Your document was read as a finished script',
-                      self.deck_screen(path, [{'snapshot': 'again'}])['snapshots']['again']['text'])
-
-    def test_the_storyboard_redraws_itself_after_the_last_edit(self):
-        path = self.saved_started()
-        gate = self.run_of(path)['gate']
-        result = self.deck_screen(path, [
-            {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
-            {'snapshot': 'edited'}, {'timer': 'redrawStoryboard'}, {'snapshot': 'redrawn'}],
-            **{'GET /api/storyboard': [ok({'src': '/api/deck-draft?ticket=before',
-                                           'expected': gate['expected']})],
-               'POST /api/storyboard': [ok({'src': '/api/deck-draft?ticket=after',
-                                            'expected': gate['expected']})]})
-        edited = result['snapshots']['edited']
-        self.assertIn('Refresh now', edited['buttons'])
-        self.assertIn('The storyboard is redrawn once you stop editing.', edited['text'])
-        self.assertEqual(edited['posts'], 0)
-        redrawn = result['snapshots']['redrawn']
-        self.assertNotIn('The storyboard is redrawn once you stop editing.', redrawn['text'])
-        (_, body), = self.posts(result)
-        self.assertEqual(body['slides'][1]['title'], 'A clearer proposed title')
-        self.assertEqual(body['expected'], gate['expected'])
-
-    def test_the_build_gate_shows_saved_feedback_and_takes_a_line_on_each_slide(self):
-        path = self.saved_started()
-        self.to_gate(Path(path), 'gate:build')
-        self.post('build-feedback', {'path': path, 'ref': 'a' * 32,
-                                     'note': 'Name the batch size.', 'number': 3})
-        result = self.deck_screen(path, [
-            {'click': 'Next slide'}, {'click': 'Next slide'}, {'snapshot': 'third'},
-            {'fill': 'What should change on slide 3', 'value': 'Name the batch size, in words.'},
-            {'click': 'Previous slide'}, {'click': 'Draw it again'},
-            {'fill': 'What should change on slide 2', 'value': 'More room.'},
-            {'click': 'Ask for changes'}, {'snapshot': 'sheet'}, {'type': 'Calmer overall.'},
-            {'click': 'Send for changes'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        third = result['snapshots']['third']
-        self.assertIn('Your feedback on it: Name the batch size.', third['text'])
-        self.assertIn('Draw it again', third['pressed'])
-        self.assertEqual(third['fields']['What should change on slide 3'], 'Name the batch size.')
-        self.assertIn('slides 2 and 3, which you marked', result['snapshots']['sheet']['sheet'])
-        (_, body), = self.posts(result)
-        self.assertEqual((body['note'], body['extra']),
-                         ('Calmer overall.', {'slides': [2, 3], 'slide_notes': {
-                             '2': 'More room.', '3': 'Name the batch size, in words.'}}))
-        # The kept note taken away on the page is taken away for real: the lines are sent
-        # even when none is left, so the runner does not put it back.
-        withdrawn = self.deck_screen(path, [
-            {'click': 'Next slide'}, {'click': 'Next slide'},
-            {'fill': 'What should change on slide 3', 'value': ''},
-            {'click': 'Ask for changes'}, {'type': 'As it is.'}, {'click': 'Send for changes'}],
-            **{'POST /api/decide': [ok(self.run_of(path))]})
-        (_, sent), = self.posts(withdrawn)
-        self.assertEqual(sent['extra'], {'slides': [3], 'slide_notes': {}})
-        self.post('decide', body)
-        self.assertIn('Slide 3: Name the batch size, in words.',
-                      self.workers.of('section')[-1].task)
-        self.assertEqual(self.record(Path(path))['build_feedback'], [])
-
 
 class OneNameEachTests(unittest.TestCase):
     """Presentation Studio says each thing one way, true at every review level."""
@@ -2679,15 +1213,13 @@ class OneNameEachTests(unittest.TestCase):
                     'work folder', "notify('Deck copied", "notify('Slide feedback saved"):
             with self.subTest(old=old):
                 self.assertNotIn(old, page + runner)
-        for new in ('Ask for changes to this finding', 'Keep it as it is',
-                    'Ask for changes to the research', 'Ask for changes to this slide',
-                    'The check has nothing left to raise', 'Applies to the slides shown here.',
-                    "card('Assistant jobs now')", 'What you gave', 'Say which slides and what to fix.',
+        # The new names that lived only on the earlier step-by-step flow's stop screens went
+        # with them (GitHub issue #542); the old names stay gone everywhere.
+        for new in ("card('Assistant jobs now')", 'Say which slides and what to fix.',
                     'It may tighten, split, merge or reorder content, then redesign.',
-                    'Approve, and it carries on from what you gave.',
                     'Your assistant, workspace, brand and delivery choices apply across all studios.',
-                    "toast('Deck copied into this workspace.')", "toast('Slide feedback saved.')",
-                    'At each stop you see what is made so far: each slide is turned'):
+                    "toast('Deck copied into this workspace.')",
+                    'Slide previews show what is made so far: each slide is turned'):
             with self.subTest(new=new):
                 self.assertIn(new, page + runner)
         from runner import engine

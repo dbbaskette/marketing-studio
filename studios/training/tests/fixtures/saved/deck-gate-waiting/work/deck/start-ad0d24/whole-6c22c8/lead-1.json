@@ -1,0 +1,23 @@
+{
+  "direction": {
+    "focal": "headingPrimary",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "brief": {
+        "rhythm": "anchor"
+      },
+      "id": "cover-restarts",
+      "layout": "Title slide",
+      "notes": "1 min. Welcome, and what is assumed.",
+      "sources": [
+        "outline"
+      ],
+      "subtitle": "What they do, and when capacity holds",
+      "title": "Rolling restarts"
+    }
+  ],
+  "title": "Rolling restarts",
+  "version": 1
+}

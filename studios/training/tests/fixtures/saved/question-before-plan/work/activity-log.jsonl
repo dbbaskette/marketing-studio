@@ -1,0 +1,4 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T22:36:25Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:25Z"}
+{"id":"047342cf2d29","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:25Z","ended_at":"2026-11-24T22:36:25Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:25Z","text":"Asking a question"}],"dropped":0}
+{"checkpoint":"ready","unit":"research-plan","at":"2026-11-24T22:36:25Z"}

@@ -8,7 +8,7 @@ outline or notes, or a draft. Nothing stops after Start. The desk has section no
 **Add a source** and **Needs you before publishing**. **Finishing** proposes **Copy edit**
 (grammar and wording fixes, each approved first), Humanize, **Quick check** (the mechanical
 check, no assistant), fact checks, headlines, feedback, **Apply a voice** and Before
-publishing; nothing changes until Apply. Blogs started before the desk keep their step-by-step run.
+publishing; nothing changes until Apply. Blogs started before the desk are saved records; nothing continues them step by step.
 
 In a manuscript, choose **Tools**. From Blogs, use **Library and team tools
 → Tools** for global tasks. Normal writing and polishing require none of
@@ -80,11 +80,10 @@ for that blog only; a learned kind of post pre-ticks its samples. With the older
 tools on, **Settings → Default voice** names a confirmed voice for blogs run step by step,
 and **Interview me** takes **Write as**; desk blogs write with their tone.
 
-**A run that stops** says what to do beside the error: **Open Status** and **What the
-assistant said** for a CLI failure, where the step time limit lives beside **Try again
-with more time**, and, at research, **What the research check objected to**, what the
-last attempt took and **Continue without research**. First-run setup opens **Writing
-preferences** and marks an assistant that is not installed.
+A saved run of the earlier flow is a saved record: it opens on the desk, keeps its
+finished Done card, waits for what clears it, or is read-only; it is never continued.
+First-run setup opens **Writing preferences** and marks an assistant that is not
+installed.
 
 Conversation methods remain available through the normal operation references.
 The report commands are `studio.py --root WORKSPACE prepublish --id ID` and
@@ -92,11 +91,9 @@ The report commands are `studio.py --root WORKSPACE prepublish --id ID` and
 
 ## Research review
 
-The research stage shows the brief, independent check's note, gaps, source limitations
-and question mapping, with report and evidence in folds. Ask for changes shows the full
-research rerun estimate when research is selected, and updates it if another stage is
-chosen. A run researching your documents only instead shows Claims in your material, an
-exact-source map with one correction; from-files keeps its existing flow. A review says how
-many pages were outside your sites.
+A finished editor run's research stage shows the brief, independent check's note, gaps,
+source limitations and question mapping, with report and evidence in folds. A run
+researching your documents only instead shows Claims in your material, an exact-source
+map. A review says how many pages were outside your sites.
 
-The Done card also opens pre-publish checks and repurposing directly. **Apply the review's findings** at review saves the prior draft and confirms the three jobs before restarting draft, review and handoff. The complete saved review accompanies the preservation rules. Review notes open beside the draft with actual checks; the fold choice is remembered per blog.
+The Done card also opens pre-publish checks and repurposing directly. Review notes open beside the draft with actual checks; the fold choice is remembered per blog.

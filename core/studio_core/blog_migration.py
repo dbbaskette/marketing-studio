@@ -85,11 +85,15 @@ def session_supported(record, ident=None):
 
 
 def run_supported(run):
-    """The saved run shapes understood by this fixed migration format."""
+    """The saved run shapes understood by this fixed migration format.
+
+    Schema 4 is a schema 3 run that also pinned a research execution record (Harness Research
+    collected it in parallel). The migration keeps the run's bytes and interprets none of that
+    record, so its shape is checked here (execution_kept), not its protocol's current name."""
     if (
         not isinstance(run, dict)
         or type(run.get('schema')) is not int
-        or run['schema'] not in (1, 2, 3)
+        or run['schema'] not in (1, 2, 3, 4)
         or run.get('approval') not in ('page', 'conversation')
     ):
         return False
@@ -117,12 +121,35 @@ def run_supported(run):
             or policy.get('level') not in ('balanced', 'automatic', 'step_by_step')
         ):
             return False
-    if run['schema'] == 3 and (
+    if run['schema'] in (3, 4) and (
         not isinstance(run.get('research_contract'), dict)
         or run['research_contract'].get('schema') != 2
     ):
         return False
+    if run['schema'] == 4:
+        return execution_kept(run.get('research_execution'))
     return True
+
+
+def execution_kept(held):
+    """A saved research execution record of the known shape, whatever protocol it names:
+    the migration keeps it uninterpreted, so a later Harness Research protocol never makes a
+    moved blog unreadable, while a malformed record is still refused."""
+    if not isinstance(held, dict) or type(held.get('schema')) is not int or held['schema'] != 1:
+        return False
+    protocol, workers, capability = (
+        held.get('protocol'),
+        held.get('workers'),
+        held.get('capability'),
+    )
+    return (
+        isinstance(protocol, str)
+        and bool(protocol.strip())
+        and type(workers) is int
+        and 1 <= workers <= 3
+        and isinstance(capability, dict)
+        and capability.get('protocol') == protocol
+    )
 
 
 def migration_supported(value, session_bytes, run_bytes, draft, ident):

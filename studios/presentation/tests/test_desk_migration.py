@@ -29,7 +29,7 @@ class MigrationTests(runner_support.DeskCase):
 
     def test_unverified_index_restoration_keeps_recovery_journal(self):
         from runner import desk_migration, gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         marker = self.space.root / gitstate.MARKER
         relative = gitstate.inside(self.space, marker)
         self.git('rm', '--cached', '--', relative)
@@ -58,7 +58,7 @@ class MigrationTests(runner_support.DeskCase):
         from runner import desk_migration, gitstate
         for crash in (False, True):
             with self.subTest(crash=crash):
-                root = self.gated(title='Deletion ' + str(crash))
+                root = self.load_saved('build', title='Deletion ' + str(crash))
                 marker = self.space.root / gitstate.MARKER
                 relative = gitstate.inside(self.space, marker)
                 self.git('rm', '--cached', '--', relative)
@@ -105,7 +105,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
                 unrelated.unlink()
 
     def test_preview_cancel_is_pure_even_older_document_index_and_no_identity(self):
-        root = self.gated()
+        root = self.load_saved('build')
         index = root / 'sources/supplied/index.json'
         index.parent.mkdir(parents=True, exist_ok=True)
         index.write_text(json.dumps({'schema': 1, 'documents': []}))
@@ -120,7 +120,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         self.assertEqual(before, self.snapshot(self.base))
 
     def test_migration_and_later_checked_edit_keep_original_and_history(self):
-        root = self.gated()
+        root = self.load_saved('build')
         before = self.snapshot(root)
         with mock.patch.object(self.engine, 'ready', side_effect=AssertionError('readiness')), \
                 mock.patch.object(self.engine, 'wake', side_effect=AssertionError('wake')):
@@ -141,7 +141,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         self.assertEqual(decks.read_run(root)['conversation_scope'], ['part'])
 
     def test_early_missing_and_unsupported_inputs_refuse_without_changes(self):
-        root = self.saved_start()
+        root = self.load_saved('outline')
         (root / 'outline.json').unlink(missing_ok=True)
         before = self.snapshot(root)
         preview = self.preview(root)
@@ -156,7 +156,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
             self.assertEqual(before, self.snapshot(root))
 
     def test_marker_blocks_preview_apply_without_cleanup(self):
-        root = self.gated()
+        root = self.load_saved('build')
         token = self.preview(root)['expected']
         marker = root / 'work/step.lock'
         marker.write_text('build-sections\n')
@@ -169,7 +169,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
     def test_preview_invalidated_by_material_source_record_worker_and_workspace(self):
         for change in ('outline', 'source', 'record', 'worker', 'workspace'):
             with self.subTest(change):
-                root = self.gated(title='Change ' + change)
+                root = self.load_saved('build', title='Change ' + change)
                 token = self.preview(root)['expected']
                 if change == 'outline':
                     with (root / 'outline.json').open('a') as stream:
@@ -195,7 +195,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
                 self.assertEqual(before, self.snapshot(root))
 
     def test_repeated_apply_is_same_and_restart_never_recovers_or_runs(self):
-        root = self.gated()
+        root = self.load_saved('build')
         token = self.preview(root)['expected']
         first = desk_chat.migrate(self.engine, root, token)
         before = self.snapshot(root)
@@ -210,7 +210,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
 
     def test_failure_after_journal_before_publication_rolls_back(self):
         from runner import desk_migration
-        root = self.gated()
+        root = self.load_saved('build')
         token = self.preview(root)['expected']
         before = self.snapshot(root)
         original = desk_migration._write
@@ -224,7 +224,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         self.assertEqual(before, self.snapshot(root))
 
     def test_pending_or_malformed_overlay_fails_closed_before_pickup(self):
-        root = self.gated()
+        root = self.load_saved('build')
         original = (root / 'run.json').read_bytes()
         (root / 'desk').mkdir(exist_ok=True)
         (root / 'desk/migration.json').write_text('{}')
@@ -237,7 +237,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         self.assertEqual((root / 'run.json').read_bytes(), original)
 
     def test_inventory_keeps_original_compatibility_and_reports_overlay_unknown(self):
-        root = self.gated()
+        root = self.load_saved('build')
         self.migrate(root)
         report = self.engine.saved_work()
         self.assertTrue(next(p for p in report['paths'] if p['id'] == 'gated-flow')['needed_by'])
@@ -246,7 +246,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
 
     def test_shared_outline_structural_damage_refuses_domain_and_replay(self):
         from studio_core.sync_guard import worker_in_progress
-        root = self.gated()
+        root = self.load_saved('build')
         original = json.loads((root / 'outline.json').read_bytes())
         for points in ('unreadable', [{'label': 4, 'text': 'Unsupported'}]):
             outline = copy.deepcopy(original)
@@ -263,7 +263,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
 
     def test_cli_commands_are_json_without_launch(self):
         from runner import studio
-        root = self.gated()
+        root = self.load_saved('build')
         args = studio.parser().parse_args(['desk', 'migration-preview', '--folder', str(root)])
         out = io.StringIO()
         studio.desk_command(args, make=lambda: self.engine, out=out)
@@ -273,7 +273,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
 
     def test_stopped_and_failed_runner_status_is_history_not_active_execution(self):
         for state in ('stopped', 'failed'):
-            root = self.gated(title='Saved runner ' + state)
+            root = self.load_saved('build', title='Saved runner ' + state)
             record = self.record(root)
             record['halted'] = {'state': state, 'step': 'build-render', 'why': 'Saved synthetic failure'}
             decks.write_run(root, record)
@@ -289,7 +289,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
 
     def test_either_missing_record_and_changed_original_are_unknown_not_legacy(self):
         from studio_core.sync_guard import worker_in_progress
-        root = self.gated()
+        root = self.load_saved('build')
         self.migrate(root)
         before = self.snapshot(root)
         for name in ('desk/migration.json', 'desk/migration-origin.json', 'run.json'):
@@ -305,7 +305,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
                 (root / name).write_bytes(before[name])
 
     def test_strict_original_shapes_and_required_dependency_refusal(self):
-        root = self.gated()
+        root = self.load_saved('build')
         original = (root / 'run.json').read_bytes()
         for key in ('agent', 'form', 'gates', 'id', 'revisions'):
             record = json.loads(original)
@@ -320,7 +320,7 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
 
     def test_crash_after_receipt_and_after_commit_has_explicit_safe_recovery(self):
         for boundary in ('receipt', 'commit'):
-            root = self.gated(title='Crash ' + boundary)
+            root = self.load_saved('build', title='Crash ' + boundary)
             token = self.preview(root)['expected']
             raw = (root / 'run.json').read_bytes()
             code = '''import os, sys
@@ -357,7 +357,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_commit_then_raise_keeps_committed_ownership_until_explicit_retry(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         token = self.preview(root)['expected']
         original = (root / 'run.json').read_bytes()
         commit = gitstate.commit
@@ -403,7 +403,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         from runner import desk_migration, gitstate
         for kind in ('receipt', 'record', 'marker', 'changed-receipt', 'changed-marker'):
             with self.subTest(kind=kind):
-                root = self.gated(title='Partial retry ' + kind)
+                root = self.load_saved('build', title='Partial retry ' + kind)
                 marker = self.space.root / gitstate.MARKER
                 value = json.loads(marker.read_bytes())
                 value['minimum_runtime'] = '4.8.0'
@@ -433,7 +433,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         from runner import gitstate
         for kind in ('receipt', 'record', 'marker', 'changed-receipt', 'changed-marker'):
             with self.subTest(kind=kind):
-                root = self.gated(title='Partial exception ' + kind)
+                root = self.load_saved('build', title='Partial exception ' + kind)
                 marker = self.space.root / gitstate.MARKER
                 value = json.loads(marker.read_bytes())
                 value['minimum_runtime'] = '4.8.0'
@@ -462,7 +462,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         for boundary in ('prepared', 'committed'):
             for change in ('staged', 'unmerged'):
                 with self.subTest(boundary=boundary, change=change):
-                    root = self.gated(title=f'Index {boundary} {change}')
+                    root = self.load_saved('build', title=f'Index {boundary} {change}')
                     token = self.preview(root)['expected']
                     code = '''import os, sys
 from pathlib import Path
@@ -509,7 +509,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_exception_rollback_preserves_unexpected_staged_output(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         token = self.preview(root)['expected']
         kept = {}
         def fail(*args, **kwargs):
@@ -528,7 +528,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_exception_rollback_keeps_changed_unstaged_outputs(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         token = self.preview(root)['expected']
         kept = {}
         def fail(*args, **kwargs):
@@ -544,7 +544,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
     def test_legacy_local_journal_keeps_existing_readable_pair_and_recovers_exactly(self):
         import base64
         from runner import desk_migration, gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         marker = self.space.root / gitstate.MARKER
         value = json.loads(marker.read_bytes())
         value['minimum_runtime'] = '4.7.1'
@@ -578,7 +578,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_exact_prepared_index_rolls_back_without_touching_unrelated_staging(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         unrelated = self.space.repo / 'unrelated.txt'
         unrelated.write_text('Staged independently')
         self.git('add', str(unrelated))
@@ -598,7 +598,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_legacy_dirty_marker_without_scoped_head_refuses_intact(self):
         from runner import desk_migration, gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         marker = self.space.root / gitstate.MARKER
         value = json.loads(marker.read_bytes())
         value['minimum_runtime'] = '4.8.0'
@@ -618,9 +618,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         self.assertEqual(self.recovery_state(root), before)
 
     def test_selected_changes_preserves_original_copy_and_google_preview_baseline(self):
-        from test_desk_words import planned
-        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.saved_existing_deck('automatic', 'selected', selected='Shorten slide 2')
+        root = self.load_saved('selected-automatic')
         baseline = root / 'work/build/drive-preview.json'
         baseline.parent.mkdir(exist_ok=True)
         baseline.write_text('{"id":"synthetic-preview","pool":"prior-receipt"}')
@@ -631,7 +629,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_shared_guard_distinguishes_blog_and_presentation_same_named_record(self):
         from studio_core.sync_guard import worker_in_progress
-        root = self.gated()
+        root = self.load_saved('build')
         self.migrate(root)
         self.assertFalse(worker_in_progress(self.space.repo))
         unrelated = self.space.repo / 'blog-fixture'
@@ -641,7 +639,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
             worker_in_progress(self.space.repo)
 
     def test_two_processes_apply_once_and_keep_original_bytes(self):
-        root = self.gated()
+        root = self.load_saved('build')
         preview = self.preview(root)
         original = (root / 'run.json').read_bytes()
         code = 'from runner import engine,desk_chat; import sys; desk_chat.migrate(engine.Engine(background=False),sys.argv[1],sys.argv[2])'
@@ -656,7 +654,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_workspace_floor_preserves_values_and_staging_on_rollback(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         marker = self.space.root / gitstate.MARKER
         values = json.loads(marker.read_bytes())
         values.update(minimum_runtime='4.7.1', unrelated={'keep': 'exactly'})
@@ -676,7 +674,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
     def test_higher_workspace_floor_is_not_lowered_and_configured_writers_check_it(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         marker = self.space.root / gitstate.MARKER
         values = json.loads(marker.read_bytes())
         # Above both the migration floor and this checkout's own version.
@@ -692,16 +690,8 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
             with gitstate.workspace_locked(self.space, self.engine.files, configured=True):
                 self.fail('older configured writer admitted')
 
-    def test_policy_continuation_cannot_approve_after_migration(self):
-        from runner import stages
-        root = self.gated()
-        self.migrate(root)
-        before = self.snapshot(root)
-        self.engine._policy_gate(root, stages.BY_NAME['gate:outline'])
-        self.assertEqual(self.snapshot(root), before)
-
     def test_saved_schemas_one_two_three_prepare_without_rewriting_input(self):
-        root = self.gated()
+        root = self.load_saved('build')
         original = (root / 'run.json').read_bytes()
         for schema in (1, 2, 3):
             record = json.loads(original)
@@ -728,7 +718,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
 
     def test_shared_retained_evidence_must_match_head_and_index(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         binary = root / 'research/capture.bin'
         binary.parent.mkdir(exist_ok=True)
         binary.write_bytes(b'Captured evidence\x80\xff')
@@ -780,7 +770,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
                         self.assertEqual(self.evidence(root), restored, 'synthetic baseline must be exact before the next subcase')
 
     def test_shared_private_ignored_and_unrelated_staging_survive_peer_readable_migration(self):
-        root = self.gated()
+        root = self.load_saved('build')
         binary = root / 'research/capture.bin'
         binary.parent.mkdir(exist_ok=True)
         binary.write_bytes(b'Committed evidence\x80\xff')
@@ -814,7 +804,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
             self.assertFalse((peer / 'sources/private.bin').exists())
 
     def test_shared_tracked_ignored_input_and_changed_preview_index_refuse(self):
-        root = self.gated()
+        root = self.load_saved('build')
         private = root / 'sources/tracked.bin'
         private.parent.mkdir(exist_ok=True)
         private.write_bytes(b'Originally shared\x80\xff')
@@ -841,7 +831,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
         from runner import desk_migration, gitstate
         for change in ('dirty', 'staged', 'committed', 'marker', 'legacy'):
             with self.subTest(change=change):
-                root = self.gated(title='Recovery evidence ' + change)
+                root = self.load_saved('build', title='Recovery evidence ' + change)
                 token = desk_chat.migration_preview(self.engine, root)['expected']
                 with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic interruption')), \
                         mock.patch.object(desk_migration, '_committed', return_value=True):
@@ -878,7 +868,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
         from runner import desk_migration, gitstate
         for committed in (False, True):
             with self.subTest(committed=committed):
-                root = self.gated(title='Settle ' + str(committed))
+                root = self.load_saved('build', title='Settle ' + str(committed))
                 marker = self.space.root / gitstate.MARKER
                 value = json.loads(marker.read_bytes())
                 value.update(minimum_runtime='4.8.0', person_setting='keep')
@@ -920,7 +910,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
 
     def test_deleted_and_claimed_attribution_uses_effective_remote_driver(self):
         from runner import gitstate
-        root = self.gated()
+        root = self.load_saved('build')
         preview = desk_chat.migration_preview(self.engine, root)
         desk_chat.migrate(self.engine, root, preview['expected'])
         original = (root / 'run.json').read_bytes()
@@ -955,7 +945,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
 
     def test_malformed_existing_identity_refuses_without_initializing(self):
         import home
-        root = self.gated()
+        root = self.load_saved('build')
         path = home.data_root() / 'computer.json'
         path.write_text('{"schema":1,"id":"invalid"}')
         record = self.record(root)
@@ -966,7 +956,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
         self.assertEqual(MigrationTests.snapshot(self, self.base), before)
 
     def test_preview_and_effective_team_takeover_refuse_the_old_driver(self):
-        root = self.gated()
+        root = self.load_saved('build')
         preview = desk_chat.migration_preview(self.engine, root)
         desk_chat.migrate(self.engine, root, preview['expected'])
         original = (root / 'run.json').read_bytes()
@@ -991,9 +981,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
 
 class ReadyTests(runner_support.DeskCase):
     def selected_migrated(self):
-        from test_desk_words import planned
-        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.saved_existing_deck('automatic', 'selected', selected='Shorten slide 2')
+        root = self.load_saved('selected-automatic')
         preview = desk_chat.migration_preview(self.engine, root)
         desk_chat.migrate(self.engine, root, preview['expected'])
         return root
@@ -1160,7 +1148,7 @@ class ReadyTests(runner_support.DeskCase):
             self.request(root)
 
     def test_migrated_person_approval_keeps_original_receipt_and_needs_no_jobs(self):
-        root = self.gated()
+        root = self.load_saved('build')
         preview = desk_chat.migration_preview(self.engine, root)
         desk_chat.migrate(self.engine, root, preview['expected'])
         original = (root / 'run.json').read_bytes()

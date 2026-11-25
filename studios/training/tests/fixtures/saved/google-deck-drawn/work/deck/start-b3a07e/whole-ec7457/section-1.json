@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "title": "Rolling restarts",
+  "direction": {
+    "focal": "headingPrimary",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "id": "what-it-does",
+      "title": "A rolling restart replaces instances one batch at a time",
+      "sources": [
+        "O1"
+      ],
+      "brief": {
+        "relation": "order",
+        "focal": "s1_what_it_does_t1",
+        "rhythm": "anchor"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "children": [
+          {
+            "type": "text",
+            "id": "s1_what_it_does_h1",
+            "text": "Batch",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s1_what_it_does_t1",
+            "text": "Instances are replaced one batch at a time."
+          },
+          {
+            "type": "text",
+            "id": "s1_what_it_does_h2",
+            "text": "Traffic",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s1_what_it_does_t2",
+            "text": "The app keeps serving while it restarts."
+          }
+        ]
+      },
+      "notes": "6 min. Walk the three-instance example.",
+      "source": "Platform documentation: restarts"
+    },
+    {
+      "id": "when-capacity-holds",
+      "title": "Capacity holds only with more than one instance",
+      "sources": [
+        "O2"
+      ],
+      "brief": {
+        "relation": "order",
+        "focal": "s1_when_capacity_holds_t1",
+        "rhythm": "anchor"
+      },
+      "canvas": {
+        "type": "stack",
+        "direction": "column",
+        "children": [
+          {
+            "type": "text",
+            "id": "s1_when_capacity_holds_h1",
+            "text": "Several",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s1_when_capacity_holds_t1",
+            "text": "The others carry the load."
+          },
+          {
+            "type": "text",
+            "id": "s1_when_capacity_holds_h2",
+            "text": "One",
+            "textRole": "label"
+          },
+          {
+            "type": "text",
+            "id": "s1_when_capacity_holds_t2",
+            "text": "Requests are dropped while it restarts."
+          }
+        ]
+      },
+      "notes": "7 min. Health checks start the next batch.",
+      "caveat": "A single-instance app still drops requests while it restarts."
+    }
+  ]
+}

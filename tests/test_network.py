@@ -382,8 +382,7 @@ class BridgeLimitTests(unittest.TestCase):
         self.addCleanup(upstream.close)
         for identifier, path, size in (('training', '/api/drafts/source', 5_000_000),
                                        ('training', '/api/drafts/save', 500_000),
-                                       ('presentation', '/api/desk-source', 5_000_000),
-                                       ('presentation', '/api/picture', 10_000_000)):
+                                       ('presentation', '/api/desk-source', 5_000_000)):
             with self.subTest(studio=identifier, path=path):
                 bridge, token = self.bridge(identifier, upstream)
                 self.assertEqual(self.post(bridge, token, identifier, path, size), (200, {'read': size}))

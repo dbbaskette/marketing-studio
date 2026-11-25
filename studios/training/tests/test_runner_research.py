@@ -646,10 +646,3 @@ class SynthesisStartTests(StudioCase):
         self.assertEqual(len(self.workers.of('research-result')), 2, self.view(root))
         contract.read_bundle(root / 'research')
         self.assertFalse((root / '.harness-research/research.json').exists())
-
-    def test_saved_queue_setup_never_calls_public_start_and_resumes_saved_reader(self):
-        with mock.patch.object(self.engine, 'start', side_effect=AssertionError('public start')):
-            root = self.saved_start(research=True) if hasattr(self, 'settings') else self.saved_start()
-        self.assertNotIn('research_contract', self.record(root))
-        self.assertIsNotNone(self.view(root).get('gate') if hasattr(self, 'settings') else __import__('workspace').status(root)['gate'])
-        self.assertEqual(len(self.workers.of('research-result')), 0)

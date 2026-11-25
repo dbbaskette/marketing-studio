@@ -1,6 +1,6 @@
 ---
 name: presentation-studio
-description: Create, inspect and revise branded slide materials on the Presentation Studio desk in conversation, using checked Harness Slides and Harness Research submissions. Resume supported saved decks without losing their decisions or originals.
+description: Create, inspect and revise branded slide materials on the Presentation Studio desk in conversation, using checked Harness Slides and Harness Research submissions. Open supported saved decks on the desk without losing their decisions or originals.
 ---
 
 # Presentation Studio
@@ -19,7 +19,7 @@ Use checked `studio desk` commands in conversation; no browser or nested assista
 
 1. Read workspace, person, brand/variant and output from `STUDIOS_CONFIG` or `~/.config/studios-config.json`. Never change shared settings implicitly. Unconfigured work needs explicit setup; never install or update automatically.
 2. Follow [the routes](references/routes.md). Prepare the normal checked form, plus `scope`, then `studio desk create --input FILE` (or `--input -` for stdin). Creation returns the folder, checks no assistant readiness and starts no jobs. Uploads are explicit; Google is never fetched silently.
-3. Inspect `studio desk show --folder PATH`. To continue in chat explicitly, read target `ownership`, then `studio desk take --folder PATH --input FILE` with current basis/scope. This changes ownership only. Unfinished decks use [preview/migration](references/migration.md) or their [saved path](references/workspace.md).
+3. Inspect `studio desk show --folder PATH`. To continue in chat explicitly, read target `ownership`, then `studio desk take --folder PATH --input FILE` with current basis/scope. This changes ownership only. Saved decks use [migration](references/migration.md) or are [read-only](references/workspace.md).
 
 ## Work in this conversation
 

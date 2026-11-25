@@ -8,11 +8,11 @@ What a caller needs to know
   Every action begins with `_held` and refuses a deck that is not on the desk
   (`desk.NOT_ON_DESK`). Each records what was asked and, where something is to be drawn
   again, reopens gate:build (`desk.reopen`); the engine's own steps then do the work.
-  `open_on_desk` is the one way onto the desk for a saved deck: a deck delivered the gated
-  way opens there, still delivered.
-- `_desk_gate` meets a stop the desk deck continues past (`desk.passes`) as `_policy_gate`
-  meets one a review level continues past: with what the stop shows, a desk receipt and a
-  commit, and never as a person's approval.
+  `open_on_desk` is the finished Open on the desk: a deck delivered the gated way opens
+  there, still delivered. Every other saved deck opens through the explicit migration
+  (`desk_migration`).
+- `_desk_gate` meets a stop the desk deck continues past (`desk.passes`): with what the stop
+  shows, a desk receipt and a commit, and never as a person's approval.
 """
 from __future__ import annotations
 
@@ -205,6 +205,7 @@ class DeskActions:
             record, state, section)['says'])
         return {**shown, **ready_status(root, record), 'migrated': bool(record.get('unfinished_migration')),
                 'saved_status': record.get('migration_saved_status'),
+                'saved_question': record.get('migration_saved_question'),
                 'content_pending': deck_content.enabled(record)
                     and 'gate:outline' in {step.name for step in stages.steps(record)}
                     and gate_state(record, 'gate:outline') != 'approved',

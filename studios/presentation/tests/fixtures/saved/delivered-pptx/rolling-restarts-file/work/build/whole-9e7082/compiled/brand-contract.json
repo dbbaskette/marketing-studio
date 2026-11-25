@@ -1,0 +1,162 @@
+{
+  "schema": 1,
+  "identity": {
+    "id": "example",
+    "name": "Example Co",
+    "variant": "light"
+  },
+  "medium": {
+    "kind": "slides",
+    "delivery": "live"
+  },
+  "sources": [
+    {
+      "path": "@BRAND@/brand/tokens.json",
+      "kind": "tokens",
+      "sha256": "8dec28fc9028b2176e27eb274b2d01120e2b612c070c1a992e0d9eee4be63034"
+    },
+    {
+      "path": "@BRAND@/references/brand-rules.md",
+      "kind": "brand policy",
+      "sha256": "b0930d8a41ea247845adb55776d38723ae94c863177cc649a240d2fc38eed733"
+    },
+    {
+      "path": "@BRAND@/brand/presentation.json",
+      "kind": "presentation system",
+      "sha256": "85bc767be3e15984d7a787b9f2d4a9dc1260d6670c045070ce38e7fb5dc2e8ea"
+    },
+    {
+      "path": "@BRAND@/assets/template.pptx",
+      "kind": "native template",
+      "sha256": "7ad38de57602fac63e1c03fe4699d0260d66541704edd1590b5e6b07969a6b74"
+    },
+    {
+      "path": "@BRAND@/assets/icons.pptx",
+      "kind": "icon library",
+      "sha256": "9550bc1d671c599bf6c413eea667ac7fdc640214cc5cd758fef0df77be0fefe2"
+    },
+    {
+      "path": "@BRAND@/references/icon-index.json",
+      "kind": "icon index",
+      "sha256": "33db80845dea445f87a5c53b249c04ea09c89b8766d59fb8bd665ade3ccbf3c4"
+    }
+  ],
+  "design": {
+    "fontFamily": "Arial",
+    "colors": {
+      "canvasPrimary": "#FFFFFF",
+      "canvasSecondary": "#E6E8EB",
+      "inkDeep": "#1F2430",
+      "inkSecondary": "#5A6170",
+      "headingPrimary": "#1F4E8C",
+      "accentAqua": "#0B7A75",
+      "statusAttention": "#B3261E"
+    },
+    "geometry": {
+      "rectangularRadiusPx": 0
+    },
+    "references": {
+      "guide": "@BRAND@/references/brand-rules.md"
+    },
+    "slides": {
+      "canvas": {
+        "width": 960,
+        "height": 540
+      },
+      "titleBox": {
+        "x": 48,
+        "y": 36,
+        "width": 864,
+        "height": 60
+      },
+      "contentBox": {
+        "x": 48,
+        "y": 120,
+        "width": 864,
+        "height": 360
+      },
+      "reservedBottom": 492,
+      "spacing": {
+        "inset": 16,
+        "column": 28
+      },
+      "typography": {
+        "title": {
+          "size": 28,
+          "bold": true,
+          "colorRole": "headingPrimary"
+        },
+        "body": {
+          "size": 24,
+          "bold": false,
+          "colorRole": "inkDeep"
+        },
+        "bodyReference": {
+          "size": 20,
+          "bold": false,
+          "colorRole": "inkDeep"
+        },
+        "label": {
+          "size": 20,
+          "bold": true,
+          "colorRole": "inkDeep"
+        },
+        "caption": {
+          "size": 14,
+          "bold": false,
+          "colorRole": "inkSecondary"
+        },
+        "metric": {
+          "size": 60,
+          "bold": true,
+          "colorRole": "accentAqua"
+        },
+        "quote": {
+          "size": 30,
+          "bold": false,
+          "colorRole": "inkDeep"
+        }
+      },
+      "chart": {
+        "seriesRoles": [
+          "headingPrimary",
+          "accentAqua"
+        ]
+      },
+      "table": {
+        "headerFillRole": "headingPrimary",
+        "headerTextRole": "canvasPrimary"
+      },
+      "icon": {
+        "size": 48,
+        "library": {
+          "path": "@BRAND@/assets/icons.pptx",
+          "index": "@BRAND@/references/icon-index.json"
+        }
+      }
+    },
+    "nativeTemplate": {
+      "path": "@BRAND@/assets/template.pptx",
+      "sha256": "7ad38de57602fac63e1c03fe4699d0260d66541704edd1590b5e6b07969a6b74",
+      "layoutPart": "ppt/slideLayouts/slideLayout2.xml",
+      "masterPart": "ppt/slideMasters/slideMaster1.xml"
+    }
+  },
+  "language": {
+    "organization": {
+      "rules": {
+        "headlineCase": "sentence",
+        "preserveProductNamesAndAcronyms": true,
+        "names": [
+          "Write Example Co in full, never ExCo.",
+          "Example Platform is a product: keep its capitals."
+        ]
+      },
+      "toneStatus": "unspecified; the brand sets names, not tone"
+    },
+    "authorVoice": {
+      "status": "unselected"
+    }
+  },
+  "revision": "629aebc0328ec45fcdf7a01bc8ac3d9402d8a73254e9715d661bf529c474bec0"
+}

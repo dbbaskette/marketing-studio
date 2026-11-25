@@ -5,12 +5,10 @@ Plan questions before research. The person approves the scope; saved work keeps 
 ## Draft
 
 Outline-first page work writes this plan locally from approved sections and questions,
-without another planning assistant. Saved work keeps the following behavior:
-
-A browser run with supplied-only synthesis writes this plan from the form without a
-planning job: at most eight optional questions, each up to 300 characters, or one about
-the goal. Step by step reviews it; Balanced and Automatic accept it under the saved policy.
-Web synthesis still drafts a plan and keeps the person's own questions in their words.
+without another planning assistant. A supplied-only synthesis plan has at most eight
+optional questions, each up to 300 characters, or one about the goal. Web synthesis still
+drafts a plan and keeps the person's own questions in their words. A training the runner
+saved before the desk is not continued in a conversation.
 
 
 Write `.training-studio/research-plan.json` in the format `harness-research` accepts. It is the one file under `.training-studio/` that you write.

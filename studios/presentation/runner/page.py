@@ -19,8 +19,8 @@ What a caller needs to know
     "version", "problem"}]}; `/api/models?agent=` what an agent offers to choose from
     ({"agent", "models", "levels", "source", "problem"}; a list that could not be made is
     answered with no models and `problem`, and listing holds up nothing else).
-  - `/api/decks`, every deck in the engine's four lists {"needs", "working", "finished",
-    "elsewhere"}; `/api/run?path=` one deck's view (`engine.view`); `/api/activity?path=`
+  - `/api/decks`, every deck in the engine's lists {"needs", "working", "finished",
+    "elsewhere", and "saved" when there are any}; `/api/run?path=` one deck's view (`engine.view`); `/api/activity?path=`
     one deck's Activity log (`engine.activity`): each finished assistant job, newest first,
     without its lines; `&entry=` one finished job's lines, `&job=&since=` one running job's.
   - `/api/slide?path=&kind=build|look|original&number=` (or `&name=sample` for the cover
@@ -31,11 +31,6 @@ What a caller needs to know
   - `/api/download?path=`: the rendered deck, only what `engine.download` gives, as an
     attachment named for the deck; with `&revision=N`, that delivered revision's PowerPoint
     file while it is kept beside the deck (`deliver.receipt_file`).
-  - `/api/storyboard?path=&expected=` (and POST, with the unsaved `slides`): the outline
-    drawn as a wireframe storyboard, kept in the deck's work/drafts/, answered as {"src",
-    "expected", "milliseconds"}. `src` is `/api/deck-draft?ticket=`, which the page's
-    sandboxed frame opens without the key, for that one file, for two minutes, as HTML under
-    the framed page's own policy (`server.framed_html`).
   - `/api/file?path=&name=`: one of a deck's shared files, by name, only from FILES:
     {"name", "size", "text", "truncated"}. A file that leads out of the deck's folder is
     refused.
@@ -61,14 +56,6 @@ What a caller needs to know
   - `/api/run` {"path", "action"}: pause, resume, stop, retry or undo; answers the view.
   - `/api/decide` {"path", "gate", "decision", "note"?, "extra"?}: the only way a gate
     moves; answers the view. `/api/answer` {"path", "id", "answer"}: a worker's question.
-  - `/api/picture` {"path", "slide", "name", "content", "alt", "source", "expected"}: a
-    picture of the person's own (PNG or JPEG, `content` in base64) for a cover, section or
-    content slide while the outline waits; answers {"asset", "slide"}. It may carry up to
-    PICTURE_LIMIT bytes, and only with the key.
-  - `/api/picture-remove` {"path", "slide", "expected"}: take that picture off its slide
-    while the outline waits; answers {"slide"}.
-  - `/api/note` {"path", "expected", "text"}: a note for the next step, which goes with
-    the next job that starts and stops nothing; `expected` is the view's `note.expected`.
   - `/api/share` {}, `/api/fetch` {}, `/api/drive` {"path", "action": take|hand-over},
     `/api/publish` {"path"}, `/api/delete` {"path", "title"}, `/api/bring` {"path"}: a
     deck this computer knows from outside the workspace, copied in (`engine.bring`).
@@ -85,6 +72,10 @@ What a caller needs to know
     Update, and when main is no longer at the revision shown in `upkeep.versions.brand`.
   - `/api/computer` {}: look at this computer again, and at the skills, and wake the decks
     that were waiting on what was missing.
+  - A deck the earlier step-by-step flow saved: `/api/saved-check` {"path"} finds what becomes
+    of it now (read-only; run when its screen opens or the person asks, never by a poll);
+    `/api/saved-finish` {"path"} finishes an interrupted opening on the desk with the
+    migration's own recovery. Each answers the view; a refusal is 409.
   - The desk, for a deck started from the desk's start (`engine.desk_*`), each answering the
     deck's view: `/api/desk-note` {"path", "number", "note", "expected"} redraws one slide's
     section with the note; `/api/desk-deck-note` {"path", "note", "expected"} every section;
@@ -154,7 +145,7 @@ import home
 import server
 from workspace import WorkspaceError
 
-from runner import decks, gitstate, marks, settings, setup
+from runner import decks, gitstate, marks, saved_gate, settings, setup
 from runner import engine as engines
 
 from studio_core import modules, polling
@@ -166,7 +157,7 @@ modules.bind(globals(), _shared, _shared.NAMES)
 
 READS = ('/api/research-note', '/api/updates', '/api/slide-text-draft', '/api/intake-draft', '/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/activity', '/api/slide', '/api/download', '/api/status', '/api/published',
-         '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
+         '/api/delete', '/api/file', '/api/known-decks',
          '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
 # The desk's changes: each is an engine method by the same name, with what it is sent.
 DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
@@ -207,17 +198,48 @@ WRITES = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
-          '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-          '/api/note', '/api/research-site', '/api/picture',
-          '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
+          '/api/deliver', '/api/build-feedback', '/api/progress-seen',
+          '/api/research-site', '/api/desk-outline-price', SOURCE, *DESK)
 COPY = '/api/deck-copy'   # a deck's setup, for the start form to make a new one from
 WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready', COPY)
+# A deck the earlier step-by-step flow saved (GitHub issue #542): what becomes of it, found
+# when it is opened or the person asks; and an interrupted opening on the desk finished. Each
+# answers the deck's view.
+SAVED = {'/api/saved-check': 'saved_check', '/api/saved-finish': 'finish_opening'}
+WRITES = (*WRITES, *SAVED)
 # Browsing the shared Document Library: it reads, and selects nothing for a deck.
 WRITES = (*WRITES, *library_context.ROUTES)
 # A folder on this computer, a Google Drive folder link, or a spreadsheet, read into the one
 # document a deck from a document is made from (`studio_core.source_intake`).
 DOCUMENT_INTAKE = '/api/document-intake'
 WRITES = (*WRITES, DOCUMENT_INTAKE)
+# What each changing route may do to a deck the earlier step-by-step flow saved (GitHub issue
+# #542; `saved_gate`): every entry of `RunnerPage.writes` has one decision, and one without
+# a decision is refused for every saved deck.
+SAVED_ROUTES = {
+    # About no deck.
+    **dict.fromkeys(('/api/computer', '/api/intake-draft', '/api/research-sources',
+                     '/api/setup/check', '/api/setup', '/api/decks', '/api/share',
+                     '/api/fetch', '/api/bring', '/api/companions', '/api/upgrade',
+                     '/api/restart', '/api/versions', '/api/brand', '/api/brand/install',
+                     '/api/shared', '/api/research-site', DOCUMENT_INTAKE,
+                     *library_context.ROUTES), saved_gate.WORKSPACE),
+    # A deck's queued research note and slide-text corrections: read only.
+    '/api/research-note': saved_gate.READS, '/api/slide-text-draft': saved_gate.READS,
+    # Reading it, its setup copied into a new deck's form, and deleting it.
+    '/api/saved-check': saved_gate.ALL, '/api/saved-finish': saved_gate.ALL,
+    COPY: saved_gate.ALL, '/api/delete': saved_gate.ALL,
+    # The explicit migration, which finishes an interrupted opening too.
+    '/api/desk-migrate': frozenset({'saved', 'unreadable', 'interrupted'}),
+    # Take, to open it on the desk; never Hand over.
+    '/api/drive': saved_gate.TAKE,
+    # What a delivered deck could always do that does not continue the flow.
+    '/api/desk-open': frozenset({'finished'}), '/api/publish': frozenset({'finished'}),
+    # Continuing it, and desk work: never.
+    **dict.fromkeys(('/api/run', '/api/decide', '/api/answer', '/api/deliver',
+                     '/api/build-feedback', '/api/progress-seen', '/api/desk-outline-price',
+                     '/api/desk-ready', SOURCE,
+                     *(path for path in DESK if path != '/api/desk-open')), saved_gate.NEVER)}
 DOCUMENT_ENDINGS = ('.txt', '.md', '.html', '.htm', '.docx', '.pdf')   # the page's DOCUMENT_TYPES
 DOCUMENT_MOST = 8_000_000    # bytes: the largest document the runner reads
 INTAKE_LIMIT = 12_000_000    # bytes: a spreadsheet sent to be read, in base64
@@ -227,10 +249,7 @@ ONE_DOCUMENT = ('This folder holds more than one document, among them {names}. A
                 'with research and add the folder to its sources.')
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
-DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
 DECKS_LIMIT = 120_000_000    # bytes: a deck's form with its uploads, in base64
-PICTURE = '/api/picture'
-PICTURE_LIMIT = 28_000_000   # bytes: a picture of up to 20 MB for a slide, in base64
 FILES = engines.FILES   # a read-only record lists the same files
 PREVIEW_LIMIT = 1_000_000    # bytes of a file sent to the page
 NO_DECK = 'There is no deck there.'
@@ -251,7 +270,6 @@ class RunnerPage(server.Page):
     """What the page may ask the runner."""
     reads = (*server.READS, *READS)
     writes = (*server.WRITES, *WRITES)
-    framed = (DRAFT,)   # opened by the storyboard's frame, with a ticket
 
     # Each request is answered knowing whether the network bridge carried it
     # (`studio_core.shared_runner.caller`): a phone may not read this computer's folders.
@@ -327,9 +345,6 @@ class RunnerPage(server.Page):
             if revision is not None and not re.fullmatch(r'[0-9]+', revision):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'A revision is a whole number.')
             return self.download(one('path'), int(revision) if revision else None)
-        if path == '/api/storyboard':
-            return server.as_json(HTTPStatus.OK, self.framing(one('path'), self.engine.storyboard(
-                self.deck(one('path')), None, one('expected'))))
         if path == '/api/file':
             return server.as_json(HTTPStatus.OK, self.file(one('path'), one('name')))
         if path == '/api/desk-versions':
@@ -347,27 +362,6 @@ class RunnerPage(server.Page):
         if path == '/api/delete':
             return server.as_json(HTTPStatus.OK, self.engine.leaving(self.deck(one('path'))))
         return super().read(path, one)
-
-    def framing(self, path: str, drawn: dict) -> dict:
-        """A storyboard the runner drew, as the page frames it: the address of DRAFT with a
-        ticket for that one file of that one deck. Called only for a request that sent the
-        key."""
-        ticket = self.ticket(DRAFT, {'path': path, 'draft': drawn['draft']})
-        return {'src': f'{DRAFT}?ticket={ticket}', 'expected': drawn['expected'],
-                'milliseconds': drawn['milliseconds']}
-
-    def read_framed(self, path: str, scope) -> tuple:
-        """A framed page whose ticket held: the storyboard it was issued for, served under its
-        own sandboxed policy. Only the file the runner wrote in that deck's work/drafts/ is
-        read; nothing the request names is."""
-        if path != DRAFT or not isinstance(scope, dict):
-            return super().read_framed(path, scope)
-        try:
-            body = self.engine.storyboard_page(scope.get('path'), scope.get('draft'))
-        except (OSError, WorkspaceError):
-            raise server.Refusal(HTTPStatus.NOT_FOUND, 'That draft is not here any more. '
-                                                       'Show it again from the page.')
-        return server.framed_html(body)
 
     def deck(self, path: str) -> str:
         """A deck of this workspace, or 404 for any other folder, whatever it holds."""
@@ -470,12 +464,12 @@ class RunnerPage(server.Page):
                 return super().body_limit(target, headers)
             from studio_core.intake_drafts import LIMIT
             return LIMIT if address == '/api/intake-draft' else 512_000
-        if address in (DECKS, PICTURE, SOURCE, '/api/research-sources', DOCUMENT_INTAKE):
+        if address in (DECKS, SOURCE, '/api/research-sources', DOCUMENT_INTAKE):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
-            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000,
+            return {DECKS: DECKS_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000,
                     DOCUMENT_INTAKE: INTAKE_LIMIT}[address]
         return super().body_limit(target, headers)
 
@@ -486,6 +480,13 @@ class RunnerPage(server.Page):
         next poll walks the workspace again instead of reusing the last walk, so the
         change shows at once in every open tab. A read sent as a POST changes nothing."""
         try:
+            # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`).
+            decision = SAVED_ROUTES.get(path, saved_gate.NEVER)
+            if decision != saved_gate.WORKSPACE:
+                try:
+                    saved_gate.check(self.engine, decision, sent.get('path'), sent)
+                except WorkspaceError as refusal:
+                    raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
             return self.apply(path, sent)
         finally:
             if sent.get('action') != 'read':
@@ -554,6 +555,12 @@ class RunnerPage(server.Page):
             except ValueError as error:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
+        if path in SAVED:
+            deck = self.deck(server.text(sent, 'path'))
+            try:
+                return server.as_json(HTTPStatus.OK, getattr(self.engine, SAVED[path])(deck))
+            except WorkspaceError as refusal:
+                raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
         if path == COPY:
             deck = self.deck(server.text(sent, 'path'))
             try:
@@ -576,14 +583,6 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.start(sent))
         if path == '/api/run':
             return server.as_json(HTTPStatus.OK, self.act(sent))
-        if path == '/api/storyboard':
-            return server.as_json(HTTPStatus.OK, self.framing(
-                server.text(sent, 'path'), self.engine.storyboard(
-                    self.deck(server.text(sent, 'path')), sent.get('slides'),
-                    server.text(sent, 'expected'))))
-        if path == '/api/review-draft':
-            return server.as_json(HTTPStatus.OK, self.engine.review_draft(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'expected')))
         if path == '/api/progress-seen':
             return server.as_json(HTTPStatus.OK, self.engine.progress_seen(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'ref')))
@@ -596,12 +595,6 @@ class RunnerPage(server.Page):
                 server.text(sent, 'note'), number))
         if path == '/api/decide':
             return server.as_json(HTTPStatus.OK, self.decide(sent))
-        if path == PICTURE:
-            return server.as_json(HTTPStatus.OK, self.picture_given(sent))
-        if path == '/api/picture-remove':
-            return server.as_json(HTTPStatus.OK, self.engine.remove_picture(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'slide'),
-                server.text(sent, 'expected', needed=False)))
         if path == '/api/answer':
             return server.as_json(HTTPStatus.OK, self.answered(sent))
         if path in DESK:
@@ -612,10 +605,6 @@ class RunnerPage(server.Page):
             deck = self.deck(server.text(sent, 'path'))
             return server.as_json(HTTPStatus.OK, self.desk(
                 lambda: self.engine.desk_outline_price(deck, sent.get('slides'))))
-        if path == '/api/note':
-            return server.as_json(HTTPStatus.OK, self.engine.note(
-                self.deck(server.text(sent, 'path')), server.text(sent, 'text'),
-                server.text(sent, 'expected')))
         if path == '/api/research-site':
             # A site for one deck's research, checked here as the deck's form will be.
             return server.as_json(HTTPStatus.OK, shaped(setup.research_site, sent))
@@ -754,24 +743,6 @@ class RunnerPage(server.Page):
         return {'name': name, 'content': base64.b64encode(data).decode('ascii'),
                 'bytes': len(data), 'said': found['said']}
 
-    def picture_given(self, sent: dict) -> dict:
-        """A picture the person gives one slide at the outline stop: {"path", "slide",
-        "name", "content" (the file in base64), "alt", "source", "expected"}."""
-        data = sent.get('content')
-        try:
-            if not isinstance(data, str) or not data:
-                raise ValueError
-            picture = base64.b64decode(data, validate=True)
-        except (binascii.Error, ValueError):
-            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'The picture did not arrive whole. '
-                                 'Choose the file again.')
-        return self.engine.add_picture(
-            self.deck(server.text(sent, 'path')), server.text(sent, 'slide'),
-            server.text(sent, 'name', needed=False) or '', picture,
-            server.text(sent, 'alt', needed=False) or '',
-            server.text(sent, 'source', needed=False) or '',
-            server.text(sent, 'expected', needed=False))
-
     def source_given(self, sent: dict) -> dict:
         """A source the person adds on the desk: {"path", "name", "content", "library"?} with
         the file in base64, and `library` true to keep it in the Document Library as well
@@ -825,15 +796,7 @@ class RunnerPage(server.Page):
         if extra is not None and not isinstance(extra, dict):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send what comes with a decision as '
                                  'one JSON object.')
-        # Another brand, a slide whose words go back to the outline, a corrected reading
-        # of the document, or a line against a slide: each says what should change itself.
-        noted, target = (extra or {}).get('slide_notes'), (extra or {}).get('direction_target')
-        wordless = gate == 'gate:look' \
-            or (gate == 'gate:outline' and target in ('gate:look', 'gate:classify')) \
-            or (gate == 'gate:build' and target == 'gate:outline') \
-            or (gate == 'gate:build' and isinstance(noted, dict)
-                and any(str(line or '').strip() for line in noted.values()))
-        if decision == 'changes' and not wordless and not (note or '').strip() \
+        if decision == 'changes' and not (note or '').strip() \
                 and not (gate in marks.REVIEWED and marks.asks(extra or {})):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, engines.NO_NOTE)
         return self.engine.decide(self.deck(path), gate, decision, note, extra,

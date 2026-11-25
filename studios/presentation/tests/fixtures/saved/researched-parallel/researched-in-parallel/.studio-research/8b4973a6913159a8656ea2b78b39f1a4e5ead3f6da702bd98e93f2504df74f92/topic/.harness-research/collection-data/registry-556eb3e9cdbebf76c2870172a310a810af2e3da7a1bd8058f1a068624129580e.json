@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "protocol": "parallel-v1",
+  "request_digest": "c61e7ce1e19296ef1cbf9020e9cef09b68f0f7545f3d650cffd720fefd77d1b6",
+  "generation": 1,
+  "request": {
+    "schema": 1,
+    "topic": "Researched in parallel",
+    "audience": "Platform teams",
+    "purpose": "Inform a presentation: Show when capacity holds. Prioritize key messages, evidence worth explaining visually, and counterarguments.",
+    "scope": "Evidence, limitations and alternatives for the presentation goal: Show when capacity holds. Any public page may be used.",
+    "source_mode": "public",
+    "execution_mode": "sequential",
+    "max_investigators": 1,
+    "workstreams": [
+      {
+        "id": "area1",
+        "questions": [
+          "How many instances keep capacity during a restart?",
+          "What starts the next batch?"
+        ]
+      }
+    ],
+    "supplied_sources": [],
+    "allowed_domains": [],
+    "input_fingerprint": "1d1c41a37fefbe0f07503511560e658daad0ededc406a54a7a3a69816cede091"
+  },
+  "sources": [
+    {
+      "id": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445",
+      "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+      "origin": "https://docs.example.com/restarts",
+      "title": "Synthetic source",
+      "publisher": "Synthetic publisher",
+      "permission": "public",
+      "context": "full",
+      "original_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.raw"
+    }
+  ],
+  "facts": [
+    {
+      "id": "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9",
+      "statement": "More than one instance keeps capacity.",
+      "author": "investigator-c49a0b17b23f53ba4c9314b4",
+      "citations": [
+        {
+          "source": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445",
+          "quote": "More than one instance keeps capacity."
+        }
+      ]
+    }
+  ],
+  "mappings": [
+    {
+      "workstream": "area1",
+      "sources": {
+        "source-a": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445"
+      },
+      "facts": {
+        "fact-a": "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9"
+      }
+    }
+  ],
+  "packets": [
+    {
+      "workstream": "area1",
+      "investigator": "investigator-c49a0b17b23f53ba4c9314b4",
+      "invocation": "research-invocation-9b393b8f70b9023448a3c871ca4e0dde",
+      "attempt": 1,
+      "file": ".harness-research/collection-data/packet-1-area1-1-60f288eb5ef54b07020347836683012413695ddb81844de53ff2ab1cf5950213.json",
+      "sha256": "60f288eb5ef54b07020347836683012413695ddb81844de53ff2ab1cf5950213"
+    }
+  ],
+  "limitations": [],
+  "gaps": []
+}

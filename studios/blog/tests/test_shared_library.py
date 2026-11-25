@@ -38,9 +38,16 @@ class KeepTests(SharedLibraryCase):
     finish = team.FinishTests.finish
     desk = team.DeskPublishTests.desk
     publish = team.DeskPublishTests.publish
+    revise = team.FinishTests.revise
 
     def test_finish_keeps_the_blog_as_markdown_and_again_only_when_changed(self):
-        found = self.finish(self.create(style='product-announcement', author='Avery'))
+        found = self.desk(
+            operation='c',
+            manuscript='# Synthetic gateway guide\n\n## One\n\nSynthetic writing.\n',
+            style='product-announcement',
+            author='Avery',
+        )
+        result = self.publish(found['id'])
         rows = self.shared()
         self.assertEqual(len(rows), 1)
         self.assertEqual(
@@ -50,11 +57,9 @@ class KeepTests(SharedLibraryCase):
         draft = studio.inside(self.root, 'articles', found['id']) / 'DRAFT.md'
         library = document_library.opened()
         self.assertEqual(library.snapshot(rows[0]['id'], 1)['text'], draft.read_text())
-        self.assertTrue(found['decisions'][-1]['event'].endswith(' · kept in the team library'))
-        found = runner.decide(
-            self.root, found['id'], found['expected'], 'changes', 'Tighter.', target='draft'
-        )
-        found = self.finish(self.approve(self.submit(found, '# draft\nTighter words.')))
+        self.assertEqual(result['library']['id'], team.FinishTests.kept(self)[0]['id'])
+        self.revise(found, 'Tighter words.')
+        self.publish(found['id'])
         rows = self.shared()
         self.assertEqual((len(rows), rows[0]['revision']), (1, 2))
 

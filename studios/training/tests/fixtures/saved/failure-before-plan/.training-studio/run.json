@@ -1,0 +1,172 @@
+{
+  "agent": "claude",
+  "answers": {},
+  "copies": {
+    "problems": {},
+    "tried": {}
+  },
+  "deck": {},
+  "documents": null,
+  "drafted": [],
+  "driver": null,
+  "effort": null,
+  "halt": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model": null,
+  "model_jobs": [
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 1,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research-plan",
+      "source": "inherit",
+      "step": "research-plan"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 2,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research-plan",
+      "source": "inherit",
+      "step": "research-plan"
+    },
+    {
+      "actual_effort": null,
+      "actual_model": null,
+      "attempt": 3,
+      "effort": null,
+      "model": null,
+      "permission": "write",
+      "policy": 3,
+      "product": "Training Studio",
+      "profile": "research",
+      "purpose": "research-plan",
+      "source": "inherit",
+      "step": "research-plan"
+    }
+  ],
+  "model_profiles": {
+    "agent": "claude",
+    "mode": "single",
+    "policy": 3,
+    "profiles": {
+      "checking": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "quick": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "research": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "effort": null,
+        "model": null,
+        "source": "inherit"
+      }
+    },
+    "schema": 1
+  },
+  "problem": {
+    "action": "retry",
+    "at": "2026-11-24T22:36:19Z",
+    "kept": "Everything kept before this step is still here. Nothing from the tries that failed was kept.",
+    "label": "Try again",
+    "state": "failed",
+    "step": "research-plan",
+    "what": "This step did not work in 3 tries: Draft the research plan. The last one: It stopped without finishing: the model gave up."
+  },
+  "question": null,
+  "research": null,
+  "research_from": {
+    "documents": false,
+    "sites": [],
+    "web": true
+  },
+  "research_questions": [],
+  "review_layout": 2,
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "started_at": "2026-11-24T22:36:19Z",
+  "steps": {
+    "intake": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:19Z",
+          "error": null,
+          "outcome": "kept",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:19Z",
+          "tokens": null
+        }
+      ],
+      "failed": 0
+    },
+    "research-plan": {
+      "attempts": [
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:19Z",
+          "error": "It stopped without finishing: the model gave up.",
+          "outcome": "failed",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:19Z",
+          "tokens": null
+        },
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:19Z",
+          "error": "It stopped without finishing: the model gave up.",
+          "outcome": "failed",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:19Z",
+          "tokens": null
+        },
+        {
+          "dollars": null,
+          "ended_at": "2026-11-24T22:36:19Z",
+          "error": "It stopped without finishing: the model gave up.",
+          "outcome": "failed",
+          "seconds": 0.0,
+          "started_at": "2026-11-24T22:36:19Z",
+          "tokens": null
+        }
+      ],
+      "failed": 3
+    }
+  }
+}

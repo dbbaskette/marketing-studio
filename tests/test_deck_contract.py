@@ -1,10 +1,10 @@
 """Both studios make a slide deck the same way: the contract between them, run for real.
 
-Each studio's tests hold a `deck_contract` module that takes one deck through its engine at
-every review level, with stand-ins only (no provider, no network, a disposable home), and
-writes what the deck's workers read and where it paused. They differ only in where an
-outline's words come from, so what is compared is the deck's own guidance and the brand's,
-and the brand's checkpoints.
+Each studio's tests hold a `deck_contract` module that starts one deck on the desk and draws
+it, with stand-ins only (no provider, no network, a disposable home), and writes what the
+deck's workers read. They differ only in where an outline's words come from, so what is
+compared is the deck's own guidance and the brand's. A desk deck reads no review level: the
+review-level pauses went with both studios' earlier step-by-step flows (GitHub issue #542).
 """
 import json
 import os
@@ -35,7 +35,7 @@ def contract(studio: str, out: Path) -> dict:
 
 
 class DeckContractTests(unittest.TestCase):
-    def test_both_studios_give_workers_the_same_guidance_and_pause_the_same_way(self):
+    def test_both_studios_give_workers_the_same_guidance(self):
         with tempfile.TemporaryDirectory() as folder:
             training = contract('training', Path(folder) / 'training.json')
             presentation = contract('presentation', Path(folder) / 'presentation.json')
@@ -52,16 +52,4 @@ class DeckContractTests(unittest.TestCase):
         self.assertEqual(lacking, [studio for studio, side in (('training', training),
                                    ('presentation', presentation))
                                    if 'design guidance' not in side['outline']])
-        self.assertEqual(training['pauses'], presentation['pauses'])
-        self.assertEqual(training['pauses'], {level: list(stops) for level, stops
-                                              in deck_flow.PAUSES.items()})
         self.assertIn(deck_flow.BRAND_WORKER, training['composer'])
-        # Looks that cannot be rendered: the same pauses, the brand's default taken knowingly
-        # where the person is asked, by the policy under Automatic draft, and recorded as a
-        # look nobody saw rendered.
-        self.assertEqual(training['failing'], presentation['failing'])
-        self.assertEqual({level: entry['by'] for level, entry in training['failing'].items()},
-                         {'step_by_step': 'page', 'balanced': 'page',
-                          'automatic': 'review-policy'})
-        self.assertEqual({entry['shown'] for entry in training['failing'].values()},
-                         {'unrendered'})

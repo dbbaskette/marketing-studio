@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "status": "awaiting-choice",
+  "slide": "what-it-does",
+  "outlineSha256": "f659dce3b3e55979547878aec914d098ca7027ded701c6cd9ad1c44ccfce79ca",
+  "default": "example-clear",
+  "house": [
+    "Fill cards: a supporting card is a solid neutral box or a bar card.",
+    "Icons: each card that names a concrete concept gets one approved icon."
+  ],
+  "preview": "local",
+  "samples": [
+    {
+      "id": "example-clear",
+      "name": "Clear",
+      "useWhen": "Most decks: one product explained.",
+      "direction": {
+        "focal": "headingPrimary",
+        "neutral": "canvasSecondary",
+        "meanings": {
+          "accentAqua": "Example Platform: the product this deck is about"
+        },
+        "motif": "A strip on each card says what it is about."
+      },
+      "layouts": {
+        "cover": "Title Slide",
+        "section": "Section Header",
+        "closing": "Big Statement",
+        "thanks": "Thank You"
+      },
+      "pptx": "@DECK@/work/look/samples/example-clear/look.pptx",
+      "image": "@DECK@/work/look/samples/example-clear/preview/slide-01.png"
+    },
+    {
+      "id": "example-bold",
+      "name": "Bold",
+      "useWhen": "Launches and keynotes.",
+      "direction": {
+        "focal": "accentAqua",
+        "neutral": "canvasSecondary",
+        "meanings": {
+          "headingPrimary": "Example Platform"
+        },
+        "motif": "One large solid card carries the point."
+      },
+      "layouts": {
+        "cover": "Title Slide",
+        "section": "Section Header",
+        "closing": "Big Statement",
+        "thanks": "Thank You"
+      },
+      "pptx": "@DECK@/work/look/samples/example-bold/look.pptx",
+      "image": "@DECK@/work/look/samples/example-bold/preview/slide-01.png"
+    }
+  ],
+  "sheet": "@DECK@/work/look/samples/looks.png"
+}

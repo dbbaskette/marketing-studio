@@ -6,7 +6,7 @@ Edit section titles, messages and one to three research questions per section. A
 
 The scan uses bounded supplied excerpts, no external searches, and at most 180 seconds and $0.25 within the deck's existing limits. Stop or timeout keeps accepted output or a usable incomplete starting story. There is no automatic second author or escalation. The scan supplies no teaching or presentation evidence; Harness Research's independent check still validates the factual research.
 
-The approved story and checked research feed the slide-text draft. Slide-text approval, look choice and delivery remain the person's decisions. A finished script or selected change keeps its direct route, without an unnecessary scan or research pass. Existing records keep their saved flow; schema-5 stories and new schema-6 section flows require their compatible saved runtime.
+The approved story and checked research feed the slide-text draft. Slide-text approval, look choice and delivery remain the person's decisions. A finished script or selected change keeps its direct route, without an unnecessary scan or research pass. Older records are never converted to it; schema-5 stories and new schema-6 section flows require their compatible saved runtime.
 
 
 New section flows keep completed research contributions as drafts, retry only

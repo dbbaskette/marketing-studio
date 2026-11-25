@@ -202,15 +202,6 @@ class BrandCheckTests(FinishCase):
         self.assertEqual(str(caught.exception),
                          'This deck changed since you opened it. Reload to see the latest.')
 
-    def test_a_gated_deck_has_no_finishing(self):
-        root = self.gated()
-        for name, given in (('desk_finish', ('brand',)), ('desk_apply', ('a' * 32, ['p1'], 1)),
-                            ('desk_skip', ('a' * 32, ['p1']))):
-            with self.subTest(route=name):
-                with self.assertRaises(WorkspaceError) as caught:
-                    getattr(self.engine, name)(root, *given)
-                self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
-
 
 def content_finding(number: int, note: str, fix: str):
     """A review that finds one major problem with what slide `number` says."""
@@ -574,18 +565,6 @@ class ReviewTests(FinishCase):
         self.review(root)
         self.assertTrue(seen[0]['reviewing'])
         self.assertEqual(seen[0]['working']['what'], desk.REVIEWING)
-
-    def test_a_gated_deck_still_repairs_after_its_check(self):
-        self.workers.found = [drawing_finding(5, self.NOTE, self.FIX)]
-        root = self.gated(initial_review='user-first')
-        drawn = self.sections()
-        expected = self.view(root)['gate']['expected_deck']
-        self.engine.review_draft(root, expected)
-        tasks = [job.task for job in self.workers.of('section')[drawn:]]
-        self.assertTrue(tasks)
-        self.assertIn('Draw section 2 of', tasks[0])
-        self.assertTrue(self.record(root).get('review_requested'))
-        self.assertEqual(self.waiting(root), 'gate:build')
 
 
 class SpeakerNotesTests(FinishCase):

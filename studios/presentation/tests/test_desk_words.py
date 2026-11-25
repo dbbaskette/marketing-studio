@@ -237,13 +237,6 @@ class TypedWordsTests(DeskCase):
             self.engine.desk_words(root, 1, ['points', 0, 'text'], 'x', self.seen(root),
                                    self.SESSION)
 
-    def test_a_gated_deck_s_outline_is_never_patched(self):
-        from runner import desk
-        root = self.gated()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.desk_words(root, 3, 'title', 'Batches restart in turn', 1, self.SESSION)
-        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
-
 
 class SelectionTests(DeskCase):
     """Rephrase, Shorten, Expand, Fix or Ask… on a selection of a slide's words: a small
@@ -945,17 +938,6 @@ class SelectedTests(DeskCase):
         self.assertEqual(hashlib.sha256((root / existing.SOURCE).read_bytes()).hexdigest(),
                          before)
         self.assertIsNotNone(json.loads((root / 'deliver.json').read_text())['url'])
-
-    def test_a_gated_selected_deck_keeps_its_plan_as_its_worker_wrote_it(self):
-        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.saved_existing_deck('automatic', 'selected',
-                                  selected='Shorten the words on slide 2')
-        self.assertEqual(self.waiting(root), 'gate:build')
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', 1, self.SESSION)
-        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
-        self.assertFalse((root / words.SHARED_OPS).exists())
-        self.assertEqual(self.plan(root)[0]['runs'], [{'index': 1, 'text': 'in minutes.'}])
 
 
 class StrictWordsTests(DeskCase):

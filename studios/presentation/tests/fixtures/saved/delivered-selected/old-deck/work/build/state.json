@@ -1,0 +1,16 @@
+{
+  "asked": null,
+  "audit": {
+    "errors": 0,
+    "messages": [],
+    "status": "PASS",
+    "warnings": 0
+  },
+  "auditNote": null,
+  "deck": "work/patched.pptx",
+  "repair": [],
+  "repaired": 0,
+  "rounds": [],
+  "sections": {},
+  "start": null
+}

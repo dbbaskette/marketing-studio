@@ -27,10 +27,6 @@ from studio_core import (
 )
 from studio_core.preferences import ready as shared_ready
 
-APPLY_REQUEST = (
-    'Apply only the findings in the review below. Edit only the passages they name; '
-    "change nothing else. Keep the author's voice, qualifiers, numbers, links and quotations."
-)
 STATE = 'derived/blog-run.json'
 # A from-files run embeds the uploaded files; past this many JSON characters of source
 # text, each file is excerpted to its share and the run says which ones were.
@@ -127,6 +123,28 @@ MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
 )
+# The earlier step-by-step flow continues nothing any more: only the review and revise runs
+# the manuscript editor's own check makes (Edit manuscript) still go on. Every other saved
+# run is a saved record that opens on the desk or is read-only (desk_migration.saved_record).
+SAVED_FLOW = (
+    'The earlier step-by-step flow no longer continues this blog: open it on the desk, or '
+    'start new work from it.'
+)
+
+
+def continues(found):
+    """Whether this saved run still goes on: only one the manuscript editor's check made.
+    `found` is the run record or the run as survey reads it (both carry editor_check)."""
+    check = found.get('editor_check') if isinstance(found, dict) else None
+    return isinstance(check, str) and bool(check)
+
+
+def refuse_saved(found):
+    """Refuse to continue a saved run that is not the manuscript editor's own."""
+    if not continues(found):
+        raise ValueError(SAVED_FLOW)
+
+
 # Research that stopped before its check accepted it (refused, out of time, a failed job) is
 # kept beside the blog for Try again: the draft dossier, the check's last review and the
 # captures they cite. It stays on this computer: the Team Hub skips dot folders, and the
@@ -568,8 +586,13 @@ def load(root, ident):
         raise ValueError('This run needs a newer Blog Studio runtime.')
     if run.get('schema') == 4:
         from studio_core import research_session
+        from studio_core.blog_migration import run_supported
 
-        if not research_session.protocol(run):
+        # A blog moved to the desk keeps this run only to read, so its record need only
+        # have the known shape; a run that still continues needs the current protocol.
+        if not research_session.protocol(run) and not (
+            run_supported(run) and (directory / 'desk' / 'migration.json').is_file()
+        ):
             raise ValueError('This research execution record is not supported.')
     if run.get('schema') == 2 and not run.get('review_policy'):
         raise ValueError('This run is missing its saved review level. Restore its run record.')
@@ -1446,7 +1469,7 @@ def create(root, data, approval='conversation'):
         record['stop_point'] = stop
         record['mode'] = 'from-files'
     if angles_first:
-        # Three angles first; the chosen one starts the pipeline above (see choose_angle).
+        # Three angles first: a from-files run waited for the person to choose one.
         pipeline = ['angles']
     run = {
         'schema': 1,
@@ -1728,13 +1751,7 @@ def decide(root, ident, expected, action, request='', page=False, target=None, r
     if action == 'changes' and target and found['next']:
         if run['pipeline'].index(target) > run['pipeline'].index(found['next']):
             raise ValueError('Finish the current stage before changing a later stage.')
-    if action == 'handoff':
-        run['approval'] = 'conversation' if page else 'page'
-    elif action == 'approve' and stage == 'angles':
-        raise ValueError(
-            'Choose one of the angles with run choose, or ask for three different ones.'
-        )
-    elif action == 'approve':
+    if action == 'approve':
         if (
             not stage
             or next(row['status'] for row in found['stages'] if row['stage'] == stage) != 'draft'
@@ -1776,18 +1793,6 @@ def decide(root, ident, expected, action, request='', page=False, target=None, r
 
 
 RESEARCH_STAGES = ('research-plan', 'research', 'claims-map')
-
-
-def skip_research(root, directory, record, run, at):
-    """Take research out of a run that stopped at it: its stages leave the pipeline, the
-    decision is recorded, and the later stages are told there is no research bundle. The
-    blog keeps its own research policy, so no other stage's input pin changes."""
-    run['pipeline'] = [stage for stage in run['pipeline'] if stage not in RESEARCH_STAGES]
-    for stage in RESEARCH_STAGES:
-        run['stages'].pop(stage, None)
-        run.get('approved', {}).pop(stage, None)
-    run['research_skipped'] = {'from': at, 'at': studio.now()}
-    save(root, directory, record, run, 'Continued without research')
 
 
 def has_draft(directory, run):
@@ -2221,6 +2226,7 @@ class Engine:
             raise ValueError('Choose Run this from here to move this blog from chat to the page.')
         state = self.local(ident)
         if action in ('resume', 'retry'):
+            refuse_saved(found)
             if found['complete']:
                 raise ValueError('This run is already complete.')
             state.update(enabled=True, status='queued', error='', reason=None)
@@ -2233,22 +2239,6 @@ class Engine:
         self.keep_local(ident, state)
         self.wake.set()
         return self.describe(ident)
-
-    def note_stage(self, ident, found, local=None):
-        """The stage a note left now would go with: the next job that starts. While a
-        submitted stage waits for a decision, or a worker is on the next stage, that is the
-        stage after it; None when there is no later stage."""
-        if found['complete'] or not found['next']:
-            return None
-        local = self.local(ident) if local is None else local
-        names = [row['stage'] for row in found['stages']]
-        at = names.index(found['next'])
-        busy = found['awaits'] == 'decision' or (
-            local.get('status') == 'working' and self.current == ident
-        )
-        if not busy:
-            return found['next']
-        return names[at + 1] if at + 1 < len(names) else None
 
     def note_research(self, ident, event):
         """Note the research round that started, or a research job that ended, in this
@@ -2380,7 +2370,6 @@ class Engine:
             'driver': owner,
             'status': status,
             'notes': local.get('notes') or {},
-            'note_stage': self.note_stage(ident, found, local),
             # The job's start is timed only while it is the one working here.
             'started_at': local.get('started_at') if status == 'working' else None,
             'touched': decisions[-1]['at'] if decisions else None,
@@ -2427,6 +2416,8 @@ class Engine:
         from team_workspace import before
 
         preview = survey(self.root, ident)
+        if not continues(preview):
+            return  # A saved run the earlier flow made: it never starts another step.
         if (
             not preview['complete']
             and preview['approval'] == 'page'
@@ -2451,6 +2442,8 @@ class Engine:
             if not local.get('enabled'):
                 return
             found = survey(self.root, ident)
+            if not continues(found):
+                return
             if found['complete']:
                 local.update(enabled=False, status='complete')
                 self.keep_local(ident, local)
@@ -2644,8 +2637,9 @@ class Engine:
                 if pending:
                     # submit() let any kept draft go: the accepted research replaces it.
                     state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
-                if run.get('editor_check'):
-                    state['enabled'] = False
+                # Every run that goes on is the manuscript editor's: it stops after each step
+                # for the editor (only the earlier flow went on to the next step by itself).
+                state['enabled'] = False
                 self.keep_local(ident, state)
                 self.activity.checkpoint(blog_activity.blog(ident), 'output-saved', found['next'])
                 self.activity.checkpoint(blog_activity.blog(ident), 'ready', found['next'])
@@ -2749,11 +2743,43 @@ class Engine:
             if self.closed.wait(60):
                 return
 
+    def settle_interrupted(self):
+        """Start-up recovery for a saved run of the earlier flow: a `working` marker that no
+        worker of this process runs is a step a stopped process left. Nothing takes such a run
+        up again, and the repository's running-step check would read it as busy for good, so
+        it is settled as stopped in this computer's runner record under .blog-runs only, as
+        is one whose blog's session record cannot be read or whose folder is gone.
+        Nothing in the blog's own folder changes and no work starts. A run the manuscript
+        editor's check made keeps its own recovery: the loop takes its step up again."""
+        import desk_migration
+
+        folder = studio.inside(self.root, '.blog-runs')
+        for path in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+            ident = path.stem
+            if ident == self.current or path.is_symlink():
+                continue
+            try:
+                state = self.local(ident)
+                if not isinstance(state, dict) or state.get('status') != 'working':
+                    continue
+                # Read without the blog's session record: one that cannot be read, or a blog
+                # whose folder is gone, leaves nothing that could run the step either.
+                directory = studio.inside(self.root, 'articles', studio.identifier(ident))
+                if os.path.lexists(directory):
+                    run = desk_migration.saved_run(directory)
+                    if not isinstance(run, dict) or continues(run):
+                        continue
+            except (ValueError, OSError):
+                continue
+            state.update(enabled=False, status='stopped')
+            self.keep_local(ident, state)
+
     def serve(self):
         import tool_jobs
 
         with studio.locked(self.root):
             tool_jobs.recover(self.root)
+            self.settle_interrupted()
         while not self.closed.is_set():
             folder = studio.inside(self.root, '.blog-runs')
             for path in sorted(folder.glob('*.json')) if folder.exists() else []:
@@ -2796,6 +2822,58 @@ class Engine:
 
 def engine(root):
     return ENGINES.setdefault(str(root), Engine(root))
+
+
+def saved_row(root, ident, directory, run):
+    """A list row of a saved blog of the earlier flow, from its small records only (session
+    and run; the team's driver record): saved there, finished there, or its records cannot be
+    read. Never its material, sources or a classification."""
+    import desk_migration
+
+    try:
+        session = desk_migration._small_json(directory / 'session.json')
+    except (OSError, ValueError, UnicodeError):
+        session = None
+    title = session.get('title') if isinstance(session, dict) else None
+    row = {
+        'id': ident,
+        'title': title if isinstance(title, str) and title.strip() else ident,
+        'status': 'saved',
+        'saved': 'unreadable',
+        'next': None,
+        'error': '',
+        'stages': [],
+        'complete': False,
+        'mode': None,
+        'editor_check': None,
+        'touched': None,
+    }
+    if not isinstance(session, dict) or not isinstance(run, dict):
+        return row
+    stages = run.get('stages') if isinstance(run.get('stages'), dict) else {}
+    pipeline = run.get('pipeline') if isinstance(run.get('pipeline'), list) else []
+    finished = bool(pipeline) and all(
+        isinstance(stages.get(name), dict) and stages[name].get('status') == 'approved'
+        for name in pipeline
+    )
+    decisions = run.get('decisions') if isinstance(run.get('decisions'), list) else []
+    last = decisions[-1] if decisions and isinstance(decisions[-1], dict) else {}
+    row.update(
+        saved='finished' if finished else 'saved',
+        complete=finished,
+        mode=run.get('mode') if isinstance(run.get('mode'), str) else None,
+        touched=last.get('at') if isinstance(last.get('at'), str) else None,
+    )
+    try:
+        from team_workspace import driver, space
+
+        found = space(root)
+        row.update(
+            team=bool(found and found.address), driver=driver(root, ident) if found else None
+        )
+    except (ValueError, OSError, KeyError, TypeError):
+        pass
+    return row
 
 
 def catalog(root):
@@ -2857,6 +2935,15 @@ def catalog(root):
                 )
                 continue
             if studio.inside(path.parent, STATE).is_file():
+                import desk_migration
+
+                run = desk_migration.saved_run(path.parent)
+                if not continues(run):
+                    # A saved run of the earlier flow is a saved record, never a run to
+                    # continue. A list (polled on Home and Blogs) says only what its session
+                    # and run records prove; opening its record says what becomes of it.
+                    rows.append(saved_row(root, ident, path.parent, run))
+                    continue
                 found = engine(root).describe(ident, listing=True)
                 rows.append(
                     {
@@ -2881,12 +2968,17 @@ def catalog(root):
                     }
                 )
         except (ValueError, OSError, KeyError):
+            if not studio.inside(path.parent, 'desk', 'draft.json').exists():
+                # A saved blog whose records cannot be read: its record says why.
+                rows.append({'id': ident, 'title': ident, 'status': 'saved', 'saved': 'unreadable'})
+                continue
             rows.append(
                 {
                     'id': ident,
                     'title': ident,
                     'status': 'needs-attention',
-                    'error': 'Open this blog in chat to inspect its saved context.',
+                    # Its desk says why.
+                    'error': 'Its saved records cannot be read here. Open it to see why.',
                 }
             )
     rows.sort(key=lambda row: row.get('touched') or '', reverse=True)
@@ -3221,163 +3313,35 @@ def document(root, ident, stage):
     }
 
 
-# What the page asks of a guided run. Anything else is answered as an unknown route: a new
-# run starts in chat, with the CLI's `run create`.
-PAGE_ACTIONS = (
-    'adopt',
-    'apply-review',
-    'approve',
-    'changes',
-    'develop',
-    'handoff',
-    'note',
-    'pause',
-    'resume',
-    'retry',
-    'skip-research',
-    'start',
-    'stop',
-)
+# What the page asks of a saved run: only the manuscript editor's own runs go on (Edit
+# manuscript drives them; a finished one's run and gate screens read it and can ask for
+# changes), and Stop or Pause end a step a saved blog left under way. Anything else is
+# answered as an unknown route: new work starts on the desk.
+PAGE_ACTIONS = ('approve', 'changes', 'pause', 'resume', 'retry', 'stop')
 
 
 def dispatch(root, action, data):
     """Called only by the authenticated page, under the ordinary desk mutation lock."""
-    if action not in PAGE_ACTIONS:
-        raise ValueError('Unknown management action.')
-    runner = engine(root)
     ident = data.get('id')
     if isinstance(ident, str):
         import desk
 
+        # A blog on the desk says so first, whatever the run action was.
         desk.refuse_on_desk(studio.item(root, 'articles', ident)[0])
-    if (
-        set(data)
-        - {'id', 'expected', 'request', 'stage'}
-        - ({'seconds'} if action == 'retry' else set())
-    ):
+    if action not in PAGE_ACTIONS:
+        raise ValueError('Unknown management action.')
+    runner = engine(root)
+    if set(data) - {'id', 'expected', 'request', 'stage'}:
         raise ValueError('Unknown run field.')
     # Every page control is bound to the version the person was shown.
     found = survey(root, ident)
     if not data.get('expected') or data['expected'] != found['expected']:
         raise ValueError('This blog changed. Reload before deciding.')
-    if action == 'apply-review':
-        guard(root, ident, data['expected'], page=True)
-        directory, record, run = load(root, ident)
-        review_file = studio.inside(directory, STAGES['review'][1])
-        if not review_file.is_file():
-            raise ValueError('There is no review to apply yet.')
-        if (
-            found['next'] not in ('review', 'package')
-            or next(row['status'] for row in found['stages'] if row['stage'] == found['next'])
-            != 'draft'
-        ):
-            raise ValueError('Apply findings while the review or handoff waits for you.')
-        if runner.current == ident:
-            raise ValueError('Wait for the current writing step to stop before applying findings.')
-        review = review_file.read_text(encoding='utf-8')
-        decide(root, ident, data['expected'], 'changes', APPLY_REQUEST, page=True, target='draft')
-        directory, record, run = load(root, ident)
-        run['stages']['draft'].update(request=APPLY_REQUEST + '\n\n' + review, apply_review=True)
-        if 'package' not in run['pipeline']:
-            run['pipeline'].append('package')
-        record['stop_point'] = 'package'
-        save(root, directory, record, run, 'Apply only the review’s findings')
-        return runner.control(ident, 'resume')
-    if action == 'develop':
-        guard(root, ident, data['expected'], page=True)
-        directory, record, run = load(root, ident)
-        if run.get('mode') == 'from-files':
-            choose_angle(root, directory, record, run, found, data.get('request', ''))
-            return runner.control(ident, 'resume')
-        if run.get('mode') not in ('ideas', 'outline') or not (directory / 'OUTLINE.md').is_file():
-            raise ValueError('Choose a saved idea or outline before developing it.')
-        request = text(data.get('request', ''), 'selected angle', 8000, required=True)
-        run['mode'] = 'write'
-        run['pipeline'] = ['outline', 'draft', 'review', 'package']
-        run['stages'] = {
-            'outline': {
-                'status': 'pending',
-                'request': 'Develop this selected angle or structure: ' + request,
-            }
-        }
-        record['stop_point'] = 'package'
-        save(root, directory, record, run, 'Selected angle for drafting')
-        return runner.control(ident, 'resume')
-    if action == 'start':
-        if found['approval'] == 'conversation':
-            decide(root, ident, data['expected'], 'handoff')
-        return runner.control(ident, 'resume')
-    if action == 'retry' and 'seconds' in data:
-        # Try again with more time: the limit that just ran out is raised for every step.
-        seconds = data['seconds']
-        if type(seconds) is not int or not 30 <= seconds <= 3600:
-            raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
-        if found['approval'] != 'page':
-            raise ValueError('Choose Run this from here to move this blog from chat to the page.')
-        directory, record, run = load(root, ident)
-        run['seconds'] = seconds
-        save(root, directory, record, run, f'Step time limit set to {seconds} seconds')
+    if action not in ('stop', 'pause'):
+        # Stop and Pause end a step left under way, so a saved blog can open on the desk.
+        refuse_saved(found)
     if action in ('resume', 'retry', 'pause', 'stop'):
         return runner.control(ident, action)
-    if action == 'note':
-        # A note for the next job that starts. It is kept beside the run, in its local
-        # state, never in the versioned record: leaving one stops nothing and changes no
-        # version a running worker is checked against. job() folds it into that stage's
-        # request when the stage starts.
-        request = text(data.get('request', ''), 'note', 8000, required=True)
-        stage = runner.note_stage(ident, found)
-        if stage is None:
-            raise ValueError(
-                'There is no later step for a note to go with. Ask for changes to '
-                + (STAGES[found['next']][0].lower() if found['next'] else 'a stage')
-                + ' instead.'
-            )
-        state = runner.local(ident)
-        notes = state.setdefault('notes', {})
-        notes[stage] = (notes.get(stage, '') + '\n' + request).strip()
-        runner.keep_local(ident, state)
-        return {**runner.describe(ident), 'noted': stage}
-    if action == 'skip-research':
-        # Continue without research: from a run stopped at its research, on the page.
-        guard(root, ident, data['expected'], page=True)
-        if found['next'] not in RESEARCH_STAGES:
-            raise ValueError('This blog is not waiting on research. Continue it as usual.')
-        if found['awaits'] == 'decision':
-            raise ValueError(
-                'Decide on the '
-                + STAGES[found['next']][0].lower()
-                + ' first: approve them or ask for changes.'
-            )
-        if runner.current == ident:
-            raise ValueError(
-                'Research is stopping; try again in a moment.'
-                if runner.stop.is_set()
-                else 'Research is still working. Stop the research first, then continue without it.'
-            )
-        directory, record, run = load(root, ident)
-        skip_research(root, directory, record, run, found['next'])
-        shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
-        state = runner.local(ident)
-        state.pop('research', None)
-        runner.keep_local(ident, state)
-        return runner.control(ident, 'resume')
-    if action == 'adopt':
-        if not found['next'] or not found['content']:
-            raise ValueError('There is no saved stage to review.')
-        submit(
-            root,
-            ident,
-            found['next'],
-            {
-                'content': found['content'],
-                'notes': 'The saved version was brought back for your review. Earlier assistant notes remain in history.',
-            },
-            data['expected'],
-            page=True,
-        )
-        return runner.describe(ident)
-    if data.get('refresh', False) not in (True, False):
-        raise ValueError('Say whether to bring the evidence up to date with true or false.')
     result = decide(
         root,
         ident,
@@ -3386,15 +3350,8 @@ def dispatch(root, action, data):
         data.get('request', ''),
         page=True,
         target=data.get('stage'),
-        refresh=data.get('refresh') is True,
     )
-    if action == 'handoff':
-        state = runner.local(ident)
-        state.update(enabled=False, status='in-chat')
-        runner.keep_local(ident, state)
-        if runner.current == ident:
-            runner.stop.set()
-    elif action == 'changes' and runner.current == ident:
+    if action == 'changes' and runner.current == ident:
         runner.stop.set()
     runner.wake.set()
     return {**result, **runner.describe(ident)}
@@ -3418,61 +3375,6 @@ def angles(content):
         title = re.sub(r'^\d+[.)]\s*', '', match.group(1)).replace('**', '').strip()
         found.append({'title': title, 'says': says})
     return found
-
-
-def choose_angle(root, directory, record, run, found, request):
-    """The chosen angle becomes the blog's title, point and reader; the normal run follows."""
-    if run.get('angles') is False:
-        raise ValueError('This blog has no angles to choose from.')
-    saved = run['stages'].get('angles', {})
-    if found['next'] != 'angles' or saved.get('status') != 'draft':
-        raise ValueError('Wait for the three angles before choosing one.')
-    request = text(request, 'selected angle', 8000, required=True)
-    title, _, note = request.partition('\n')
-    doc = (directory / STAGES['angles'][1]).read_text()
-    angle = next(
-        (item for item in angles(doc) if item['title'].casefold() == title.strip().casefold()),
-        None,
-    )
-    if angle is None:
-        raise ValueError('Choose one of the saved angles by its heading.')
-    headings = [item['title'].casefold() for item in angles(doc)]
-    if len(set(headings)) != len(headings):
-        raise ValueError('Two angles share a heading. Ask for three different ones instead.')
-    parts = [part.strip() for part in re.split(r'\s[·•|]\s', angle['says'])]
-    audience = parts[0] if len(parts) >= 2 else ''
-    point = parts[1] if len(parts) >= 2 else angle['says']
-    record['title'] = angle['title']
-    record.setdefault('writing_preferences', {})
-    if audience:
-        record['writing_preferences']['audience'] = audience
-    run['brief'] = {
-        'goal': point or run['brief']['goal'],
-        'audience': audience or run['brief']['audience'],
-    }
-    after = run.get('after_angles') or {'research': 'none', 'stop': 'package'}
-    pipeline = ['research-plan', 'research'] if after['research'] == 'web-allowed' else []
-    pipeline += ['outline', 'draft', 'review', 'package']
-    # The angles stay at the head of the run, decided by the pick.
-    run['pipeline'] = ['angles'] + pipeline[: pipeline.index(after['stop']) + 1]
-    run['chosen_angle'] = {'title': angle['title'], 'says': angle['says']}
-    _accept(directory, run, 'angles', 'page' if run['approval'] == 'page' else 'conversation')
-    run['stages'] = {
-        'angles': run['stages']['angles'],
-        'outline': {
-            'status': 'pending',
-            'request': (
-                'Develop this selected angle: '
-                + angle['title']
-                + ('\n' + angle['says'] if angle['says'] else '')
-                + ('\n' + note.strip() if note.strip() else '')
-            ),
-        },
-    }
-    record['stop_point'] = after['stop']
-    # The brief and title just changed with the pick; the decided angles are pinned to them.
-    run['stages']['angles']['basis'] = basis(root, directory, record, run, 'angles')
-    save(root, directory, record, run, 'Chose the angle: ' + angle['title'])
 
 
 def add_parser(groups):
@@ -3539,69 +3441,19 @@ def add_parser(groups):
         help='With --mode from-files: start at the outline from the title, goal and audience',
     )
     commands.add_parser('list')
-    for name in ('status', 'submit', 'approve', 'changes', 'handoff', 'choose'):
-        cmd = commands.add_parser(name)
-        cmd.add_argument('--id', required=True)
-        if name != 'status':
-            cmd.add_argument('--expected', required=True)
-        if name == 'choose':
-            cmd.add_argument('--angle', required=True)
-            cmd.add_argument('--note', default='')
-        if name == 'submit':
-            cmd.add_argument('--stage', choices=tuple(STAGES), required=True)
-            cmd.add_argument('--file', required=True)
-            cmd.add_argument('--notes', default='')
-            cmd.add_argument(
-                '--gap',
-                action='append',
-                default=[],
-                help='With a draft or handoff: something the author must supply before publishing',
-            )
-        if name == 'changes':
-            cmd.add_argument('--request', required=True)
-            cmd.add_argument('--stage', choices=tuple(STAGES))
+    status = commands.add_parser('status')
+    status.add_argument('--id', required=True)
 
 
 def command(root, args):
+    """Saved runs are read here: their list and one run's status. New work starts on the desk,
+    and the earlier flow continues no saved run (the manuscript editor drives its own)."""
     if args.action == 'create':
         raise ValueError(
-            'New Blog Studio work starts on the desk. Use studio.py --root PATH desk create --input FILE (or --input - for JSON on stdin). Saved run status, submit and decisions remain available.'
+            'New Blog Studio work starts on the desk. Use studio.py --root PATH desk create '
+            '--input FILE (or --input - for JSON on stdin). Saved runs can be listed and read '
+            'with run list and run status.'
         )
     if args.action == 'list':
         return catalog(root)
-    if args.action == 'status':
-        return engine(root).describe(args.id)
-    with studio.locked(root):
-        if args.action == 'submit':
-            if args.gap and args.stage not in NOTED:
-                # Only a draft and a handoff keep gaps; elsewhere one would be dropped unsaid.
-                raise ValueError(
-                    'A gap goes with a draft or a handoff, where it is listed under Needs you '
-                    'before publishing. Put it in --notes for this step. Nothing was submitted.'
-                )
-            return submit(
-                root,
-                args.id,
-                args.stage,
-                {
-                    'content': Path(args.file).read_text(),
-                    'notes': args.notes,
-                    **({'gaps': args.gap} if args.gap else {}),
-                },
-                args.expected,
-            )
-        if args.action == 'choose':
-            found = guard(root, args.id, args.expected)
-            directory, record, run = load(root, args.id)
-            if run.get('mode') != 'from-files':
-                raise ValueError('Only a blog written from files chooses an angle.')
-            choose_angle(root, directory, record, run, found, args.angle + '\n' + (args.note or ''))
-            return survey(root, args.id)
-        return decide(
-            root,
-            args.id,
-            args.expected,
-            args.action,
-            getattr(args, 'request', ''),
-            target=getattr(args, 'stage', None),
-        )
+    return engine(root).describe(args.id)

@@ -1,0 +1,175 @@
+{
+  "owner": "harness-research-synthesis",
+  "schema": 2,
+  "layout": "topic",
+  "asset_input_fingerprint": "1d1c41a37fefbe0f07503511560e658daad0ededc406a54a7a3a69816cede091",
+  "collection": {
+    "request_digest": "c61e7ce1e19296ef1cbf9020e9cef09b68f0f7545f3d650cffd720fefd77d1b6",
+    "generation": 1,
+    "registry_digest": "556eb3e9cdbebf76c2870172a310a810af2e3da7a1bd8058f1a068624129580e"
+  },
+  "dossier": {
+    "audience": "Platform teams",
+    "facts": [
+      {
+        "author": "investigator-c49a0b17b23f53ba4c9314b4",
+        "citations": [
+          {
+            "quote": "More than one instance keeps capacity.",
+            "source": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445"
+          }
+        ],
+        "id": "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9",
+        "statement": "More than one instance keeps capacity."
+      }
+    ],
+    "purpose": "Inform a presentation: Show when capacity holds. Prioritize key messages, evidence worth explaining visually, and counterarguments.",
+    "schema": 2,
+    "scope": "Evidence, limitations and alternatives for the presentation goal: Show when capacity holds. Any public page may be used.",
+    "source_mode": "public",
+    "sources": [
+      {
+        "context": "full",
+        "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+        "id": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445",
+        "origin": "https://docs.example.com/restarts",
+        "original_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.raw",
+        "permission": "public",
+        "publisher": "Synthetic publisher",
+        "title": "Synthetic source"
+      }
+    ],
+    "topic": "Researched in parallel",
+    "findings": [
+      {
+        "id": "instance-min",
+        "title": "A conditional choice",
+        "summary": {
+          "text": "More than one instance keeps capacity.",
+          "kind": "summary",
+          "refs": [
+            "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9"
+          ]
+        },
+        "support": [
+          "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9"
+        ],
+        "counter": [],
+        "implications": [],
+        "conditions": [],
+        "gaps": []
+      },
+      {
+        "id": "health-checks",
+        "title": "A conditional choice",
+        "summary": {
+          "text": "More than one instance keeps capacity.",
+          "kind": "summary",
+          "refs": [
+            "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9"
+          ]
+        },
+        "support": [
+          "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9"
+        ],
+        "counter": [],
+        "implications": [],
+        "conditions": [],
+        "gaps": []
+      }
+    ],
+    "sections": [
+      {
+        "id": "explain",
+        "title": "Explanation",
+        "blocks": [
+          {
+            "text": "More than one instance keeps capacity.",
+            "refs": [
+              "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9"
+            ],
+            "kind": "summary"
+          }
+        ]
+      }
+    ],
+    "brief": [
+      {
+        "id": "teaching",
+        "title": "What to explain first",
+        "blocks": [
+          {
+            "text": "Use the synthetic example within its stated bounds.",
+            "refs": [
+              "instance-min"
+            ],
+            "kind": "recommendation"
+          }
+        ]
+      }
+    ]
+  },
+  "author": "synthesizer-e57091d4d9e98a0f2478bc18",
+  "digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a",
+  "sources": [
+    {
+      "id": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445",
+      "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+      "sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+      "original_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.raw",
+      "original_sha256": "ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da",
+      "snapshot": "sources/revisions/46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc.txt",
+      "original_snapshot": "sources/revisions/ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da.raw"
+    }
+  ],
+  "review": {
+    "schema": 2,
+    "digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a",
+    "originals": [
+      {
+        "source": "s-446107d4a32454d6f5434339b48d5e8b5d034187d6879445",
+        "sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+        "original_sha256": "ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da",
+        "read_original": true
+      }
+    ],
+    "facts": [
+      {
+        "id": "f-2e37c7950350b180ac234ffe103e11b920ff3700cb171fe9",
+        "verdict": "supported",
+        "note": "Synthetic independent invocation inspected the saved context and scope."
+      }
+    ],
+    "findings": [
+      {
+        "id": "instance-min",
+        "verdict": "supported",
+        "note": "Synthetic independent invocation inspected the saved context and scope."
+      },
+      {
+        "id": "health-checks",
+        "verdict": "supported",
+        "note": "Synthetic independent invocation inspected the saved context and scope."
+      }
+    ],
+    "prose": [
+      {
+        "id": "explain:0",
+        "verdict": "supported",
+        "note": "Synthetic independent invocation inspected the saved context and scope."
+      },
+      {
+        "id": "brief:teaching:0",
+        "verdict": "supported",
+        "note": "Synthetic independent invocation inspected the saved context and scope."
+      }
+    ],
+    "assessment": {
+      "coverage": "accurate",
+      "usefulness": "adequate",
+      "note": "Explicit synthetic scope and usable brief."
+    },
+    "worker": "reviewer-3adcb1adbba947db9835cbf6",
+    "accepted": true
+  }
+}

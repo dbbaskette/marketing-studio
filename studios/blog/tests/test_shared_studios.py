@@ -540,9 +540,7 @@ class TeamTests(unittest.TestCase):
             },
         )
         ident = result['files'][0]['source']['id']
-        found = blog_runner.create(
-            self.root, {'mode': 'from-files', 'sources': [ident], 'goal': 'A team post'}
-        )
+        found = self.desk(sources=[ident])
         repo = teams.space(self.root).repo
         status = support.git(repo, 'status', '--porcelain', '--untracked-files=all')
         self.assertNotIn('material', status)
@@ -565,12 +563,18 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(tracked.stdout, '', 'no committed file holds the words')
         self.assertFalse((self.root / '.shared' / 'references' / ident).exists())
         # Another computer that takes this blog is told where its files are.
+        import desk
+        import desk_jobs
+
         other = self.other()
         with self.assertRaisesRegex(ValueError, 'stay on the computer'):
-            blog_runner.job(other, found['id'])
+            desk_jobs._context(other, desk.read(other, found['id']))
 
     def create(self):
-        return blog_runner.create(
+        """A step-by-step run that still goes on, for the tests of a run's team behaviour
+        (driver, takeover, publishing). Only the manuscript editor's own runs go on, so it is
+        marked as one; a run of the earlier flow is a saved record (test_saved_gate)."""
+        found = blog_runner.create(
             self.root,
             {
                 'title': 'Fictional launch',
@@ -580,9 +584,55 @@ class TeamTests(unittest.TestCase):
                 'stop': 'outline',
             },
         )
+        directory, _, run = blog_runner.load(self.root, found['id'])
+        run['editor_check'] = 'revise'
+        studio.write_json(directory / blog_runner.STATE, run)
+        teams.saved(self.root, found['id'])  # Committed, as the editor's check commits it.
+        return blog_runner.survey(self.root, found['id'])
+
+    def desk(self, **extra):
+        """A blog started on the writing desk in the team workspace, as the page starts one:
+        its ID, title and the version its detail shows."""
+        import uuid
+        import management
+
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': uuid.uuid4().hex,
+                'title': 'Fictional launch',
+                'manuscript': 'An opening.\n\n## One\n\nFictional text.\n',
+                **extra,
+            },
+        )
+        return self.shown(made['id'])
+
+    def shown(self, ident):
+        import management
+
+        found = management.detail(self.root, ident)
+        return {'id': ident, 'title': found['title'], 'expected': found['expected']}
+
+    def type_into(self, ident, text):
+        """A change typed into the blog's first part on the desk."""
+        import management
+
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        return management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': shown['revision'],
+                'part': shown['sections'][0]['id'],
+                'text': text,
+                'session': 'c' * 16,
+            },
+        )
 
     def test_side_by_side_claim_handover_takeover_and_no_foreign_commits(self):
-        found = self.create()
+        found = self.desk()
         ident = found['id']
         self.assertTrue((self.root / ident / 'session.json').is_file())
         self.assertFalse((self.root / 'articles').exists())
@@ -614,11 +664,11 @@ class TeamTests(unittest.TestCase):
     def test_delete_takes_the_blog_out_of_the_shared_branch_and_restore_brings_it_back(self):
         import management
 
-        found = self.create()
+        found = self.desk()
         ident = found['id']
         (self.root / ident / '.google-native').mkdir()
         (self.root / ident / '.google-native' / 'kept.json').write_text('{}')
-        shown = blog_runner.survey(self.root, ident)
+        shown = self.shown(ident)
         result = management.dispatch(
             self.root,
             'blog-delete',
@@ -648,7 +698,8 @@ class TeamTests(unittest.TestCase):
         self.assertTrue(teams.refresh(self.root)['shared'])
         self.assertTrue(teams.driver(self.root, ident)['here'])
         self.assertEqual(blog_runner.catalog(self.root)['deleted'], [])
-        self.assertFalse(blog_runner.engine(self.root).describe(ident)['enabled'])
+        self.assertTrue(restored['on_desk'])
+        self.assertTrue((self.root / ident / 'desk' / 'draft.json').is_file())
         os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'two')
         teams.refresh(other)
         self.assertTrue((other / ident / 'session.json').is_file())
@@ -656,7 +707,7 @@ class TeamTests(unittest.TestCase):
     def test_a_folder_git_has_nothing_to_take_out_is_kept_here_instead(self):
         import management
 
-        found = self.create()
+        found = self.desk()
         ident = found['id']
         # A folder git ignores: nothing of it is in the branch, so there is nothing to take out.
         with open(self.root / '.gitignore', 'a') as ignore:
@@ -665,7 +716,7 @@ class TeamTests(unittest.TestCase):
         support.git(self.root.parent, 'add', 'blogs/.gitignore')
         support.git(self.root.parent, 'commit', '-q', '-m', 'Keep one blog out of the branch')
         self.assertEqual(support.git(self.root.parent, 'ls-files', '--', 'blogs/' + ident), '')
-        shown = blog_runner.survey(self.root, ident)
+        shown = self.shown(ident)
         management.dispatch(
             self.root,
             'blog-delete',
@@ -684,12 +735,12 @@ class TeamTests(unittest.TestCase):
 
         import management
 
-        found = self.create()
+        found = self.desk(title='Another fictional launch')
         ident = found['id']
         other = self.other()
         teams.action(other, ident, 'takeover')
         os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'one')
-        shown = blog_runner.survey(self.root, ident)
+        shown = self.shown(ident)
         with self.assertRaisesRegex(ValueError, 'another computer'):
             management.dispatch(
                 self.root,
@@ -699,25 +750,17 @@ class TeamTests(unittest.TestCase):
         self.assertTrue((self.root / ident / 'session.json').is_file())
 
     def test_offline_queue_retry_and_manual_sharing(self):
-        found = self.create()
+        found = self.desk()
         ident = found['id']
         support.git(self.root.parent, 'remote', 'set-url', 'origin', str(self.base / 'missing.git'))
-        current = blog_runner.survey(self.root, ident)
-        blog_runner.submit(
-            self.root,
-            ident,
-            'outline',
-            {'content': '# Synthetic outline', 'notes': ''},
-            current['expected'],
-        )
+        self.type_into(ident, 'Synthetic outline words.')
         self.assertGreater(len(gitstate.unshared(teams.space(self.root), ident)), 0)
         report = teams.refresh(self.root, push=True)
         self.assertFalse(report['shared'])
         support.git(self.root.parent, 'remote', 'set-url', 'origin', str(self.remote))
         self.assertTrue(teams.refresh(self.root, push=True)['shared'])
         studios_config.update({'share': 'asked'})
-        current = blog_runner.survey(self.root, ident)
-        blog_runner.decide(self.root, ident, current['expected'], 'approve')
+        self.type_into(ident, 'Synthetic words, changed again.')
         self.assertTrue(gitstate.unshared(teams.space(self.root), ident))
         self.assertTrue(teams.refresh(self.root, push=True)['shared'])
 
@@ -993,6 +1036,8 @@ class MigrationTests(unittest.TestCase):
 class TeamPageTests(unittest.TestCase):
     setUp = TeamTests.setUp
     create = TeamTests.create
+    desk = TeamTests.desk
+    shown = TeamTests.shown
 
     def test_page_joins_and_switches_workspace_with_driver_controls(self):
         import http.client
@@ -1079,7 +1124,7 @@ class TeamPageTests(unittest.TestCase):
     def test_google_linked_documents_follow_the_same_driver(self):
         import google_drive
 
-        found = self.create()
+        found = self.desk()
         ident = found['id']
         folder, record = studio.item(self.root, 'articles', ident)
         record['google'] = {

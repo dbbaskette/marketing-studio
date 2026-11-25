@@ -29,13 +29,12 @@ class ActivityLogTests(StudioCase):
                 ident = next(one['id'] for one in seen['view']['workers'])
                 seen['lines'] = self.engine.activity(found, job=ident, since=0)['lines']
                 seen['task'] = job.task
-            return self.workers.question(tools, job)
+            return self.workers.research_result(tools, job)
 
-        # The first research question's job: research jobs of every kind run through the
-        # engine's one way to run a worker, the parallel research transport's among them.
-        self.workers.then('question', researching)
-        root = self.saved_start()
-        self.to_gate(root, 'research')
+        # The desk's first research job: research jobs of every kind run through the engine's
+        # one way to run a worker.
+        self.workers.then('research-result', researching)
+        root = self.start()
         worker = next(one for one in seen['view']['workers']
                       if one['id'].startswith('research:'))
         self.assertEqual((worker['now']['text'], worker['count']),
@@ -52,8 +51,8 @@ class ActivityLogTests(StudioCase):
         self.assertEqual(research['label'], worker['label'])
         said = [line['text'] for line in self.engine.activity(root, entry=research['id'])['lines']]
         self.assertEqual(said[0], 'Looking at what it was given')
-        self.assertIn('Handing back the finding for ' + worker['id'].partition(':')[2], said)
-        self.assertIn('The finding was accepted', said)
+        # (The lines a per-question research job said as it handed back each finding were
+        # the saved flow's question queue's; the desk researches as one report.)
         self.assertTrue(research['started_at'] <= research['ended_at'])
         # Newest first: the research job came after the research plan.
         self.assertLess(jobs.index(research),
@@ -83,7 +82,7 @@ class ActivityLogTests(StudioCase):
 
     def ending_of(self, act) -> dict:
         self.workers.then('research-plan', act)
-        root = self.saved_start()
+        root = self.start()
         # The first try at the research plan: the oldest, as the log reads newest first.
         tried = [job for job in self.engine.activity(root)['jobs']
                  if job['step'] == 'research-plan']
@@ -111,14 +110,14 @@ class ActivityLogTests(StudioCase):
         from workspace import WorkspaceError
         with mock.patch('studio_core.activity_log.append',
                         side_effect=WorkspaceError('The workspace is busy.')) as append:
-            root = self.saved_start()
+            root = self.start()
             self.assertTrue(append.called)
-        self.assertEqual(self.view(root)['state'], 'waiting')
+        self.assertEqual(self.view(root)['state'], 'done')
         self.assertEqual(self.engine.activity(root)['jobs'], [])
 
     def test_a_training_with_no_log_still_opens_and_says_so(self):
         self.workers.then('research-plan', fails())
-        root = self.saved_start()
+        root = self.start()
         self.log_path(root).unlink()
         found = self.engine.activity(root)
         self.assertEqual((found['jobs'], found['empty']), ([], 'No activity recorded yet.'))
@@ -126,7 +125,7 @@ class ActivityLogTests(StudioCase):
 
     def test_the_page_reads_the_log_for_a_training_it_knows(self):
         from runner import page
-        root = self.saved_start()
+        root = self.start()
         served = page.RunnerPage(8765, self.engine)
         found = served.engine.activity(served.driving(str(root)))
         self.assertTrue(found['jobs'])
@@ -172,7 +171,7 @@ class StoppedJobTests(StudioCase):
             go.wait(30)
 
         self.workers.then('research-plan', working)
-        root = self.saved_start()
+        root = self.start()
         self.assertTrue(entered.wait(30))
         self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
         go.set()
@@ -197,7 +196,7 @@ class StoppedJobTests(StudioCase):
         self.workers.then('research-plan', working)
         with mock.patch('studio_core.activity_log.append',
                         side_effect=WorkspaceError('The workspace is busy.')):
-            root = self.saved_start()
+            root = self.start()
             self.assertTrue(entered.wait(30))
             self.assertEqual(self.engine.act(root, 'stop')['state'], 'stopped')
             go.set()

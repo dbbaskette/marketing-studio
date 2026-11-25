@@ -13,7 +13,9 @@ from unittest.mock import Mock, patch
 import blog_runner as runner
 import desk
 import desk_chat
+import desk_migration
 import management
+import saved_fixtures
 import studio
 from test_blog_runner import RunnerCase
 
@@ -23,9 +25,10 @@ MANUSCRIPT = '# Synthetic draft\n\nAn opening.\n\n## First\n\nSaved words.\n'
 
 class MigrationTests(RunnerCase):
     def eligible(self, material='draft'):
-        # A saved-format fixture, not a public new-work command or a worker.
-        found = self.create(page=True)
-        directory, _, run = runner.load(self.root, found['id'])
+        # A page run just created by the saved flow, in its original format (a static
+        # fixture), with its material written here: not a new-work command or a worker.
+        ident = saved_fixtures.load(self.root, 'page-created')
+        directory, _, run = runner.load(self.root, ident)
         if material == 'draft':
             (directory / 'DRAFT.md').write_text(MANUSCRIPT)
             (directory / 'OUTLINE.md').write_text(OUTLINE)
@@ -43,7 +46,7 @@ class MigrationTests(RunnerCase):
         elif material == 'outline':
             (directory / 'OUTLINE.md').write_text(OUTLINE)
         studio.write_json(directory / runner.STATE, run)
-        return found['id'], directory
+        return ident, directory
 
     def snapshot(self, directory=None):
         directory = directory or self.root
@@ -75,7 +78,7 @@ class MigrationTests(RunnerCase):
         import blog_delete
 
         ident, directory, source = self.attached_material()
-        other = self.create(page=True, sources=[source])
+        other = self.desk(title='Another synthetic blog', sources=[source])
         before = self.snapshot(directory)
         management.dispatch(
             self.root,
@@ -103,7 +106,7 @@ class MigrationTests(RunnerCase):
         from test_blog_runner import FilesCase
 
         source = FilesCase.material(self, ('unclaimed.md', 'Synthetic file.'))[0]
-        other = self.create(page=True, sources=[source])
+        other = self.desk(title='Another synthetic blog', sources=[source])
         broken = studio.inside(self.root, 'articles', 'unreadable')
         broken.mkdir()
         for raw in (b'{', b'{"schema":999,"sources":[]}', None):
@@ -188,7 +191,7 @@ class MigrationTests(RunnerCase):
 
         first, directory = self.eligible()
         self.apply(first)
-        second = self.create(page=True)['id']
+        second = saved_fixtures.load(self.root, 'outline-gate')  # Another saved page run.
         for ident in (first, second):
             folder, record = studio.item(self.root, 'articles', ident)
             record['google'] = {'baselines': {'draft': {'document': {'document_id': 'shared-doc'}}}}
@@ -270,8 +273,6 @@ class MigrationTests(RunnerCase):
             (local, {'enabled': 0, 'status': 'paused'}),
             (local, {'enabled': False, 'status': 'paused', 'owner': 'unknown-computer'}),
             (local, {'enabled': False, 'status': 'paused', 'notes': []}),
-            (local, {'enabled': False, 'status': 'working'}),
-            (local, {'enabled': True, 'status': 'paused'}),
         ]
         for field, value in (
             ('schema', 999),
@@ -307,6 +308,15 @@ class MigrationTests(RunnerCase):
                 self.assertEqual(self.snapshot(), before)
                 self.assertFalse((directory / 'desk').exists())
                 path.unlink()
+        # Known markers the earlier flow left, which no runner picks up again, are idle.
+        for value in (
+            {'enabled': False, 'status': 'working'},
+            {'enabled': True, 'status': 'paused'},
+        ):
+            with self.subTest(idle=value):
+                studio.write_json(local, value)
+                self.assertTrue(self.preview(ident)['eligible'])
+                local.unlink()
 
     def test_known_worker_states_and_settled_tools_have_explicit_eligibility(self):
         ident, _ = self.eligible()
@@ -555,7 +565,7 @@ class MigrationTests(RunnerCase):
                 preview = self.preview(ident)
                 self.assertFalse(preview['eligible'])
                 self.assertIn('usable', ' '.join(preview['blockers']))
-                self.assertIn('saved flow', preview['notice'])
+                self.assertEqual(preview['notice'], desk_migration.REFUSAL)
                 with self.assertRaises(ValueError):
                     self.apply(ident, preview)
                 self.assertEqual(self.snapshot(directory), before)
@@ -573,9 +583,13 @@ class MigrationTests(RunnerCase):
                 if change == 'missing':
                     (directory / 'DRAFT.md').unlink()
                 if change == 'outline':
+                    # Unstructured outline notes move as notes (test_saved_states); notes
+                    # holding image data cannot be kept as a start's notes, so they refuse.
                     (directory / 'DRAFT.md').unlink()
                     run['stages'].pop('draft')
-                    (directory / 'OUTLINE.md').write_text('Unstructured notes only.')
+                    (directory / 'OUTLINE.md').write_text(
+                        'Unstructured notes only.\n\n![a](data:image/png;base64,iVBORw0KGgo=)\n'
+                    )
                 if change == 'link':
                     (directory / 'linked').symlink_to(self.base)
                 studio.write_json(directory / runner.STATE, run)
@@ -802,7 +816,11 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
         worker.assert_not_called()
 
     def test_worker_waiting_for_lock_rechecks_migration_ownership(self):
-        ident, _ = self.eligible()
+        ident, directory = self.eligible()
+        # Only the manuscript editor's own runs still reach a worker: this one is the editor's.
+        run = studio.read_json(directory / runner.STATE)
+        run['editor_check'] = 'proofread'
+        studio.write_json(directory / runner.STATE, run)
         shown = self.preview(ident)
         worker = Mock(side_effect=AssertionError('provider'))
         engine = runner.Engine(self.root, worker=worker)
@@ -951,9 +969,16 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
 
     def test_runner_settlement_keeps_a_parallel_record_edit(self):
         import editorial
+        import manuscript_editor
+        from test_editorial_tools import Fixture
 
-        found = self.create(page=True)
-        ident = found['id']
+        # The runner settles only the manuscript editor's own runs now: a revise check.
+        ident = Fixture.article(self, MANUSCRIPT)
+        shown = manuscript_editor.read(self.root, ident)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            manuscript_editor.dispatch(
+                self.root, 'check', {'id': ident, 'expected': shown['expected'], 'check': 'revise'}
+            )
         directory, _ = studio.item(self.root, 'articles', ident)
 
         def worker(*args, **kwargs):
@@ -970,6 +995,7 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
             studio.item(self.root, 'articles', ident)[1]['editorial']['owner'], 'New editor'
         )
         self.assertFalse((directory / 'OUTLINE.md').exists())
+        self.assertEqual((directory / 'DRAFT.md').read_text(), MANUSCRIPT)
 
     def test_original_session_schema_and_required_shapes_refuse_in_pure_and_snapshot(self):
         import desk_migration
@@ -1066,6 +1092,328 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
                 with self.assertRaisesRegex(ValueError, 'could not be checked'):
                     worker_in_progress(self.root)
                 self.assertEqual(self.snapshot(directory), before)
+
+    def test_every_refusal_has_one_outcome_and_classifying_changes_nothing(self):
+        """Each refused saved state is read-only (cannot be read or understood) or waits
+        (ends by itself, by Stop or by Take, or by its own recovery), never both."""
+        import desk_migration
+
+        def tool(ident, status):
+            job = self.tool_record(ident)
+            job['status'] = status
+            return job
+
+        driver = {'computer': 'a' * 16, 'name': 'Synthetic driver', 'since': 'synthetic-time'}
+        cases = {
+            'worker-format': (
+                'read-only',
+                lambda d, i: studio.write_json(
+                    self.root / '.blog-runs' / (i + '.json'), {'enabled': False, 'status': 'future'}
+                ),
+            ),
+            # A step running now waits; a marker no runner picks up again does not (below).
+            'worker-busy': ('wait', lambda d, i: setattr(runner.engine(self.root), 'current', i)),
+            'tool-format': (
+                'read-only',
+                lambda d, i: studio.write_json(
+                    self.root / '.blog-runs/tools' / ('a' * 32 + '.json'), {'id': 'a' * 32}
+                ),
+            ),
+            'tool-busy': (
+                'wait',
+                lambda d, i: studio.write_json(
+                    self.root / '.blog-runs/tools' / ('a' * 32 + '.json'), tool(i, 'queued')
+                ),
+            ),
+            'driver-format': (
+                'read-only',
+                lambda d, i: studio.write_json(d / 'run.json', {'schema': 999, 'driver': None}),
+            ),
+            # A condition of the workspace is never this blog's outcome: it waits.
+            'older-hub': (
+                'wait',
+                lambda d, i: studio.write_json(self.root / '.team-hub.json', {'schema': 1}),
+            ),
+            'pipeline': (
+                'read-only',
+                lambda d, i: studio.write_json(
+                    d / runner.STATE,
+                    {**studio.read_json(d / runner.STATE), 'pipeline': ['unknown']},
+                ),
+            ),
+            'missing-file': ('read-only', lambda d, i: (d / 'DRAFT.md').unlink()),
+            'session-shape': (
+                'read-only',
+                lambda d, i: studio.write_json(
+                    d / 'session.json', {**studio.read_json(d / 'session.json'), 'mode': 'future'}
+                ),
+            ),
+            'desk-records': (
+                'read-only',
+                lambda d, i: studio.write_json(d / 'desk/start.json', {'schema': 1}),
+            ),
+            'link': ('read-only', lambda d, i: (d / 'linked').symlink_to(self.base)),
+        }
+        for name, (outcome, change) in cases.items():
+            with self.subTest(case=name):
+                ident, directory = self.eligible()
+                (directory / 'desk').mkdir(exist_ok=name != 'desk-records')
+                change(directory, ident)
+                before = self.snapshot()
+                said = desk_migration.classify(self.root, ident)
+                self.assertEqual(said['outcome'], outcome, said)
+                self.assertTrue(said['reason'])
+                self.assertEqual(said['next'], 'copy' if outcome == 'read-only' else None)
+                self.assertEqual(said, {k: self.preview(ident)[k] for k in said})
+                self.assertEqual(self.snapshot(), before)
+                for path in (
+                    self.root / '.blog-runs' / (ident + '.json'),
+                    self.root / '.blog-runs/tools' / ('a' * 32 + '.json'),
+                    self.root / '.team-hub.json',
+                ):
+                    path.unlink(missing_ok=True)
+                runner.engine(self.root).current = None
+        # A queued marker the earlier flow left, which no runner picks up again, is idle.
+        ident, directory = self.eligible()
+        studio.write_json(
+            self.root / '.blog-runs' / (ident + '.json'), {'enabled': True, 'status': 'queued'}
+        )
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'migrates')
+        # A team driver on another computer waits until this computer takes the blog.
+        ident, directory = self.eligible()
+        directory.rename(self.root / ident)
+        studio.write_json(
+            self.root / 'hub.json',
+            {
+                'schema': 1,
+                'tool': 'blog-studio',
+                'name': 'Synthetic workspace',
+                'folder': self.root.name,
+                'branch': 'synthetic',
+                'minimum_runtime': '4.9.0',
+                'repository': 'synthetic-remote',
+            },
+        )
+        studio.write_json(self.root / ident / 'run.json', {'schema': 1, 'driver': driver})
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'wait')
+
+    def test_workspace_and_computer_conditions_wait_and_say_what_clears_them(self):
+        """An older Team Hub connection, a workspace needing a newer Blog Studio and an
+        unreadable computer identity belong to the workspace or this computer, not to the
+        blog: they wait, naming the condition and what clears it, never read-only."""
+        import desk_migration
+        from studio_sync import support
+
+        ident, directory = self.eligible()
+        studio.write_json(self.root / '.team-hub.json', {'schema': 1})
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual((said['outcome'], said['next']), ('wait', None))
+        self.assertIn('older Team Hub', said['reason'])
+        self.assertIn('hub leave', said['reason'])
+        (self.root / '.team-hub.json').unlink()
+        directory.rename(self.root / ident)
+        marker = {
+            'schema': 1,
+            'tool': 'blog-studio',
+            'name': 'Synthetic workspace',
+            'folder': self.root.name,
+            'branch': 'synthetic',
+            'minimum_runtime': '999.0.0',
+            'repository': None,
+        }
+        studio.write_json(self.root / 'hub.json', marker)
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual(said['outcome'], 'wait')
+        self.assertIn('Update Blog Studio', said['reason'])
+        marker['minimum_runtime'] = '4.9.0'
+        studio.write_json(self.root / 'hub.json', marker)
+        identity = support.data_root() / 'computer.json'
+        studio.write_json(identity, {'schema': 999, 'id': 'a' * 16})
+        before = self.snapshot(), identity.read_bytes()
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual(said['outcome'], 'wait')
+        self.assertIn('Take this blog', said['reason'])
+        self.assertEqual((self.snapshot(), identity.read_bytes()), before)
+
+    def test_a_waiting_tool_job_is_named_with_the_way_to_it(self):
+        """A tool job of the blog that waits for the person (ready, not applied) is named on
+        the record, which opens it where it is finished; once it is, the blog opens on the
+        desk. Reading the record writes nothing."""
+        import desk_migration
+
+        ident, directory = self.eligible()
+        tool = self.root / '.blog-runs/tools' / ('a' * 32 + '.json')
+        job = self.tool_record(ident, 'repurpose')
+        job.update(status='ready', result={'content': 'Synthetic channel copy.'})
+        studio.write_json(tool, job)
+        with studio.locked(self.root):
+            pass  # The page view takes the lock; its marker file is not saved work.
+        before = self.snapshot()
+        shown = management.view(self.root, 'run', {'id': [ident]})
+        self.assertEqual(self.snapshot(), before)
+        saved = shown['saved_record']
+        self.assertEqual((saved['outcome'], saved['clear'], saved['next']), ('wait', 'job', None))
+        self.assertEqual(saved['job'], {'id': 'a' * 32, 'kind': 'repurpose', 'status': 'ready'})
+        job['applied'] = {'id': ident, 'status': 'saved'}
+        studio.write_json(tool, job)
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'migrates')
+
+    def test_an_identity_recorded_by_taking_the_blog_offers_take(self):
+        """In a team workspace, an unreadable computer identity is recorded again by taking
+        the blog, as its reason says: the record offers Take."""
+        from types import SimpleNamespace
+
+        from studio_sync import support
+        import team_workspace
+
+        ident, directory = self.eligible()
+        directory.rename(self.root / ident)
+        studio.write_json(
+            self.root / 'hub.json',
+            {
+                'schema': 1,
+                'tool': 'blog-studio',
+                'name': 'Synthetic workspace',
+                'folder': self.root.name,
+                'branch': 'synthetic',
+                'minimum_runtime': '4.9.0',
+                'repository': 'synthetic-remote',
+            },
+        )
+        studio.write_json(support.data_root() / 'computer.json', {'schema': 999, 'id': 'a' * 16})
+        (self.base / 'team-repo' / '.git').mkdir(parents=True)
+        joined = SimpleNamespace(address='synthetic-remote', repo=self.base / 'team-repo')
+        with (
+            patch.object(team_workspace, 'space', return_value=joined),
+            patch.object(team_workspace, 'driver', return_value=None),
+        ):
+            shown = management.view(self.root, 'run', {'id': [ident]})
+        saved = shown['saved_record']
+        self.assertIn('Take this blog', saved['why'])
+        self.assertEqual((saved['outcome'], saved['clear'], shown['team']), ('wait', 'take', True))
+        # Outside a team repository taking records nothing: new work is offered meanwhile.
+        with patch.object(team_workspace, 'space', return_value=None):
+            shown = management.view(self.root, 'run', {'id': [ident]})
+        said = shown['saved_record']
+        self.assertEqual((said['clear'], said['next']), (None, 'copy'))
+
+    def test_a_run_record_that_is_not_an_object_is_read_only(self):
+
+        for value in ([], 'x', 3, None):
+            with self.subTest(value=value):
+                ident, directory = self.eligible()
+                (directory / runner.STATE).write_text(json.dumps(value))
+                with studio.locked(self.root):
+                    pass  # The page view takes the lock; its marker file is not saved work.
+                before = self.snapshot()
+                shown = self.preview(ident)
+                self.assertFalse(shown['eligible'])
+                self.assertTrue(shown['blockers'])
+                self.assertEqual((shown['outcome'], shown['next']), ('read-only', 'copy'))
+                self.assertIn('run record', shown['reason'])
+                page = management.view(self.root, 'run', {'id': [ident]})
+                self.assertEqual(page['saved_record']['why'], shown['reason'])
+                self.assertEqual(self.snapshot(), before)
+
+    def test_a_moved_research_execution_run_stays_readable_whatever_the_protocol(self):
+        """The migration keeps the run's research execution record without interpreting it,
+        so a later Harness Research protocol never makes the moved blog unreadable."""
+        import desk_migration
+        from studio_core import research_session
+        from studio_core.blog_migration import run_supported
+        from studio_core.sync_guard import worker_in_progress
+
+        ident = saved_fixtures.load(self.root, 'research-execution-drafted')
+        directory = studio.inside(self.root, 'articles', ident)
+        self.apply(ident)
+        with patch.object(research_session, 'PROTOCOL', 'harness-collection-v9'):
+            self.assertIsNotNone(desk_migration.metadata(directory))
+            self.assertFalse(worker_in_progress(self.root))
+            self.assertTrue(runner.engine(self.root).describe(ident)['on_desk'])
+            self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'desk')
+        run = studio.read_json(directory / runner.STATE)
+        held = run['research_execution']
+        self.assertTrue(run_supported(run))
+        for broken in (
+            None,
+            [],
+            {**held, 'schema': 2},
+            {**held, 'protocol': ''},
+            {**held, 'protocol': 7},
+            {**held, 'workers': 0},
+            {**held, 'workers': 4},
+            {**held, 'workers': True},
+            {**held, 'capability': []},
+            {**held, 'capability': {'protocol': 'another-protocol'}},
+        ):
+            with self.subTest(execution=broken):
+                self.assertFalse(run_supported({**run, 'research_execution': broken}))
+        self.assertFalse(run_supported({k: v for k, v in run.items() if k != 'research_execution'}))
+
+    def test_the_saved_files_view_serves_only_a_saved_record(self):
+        ident, directory = self.eligible()
+        # A saved blog that opens on the desk shows its saved files on its record too.
+        shown = management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
+        self.assertEqual(shown['text'], MANUSCRIPT)
+        (directory / runner.STATE).write_text('{not json')
+        shown = management.view(self.root, 'saved-file', {'id': [ident], 'name': ['DRAFT.md']})
+        self.assertEqual(shown['text'], MANUSCRIPT)
+        # Once it is on the desk it is desk work, with its own views: refused here.
+        other, _ = self.eligible()
+        self.apply(other)
+        with self.assertRaisesRegex(ValueError, 'saved file'):
+            management.view(self.root, 'saved-file', {'id': [other], 'name': ['DRAFT.md']})
+        # A folder that is no blog (in a team workspace any top-level folder) is refused.
+        for name in ('sources', 'profiles', 'no-such-blog'):
+            with self.subTest(folder=name):
+                (self.root / 'articles' / name).mkdir(exist_ok=True)
+                (self.root / 'articles' / name / 'DRAFT.md').write_text('Not a blog.')
+                with self.assertRaisesRegex(ValueError, 'saved file'):
+                    management.view(self.root, 'saved-file', {'id': [name], 'name': ['DRAFT.md']})
+
+    def test_an_interrupted_opening_waits_and_a_damaged_one_is_read_only(self):
+        import desk_migration
+
+        ident, directory = self.eligible()
+        (directory / 'desk').mkdir()
+        studio.write_json(directory / 'desk/migration.pending.json', {'schema': 1})
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual((said['outcome'], said['reason']), ('wait', desk_migration.PENDING))
+        (directory / 'desk/migration.pending.json').unlink()
+        self.apply(ident)
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'desk')
+        (directory / 'desk/migration.json').write_text('{bad')
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual((said['outcome'], said['next']), ('read-only', 'copy'))
+        self.assertIn('incomplete or unreadable', said['reason'])
+        self.assertEqual(said['start']['title'], 'Synthetic gateway guide')
+
+    def test_the_editors_own_run_is_current_work_or_waits_never_read_only(self):
+        import desk_migration
+        import manuscript_editor
+
+        from test_editorial_tools import Fixture
+
+        ident = Fixture.article(self, MANUSCRIPT)
+        shown = manuscript_editor.read(self.root, ident)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            manuscript_editor.dispatch(
+                self.root,
+                'check',
+                {'id': ident, 'expected': shown['expected'], 'check': 'proofread'},
+            )
+        directory = studio.inside(self.root, 'articles', ident)
+        local = self.root / '.blog-runs' / (ident + '.json')
+        studio.write_json(local, {'enabled': True, 'status': 'queued'})
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'wait')
+        studio.write_json(local, {'enabled': False, 'status': 'paused'})
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'migrates')
+        record = studio.read_json(directory / 'session.json')
+        record['hub_context'] = {'synthetic': True}
+        studio.write_json(directory / 'session.json', record)
+        said = desk_migration.classify(self.root, ident)
+        self.assertEqual((said['outcome'], said['next']), ('current', None))
+        self.assertIn('Edit manuscript', said['reason'])
 
     def test_preparation_and_registered_reader_share_supported_run_formats(self):
         import desk_migration

@@ -1,0 +1,88 @@
+{
+  "schema": 3,
+  "approval": "page",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "research-plan",
+    "research",
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "research-plan": {
+      "status": "draft",
+      "hash": "76c36171b1e0d330c5bee4cab91505eb02db45b3dc009a28ff50c052c00f9cb7",
+      "basis": "6b489992327dab760d607fb2ef6a3ddae9fd7a7d72279fe7d66a2cd8ad1f2ae3",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "research-plan"
+    }
+  },
+  "length": "style",
+  "research_contract": {
+    "schema": 2,
+    "version": "1.5.1",
+    "digest": "0c0203c568b3256258ad7218750b13d7b1d2e0032f3a4b8c510a082a4e5f0d46"
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from page",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted research-plan",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ]
+}

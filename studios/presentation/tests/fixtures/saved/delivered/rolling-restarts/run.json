@@ -1,0 +1,398 @@
+{
+  "schema": 1,
+  "id": "rolling-restarts",
+  "title": "Rolling restarts",
+  "route": "scratch",
+  "form": {
+    "route": "scratch",
+    "title": "Rolling restarts",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": false,
+    "delivery": "live",
+    "notes": "",
+    "research_questions": []
+  },
+  "created": "2026-11-24T23:12:26Z",
+  "driver": null,
+  "gates": {
+    "gate:outline": {
+      "state": "approved",
+      "round": 1,
+      "note": null,
+      "at": "2026-11-24T23:12:27Z",
+      "by": "Alex",
+      "saying": null
+    },
+    "gate:look": {
+      "state": "approved",
+      "round": 1,
+      "at": "2026-11-24T23:12:27Z",
+      "by": "Alex",
+      "note": null
+    },
+    "gate:build": {
+      "state": "approved",
+      "round": 1,
+      "note": null,
+      "at": "2026-11-24T23:12:28Z",
+      "by": "Alex"
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:26Z",
+          "ended_at": "2026-11-24T23:12:26Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:26Z"
+    },
+    "outline": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:26Z",
+          "ended_at": "2026-11-24T23:12:26Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:26Z"
+    },
+    "brand": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:27Z",
+          "ended_at": "2026-11-24T23:12:27Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:27Z"
+    },
+    "look-preview": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:27Z",
+          "ended_at": "2026-11-24T23:12:27Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:27Z"
+    },
+    "build-start": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:27Z",
+          "ended_at": "2026-11-24T23:12:27Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:27Z"
+    },
+    "build-sections:section-1": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:27Z",
+          "ended_at": "2026-11-24T23:12:27Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": false
+    },
+    "build-sections:section-2": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:27Z",
+          "ended_at": "2026-11-24T23:12:27Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": false
+    },
+    "build-sections": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:27Z",
+          "ended_at": "2026-11-24T23:12:27Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "runner": true
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:27Z"
+    },
+    "build-whole": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:28Z",
+          "ended_at": "2026-11-24T23:12:28Z",
+          "seconds": 0.1,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:28Z"
+    },
+    "build-review": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:28Z",
+          "ended_at": "2026-11-24T23:12:28Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:28Z"
+    },
+    "build-repair": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:28Z",
+          "ended_at": "2026-11-24T23:12:28Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null,
+          "runner": true
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:28Z"
+    },
+    "build-render": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:28Z",
+          "ended_at": "2026-11-24T23:12:28Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:28Z"
+    },
+    "deliver": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:28Z",
+          "ended_at": "2026-11-24T23:12:28Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:28Z"
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [
+    {
+      "revision": 1,
+      "at": "2026-11-24T23:12:28Z",
+      "url": "https://docs.google.com/presentation/d/stand-in-deck-1/edit",
+      "sha256": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9"
+    }
+  ],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "answers": {},
+  "said": {
+    "outline": "Six slides. The check slide is the one I am least sure of.",
+    "build-sections:section-1": "What I changed after looking: Nothing: it read well at once.",
+    "build-sections:section-2": "What I changed after looking: Nothing: it read well at once."
+  },
+  "question": null,
+  "research": null,
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "outline",
+      "step": "outline",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "writing",
+      "purpose": "construction",
+      "step": "build-sections:section-1",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "writing",
+      "purpose": "construction",
+      "step": "build-sections:section-2",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "checking",
+      "purpose": "review",
+      "step": "build-review",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    }
+  ],
+  "look_shown": "rendered",
+  "look_by": "page",
+  "look_picked": {
+    "choice": "example-clear",
+    "words": "Picked Clear on the page, with no comment.",
+    "shown": "144725a706c9d8352bf80ca27f3c13f1bdd0fe8f88307476b5f2940481d18278",
+    "name": "Clear"
+  },
+  "last_build": {
+    "tries": {
+      "intake-source": 1,
+      "outline": 1,
+      "brand": 1,
+      "look-preview": 1
+    }
+  },
+  "build_feedback": []
+}

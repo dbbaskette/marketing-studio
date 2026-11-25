@@ -1,0 +1,2 @@
+# outline
+Synthetic writing.

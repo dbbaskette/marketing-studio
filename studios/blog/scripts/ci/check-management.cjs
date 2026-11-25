@@ -79,17 +79,17 @@ async function check(){
   await refreshWithNewSelection();
   await guidedRuns();
   await unfinishedMigration();
+  await savedReadOnlyRecord();
+  await savedRecordStates();
   await manuscriptEditing();
   await reviewInteractions();
   await editorTransitions();
   await commentCompletionAndFailure();
   await pendingEditorSaves();
   await manualEditingJourneys();
-  await writingReviewJourneys();
   await taskJourneys();
   await phase4Starts();
   await phase4GoogleHandoff();
-  await phase4ApplyReview();
   await phase4ReviewAside();
   await phase4FileKeep();
   await revisionCompletion();
@@ -132,7 +132,6 @@ async function check(){
   await voiceGuides();
   await researchRefusal();
   await researchRounds();
-  await skipResearch();
   await finishEveryLevel();
   await failureRecovery();
   await deskJourneys();
@@ -189,10 +188,10 @@ async function check(){
   await deskTakeOver();
   pageDefinesEveryElement();
   noUnusedPageParts();
-  const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Review Google changes previewing suggestions and comments before a single Send action, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Edit everything and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','The Reader aids and AI search group’s GEO additions: every tool listed in its group with the post’s Include a GEO review choice after them, an FAQ of 3 to 6 questions each ticked, edited or dropped and placed (before a closing call to action by default) and added all or ticked, the new form of an FAQ the post has, an out-of-date one only skipped, key takeaways after the opening, alt text said to come from what the post says, search questions as advice with Copy, Before publishing’s GEO review done, waiting, under way or out of date with Run GEO review beside the pre-publish check, and New blog’s choice off unless ticked','Repurpose’s SEO meta description counted in characters, refused over 155, kept with the post rather than made a new blog, copied, and said to be out of date after a change','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','a GEO report for a published post: Home’s task and New blog’s link to it, a link read and shown before one press starts one job, the report as opaque paper with changes marked, additions where they go, no score, both downloads, a new Google Doc checked then sent, Run again saying what changed, Edit this post on the desk opening Finishing, and Blogs marking a GEO report; a published page built by scripts: the no-text refusal offering Ask Codex to find the post’s text only on a press, on the GEO report start, Run again and the start form, its progress with Stop and focus, a failure with the paste advice and Ask again, focus on the offer after each read that found no text, a found address read again and said quietly in the preview, Run again going ahead once found, a changed link letting the offer go, and read-only access unable to press it; review an existing post for AI search: the GEO first pass opening Finishing, Link to a published post read then started, a team collection post; polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','the parts of a blog down the left of its desk: each with its state, the part shown marked, a part chosen with a history entry, Back without reading the desk again, a poll that never moves the person, Sources brought into view, Finishing’s open tools, and a reload at the outline or a section','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Review Google changes previewing suggestions and comments before a single Send action, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Edit everything and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','The Reader aids and AI search group’s GEO additions: every tool listed in its group with the post’s Include a GEO review choice after them, an FAQ of 3 to 6 questions each ticked, edited or dropped and placed (before a closing call to action by default) and added all or ticked, the new form of an FAQ the post has, an out-of-date one only skipped, key takeaways after the opening, alt text said to come from what the post says, search questions as advice with Copy, Before publishing’s GEO review done, waiting, under way or out of date with Run GEO review beside the pre-publish check, and New blog’s choice off unless ticked','Repurpose’s SEO meta description counted in characters, refused over 155, kept with the post rather than made a new blog, copied, and said to be out of date after a change','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','a GEO report for a published post: Home’s task and New blog’s link to it, a link read and shown before one press starts one job, the report as opaque paper with changes marked, additions where they go, no score, both downloads, a new Google Doc checked then sent, Run again saying what changed, Edit this post on the desk opening Finishing, and Blogs marking a GEO report; a published page built by scripts: the no-text refusal offering Ask Codex to find the post’s text only on a press, on the GEO report start, Run again and the start form, its progress with Stop and focus, a failure with the paste advice and Ask again, focus on the offer after each read that found no text, a found address read again and said quietly in the preview, Run again going ahead once found, a changed link letting the offer go, and read-only access unable to press it; review an existing post for AI search: the GEO first pass opening Finishing, Link to a published post read then started, a team collection post; polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','the parts of a blog down the left of its desk: each with its state, the part shown marked, a part chosen with a history entry, Back without reading the desk again, a poll that never moves the person, Sources brought into view, Finishing’s open tools, and a reload at the outline or a section','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start puts the idea and one source inventory before optional writing preferences','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','no page code nothing calls: the brand notice, the old run renderers, the Writing runs view and unused mode descriptions','Keep in library or Only this blog at upload, and Update available on the desk taken only with Use revision N','element ids','what the assistant is doing and the Activity log: a running job’s latest line and Show activity on the run page, the desk, a GEO report, with its lines read from the since’th on only when opened and a new line drawn without the page around it, the focus kept on its control and each disclosure open or closed as it was when a poll draws the page again, and the log read only when opened, on the run page, the desk, a GEO report and Status'];
+    'refresh with a new selection','guided run decisions','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete and restore','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angles gate read with its check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start puts the idea and one source inventory before optional writing preferences','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','no page code nothing calls: the brand notice, the old run renderers, the Writing runs view and unused mode descriptions','Keep in library or Only this blog at upload, and Update available on the desk taken only with Use revision N','element ids','what the assistant is doing and the Activity log: a running job’s latest line and Show activity on the run page, the desk, a GEO report, with its lines read from the since’th on only when opened and a new line drawn without the page around it, the focus kept on its control and each disclosure open or closed as it was when a poll draws the page again, and the log read only when opened, on the run page, the desk, a GEO report and Status','every saved blog of the earlier flow as a saved record: one that opens on the desk through its preview, one finished with its Done card, one waiting with Stop the step, Finish opening on the desk, Take over, its waiting task or new work, none continued, and the lists saying what the small records prove'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -360,27 +359,6 @@ async function manualEditingJourneys(){
   assert.equal(writes.some(write=>write.url==='/api/editor-check'||write.url==='/api/editor-google-send'),false);
 }
 
-async function writingReviewJourneys(){
-  let run={id:'ready',title:'Ready writing',expected:'r1',approval:'page',status:'waiting-for-approval',next:'outline',enabled:true,complete:false,existing:false,mode:'write',engine:'codex',seconds:600,brief:{goal:'Explain',audience:'Authors'},decisions:[],stages:[{stage:'outline',label:'Outline',status:'draft',path:'OUTLINE.md'},{stage:'draft',label:'Draft',status:'pending',path:'DRAFT.md'}]};
-  const shown={stage:'outline',label:'Outline',expected:'r1',status:'draft',content:'# Three ideas\n\nAn angle to develop.',checks:[],notes:'Synthetic only.',previous:null,diff:[]},writes=[];
-  const f=fixture((url,options)=>{if(url.startsWith('/api/run?'))return run;if(url.startsWith('/api/run-file?'))return shown;if(url==='/api/run-develop'){writes.push(JSON.parse(options.body));run={...run,mode:'write',status:'queued',next:'draft'};return run;}return {items:[]};});f.loadRunner();
-  await f.run("sRoute('run','ready')");
-  assert.equal(f.run('studio.screen'),'gate','a ready outline opens directly for reading');
-  assert.equal(writes.length,0,'opening a document never approves it');
-  await descendants(f.get('toolbar-lead')).find(e=>e.attributes['aria-label']==='Back').listeners.click();
-  assert.equal(f.run('studio.screen'),'run');assert.equal(f.run('studio.stage'),'status','Back can still open progress');await f.run('sPoll()');assert.equal(f.run('studio.screen'),'run');
-  run={...run,mode:'ideas'};await f.run("sRoute('run','ready')");
-  assert.equal(f.get('title').textContent,'Ideas');
-  const actions=()=>descendants(f.get('actions'));
-  assert.equal(actions().filter(e=>e.tagName==='button'&&e.className.includes('button-filled')).length,1);
-  assert.ok(actions().some(e=>e.textContent==='Save ideas for later'));
-  await actions().find(e=>e.textContent==='Develop an idea').listeners.click();
-  const sheet=()=>descendants(f.get('sheet')),go=sheet().find(e=>e.textContent==='Develop this choice');assert.equal(go.disabled,true);assert.equal(writes.length,0);
-  const choice=sheet().find(e=>e.id==='develop-choice');choice.value='Develop the second idea for technical leads.';choice.listeners.input();assert.equal(go.disabled,false);
-  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(writes.length,1);assert.equal(writes[0].request,'Develop the second idea for technical leads.');
-}
-
 async function deliveryRecovery(){
   let attempts=0,plans=0;const tokens=[];
   const state={id:'retry',title:'Retry fixture',content:'Old wording.',expected:'v1',google:{url:'https://docs.google.com/document/d/fixture/edit'},proposals:[{id:'one',kind:'edit',before:'Old',after:'New',reason:'Clearer'}],findings:[],checks:{},working:false};
@@ -436,18 +414,6 @@ async function phase4ReviewAside(){
   assert.equal(aside().open,true);aside().open=false;aside().listeners.toggle();
   f.run('sGate(found,shown)');assert.equal(aside().open,false);
   f.run("sGate({...found,id:'other'},shown)");assert.equal(aside().open,true);
-}
-
-async function phase4ApplyReview(){
-  const calls=[],found={id:'apply',title:'Review draft',mode:'write',status:'waiting-for-approval',next:'package',approval:'page',expected:'v1',enabled:true,complete:false,engine:'codex',seconds:600,directory:'/synthetic/articles/apply',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[{stage:'draft',label:'Draft',status:'approved'},{stage:'review',label:'Review',status:'approved'},{stage:'package',label:'Handoff',status:'draft'}],redo:{draft:{stages:['draft','review','package'],says:'This computer has no record of what they cost.'}}};
-  const shown={stage:'package',label:'Handoff',expected:'v1',status:'draft',content:'# Handoff',checks:[],notes:'',previous:null,bundle:[]};
-  const updated={...found,status:'queued',next:'draft'};
-  const f=fixture((route,options)=>{calls.push({route,data:options?.body?JSON.parse(options.body):null});return updated;});f.loadRunner();f.set('found',found);f.set('shown',shown);f.run("studio.screen='gate';studio.id=found.id;sGate(found,shown)");
-  await descendants(f.get('actions')).find(n=>n.textContent==="Apply the review's findings").listeners.click();
-  const sheet=()=>descendants(f.get('sheet'));
-  assert.ok(sheet().some(n=>/three jobs/.test(n.textContent)));assert.ok(sheet().some(n=>/no record of what they cost/.test(n.textContent)));assert.equal(calls.length,0);
-  await sheet().find(n=>n.textContent==='Apply them').listeners.click();
-  const sent=calls.find(r=>r.route==='/api/run-apply-review');assert.equal(sent.data.id,'apply');assert.equal(sent.data.expected,'v1');
 }
 
 async function phase4GoogleHandoff(){
@@ -1334,9 +1300,6 @@ async function guidedRuns(){
     assert.equal(calls[0].url,'/api/run-approve','grouped reviews approve the displayed revision directly');
     assert.deepEqual(JSON.parse(calls[0].options.body),{id:'synthetic',expected:'version-1'});
   }
-  f.set('found',{...found,approval:'conversation',status:'in-chat'});f.run("studio.screen='run';sRun(found)");
-  assert.ok(f.get('actions').children.some(e=>e.textContent==='Run this from here'));
-  assert.ok(!f.get('actions').children.some(e=>e.textContent==='Approve'));
   f.set('found',{...found,status:'failed',error:'Synthetic failure',enabled:false});f.run("studio.screen='run';sRun(found)");
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic failure'));
@@ -1543,7 +1506,7 @@ async function honestBlogCopy(){
 // The pattern every studio shares: the run says what it is doing now and for how long, a retry says what it costs, a note reaches the next job
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
-  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',ahead:{steps_left:2,next_gate:'draft',next_stop:'Draft',jobs:2,seconds:180,dollars:null,spent:'3 minutes; the assistant reported no cost'},decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
+  const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',ahead:{steps_left:2,next_gate:'draft',next_stop:'Draft',jobs:2,seconds:180,dollars:null,spent:'3 minutes; the assistant reported no cost'},decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
   const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();voicesOn(f);
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
   const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
@@ -1585,19 +1548,6 @@ async function sharedPattern(){
   f.set('found',{...found,ahead:undefined});f.run('sRun(found)');
   assert.equal(descendants(f.get('studio-page')).some(e=>e.className==='quiet ahead-line'),false,'a view without ahead draws without it');
   f.set('found',found);f.run('sRun(found)');
-  // A note for the next step goes with the next job and stops nothing.
-  const note=descendants(f.get('studio-page')).find(e=>e.id==='note-request');note.value='Mention the gateway.';note.listeners.input();
-  await descendants(f.get('studio-page')).find(e=>e.textContent==='Add the note').listeners.click();
-  assert.deepEqual(requests.find(r=>r.url==='/api/run-note').data,{id:'synthetic',expected:'version-1',request:'Mention the gateway.'});
-  assert.ok(text().some(t=>/goes with the next job that starts, review/.test(t)),'the box names the stage the runner would note for');
-  f.set('found',{...found,note_stage:null});f.run('sRun(found)');assert.equal(descendants(f.get('studio-page')).some(e=>e.id==='note-request'),false,'no later step, no box');
-  // A time limit that ran out offers more time, and says what a plain retry costs.
-  f.set('found',{...found,status:'failed',enabled:false,started_at:null,error:'This step reached its time limit. Retry or continue in chat.'});f.run('sRun(found)');
-  const more=f.get('actions').children.find(e=>e.textContent==='Try again with more time');assert.equal(more.className,'button button-filled');
-  assert.ok(text().some(t=>t==='Try again makes the draft again in a new job, with the same 10-minute limit; saved work is kept.'),text().join('|'));
-  assert.ok(text().some(t=>t==='The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),'a time limit says where it lives: '+text().join('|'));
-  await more.listeners.click();
-  assert.deepEqual(requests.find(r=>r.url==='/api/run-retry').data,{id:'synthetic',expected:'version-1',seconds:1200});
   // Ask for changes says what it draws again, and what that took, before it is sent.
   f.set('found',{...found,status:'waiting-for-approval',stages:[found.stages[0],{...found.stages[1],status:'draft'},found.stages[2]],redo:{outline:{stages:['outline','draft','review'],says:'Drawn again: the outline and every step after it, 3 steps. Last time they took 12 minutes and about $1.40.'},draft:{stages:['draft','review'],says:'Drawn again: the draft and every step after it, 2 steps; this computer has no record of what they cost.'}}});
   f.run("sChanges(found,'draft')");
@@ -1743,13 +1693,12 @@ async function filesJourney(){
   assert.ok(text().some(t=>/^Messaging Doc$/.test(t)),'the Doc is listed by its title: '+text().join('|'));
   assert.ok(text().some(t=>/Google Doc · 4,200 characters · All 3 tabs were read: “Overview”, “Messaging”, “FAQ”\. Link one tab/.test(t)),'with how much text it has and which tabs were read: '+text().join('|'));
   assert.equal(docAdd().disabled,false,'and another Doc can be added');
-  // The angles gate: picks, a note, or none of these.
+  // An older from-files run's angles gate, read: its checks, gaps and excerpts.
   const waiting={...found,status:'waiting-for-approval',expected:'a2',stages:[{...found.stages[0],status:'draft'}],excerpted:['notes']};
   const shown={id:'files',title:'From my files',name:'blog-angles.md',stage:'angles',label:'Angles',expected:'a2',status:'draft',content:'# Angles\n\n## Retries are a budget\n\nPlatform engineers · Retries cost · Leans on notes.md\n\n## The gateway is a contract\n\nAPI authors · The contract · Leans on notes.md\n\n## Fewer hops\n\nTeam leads · Hops · Leans on notes.md',notes:'',checks:[],previous:null,diff:[],bundle:[]};
   f.set('waiting',waiting);f.set('shown',shown);
   f.run("studio.screen='gate';studio.found=waiting;sGate(waiting,shown)");
   const actions=()=>f.get('actions').children.map(e=>e.textContent);
-  assert.ok(actions().includes('Choose an angle'),actions().join('|'));assert.ok(actions().includes('None of these'),actions().join('|'));
   // Checked for you lists the passages a check found, under the check.
   f.set('copied',{...shown,checks:[{label:'Carried over from an example',passed:false,detail:['42 percent','https://example.invalid/launch']}]});
   f.run("sGate(waiting,copied)");
@@ -1766,21 +1715,6 @@ async function filesJourney(){
   f.run("sGate(waiting,shown)");
   assert.ok(!actions().some(t=>/Save ideas|Use this|Finish/.test(t)),actions().join('|'));
   assert.ok(text().some(t=>/notes was excerpted|excerpted/.test(t)),'the gate says which files were excerpted: '+text().join('|'));
-  const sheet=()=>descendants(f.get('sheet'));
-  await f.get('actions').children.find(e=>e.textContent==='Choose an angle').listeners.click();
-  const picks=sheet().filter(e=>e.className==='pick-card');
-  assert.deepEqual(picks.map(e=>e.textContent),['Retries are a budget','The gateway is a contract','Fewer hops']);
-  assert.ok(descendants(picks[1]).some(e=>e.textContent==='API authors · The contract · Leans on notes.md'));
-  const go=sheet().find(e=>e.type==='submit');assert.equal(go.disabled,true);
-  await picks[1].listeners.click();assert.equal(go.disabled,false);
-  const note=sheet().find(e=>e.id==='develop-note');note.value='Short.';note.listeners.input();
-  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.deepEqual(requests.find(r=>r.url==='/api/run-develop').data,{id:'files',expected:'a2',request:'The gateway is a contract\nShort.'});
-  f.run("studio.screen='gate';studio.found=waiting;sGate(waiting,shown)");
-  await f.get('actions').children.find(e=>e.textContent==='None of these').listeners.click();
-  const why=sheet().find(e=>e.id==='angles-note');why.value='Closer to on-call.';why.listeners.input();
-  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.deepEqual(requests.find(r=>r.url==='/api/run-changes').data,{id:'files',expected:'a2',request:'Closer to on-call.',stage:'angles'});
 }
 // A real finish: the final stop shows the draft open with Finish, a finished run has a Done
 // card, Delete asks for the typed title and says what is running stops, Blogs lists what was
@@ -1883,23 +1817,6 @@ async function finishAndDelete(){
   // The run address of a desk blog opens the desk too.
   await f.run("sRoute('blogs')");await f.run("sRoute('run','desked')");
   assert.equal(f.run('studio.screen'),'desk');assert.equal(f.get('title').textContent,'Desk blog');
-  // The ideas gate: the headings become picks, with an optional note.
-  const ideasRun={...atPackage,mode:'ideas',next:'outline',expected:'version-i',stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'draft'}]};
-  const ideas={...shown,stage:'outline',label:'Outline',expected:'version-i',content:'# Ideas\n\n## The first angle\n\nWhy it matters.\n\n## The second angle\n\nAnother view.\n\n## A third angle\n\nMore.',bundle:[]};
-  f.set('ideasRun',ideasRun);f.set('ideas',ideas);
-  f.run("studio.screen='gate';studio.found=ideasRun;sGate(ideasRun,ideas)");
-  await f.get('actions').children.find(e=>e.textContent==='Develop an idea').listeners.click();
-  const picks=sheet().filter(e=>e.className==='pick-card');
-  assert.deepEqual(picks.map(e=>e.textContent),['The first angle','The second angle','A third angle']);
-  const go=sheet().find(e=>e.textContent==='Develop this choice');assert.equal(go.disabled,true);
-  await picks[1].listeners.click();assert.equal(go.disabled,false);
-  const note=sheet().find(e=>e.id==='develop-note');note.value='x'.repeat(8000);note.listeners.input();
-  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(requests.some(r=>r.url==='/api/run-develop'),false,'an over-long note is refused before it is sent');
-  assert.ok(sheet().some(e=>/Keep the note under/.test(e.textContent)));
-  note.value='Keep it short.';note.listeners.input();
-  await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.deepEqual(requests.find(r=>r.url==='/api/run-develop').data,{id:'synthetic',expected:'version-i',request:'The second angle\nKeep it short.'});
 }
 
 // Published posts from a list of links: the file name suggests the author, the check shows the
@@ -2851,44 +2768,6 @@ async function researchRounds(){
 // A new blog stopped at its research offers Continue without research: a confirmation that says
 // what it does, one request, and the run's stops line without the research. Only a blog with a
 // manuscript is told to open Edit manuscript.
-async function skipResearch(){
-  const requests=[];
-  const stages=[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
-  const stopped={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',ahead:{steps_left:5,next_gate:'research',next_stop:'Research findings',jobs:0,seconds:0,dollars:null,spent:null},existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},error:'The selected CLI failed.',research:{kept:false,rounds:3,refusal:null,last:null},stages};
-  const after={...stopped,status:'queued',enabled:true,error:'',next:'outline',expected:'version-2',research:null,stages:stages.slice(2),ahead:{steps_left:4,next_gate:'outline',next_stop:'Outline',jobs:0,seconds:0,dollars:null,spent:null},decisions:[{event:'Continued without research',at:new Date().toISOString()}]};
-  const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-skip-research'||url.startsWith('/api/run?'))return after;return {items:[],total:0};});f.loadRunner();
-  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),line=()=>nodes().find(e=>e.className==='quiet ahead-line')?.textContent;
-  f.set('found',stopped);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.equal(line(),'5 steps left · Next stop: the research findings');
-  assert.ok(text().includes('Research is optional. Continue without research takes this blog on to the outline, from your brief and selected sources; the later steps get no research findings.'),text().join('|'));
-  assert.equal(text().some(t=>/Open Edit manuscript/.test(t)),false,'a new blog has no manuscript to edit');
-  assert.equal(f.get('actions').children.some(e=>e.textContent==='Edit manuscript'),false);
-  const skip=f.get('actions').children.find(e=>e.textContent==='Continue without research');assert.ok(skip,f.get('actions').children.map(e=>e.textContent).join('|'));
-  await skip.listeners.click();
-  assert.equal(requests.length,0,'opening the confirmation sends nothing');
-  const sheet=descendants(f.get('sheet'));
-  assert.ok(sheet.some(e=>e.textContent==='Continue without research?'));
-  assert.ok(sheet.some(e=>e.textContent==='The research steps leave this blog’s run, and it goes on to the outline from your brief and selected sources. The later steps get no research findings, and research cannot be added back to this run.'),sheet.map(e=>e.textContent).join('|'));
-  await sheet.find(e=>e.tagName==='button'&&e.textContent==='Continue without research').listeners.click();
-  assert.deepEqual(requests.find(r=>r.url==='/api/run-skip-research').data,{id:'synthetic',expected:'version-1'});
-  assert.equal(line(),'4 steps left · Next stop: the outline','the line no longer counts research');
-  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Continuing without research.'));
-  assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not once research is gone');
-  // An existing draft keeps the editing hint, and a working research offers no skip.
-  f.set('found',{...stopped,existing:true});f.run('sRun(found)');
-  assert.ok(text().includes('Research is optional for editing. Open Edit manuscript to polish the writing without research.'));
-  f.set('found',{...stopped,status:'working',enabled:true,error:'',started_at:new Date().toISOString()});f.run('sRun(found)');
-  assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'stop the research first');
-  // The next stop is the server's, under the run's own level.
-  f.set('found',{...stopped,review_level:'balanced',ahead:{...stopped.ahead,next_gate:'outline',next_stop:'Outline'}});f.run('sRun(found)');
-  assert.equal(line(),'5 steps left · Next stop: the outline');
-  // Only where research stopped: not at the research gates, and the hint goes with the button.
-  for(const status of ['stopped','paused','needs-attention']){f.set('found',{...stopped,status,error:status==='needs-attention'?'Saved writing or its inputs changed.':''});f.run('sRun(found)');assert.ok(f.get('actions').children.some(e=>e.textContent==='Continue without research'),status);}
-  for(const next of ['research','research-plan']){f.set('found',{...stopped,next,status:'waiting-for-approval',enabled:true,error:'An earlier note.'});f.run('sRun(found)');
-    assert.equal(f.get('actions').children.some(e=>e.textContent==='Continue without research'),false,'not at the '+next+' gate');
-    assert.equal(text().some(t=>/^Research is optional/.test(t)),false,'no hint without the button');}
-}
-
 // Finish asks first at every review level, names what it does with the team library, and the
 // toast says whether the draft was kept there or why not. Earlier grouped stops still approve
 // the displayed version directly.
@@ -2946,22 +2825,6 @@ async function failureRecovery(){
   f.set('found',{...failed,said:null});f.run("studio.screen='run';sRun(found)");
   assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said'),false);
   assert.ok(nodes().some(e=>e.textContent==='Open Status'));
-  // Out of time: the error names the limit, the page says where it lives, beside more time.
-  f.set('found',{...failed,reason:'time-limit',said:null,error:'This step ran out of the time a step may take (10 minutes).'});f.run('sRun(found)');
-  assert.ok(text().includes('This step ran out of the time a step may take (10 minutes).'));
-  assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. Try again with more time doubles it to 20 minutes for this blog.'),text().join('|'));
-  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again with more time'));
-  assert.equal(nodes().some(e=>e.textContent==='Open Status'),false,'a time limit is not a sign-in problem');
-  // The words follow the limit exactly, and nothing doubles past the longest a step may take.
-  for(const [seconds,words,retry] of [[90,'Try again with more time doubles it to 3 minutes for this blog.','with the same 1.5-minute limit'],[45,'Try again with more time doubles it to 1.5 minutes for this blog.','with the same 45-second limit'],[2400,'Try again with more time raises it to 60 minutes for this blog.','with the same 40-minute limit']]){
-    f.set('found',{...failed,seconds,reason:'time-limit',said:null,error:'This step ran out of the time a step may take.'});f.run('sRun(found)');
-    assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. '+words),seconds+': '+text().join('|'));
-    assert.ok(text().some(t=>t.includes(retry)),seconds+': '+text().join('|'));
-    assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again with more time'));}
-  f.set('found',{...failed,seconds:3600,reason:'time-limit',said:null,error:'This step ran out of the time a step may take (60 minutes).'});f.run('sRun(found)');
-  assert.ok(text().includes('The limit is in Settings → Step time limit and applies to blogs started after a change. 60 minutes is the longest a step may take.'),text().join('|'));
-  assert.equal(f.get('actions').children.some(e=>e.textContent==='Try again with more time'),false,'no more time past the longest');
-  assert.equal(f.get('actions').children.find(e=>e.textContent==='Try again').className,'button button-filled');
   // First-run setup: Writing preferences open, and an assistant that is not installed marked.
   f.run("studio.options={agents:{codex:false,claude:true}};studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};studio.team={};studio.brand=null;sSettings(true)");
   const preferences=()=>nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='Writing preferences');
@@ -6092,7 +5955,9 @@ async function unfinishedMigration(){
     if(url.startsWith('/api/desk-images?'))return {id:'synthetic',images:[]};
     return null;
   });
-  t.f.set('found',found);t.f.run("studio.screen='run';studio.id='synthetic';sRun(found)");
+  // The saved run is a saved record now: Open on the desk is its one action, through the preview.
+  const record=(outcome,extra={})=>({...extra,id:'synthetic',title:'Synthetic saved blog',status:outcome,sentence:'Saved by the earlier flow.',saved_record:{outcome,why:'Its saved outline or draft can be opened on the writing desk.',files:[],next:null,start:null,retained:[],held:''}});
+  t.f.set('found',record('migrates'));t.f.run("studio.screen='run';studio.id='synthetic';sSavedRecord(found)");
   await t.click('Open on the desk');
   assert.equal(t.requests.filter(r=>r.url==='/api/desk-migrate').length,0,'preview starts no migration');
   assert.ok(t.sheet().some(n=>n.textContent==='Original records and real approvals'));
@@ -6118,6 +5983,140 @@ async function unfinishedMigration(){
   t.f.run('sRunOnDesk(migrated)');
   assert.ok(t.nodes().some(n=>n.textContent.includes('Unfinished steps remain incomplete')));
   assert.ok(!t.nodes().some(n=>n.textContent.includes('It was finished here')));
+  assert.ok(!t.nodes().some(n=>n.textContent.includes('its last step stopped')),'a run that never stopped says nothing about a stop');
+  t.f.set('migrated',{...found,on_desk:true,unfinished_migration:true,next:null,error:'Synthetic failure.'});
+  t.f.run('sRunOnDesk(migrated)');
+  assert.ok(t.nodes().some(n=>n.textContent==='Before it was opened on the desk, its last step stopped: Synthetic failure.'),'a saved failure stays in the run’s history');
+  // Finished ideas or an outline have no draft, so no finished Open on the desk: their saved
+  // record moves them through the previewed migration. A finished blog with a draft keeps its
+  // own action, in its Done card.
+  const offered=()=>descendants(t.f.get('actions')).some(n=>n.textContent==='Open on the desk');
+  t.f.set('ideas',{...found,mode:'ideas',complete:true,desk_open:false,next:null,status:'complete',stages:found.stages.map(row=>({...row,status:'approved'}))});
+  t.f.set('ideas',record('migrates',{mode:'ideas',complete:true}));t.f.run('sSavedRecord(ideas)');
+  assert.ok(offered(),'finished ideas are offered Open on the desk');
+  t.f.set('done',{...found,mode:'write',complete:true,desk_open:true,next:null,status:'complete',stages:found.stages.map(row=>({...row,status:'approved'}))});
+  t.f.set('done',record('finished',{...t.f.run('done')}));t.f.run('sSavedRecord(done)');
+  assert.ok(!offered(),'a finished blog with a draft keeps its own Open on the desk');
+  assert.ok(t.nodes().some(n=>n.tagName==='button'&&n.textContent==='Open on the desk'),'in its Done card');
+}
+
+async function savedReadOnlyRecord(){
+  const record=(next,start)=>({id:'unreadable',title:'Synthetic saved blog',status:'read-only',sentence:'This blog was saved by the earlier step-by-step flow, and it can be neither continued nor opened on the desk. Its saved files are kept as they are.',saved_record:{why:'Its saved run record cannot be read.',files:['DRAFT.md','OUTLINE.md'],next,start}});
+  let shown=record('copy',{title:'Synthetic saved blog',point:'Explain a fixture',audience:'Authors'});
+  const t=deskStartFixture(url=>{
+    if(url.startsWith('/api/run?'))return shown;
+    if(url.startsWith('/api/saved-file?'))return new URLSearchParams(url.split('?')[1]).get('name')==='DRAFT.md'?{id:'unreadable',name:'DRAFT.md',text:'# Saved draft\n\nSaved words.',truncated:false}:{__http:400,error:'Choose a saved file this blog holds.'};
+    return null;
+  });
+  // A gate address for it opens the record too: there is no gate to read.
+  await t.f.run("sRoute('gate','unreadable','draft')");
+  assert.equal(t.f.run('studio.screen'),'run');
+  const actions=descendants(t.f.get('actions'));
+  assert.equal(actions.filter(n=>n.tagName==='button'&&n.className.split(' ').includes('button-filled')).length,1,'one main action');
+  assert.ok(actions.some(n=>n.textContent==='Start new work from this'));
+  assert.ok(t.nodes().some(n=>n.textContent==='Read-only: it is not continued and not opened on the desk'),'the record says it is read-only in words');
+  assert.ok(t.nodes().some(n=>n.textContent==='Its saved run record cannot be read.'),'it says why');
+  for(const gone of ['Resume','Try again','Continue','Open on the desk','Review Draft'])assert.ok(!t.nodes().concat(actions).some(n=>n.tagName==='button'&&n.textContent===gone),gone+' is not offered');
+  await t.click('Read the saved draft');
+  assert.ok(t.nodes().some(n=>n.textContent==='Saved words.'),'a saved file is read in place');
+  await t.click('Read the saved outline');
+  assert.ok(t.nodes().some(n=>n.textContent==='Choose a saved file this blog holds.'),'a file it cannot read is said');
+  assert.ok(!t.requests.some(r=>r.data),'the record writes nothing');
+  await descendants(t.f.get('actions')).find(n=>n.textContent==='Start new work from this').listeners.click();
+  assert.equal(t.f.run('studio.screen'),'desk-start');
+  assert.deepEqual(JSON.parse(t.f.run('JSON.stringify([studio.deskStart.title,studio.deskStart.point,studio.deskStart.audience])')),['Synthetic saved blog','Explain a fixture','Authors']);
+  assert.ok(!t.requests.some(r=>r.url==='/api/desk-create'),'starting new work makes nothing until the person starts');
+  shown={...record('new',null),title:'unreadable',sentence:'This blog’s saved record cannot be read, so it can be neither continued nor opened on the desk. Its saved files are kept as they are.'};
+  t.f.run('studio.deskStart=null');await t.f.run("sRoute('run','unreadable')");
+  assert.ok(descendants(t.f.get('actions')).some(n=>n.textContent==='Start a new blog'));
+  assert.ok(t.nodes().some(n=>n.textContent.startsWith('Its start form cannot be read')));
+}
+
+// Every saved blog of the earlier flow is a saved record: one that opens on the desk, one that
+// finished, and one that waits, each with one main action and nothing that continues it.
+async function savedRecordStates(){
+  const files={files:['DRAFT.md'],next:null,start:null};
+  const preview={id:'saved',eligible:true,expected:'opaque-migration-value',blockers:[],retained:['Original records and real approvals'],held:'Unfinished checks remain incomplete.',notice:'Nothing was changed.'};
+  let shown;
+  const t=deskStartFixture((url,data)=>{
+    if(url.startsWith('/api/run?'))return shown;
+    if(url.startsWith('/api/desk-migration-preview?'))return preview;
+    if(url==='/api/desk-migrate')return {id:data.id,execution:'conversation',draft:{}};
+    if(url.startsWith('/api/desk?'))return deskView({id:'saved',execution:'conversation',run:true,unfinished_migration:true,sections:[],opening:'',kept_notes:'Unstructured saved notes.'});
+    if(url.startsWith('/api/desk-images?'))return {id:'saved',images:[]};
+    if(url.startsWith('/api/saved-file?'))return {id:'saved',name:'DRAFT.md',text:'Saved words.',truncated:false};
+    return null;
+  });
+  const filled=()=>descendants(t.f.get('actions')).concat(t.nodes()).filter(n=>n.tagName==='button'&&n.className.split(' ').includes('button-filled'));
+  const nothingContinues=()=>{for(const label of ['Resume','Try again','Continue','Approve','Ask for changes','Continue in the conversation','Run this from here','Continue without research'])assert.ok(!t.nodes().concat(descendants(t.f.get('actions'))).some(n=>n.tagName==='button'&&n.textContent===label),label+' is not offered');};
+  const said=words=>assert.ok(t.nodes().some(n=>n.textContent===words),'no '+words);
+  // It opens on the desk: Open on the desk previews first, then opens it.
+  shown={id:'saved',title:'Synthetic saved blog',status:'migrates',sentence:'Saved by the earlier flow.',saved_record:{...files,outcome:'migrates',why:'Its saved outline or draft can be opened on the writing desk.',retained:preview.retained,held:preview.held}};
+  await t.f.run("sRoute('gate','saved','draft')");
+  assert.equal(t.f.run('studio.screen'),'run','a gate address opens the record');
+  assert.deepEqual(filled().map(n=>n.textContent),['Open on the desk']);
+  said('Saved: it continues on the writing desk, not here');said('Original records and real approvals');
+  assert.equal(t.nodes().find(n=>n.textContent==='Saved: it continues on the writing desk, not here').parent.attributes.role,'status');
+  nothingContinues();
+  await t.click('Read the saved draft');said('Saved words.');
+  await t.click('Open on the desk');
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-migrate').length,0,'the preview comes first');
+  await t.sheet().find(n=>n.textContent==='Open on the desk'&&n.tagName==='button').listeners.click();
+  assert.deepEqual(t.requests.filter(r=>r.url==='/api/desk-migrate').at(-1).data,{id:'saved',expected:'opaque-migration-value'});
+  assert.equal(t.f.run('studio.screen'),'desk');
+  said('Your saved outline notes');said('Unstructured saved notes.');
+  // It finished: its Done card holds the finished Open on the desk, the one main action.
+  shown={id:'saved',title:'Synthetic saved blog',status:'finished',complete:true,desk_open:true,expected:'run-v1',mode:'write',stages:[{stage:'draft',label:'Draft',status:'approved'}],decisions:[],sentence:'Finished in the earlier flow.',saved_record:{...files,outcome:'finished',why:'This blog already finished.'}};
+  t.f.run('studio.desk=null');await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(filled().map(n=>n.textContent),['Open on the desk']);
+  assert.equal(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').length,0,'its Done card holds the action');
+  said('Finished: it is edited on the writing desk from here on');said('Done');
+  nothingContinues();
+  // A finished team blog keeps Record in team repository, quiet; it is never handed over.
+  shown={...shown,team:true,driver:{name:'This computer',here:true}};await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').map(n=>[n.textContent,n.className.split(' ').includes('button-filled')]),[['Record in team repository',false]]);
+  assert.ok(!t.nodes().some(n=>n.textContent==='Hand over'),'a saved blog is never handed over');
+  assert.deepEqual(filled().map(n=>n.textContent),['Open on the desk']);
+  // Another computer drives it: Take over, which it needs to be opened on the desk here.
+  shown={...shown,driver:{name:'Ana',here:false}};await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(descendants(t.f.get('actions')).filter(n=>n.tagName==='button').map(n=>n.textContent),['Take over']);
+  shown={...shown,driver:{name:'This computer',here:true}};
+  // It waits: what clears it is the main action, or new work while nothing here can.
+  const waiting=(why,clear,extra={})=>({id:'saved',title:'Synthetic saved blog',status:'wait',expected:'run-v2',team:false,driver:null,sentence:'Waiting.',...extra,saved_record:{...files,outcome:'wait',why,clear,token:clear==='recover'?'bm1.token':null,...(extra.saved||{})}});
+  shown=waiting('A step of this blog is under way. Stop it before opening on the desk.','stop');
+  await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(filled().map(n=>n.textContent),['Stop the step']);
+  said('Waiting: it opens on the desk once this is cleared');said('A step of this blog is under way. Stop it before opening on the desk.');
+  nothingContinues();
+  await t.click('Stop the step');
+  assert.deepEqual(t.requests.filter(r=>r.url==='/api/run-stop').at(-1).data,{id:'saved',expected:'run-v2'});
+  shown=waiting('Opening this blog on the desk was interrupted.','recover');
+  await t.f.run("sRoute('run','saved')");
+  await t.click('Finish opening on the desk');
+  assert.deepEqual(t.requests.filter(r=>r.url==='/api/desk-migrate').at(-1).data,{id:'saved',expected:'bm1.token'});
+  shown=waiting('Another computer drives this blog.','take',{team:true,driver:{name:'Synthetic computer',here:false}});
+  await t.f.run("sRoute('run','saved')");
+  await t.click('Take over this blog');
+  await t.sheet().find(n=>n.textContent==='Confirm').listeners.click();
+  assert.deepEqual(t.requests.find(r=>r.url==='/api/team-takeover').data,{id:'saved',expected:'run-v2',confirmed:true});
+  // A waiting tool task is named, with the way to where it is finished.
+  shown=waiting('A saved job is under way or waiting to land.','job',{saved:{job:{id:'b'.repeat(32),kind:'repurpose',status:'ready'}}});
+  await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(filled().map(n=>n.textContent),['Open the waiting repurpose task']);
+  assert.ok(t.nodes().some(n=>/Its repurpose task is ready for you/.test(n.textContent)));
+  await t.click('Open the waiting repurpose task');
+  assert.ok(t.requests.some(r=>r.url==='/api/tool-job?job='+'b'.repeat(32)),'the task is read from where the blog\u2019s Tools list it');
+  shown=waiting('This workspace is connected to an older Team Hub.',null,{saved:{next:'copy',start:{title:'Synthetic saved blog'}}});
+  await t.f.run("sRoute('run','saved')");
+  assert.deepEqual(filled().map(n=>n.textContent),['Start new work from this']);
+  assert.ok(t.nodes().some(n=>n.textContent.startsWith('Nothing on this page clears it')));
+  // Lists and Home say each saved record's state in words, and open its record.
+  for(const [saved,words] of [['saved','Saved by the earlier flow · Open it to see what becomes of it'],['finished','Finished in the earlier flow'],['unreadable','Saved by the earlier flow · Its records cannot be read']]){
+    t.f.set('row',{id:'saved',title:'Synthetic saved blog',status:'saved',saved,complete:saved==='finished',stages:[],error:''});
+    assert.equal(t.f.run('sWords(row)'),words);assert.equal(t.f.run('sGoWords(row)'),'Open');assert.equal(t.f.run('sNeeds(row)'),false);
+    assert.ok(descendants(t.f.run('sBlogCard(row)')).some(n=>n.tagName==='button'&&n.textContent==='Open'));
+  }
+  await t.f.run('sReview(row)()');assert.equal(t.f.run('studio.screen'),'run');
 }
 
 async function blogReadingAndUnifiedSources(){

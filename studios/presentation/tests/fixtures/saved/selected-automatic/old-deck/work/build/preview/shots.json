@@ -1,0 +1,16 @@
+{
+  "slides": [
+    {
+      "image": "1.png",
+      "number": 1
+    },
+    {
+      "image": "2.png",
+      "number": 2
+    },
+    {
+      "image": "3.png",
+      "number": 3
+    }
+  ]
+}

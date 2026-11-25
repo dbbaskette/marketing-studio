@@ -1,0 +1,157 @@
+{
+  "schema": 4,
+  "id": "parallel-research-plan",
+  "title": "Parallel research plan",
+  "route": "scratch",
+  "form": {
+    "route": "scratch",
+    "title": "Parallel research plan",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": true,
+    "delivery": "live",
+    "notes": "",
+    "research_from": {
+      "documents": false,
+      "sites": [],
+      "web": true
+    },
+    "research_questions": []
+  },
+  "created": "2026-11-24T23:35:38Z",
+  "driver": null,
+  "gates": {
+    "gate:research-plan": {
+      "state": "waiting",
+      "round": 1
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:38Z",
+          "ended_at": "2026-11-24T23:35:38Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:38Z"
+    },
+    "research-plan": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:35:38Z",
+          "ended_at": "2026-11-24T23:35:38Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:35:38Z"
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "research_contract": {
+    "schema": 2,
+    "version": "1.5.1",
+    "digest": "0c0203c568b3256258ad7218750b13d7b1d2e0032f3a4b8c510a082a4e5f0d46"
+  },
+  "research_execution": {
+    "schema": 1,
+    "protocol": "harness-collection-v1",
+    "workers": 3,
+    "capability": {
+      "protocol": "harness-collection-v1",
+      "digest": "06e7ae1696dfa38c694f0cbb4b49d0037b19d9a6ecbbb4047ca4d5d0e2878f92"
+    }
+  },
+  "answers": {},
+  "said": {
+    "research-plan": "Two questions."
+  },
+  "question": null,
+  "research": {
+    "plan_from": "assistant"
+  },
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "research",
+      "purpose": "research-plan",
+      "step": "research-plan",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    }
+  ]
+}

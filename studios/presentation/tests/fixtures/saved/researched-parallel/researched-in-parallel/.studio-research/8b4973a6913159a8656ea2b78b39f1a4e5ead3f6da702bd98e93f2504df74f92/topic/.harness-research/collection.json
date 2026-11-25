@@ -1,0 +1,87 @@
+{
+  "owner": "harness-research-collection",
+  "schema": 1,
+  "protocol": "parallel-v1",
+  "request": {
+    "schema": 1,
+    "topic": "Researched in parallel",
+    "audience": "Platform teams",
+    "purpose": "Inform a presentation: Show when capacity holds. Prioritize key messages, evidence worth explaining visually, and counterarguments.",
+    "scope": "Evidence, limitations and alternatives for the presentation goal: Show when capacity holds. Any public page may be used.",
+    "source_mode": "public",
+    "execution_mode": "sequential",
+    "max_investigators": 1,
+    "workstreams": [
+      {
+        "id": "area1",
+        "questions": [
+          "How many instances keep capacity during a restart?",
+          "What starts the next batch?"
+        ]
+      }
+    ],
+    "supplied_sources": [],
+    "allowed_domains": [],
+    "input_fingerprint": "1d1c41a37fefbe0f07503511560e658daad0ededc406a54a7a3a69816cede091"
+  },
+  "request_digest": "c61e7ce1e19296ef1cbf9020e9cef09b68f0f7545f3d650cffd720fefd77d1b6",
+  "generation": 1,
+  "status": "active",
+  "asset_id": "topic-afde0488165546e29e239768c1c609d0",
+  "created_at": "2026-11-24T23:35:39.120Z",
+  "updated_at": "2026-11-24T23:35:39.769Z",
+  "workstreams": [
+    {
+      "id": "area1",
+      "attempts": [
+        {
+          "number": 1,
+          "investigator": "investigator-c49a0b17b23f53ba4c9314b4",
+          "invocation": "research-invocation-9b393b8f70b9023448a3c871ca4e0dde",
+          "status": "accepted",
+          "started_at": "2026-11-24T23:35:39.201Z",
+          "receipts": [
+            {
+              "source": {
+                "id": "source-a",
+                "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+                "origin": "https://docs.example.com/restarts",
+                "title": "Synthetic source",
+                "publisher": "Synthetic publisher",
+                "permission": "public",
+                "context": "full",
+                "original_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.raw"
+              },
+              "id": "source-a",
+              "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+              "sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+              "original_file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.raw",
+              "original_sha256": "ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da",
+              "snapshot": ".harness-research/collection-data/capture-46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc.bin",
+              "original_snapshot": ".harness-research/collection-data/original-ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da.bin"
+            }
+          ],
+          "ended_at": "2026-11-24T23:35:39.463Z",
+          "outcome": "completed",
+          "terminal_note": "The host transport returned from this isolated invocation.",
+          "packet": {
+            "file": ".harness-research/collection-data/packet-1-area1-1-60f288eb5ef54b07020347836683012413695ddb81844de53ff2ab1cf5950213.json",
+            "sha256": "60f288eb5ef54b07020347836683012413695ddb81844de53ff2ab1cf5950213"
+          }
+        }
+      ]
+    }
+  ],
+  "identities": [
+    {
+      "investigator": "investigator-c49a0b17b23f53ba4c9314b4",
+      "invocation": "research-invocation-9b393b8f70b9023448a3c871ca4e0dde"
+    }
+  ],
+  "registry": {
+    "digest": "556eb3e9cdbebf76c2870172a310a810af2e3da7a1bd8058f1a068624129580e",
+    "file": ".harness-research/collection-data/registry-556eb3e9cdbebf76c2870172a310a810af2e3da7a1bd8058f1a068624129580e.json",
+    "sha256": "ed8f5bc46d2e46018a0060dd4741a32921264228b0736db011a18b2535d5108b"
+  },
+  "final_digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a"
+}

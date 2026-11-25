@@ -781,8 +781,9 @@ class DeskCopyTests(runner_support.StudioCase):
         self.assertEqual(self.copies.drive.docs, {})
 
     def test_a_saved_run_s_copies_follow_its_approvals(self):
-        root = self.saved_start(levels=['101'], copies=['google'])
-        self.to_end(root)
-        self.assertEqual(self.docs(root), ['brief@101', 'document@101'])
+        # The saved flow no longer makes copies as it is approved; what stays is that a saved
+        # record's copy is never sent from the desk.
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'finished')
         with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.'):
-            self.engine.send_copy(root, 'brief@101')
+            self.engine.send_copy(root, 'brief')

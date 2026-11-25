@@ -90,6 +90,10 @@ def reviewed_bundle(case):
 
 
 class ResearchCase(RunnerCase):
+    # Runner code the manuscript editor's own runs still use: its runs are marked as the
+    # editor's (RunnerCase.EDITOR), the only saved runs the runner goes on with.
+    EDITOR = 'revise'
+
     def research_run(self):
         """A page run whose next stage is reviewed research, its plan approved."""
         source = self.source('A fictional gateway routes synthetic requests.')
@@ -524,111 +528,6 @@ class StageMeterTests(ResearchCase):
                     ),
                     ahead['spent'],
                 )
-
-
-class ContinueWithoutResearchTests(ResearchCase):
-    def stopped_at_research(self):
-        found = self.research_run()
-        engine = self.engine()
-
-        def refusing(case_root, run, payload, worker, *, seconds, stop, progress=None):
-            refused_case(case_root / research_contract.CASE)
-            raise research_contract.ReviewRefused(
-                research_contract.objections(case_root / research_contract.CASE), 3
-            )
-
-        engine.control(found['id'], 'resume')
-        with patch('synthesis_research.generate', refusing):
-            engine._once(found['id'])
-        return engine, engine.describe(found['id'])
-
-    def test_the_outline_then_runs_without_research_and_the_run_says_so(self):
-        engine, shown = self.stopped_at_research()
-        directory = Path(shown['directory'])
-        self.assertTrue((directory / DRAFT).is_dir())
-        shown = runner.dispatch(
-            self.root, 'skip-research', {'id': shown['id'], 'expected': shown['expected']}
-        )
-        self.assertEqual(
-            [row['stage'] for row in shown['stages']], ['outline', 'draft', 'review', 'package']
-        )
-        self.assertEqual(shown['next'], 'outline')
-        self.assertEqual(shown['status'], 'queued', 'it resumes')
-        self.assertEqual(shown['error'], '')
-        self.assertIsNone(shown['research'])
-        self.assertEqual(shown['decisions'][-1]['event'], 'Continued without research')
-        self.assertFalse((directory / DRAFT).exists(), 'the kept research draft is let go')
-        _, record, run = runner.load(self.root, shown['id'])
-        self.assertEqual(run['pipeline'], ['outline', 'draft', 'review', 'package'])
-        self.assertNotIn('research', run['stages'])
-        self.assertNotIn('research-plan', run['stages'])
-        self.assertEqual(run['research_skipped']['from'], 'research')
-        self.assertEqual(record['research_policy'], 'supplied-only', 'the blog keeps its policy')
-        # The later stages get no bundle and are told there is none.
-        _, payload, guidance = runner.job(self.root, shown['id'])
-        self.assertNotIn('research_bundle', payload)
-        self.assertEqual(payload['research_policy'], 'none')
-        self.assertIn('continued without research', guidance)
-        seen = []
-
-        def worker(*args, **kwargs):
-            seen.append(args[1])
-            return {'content': '# Outline\nSynthetic writing.', 'notes': 'Synthetic.'}
-
-        engine.worker = worker
-        engine._once(shown['id'])
-        shown = engine.describe(shown['id'])
-        self.assertEqual(shown['next'], 'outline')
-        self.assertEqual(shown['status'], 'waiting-for-approval', shown['error'])
-        self.assertNotIn('research_bundle', seen[0])
-        self.assertEqual(seen[0]['research_policy'], 'none')
-
-    def test_research_questions_that_failed_can_be_skipped_too(self):
-        found = self.research_run()
-        engine = self.engine()
-        # Back to the plan: ask for changes, then let its job fail.
-        found = runner.decide(
-            self.root,
-            found['id'],
-            found['expected'],
-            'changes',
-            'Narrow it.',
-            True,
-            'research-plan',
-        )
-        engine.keep_local(
-            found['id'], {'enabled': False, 'status': 'failed', 'error': 'The selected CLI failed.'}
-        )
-        shown = engine.describe(found['id'])
-        self.assertEqual(shown['next'], 'research-plan')
-        shown = runner.dispatch(
-            self.root, 'skip-research', {'id': shown['id'], 'expected': shown['expected']}
-        )
-        self.assertEqual(shown['next'], 'outline')
-        self.assertEqual(
-            runner.load(self.root, shown['id'])[2]['research_skipped']['from'], 'research-plan'
-        )
-
-    def test_it_is_refused_away_from_research_while_working_and_from_chat(self):
-        found = self.create(page=True)
-        with self.assertRaisesRegex(ValueError, 'not waiting on research'):
-            runner.dispatch(
-                self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
-            )
-        engine, shown = self.stopped_at_research()
-        engine.current = shown['id']
-        self.addCleanup(setattr, engine, 'current', None)
-        runner.ENGINES[str(self.root)] = engine
-        with self.assertRaisesRegex(ValueError, 'Stop the research first'):
-            runner.dispatch(
-                self.root, 'skip-research', {'id': shown['id'], 'expected': shown['expected']}
-            )
-        engine.current = None
-        chat = runner.decide(self.root, shown['id'], shown['expected'], 'handoff', page=True)
-        with self.assertRaisesRegex(ValueError, 'decided in chat'):
-            runner.dispatch(
-                self.root, 'skip-research', {'id': chat['id'], 'expected': chat['expected']}
-            )
 
 
 class WorkerFailureTests(MeteredWorkerTests):
@@ -1327,6 +1226,45 @@ class DraftTieTests(ResearchCase):
         state, _ = self.resumed_from(engine, ident)
         self.assertEqual(state['dossier']['topic'], 'ACCEPTED')
 
+    def test_a_changed_brief_or_sources_lets_the_draft_go(self):
+        for change in ('brief', 'sources'):
+            with self.subTest(change=change):
+                engine, ident, directory = self.refused()
+                _, record, run = runner.load(self.root, ident)
+                if change == 'brief':
+                    run['brief']['goal'] = 'Explain a different fictional gateway'
+                else:
+                    extra = self.source('A second synthetic source about the gateway.')
+                    _, source = runner.studio.item(self.root, 'sources', extra['id'])
+                    record['sources'].append(
+                        {
+                            'source_id': extra['id'],
+                            'revision': source['revision'],
+                            'purposes': ['reference'],
+                        }
+                    )
+                runner.save(self.root, directory, record, run, 'Synthetic change: ' + change)
+                # New inputs bring the approved research plan back for review first.
+                shown = engine.describe(ident)
+                self.assertEqual(shown['next'], 'research-plan')
+                self.assertFalse(shown['research']['kept'])
+                # The saved plan brought back for review as it stands (what the page's old
+                # Review saved version submitted).
+                shown = runner.submit(
+                    self.root,
+                    ident,
+                    'research-plan',
+                    {'content': shown['content'], 'notes': 'The saved version was brought back.'},
+                    shown['expected'],
+                    page=True,
+                )
+                shown = self.approve(shown, page=True)
+                self.assertEqual(shown['next'], 'research')
+                self.assertTrue((directory / DRAFT).exists(), 'still on disk until research runs')
+                state, _ = self.resumed_from(engine, ident)
+                self.assertIsNone(state)
+                self.assertFalse((directory / DRAFT).exists())
+
     def test_a_draft_whose_research_was_saved_elsewhere_is_let_go_here(self):
         engine, ident, directory = self.refused()
         # Another computer saved and shared the research, then asked for changes to it: its
@@ -1355,38 +1293,6 @@ class DraftTieTests(ResearchCase):
         kept = json.loads((directory / DRAFT / '.harness-research/synthesis.json').read_text())
         self.assertEqual(kept['dossier']['topic'], 'ELSEWHERE')
         self.assertTrue(engine.describe(ident)['research']['kept'])
-
-    def test_a_changed_brief_or_sources_lets_the_draft_go(self):
-        for change in ('brief', 'sources'):
-            with self.subTest(change=change):
-                engine, ident, directory = self.refused()
-                _, record, run = runner.load(self.root, ident)
-                if change == 'brief':
-                    run['brief']['goal'] = 'Explain a different fictional gateway'
-                else:
-                    extra = self.source('A second synthetic source about the gateway.')
-                    _, source = runner.studio.item(self.root, 'sources', extra['id'])
-                    record['sources'].append(
-                        {
-                            'source_id': extra['id'],
-                            'revision': source['revision'],
-                            'purposes': ['reference'],
-                        }
-                    )
-                runner.save(self.root, directory, record, run, 'Synthetic change: ' + change)
-                # New inputs bring the approved research plan back for review first.
-                shown = engine.describe(ident)
-                self.assertEqual(shown['next'], 'research-plan')
-                self.assertFalse(shown['research']['kept'])
-                shown = runner.dispatch(
-                    self.root, 'adopt', {'id': ident, 'expected': shown['expected']}
-                )
-                shown = self.approve(shown, page=True)
-                self.assertEqual(shown['next'], 'research')
-                self.assertTrue((directory / DRAFT).exists(), 'still on disk until research runs')
-                state, _ = self.resumed_from(engine, ident)
-                self.assertIsNone(state)
-                self.assertFalse((directory / DRAFT).exists())
 
     def test_the_draft_is_private_and_its_tie_stays_out_of_the_case(self):
         engine, ident, directory = self.refused()
@@ -1425,48 +1331,6 @@ class MinorReviewTests(ResearchCase):
             'The research check still objected after 3 rounds of writing and checking, and did '
             'not say what.',
         )
-
-    def test_continue_without_research_waits_for_a_decision_on_research_first(self):
-        found = self.research_run()
-        engine = self.engine()
-        runner.ENGINES[str(self.root)] = engine
-
-        def finished(case_root, run, payload, worker, *, seconds, stop, progress=None):
-            return reviewed_bundle(case_root / research_contract.CASE)
-
-        engine.control(found['id'], 'resume')
-        with patch('synthesis_research.generate', finished):
-            engine._once(found['id'])
-        shown = engine.describe(found['id'])
-        self.assertEqual(shown['status'], 'waiting-for-approval')
-        with self.assertRaisesRegex(ValueError, 'Decide on the research findings first'):
-            runner.dispatch(
-                self.root, 'skip-research', {'id': found['id'], 'expected': shown['expected']}
-            )
-
-    def test_right_after_stop_it_says_research_is_stopping(self):
-        found = self.research_run()
-        engine = self.engine()
-        runner.ENGINES[str(self.root)] = engine
-        engine.keep_local(found['id'], {'enabled': False, 'status': 'stopped', 'error': ''})
-        engine.current = found['id']
-        engine.stop.set()
-        self.addCleanup(setattr, engine, 'current', None)
-        shown = engine.describe(found['id'])
-        with self.assertRaisesRegex(ValueError, '^Research is stopping; try again in a moment.$'):
-            runner.dispatch(
-                self.root, 'skip-research', {'id': found['id'], 'expected': shown['expected']}
-            )
-
-    def test_status_says_research_was_skipped(self):
-        found = self.research_run()
-        self.engine().keep_local(found['id'], {'enabled': False, 'status': 'failed', 'error': 'x'})
-        self.assertIsNone(runner.survey(self.root, found['id'])['research_skipped'])
-        runner.dispatch(
-            self.root, 'skip-research', {'id': found['id'], 'expected': found['expected']}
-        )
-        skipped = runner.survey(self.root, found['id'])['research_skipped']
-        self.assertEqual(skipped['from'], 'research')
 
     def test_usage_reported_for_some_jobs_only_is_counted(self):
         jobs = [

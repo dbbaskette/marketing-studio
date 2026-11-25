@@ -104,8 +104,10 @@ class RefusalTests(ModelsCase):
             run.busy = False
 
     def test_a_training_started_before_change_settings_may_still_use_them(self):
-        root = self.older(self.saved_start())
-        self.assertFalse(self.view(root)['settings']['may'])
+        import saved_fixtures
+        root = self.older(saved_fixtures.load(self, 'finished'))
+        # A saved record's view no longer carries the settings card (it shows the saved
+        # record instead); the preview it read from is kept.
         self.assertTrue(model_settings.preview(self.engine, root)['changes'])
 
 

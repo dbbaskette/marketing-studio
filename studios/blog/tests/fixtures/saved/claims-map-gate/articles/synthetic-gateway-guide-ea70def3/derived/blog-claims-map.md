@@ -1,0 +1,1 @@
+- **Synthetic claim** — Specification (`source-c9e584d07de7`): "The gateway calls the service."

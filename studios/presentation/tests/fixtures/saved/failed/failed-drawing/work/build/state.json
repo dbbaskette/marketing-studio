@@ -1,0 +1,41 @@
+{
+  "asked": null,
+  "audit": null,
+  "auditNote": null,
+  "deck": null,
+  "previous": null,
+  "repair": [],
+  "repaired": 0,
+  "rounds": [],
+  "sections": {},
+  "start": {
+    "at": "2026-11-24T23:12:39Z",
+    "brand": "@DECK@/brand/brand-contract.json",
+    "contract": "6aef3de77218fd2e5429ab7c24929073ff97dfbcc72faac05a17d9dc964fc394",
+    "drawn": "16ce46",
+    "folder": "work/build/start",
+    "pictures": {},
+    "sections": [
+      {
+        "file": "section-1.json",
+        "id": "section-1",
+        "slides": [
+          "what-it-does",
+          "when-capacity-holds",
+          "the-objection"
+        ]
+      },
+      {
+        "file": "section-2.json",
+        "id": "section-2",
+        "slides": [
+          "check-yourself",
+          "health-checks",
+          "rolling-back"
+        ]
+      }
+    ],
+    "titled": {},
+    "wordless": {}
+  }
+}

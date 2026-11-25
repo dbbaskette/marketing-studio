@@ -1,0 +1,253 @@
+{
+  "basis": "work/build/start",
+  "parts": {
+    "section-1": {
+      "first_ready_at": "2026-11-24T23:12:23Z",
+      "images": {
+        "the-objection": {
+          "buildRevision": null,
+          "id": "the-objection",
+          "number": 4,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "13927456fad0365c14a3e8bd29c11ebe",
+          "reused": false,
+          "revision": "c108e23957c42a0aa2b678b47dfba6106e6c38931e00eb69eea414985b6e1c64",
+          "title": "Rolling does not always mean zero downtime"
+        },
+        "what-it-does": {
+          "buildRevision": null,
+          "id": "what-it-does",
+          "number": 2,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "a803721e4d7f683f99fe86f543d7a048",
+          "reused": false,
+          "revision": "c108e23957c42a0aa2b678b47dfba6106e6c38931e00eb69eea414985b6e1c64",
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        "when-capacity-holds": {
+          "buildRevision": null,
+          "id": "when-capacity-holds",
+          "number": 3,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "14962cb30ad00aa945fd70fa123faed8",
+          "reused": false,
+          "revision": "c108e23957c42a0aa2b678b47dfba6106e6c38931e00eb69eea414985b6e1c64",
+          "title": "Capacity holds only with more than one instance"
+        }
+      },
+      "owner": "sealed-ef94f3506974f1b0f4313cbb963c5d5a",
+      "render": "b049127855b1d86f91036880b3023f5d",
+      "slides": [
+        {
+          "id": "what-it-does",
+          "number": 2,
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        {
+          "id": "when-capacity-holds",
+          "number": 3,
+          "title": "Capacity holds only with more than one instance"
+        },
+        {
+          "id": "the-objection",
+          "number": 4,
+          "title": "Rolling does not always mean zero downtime"
+        }
+      ],
+      "started_at": "2026-11-24T23:12:23Z",
+      "status": "rendered"
+    },
+    "section-2": {
+      "first_ready_at": "2026-11-24T23:12:23Z",
+      "images": {
+        "check-yourself": {
+          "buildRevision": null,
+          "id": "check-yourself",
+          "number": 5,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "6bf2a3b4a7a1e9fbfc2df0d7b7542441",
+          "reused": false,
+          "revision": "23f9645c013fe333cf99316251e26d066d3c1f6048b7a66cbe4bd3c24972a32b",
+          "title": "Check what you can now explain"
+        },
+        "health-checks": {
+          "buildRevision": null,
+          "id": "health-checks",
+          "number": 6,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "35e51865b1bdb99a1cad58b48eab7b4d",
+          "reused": false,
+          "revision": "23f9645c013fe333cf99316251e26d066d3c1f6048b7a66cbe4bd3c24972a32b",
+          "title": "Health checks start the next batch"
+        },
+        "rolling-back": {
+          "buildRevision": null,
+          "id": "rolling-back",
+          "number": 7,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "6d43a0f4cb8b61c33fff898f547fd751",
+          "reused": false,
+          "revision": "23f9645c013fe333cf99316251e26d066d3c1f6048b7a66cbe4bd3c24972a32b",
+          "title": "A failed batch is rolled back, not pushed on"
+        }
+      },
+      "owner": "sealed-ee2361d8a77a33de2c339469abfa1187",
+      "render": "001edf646fed08873eeb5e3ca9c15a97",
+      "slides": [
+        {
+          "id": "check-yourself",
+          "number": 5,
+          "title": "Check what you can now explain"
+        },
+        {
+          "id": "health-checks",
+          "number": 6,
+          "title": "Health checks start the next batch"
+        },
+        {
+          "id": "rolling-back",
+          "number": 7,
+          "title": "A failed batch is rolled back, not pushed on"
+        }
+      ],
+      "started_at": "2026-11-24T23:12:23Z",
+      "status": "rendered"
+    },
+    "whole": {
+      "first_ready_at": "2026-11-24T23:12:23Z",
+      "images": {
+        "check-yourself": {
+          "buildRevision": null,
+          "id": "check-yourself",
+          "number": 5,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "3cbaaffec9e35bad1862470981a382df",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "Check what you can now explain"
+        },
+        "closing-practice": {
+          "buildRevision": null,
+          "id": "closing-practice",
+          "number": 8,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "aa5c3bed3278610c8e1424d1ac801936",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "Next: try it on a test app"
+        },
+        "cover-restarts": {
+          "buildRevision": null,
+          "id": "cover-restarts",
+          "number": 1,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "9d38f39c20af010e4e5659696d746d4e",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "Rolling restarts"
+        },
+        "health-checks": {
+          "buildRevision": null,
+          "id": "health-checks",
+          "number": 6,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "04ee291704559f5ba548bfe76dd1aab6",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "Health checks start the next batch"
+        },
+        "rolling-back": {
+          "buildRevision": null,
+          "id": "rolling-back",
+          "number": 7,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "26935cf7711a177c67b469f92ce2f8e3",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "A failed batch is rolled back, not pushed on"
+        },
+        "the-objection": {
+          "buildRevision": null,
+          "id": "the-objection",
+          "number": 4,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "2237d34955102c88af1d539a74121852",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "Rolling does not always mean zero downtime"
+        },
+        "what-it-does": {
+          "buildRevision": null,
+          "id": "what-it-does",
+          "number": 2,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "d825ec03eaaa2c98bdc7decbce6dd09f",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        "when-capacity-holds": {
+          "buildRevision": null,
+          "id": "when-capacity-holds",
+          "number": 3,
+          "ready_at": "2026-11-24T23:12:23Z",
+          "ref": "cd56b90cee9ba6f7500812b018466a94",
+          "reused": false,
+          "revision": "5b9cfff98d755664f6aa64fd3ca7ad292725f8bbd5063a8e131eca5c760f7ea9",
+          "title": "Capacity holds only with more than one instance"
+        }
+      },
+      "owner": "82c5918cbc50a5aa01a022bc537d5707",
+      "render": "2eeb743472beb22a5a7a8720fddfc8c9",
+      "slides": [
+        {
+          "id": "cover-restarts",
+          "number": 1,
+          "title": "Rolling restarts"
+        },
+        {
+          "id": "what-it-does",
+          "number": 2,
+          "title": "A rolling restart replaces instances one batch at a time"
+        },
+        {
+          "id": "when-capacity-holds",
+          "number": 3,
+          "title": "Capacity holds only with more than one instance"
+        },
+        {
+          "id": "the-objection",
+          "number": 4,
+          "title": "Rolling does not always mean zero downtime"
+        },
+        {
+          "id": "check-yourself",
+          "number": 5,
+          "title": "Check what you can now explain"
+        },
+        {
+          "id": "health-checks",
+          "number": 6,
+          "title": "Health checks start the next batch"
+        },
+        {
+          "id": "rolling-back",
+          "number": 7,
+          "title": "A failed batch is rolled back, not pushed on"
+        },
+        {
+          "id": "closing-practice",
+          "number": 8,
+          "title": "Next: try it on a test app"
+        }
+      ],
+      "started_at": "2026-11-24T23:12:23Z",
+      "status": "rendered"
+    }
+  },
+  "timings": {
+    "final_review_ready_at": "2026-11-24T23:12:24Z",
+    "first_section_ready_at": "2026-11-24T23:12:23Z",
+    "first_whole_preview_at": "2026-11-24T23:12:23Z"
+  }
+}

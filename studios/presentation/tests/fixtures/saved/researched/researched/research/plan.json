@@ -1,0 +1,20 @@
+{
+  "topic": "Rolling restarts",
+  "purpose": "planning",
+  "scope": "public-web",
+  "sources": [],
+  "items": [
+    {
+      "id": "instance-min",
+      "question": "How many instances keep capacity during a restart?",
+      "public_query": "rolling restart minimum instances",
+      "claim": null
+    },
+    {
+      "id": "health-checks",
+      "question": "What starts the next batch?",
+      "public_query": "rolling restart health check batch",
+      "claim": null
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "material-3767dc269a214eb3",
+  "name": "plain",
+  "origin": "plain.txt",
+  "original_filename": "plain.txt",
+  "original_path": "original.txt",
+  "original_sha256": "9047d69bf49ee4492e94a303adcd2c9f529235a6c4fc05a48accd7891ffa9069",
+  "content_sha256": "9047d69bf49ee4492e94a303adcd2c9f529235a6c4fc05a48accd7891ffa9069",
+  "purposes": [
+    "material"
+  ],
+  "author": null,
+  "status": "ready",
+  "note": "Uploaded through the local editorial desk.",
+  "revision": 1,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "retrieved_at": "2026-01-05T09:30:00+00:00",
+  "updated_at": "2026-01-05T09:30:00+00:00",
+  "analysis": {
+    "status": "needs-analysis",
+    "sha256": "9047d69bf49ee4492e94a303adcd2c9f529235a6c4fc05a48accd7891ffa9069",
+    "harness": null,
+    "at": "2026-01-05T09:30:00+00:00",
+    "message": "Select your writing CLI once, then retry analysis."
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "schema": 1,
+  "id": "asked",
+  "title": "Asked",
+  "route": "scratch",
+  "form": {
+    "route": "scratch",
+    "title": "Asked",
+    "audience": "Platform teams",
+    "goal": "Show when capacity holds",
+    "minutes": 20,
+    "brand": "example",
+    "variant": "light",
+    "output": "google",
+    "research": false,
+    "delivery": "live",
+    "notes": "",
+    "research_questions": []
+  },
+  "created": "2026-11-24T23:12:40Z",
+  "driver": null,
+  "gates": {
+    "gate:outline": {
+      "state": "changes",
+      "round": 1,
+      "note": "Fewer slides on the batches.",
+      "at": "2026-11-24T23:12:40Z",
+      "by": "Alex",
+      "saying": null
+    },
+    "gate:look": {
+      "state": "absent"
+    },
+    "gate:build": {
+      "state": "absent"
+    }
+  },
+  "steps": {
+    "intake-source": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        }
+      ],
+      "done": true,
+      "at": "2026-11-24T23:12:40Z"
+    },
+    "outline": {
+      "failed": 0,
+      "tries": [
+        {
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "kept",
+          "error": null
+        },
+        {
+          "started_at": "2026-11-24T23:12:40Z",
+          "ended_at": "2026-11-24T23:12:40Z",
+          "seconds": 0.0,
+          "dollars": null,
+          "tokens": null,
+          "outcome": "question",
+          "error": null
+        }
+      ],
+      "done": false,
+      "at": "2026-11-24T23:12:40Z"
+    },
+    "brand": {
+      "done": false,
+      "failed": 0
+    },
+    "look-preview": {
+      "done": false,
+      "failed": 0
+    },
+    "build-start": {
+      "done": false,
+      "failed": 0
+    },
+    "build-sections": {
+      "done": false,
+      "failed": 0
+    },
+    "build-whole": {
+      "done": false,
+      "failed": 0
+    },
+    "build-review": {
+      "done": false,
+      "failed": 0
+    },
+    "build-repair": {
+      "done": false,
+      "failed": 0
+    },
+    "build-render": {
+      "done": false,
+      "failed": 0
+    },
+    "deliver": {
+      "done": false,
+      "failed": 0
+    }
+  },
+  "classified": null,
+  "look": null,
+  "revisions": [],
+  "halted": null,
+  "agent": "claude",
+  "model": null,
+  "level_of_effort": null,
+  "limits": {
+    "step_seconds": 1350
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "claude",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "answers": {},
+  "said": {
+    "outline": "Six slides. The check slide is the one I am least sure of."
+  },
+  "question": {
+    "id": "ba456152a15f",
+    "step": "outline",
+    "text": "Which diagram style should the restart batches use?",
+    "from": "The assistant drafting the outline of your deck",
+    "at": "2026-11-24T23:12:40Z"
+  },
+  "research": null,
+  "model_jobs": [
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "outline",
+      "step": "outline",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 1,
+      "permission": "write"
+    },
+    {
+      "model": null,
+      "effort": null,
+      "source": "inherit",
+      "profile": "quick",
+      "purpose": "outline",
+      "step": "outline",
+      "product": "Presentation Studio",
+      "policy": 3,
+      "actual_model": null,
+      "actual_effort": null,
+      "attempt": 2,
+      "permission": "write"
+    }
+  ]
+}

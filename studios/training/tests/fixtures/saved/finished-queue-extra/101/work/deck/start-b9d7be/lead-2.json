@@ -1,0 +1,22 @@
+{
+  "direction": {
+    "focal": "headingPrimary",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "brief": {
+        "rhythm": "anchor"
+      },
+      "id": "closing-practice",
+      "layout": "Closing with title",
+      "notes": "1 min. Point to the practice scenario.",
+      "sources": [
+        "outline"
+      ],
+      "title": "Next: practice the objection"
+    }
+  ],
+  "title": "Rolling restarts",
+  "version": 1
+}

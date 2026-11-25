@@ -66,20 +66,35 @@ class HandoffTests(RunnerCase):
         self.assertTrue(found['complete'])
         return found['id']
 
+    def on_desk(self, spelling=None):
+        """A blog on the writing desk whose draft is the one the stand-in Doc reads back,
+        or the given spelling of it. A desk draft starts with its title, so the Doc does too."""
+        return self.desk(spelling or self.desk_text(), title='Desk title')['id']
+
+    def desk_text(self):
+        """The Markdown the stand-in Doc reads back, with the title a desk draft starts with."""
+        if not getattr(self, 'titled', False):
+            titled(self.drive.doc, 'Desk title')
+            self.titled = True
+        return accepted_markdown(self.drive.doc).decode('utf-8')
+
+    def open(self, ident, *args):
+        return handoff.open_as_doc(self.root, ident, self.drive, *args, desk=True)
+
     def test_equivalent_link_and_heading_spellings_confirm_one_native_doc(self):
-        native = accepted_markdown(self.drive.doc).decode('utf-8')
+        native = self.desk_text()
         ordinary = native.replace('](<https://example.invalid>)', '](https://example.invalid)')
         ordinary = ordinary.replace(
             '## The delay is in handoffs.', 'The delay is in handoffs.\n-------------------------'
         )
-        ident = self.finished(ordinary)
-        result = handoff.open_as_doc(self.root, ident, self.drive)
+        ident = self.on_desk(ordinary)
+        result = self.open(ident)
         self.assertTrue(result['url'])
         self.assertEqual(len(self.drive.imports), 1)
-        self.assertEqual(handoff.open_as_doc(self.root, ident, self.drive), result)
+        self.assertEqual(self.open(ident), result)
 
     def test_handoff_rejects_changed_urls_structure_formatting_and_code(self):
-        native = accepted_markdown(self.drive.doc).decode('utf-8')
+        native = self.desk_text()
         link = '[Keep this link.](<https://example.invalid>)'
         for changed in (
             native.replace('https://example.invalid', 'https://different.invalid'),
@@ -90,63 +105,64 @@ class HandoffTests(RunnerCase):
             native.replace(link, r'\[Keep this link.](https://example.invalid)'),
         ):
             with self.subTest(changed=changed):
-                ident = self.finished(changed)
+                ident = self.on_desk(changed)
                 with self.assertRaisesRegex(handoff.Conflict, 'readback does not match'):
-                    handoff.open_as_doc(self.root, ident, self.drive)
+                    self.open(ident)
 
     def test_a_finished_blog_becomes_its_linked_doc_once(self):
-        ident = self.finished()
-        result = handoff.open_as_doc(self.root, ident, self.drive)
+        ident = self.on_desk()
+        result = self.open(ident)
         self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
         directory, record = studio.item(self.root, 'articles', ident)
         self.assertEqual(editorial.doc_link(record)['url'], result['url'])
         self.assertEqual(record['google']['transfers'][result['transfer']]['status'], 'confirmed')
         self.assertEqual(self.drive.imports, [((directory / 'DRAFT.md').read_bytes(), None)])
-        self.assertEqual(handoff.open_as_doc(self.root, ident, self.drive)['url'], result['url'])
+        self.assertEqual(self.open(ident)['url'], result['url'])
         self.assertEqual(len(self.drive.imports), 1)
 
     def test_refusals_and_uncertain_upload_never_import_twice(self):
-        unfinished = self.create(page=True)['id']
-        with self.assertRaisesRegex(ValueError, 'Finish the blog first'):
-            handoff.open_as_doc(self.root, unfinished, self.drive)
-        ident = self.finished()
+        unfinished = self.on_desk()
+        (studio.inside(self.root, 'articles', unfinished) / 'DRAFT.md').write_text('')
+        with self.assertRaisesRegex(ValueError, 'no draft yet'):
+            self.open(unfinished)
+        ident = self.on_desk()
         with patch.object(gd, 'active_account', return_value=None):
             with self.assertRaisesRegex(ValueError, 'Google is not signed in'):
-                handoff.open_as_doc(self.root, ident, self.drive)
+                self.open(ident)
         self.drive.uncertain = True
         with self.assertRaises(gd.GoogleError):
-            handoff.open_as_doc(self.root, ident, self.drive)
+            self.open(ident)
         with self.assertRaisesRegex(ValueError, 'last upload is being checked'):
-            handoff.open_as_doc(self.root, ident, self.drive)
+            self.open(ident)
         self.assertEqual(len(self.drive.imports), 1)
         self.drive.matches = [{'id': 'fixture-doc', 'mimeType': gd.DOC_MIME}]
-        result = handoff.open_as_doc(self.root, ident, self.drive)
+        result = self.open(ident)
         self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
         self.assertEqual(len(self.drive.imports), 1)
 
     def test_failed_readback_keeps_the_created_doc_for_retry(self):
-        ident = self.finished()
+        ident = self.on_desk()
         with patch.object(self.drive, 'native_read', side_effect=gd.GoogleError('Offline')):
             with self.assertRaises(gd.GoogleError):
-                handoff.open_as_doc(self.root, ident, self.drive)
-        handoff.open_as_doc(self.root, ident, self.drive)
+                self.open(ident)
+        self.open(ident)
         self.assertEqual(len(self.drive.imports), 1)
 
     def test_dispatch_requires_confirmation_and_the_shown_version(self):
-        import blog_runner
         import management
 
-        ident = self.finished()
-        expected = blog_runner.survey(self.root, ident)['expected']
+        ident = self.on_desk()
+        expected = management.view(self.root, 'desk', {'id': [ident]})['expected']
+        route = 'desk-google-open'
         with patch.object(gd, 'Client', return_value=self.drive):
             with self.assertRaisesRegex(ValueError, 'Confirm'):
-                management.dispatch(self.root, 'google-open', {'id': ident, 'expected': expected})
+                management.dispatch(self.root, route, {'id': ident, 'expected': expected})
             with self.assertRaisesRegex(ValueError, 'changed'):
                 management.dispatch(
-                    self.root, 'google-open', {'id': ident, 'expected': 'old', 'confirmed': True}
+                    self.root, route, {'id': ident, 'expected': 'old', 'confirmed': True}
                 )
             result = management.dispatch(
-                self.root, 'google-open', {'id': ident, 'expected': expected, 'confirmed': True}
+                self.root, route, {'id': ident, 'expected': expected, 'confirmed': True}
             )
         self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
         self.assertEqual(len(self.drive.imports), 1)
@@ -155,7 +171,7 @@ class HandoffTests(RunnerCase):
     def test_mismatched_readback_is_not_linked_or_uploaded_again(self):
         import google_roundtrip
 
-        ident = self.finished()
+        ident = self.on_desk()
 
         def different(client, document, tab, snapshot):
             client.doc['tabs'][0]['documentTab']['body']['content'][1]['paragraph']['elements'][0][
@@ -164,13 +180,13 @@ class HandoffTests(RunnerCase):
             return google_roundtrip.capture(client, document, tab, snapshot)
 
         with self.assertRaisesRegex(ValueError, 'readback does not match'):
-            handoff.open_as_doc(self.root, ident, self.drive, different)
+            self.open(ident, different)
         _, record = studio.item(self.root, 'articles', ident)
         self.assertIsNone(editorial.doc_link(record))
-        pending = __import__('blog_runner').survey(self.root, ident)['google_pending']
+        pending = handoff.pending_link(record)
         self.assertEqual(pending['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
         with self.assertRaisesRegex(ValueError, 'readback does not match'):
-            handoff.open_as_doc(self.root, ident, self.drive)
+            self.open(ident)
         self.assertEqual(len(self.drive.imports), 1)
 
     def test_changed_local_draft_is_never_sent_or_confirmed(self):

@@ -1,12 +1,10 @@
 """Grouped, revision-bound reviews for new runs; legacy gates remain unchanged."""
-from pathlib import Path
-import shutil
 
 import home
 import workspace
 from workspace import WorkspaceError
-from studio_core import deck_direction, research_view, review_policy
-from runner import pipeline, deck, drafts, worker_tools
+from studio_core import research_view, review_policy
+from runner import pipeline, deck, drafts
 
 LAYOUT = 2
 DIRECTION_PREPARED = ('research-plan', 'research', 'blueprint', 'document')
@@ -196,22 +194,6 @@ def outline_text(shown):
 
 
 class Reviewing:
-    def _policy_accept(self, root, step):
-        with self.files:
-            record = self._load(root)
-            if not review_policy.automatic(record, 'training', step.id):
-                raise WorkspaceError('This step needs your review.')
-            session = workspace.load(root)
-            spec = workspace.artifact(root, session, step.artifact)
-            digest = workspace.sha256_file(contained(root, spec['file']))
-            self.deck_decided(root, step.artifact, 'approve',
-                              'Continued under the saved review level.', digest)
-            outcome = workspace.accept_policy(root, step.artifact, record['review_policy'])
-            # deck_decided may have stored a receipt in the run.
-            record = self._load(root)
-            review_policy.receipt(record, step.id, outcome['approved'], home.now())
-            self._store(root, record)
-            self._commit(root, f'continue {workspace.label(step.artifact)} under the saved review level')
 
     def _policy_outline(self, root, found, by='review-policy'):
         """Keep what a deck says without the person: under the saved review level, or `by`
@@ -244,62 +226,6 @@ class Reviewing:
     def _desk_outline(self, root, found):
         """Keep what a deck says on a desk run's way through, with the desk's receipt."""
         self._policy_outline(root, found, by='desk')
-
-    def _review_sample(self, root, found, step):
-        """Draw one sample slide for the combined direction review. A sample that cannot
-        be drawn is a note on the review, not a halt: the direction can be read without
-        it, and the slides are drawn and reviewed after it is approved."""
-        level = workspace.split(step.artifact)[1]
-        mine = found.decks[level]
-        try:
-            self._draw_sample(root, found, level, mine)
-        except (WorkspaceError, OSError, ValueError) as failure:
-            why = str(failure).strip() or type(failure).__name__
-            shutil.rmtree(contained(root, f'{workspace.prefix(level)}work/review-sample'),
-                          ignore_errors=True)
-            with self.files:
-                record = self._load(root)
-                record.setdefault('review_samples', {})[level or ''] = {
-                    'brand': (mine.built.get('brand') or {}).get('sha256'),
-                    'outline': workspace.sha256_file(pipeline.place(root, level, pipeline.OUTLINE)),
-                    'image': None, 'problem': why}
-                self._store(root, record)
-                self._commit(root, 'note that no sample slide could be drawn for the '
-                                   'combined direction review')
-
-    def _draw_sample(self, root, found, level, mine):
-        tool, contract = self.slides(), pipeline.contract(root, mine)
-        slides = deck.slides_of(mine.outline)
-        cover = next((slide for slide in slides if slide.get('kind') == 'cover'),
-                     {'id': 'cover', 'kind': 'cover', 'title': found.session['title']})
-        laid = {'id': cover['id'], 'title': cover.get('title') or found.session['title'],
-                'layout': deck.layouts(tool.layouts(contract).get('layouts'), [cover])['cover'],
-                'sources': ['outline'], 'brief': {'rhythm': 'anchor'}}
-        if cover.get('subtitle'):
-            laid['subtitle'] = cover['subtitle']
-        folder = contained(root, f'{workspace.prefix(level)}work/review-sample')
-        shutil.rmtree(folder, ignore_errors=True)
-        folder.mkdir(parents=True, exist_ok=True)
-        home.write_json(folder / 'composition.json', {
-            'version': 1, 'title': found.session['title'],
-            'direction': deck_direction.of_file(contract) or dict(deck.DIRECTION),
-            'slides': [laid]})
-        tool.compile(folder / 'composition.json', contract, folder=folder / 'compiled')
-        shown = worker_tools.render(tool, folder / 'compiled', folder / 'preview',
-                                    self._how(root, found, level))
-        image = Path(shown['slides'][0]['image']).resolve()
-        if (folder / 'preview').resolve() not in image.parents:
-            raise WorkspaceError('The renderer did not return a sample slide.')
-        data = worker_tools.picture(image)
-        with self.files:
-            (folder / 'sample.png').write_bytes(data)
-            record = self._load(root)
-            record.setdefault('review_samples', {})[level or ''] = {
-                'brand': (mine.built.get('brand') or {}).get('sha256'),
-                'outline': workspace.sha256_file(pipeline.place(root, level, pipeline.OUTLINE)),
-                'image': workspace.sha256_file(folder / 'sample.png'), 'problem': None}
-            self._store(root, record)
-            self._commit(root, 'draw a sample for the combined direction review')
 
     def _outside(self, record, account):
         """The research's account, saying too which pages were refused for being outside
@@ -370,119 +296,3 @@ class Reviewing:
         return {'phase': phase, 'label': found.next.step.label, 'items': items,
                 'commits': commits(root, found.session, found.decks, phase),
                 'expected': signature(root, found.session, record, phase)}
-
-    def _request(self, root, record, decisions, target, note, phase):
-        """Record one change asked for from a combined review. Call it holding `files`.
-        A change asked for at the first drafts review brings that review back; one asked
-        for at the finished materials review keeps it, and what it rewrites comes back to
-        the review it was asked at."""
-        base = target.partition('@')[0].partition(':')[0]
-        if phase == 'direction' and base not in ('scenario', 'yoodli'):
-            decisions.pop('direction', None)
-        elif phase != 'direction' and decisions.get('direction'):
-            # The first drafts stay approved: what this rewrites comes back to this review.
-            decisions['direction']['carried'] = True
-        if target.startswith('outline:'):
-            level = target.partition(':')[2] or None
-            self._decided(record, level)['asked'] = {
-                'kind': 'revise', 'note': note.strip(), 'at': home.now()}
-            self._fresh(record, workspace.qualify('deck-outline', level))
-            return
-        # The existing core records and invalidates all dependent materials.
-        outcome = workspace.decide(root, target, 'revise', note, by='page')
-        self._fresh(record, target)
-        if target == 'research' and record.get('research'):
-            record['research']['again'] = {
-                'at': outcome['request']['at'],
-                'left': pipeline.again(root, record, outcome['request'])}
-
-    def review_decide(self, path, expected, decision, target=None, note=None, requests=None,
-                      looks=None):
-        """Approve a combined review, or ask for changes: to one `target` with a `note`,
-        or to several at once as `requests`, each {'target', 'note'}. Every request is
-        checked before any is recorded, so they are taken whole or not at all. Approving a
-        direction review whose decks the brand drew looks for takes the person's pick for
-        each, as `looks`: {level, or '' for a training without levels: {'choice', 'words'}}."""
-        root = self._held(path)
-        if decision not in ('approve', 'revise'):
-            raise WorkspaceError('Approve the review or ask for changes.')
-        asked = requests if requests is not None else [{'target': target, 'note': note}]
-        if decision == 'revise' and (not isinstance(asked, list) or not asked
-                                     or not all(isinstance(ask, dict) for ask in asked)):
-            raise WorkspaceError('Say what should change, in at most 4000 characters.')
-        again = []
-        with self.files:
-            record = self._load(root)
-            found = self._survey(root, record)
-            if self._resting(record) or found.next.kind != 'review':
-                raise WorkspaceError('This training is not waiting for a combined review.')
-            phase = found.next.step.id.partition(':')[2]
-            view = self._review_view(root, record, found)
-            if view is None:
-                raise WorkspaceError('Review the training topics on the desk.')
-            if not expected or expected != view['expected']:
-                raise WorkspaceError('The materials changed. Read the latest review before deciding.')
-            if decision == 'approve':
-                picks = {}
-                for item in view['items']:
-                    offered = item.get('looks')
-                    if not offered:
-                        continue
-                    level = offered['level']
-                    pick = (looks or {}).get(level or '') if isinstance(looks, dict) else None
-                    choice = pick.get('choice') if isinstance(pick, dict) else None
-                    # Looks that could not be rendered are never picked blind: drawn again,
-                    # or the brand's default, chosen knowingly.
-                    allowed = [pipeline.DEFAULT_LOOK, pipeline.AGAIN_LOOK] \
-                        if offered.get('failed') else [look['id'] for look in offered['looks']]
-                    if choice == pipeline.AGAIN_LOOK and offered.get('failed'):
-                        again.append(level)
-                        continue
-                    if choice not in allowed:
-                        raise WorkspaceError('Pick a look for ' + item['label'].lower()
-                                             .removesuffix(' outline')
-                                             + ' before you approve the first drafts.')
-                    words = pick.get('words') if isinstance(pick.get('words'), str) else ''
-                    picks[level or ''] = {'choice': choice, 'words': words.strip()[:2000],
-                                          'by': 'page', 'at': home.now()}
-                for level, picked in picks.items():
-                    self._decided(record, level or None).setdefault('look', {})['picked'] = picked
-                # Asked to draw looks again, it is not approved yet: they are drawn again,
-                # and the review comes back with them.
-                for level in again:
-                    self._note(root, level, look=None)
-                if not again:
-                    record.setdefault('review_decisions', {})[phase] = {
-                        'signature': expected, 'by': 'page', 'at': home.now()}
-                    # The finished materials approved: a first drafts approval kept through
-                    # a change made there now stands for the drafts as they are.
-                    kept = record['review_decisions'].get('direction') or {}
-                    if phase == 'final' and kept.get('carried'):
-                        record['review_decisions']['direction'] = {
-                            **{key: value for key, value in kept.items() if key != 'carried'},
-                            'signature': signature(root, found.session, record, 'direction')}
-            else:
-                known = [item['target'] for item in view['items']]
-                for ask in asked:
-                    said = ask.get('note')
-                    if not isinstance(said, str) or not said.strip() or len(said) > 4000:
-                        raise WorkspaceError('Say what should change, in at most 4000 characters.')
-                    if ask.get('target') not in known:
-                        raise WorkspaceError('Choose a document or deck direction from this review.')
-                if len({ask['target'] for ask in asked}) != len(asked):
-                    raise WorkspaceError('Ask once for each document or deck direction.')
-                decisions = record.setdefault('review_decisions', {})
-                decisions.pop('final', None)
-                for ask in asked:
-                    self._request(root, record, decisions, ask['target'], ask['note'],
-                                  phase)
-            self._store(root, record)
-            if decision != 'approve' or not again:
-                self._remember_decision(root, record, view['label'].removeprefix('Review '), decision)
-            self._commit(root, 'draw the looks again for the direction review'
-                         if decision == 'approve' and again else
-                         'approve the combined review' if decision == 'approve'
-                         else f'request changes to {len(asked)} items from the combined review'
-                         if len(asked) > 1 else 'request changes from the combined review')
-        self.carry_on(root)
-        return self.view(root)

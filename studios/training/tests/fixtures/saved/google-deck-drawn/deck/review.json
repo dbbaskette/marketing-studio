@@ -1,0 +1,89 @@
+{
+  "audit": {
+    "blockers": [],
+    "status": "warnings",
+    "warnings": [
+      {
+        "code": "SMALL_TEXT",
+        "count": 2,
+        "says": "Text under 18 points."
+      },
+      {
+        "code": "HIGH_TEXT_DENSITY",
+        "count": 1,
+        "says": "Many words for one slide."
+      }
+    ]
+  },
+  "coverage": [
+    {
+      "cited": [
+        2,
+        5
+      ],
+      "objective": "O1",
+      "reviewed": [
+        2
+      ],
+      "says": "Describe what a rolling restart does"
+    },
+    {
+      "cited": [
+        3,
+        5
+      ],
+      "objective": "O2",
+      "reviewed": [
+        3
+      ],
+      "says": "Explain when a rolling restart keeps capacity"
+    },
+    {
+      "cited": [
+        4,
+        5
+      ],
+      "objective": "O3",
+      "reviewed": [
+        4
+      ],
+      "says": "Handle the objection that rolling restarts guarantee zero downtime"
+    }
+  ],
+  "deck": "2233662c5af93dfc9e537211f25596db8717036d712218c5d6d8c87f43801abe",
+  "findings": [],
+  "rendered": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f",
+  "round": 1,
+  "slides": [
+    {
+      "id": "cover-restarts",
+      "number": 1,
+      "title": "Rolling restarts"
+    },
+    {
+      "id": "what-it-does",
+      "number": 2,
+      "title": "A rolling restart replaces instances one batch at a time"
+    },
+    {
+      "id": "when-capacity-holds",
+      "number": 3,
+      "title": "Capacity holds only with more than one instance"
+    },
+    {
+      "id": "the-objection",
+      "number": 4,
+      "title": "Rolling does not always mean zero downtime"
+    },
+    {
+      "id": "check-yourself",
+      "number": 5,
+      "title": "Check what you can now explain"
+    },
+    {
+      "id": "closing-practice",
+      "number": 6,
+      "title": "Next: practice the objection"
+    }
+  ]
+}

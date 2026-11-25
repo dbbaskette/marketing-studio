@@ -15,8 +15,6 @@ const { byId, main, make, add, count, list, series, ago, when, megabytes, pathIn
   placeAsked, forgetFound, createStep, base64Of, slideName, slidesNamed, shortNote, keptPart,
   nameOf, lastLine, queued, spentSays, wantedCompanions, updating, upgradeOf, brandOf, wantedRows,
   releasesLine, linkToken, forgetLibraryLink, libraryFromLink } = window.StudioDesk;
-
-const EDITED_LOOKS = 'You edited the outline, so the looks will be drawn again from it. You pick from the new ones before the deck is built.';
 const TOKEN_HEADER = 'X-Presentation-Studio-Token';
 // The shell kit saves the appearance through this page's own key.
 if (typeof StudioShell !== 'undefined') StudioShell.connect({ header: TOKEN_HEADER, token: () => view.token });
@@ -79,15 +77,11 @@ const RUN_WORDS = {
   failed: ['late', 'Stopped: something went wrong'],
   finished: ['done', 'Finished'],
   ready: ['done', 'Ready'],
+  // A deck the earlier step-by-step flow saved: nothing continues it (GitHub issue #542).
+  saved: ['off', 'Saved earlier'],
   // A deck a teammate's computer runs: only what was last shared is known here.
   elsewhere: ['none', 'Run from another computer'],
 };
-// Each step of a deck, and each stage, as the timeline says it.
-const STEP_WORDS = {
-  done: ['done', 'Done'], current: ['current', 'Now'], upcoming: ['none', 'Still to come'],
-};
-const STAGES = [['intake', 'Intake'], ['classify', 'Classify'], ['research', 'Research'],
-  ['outline', 'Outline'], ['look', 'Look'], ['build', 'Build'], ['deliver', 'Deliver']];
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
@@ -162,10 +156,6 @@ const SOURCE_KINDS = {
 };
 // A document is a finished script, or material to build from: the two kinds classify knows.
 const KINDS = { spec: 'a finished script for the slides', material: 'material to build from' };
-const KIND_SAYS = {
-  spec: 'Its slides are taken as it lays them out: the outline is read from it.',
-  material: 'An outline is drafted from it' + ', researched first if you asked for research.',
-};
 const WEB_LINK = /^https?:\/\/\S+$/i;
 // How the pictures of a deck's slides are made while it is drawn. What each way means is
 // said under the choice.
@@ -192,10 +182,8 @@ const PREVIEW_WORDS = { local: 'made with LibreOffice, on this computer',
   drive: 'made through Google Drive' };
 const SEVERITIES = { critical: ['late', 'Critical'], major: ['late', 'Major'],
   minor: ['none', 'Minor'] };
-const SERIOUS = ['critical', 'major'];
 // What a finding is about: how the slide was drawn, or what it says.
 const ABOUT_TAGS = { drawing: 'About how it was drawn', content: 'About what it says' };
-const CLOSE = 'You can close this page; it says when it needs you again.';
 // What a team adds. Each of these is confirmed in the sheet before anything is sent.
 const TEAM_SHEETS = ['take', 'hand-over', 'publish'];
 const READ_ONLY = 'You can read everything here: the steps, the outline and the slides. '
@@ -210,10 +198,6 @@ const NOTIFY_SAYS = 'When no page is open and a deck needs you, this computer te
   + 'decision, once for each thing that needs you.';
 const NOTIFY_DIFFERS = 'This is not the browser’s notification above. That one works only '
   + 'while this page is open in a tab; this one is for when no page is open at all.';
-// Deleting a deck: what the card offers, and what its confirmation says. The runner says
-// what goes and what stays for each deck; these are the words around it.
-const DELETE_SAYS = 'If you no longer want this deck, delete it. It goes from this '
-  + 'computer and from your team’s workspace.';
 const DELETE_STOPS = 'It is working now. Deleting it stops it first, and ends everything it '
   + 'is running.';
 const DELETE_SHARED = { decision: 'Your team sees it gone straight away.',
@@ -257,17 +241,6 @@ const COME_BACK_TRIES = 90;   // one a second, while the runner opens its newer 
 const SETUP_HIDDEN = 600000;  // how often a tab nobody looks at reads what was found of versions
 const OWN_NAME = 'presentation-studio';
 // The decisions that take a note. `needed` is what the page says when one is missing.
-const FORMS = {
-  changes: {
-    title: 'Ask for changes',
-    label: 'What should change?',
-    hint: 'Say it in your own words. Presentation Studio makes the change and brings it back '
-      + 'here for your decision.',
-    needed: 'Say what should change first.',
-    send: 'Send for changes',
-  },
-};
-
 const view = {
   token: '', screen: 'home', path: null, decks: null, listing: null, needs: 0,
   computer: undefined, known: null, sheet: '', opener: '', after: null,
@@ -487,10 +460,6 @@ function oneOf(id, label, options, held, name, changed) {
 function settingsAddress() {
   return '/onboarding/#token=' + view.token;
 }
-
-// The shared review level, as a start form says it.
-const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
-  step_by_step: 'Step by step' };
 
 function moreMenu(label, items, key) {
   const menu = make('details', 'menu');
@@ -1075,87 +1044,6 @@ function closeSheet() {
   if (!focusKey(opener)) byId('title').focus({ preventScroll: true });
 }
 
-// A note is kept for the deck, its gate and the decision it was typed for.
-function noteKey(kind) {
-  const gate = view.run && view.run.gate ? view.run.gate.name : 'deliver';
-  return [view.path, gate, kind].join('\n');
-}
-
-function noteSheet(kind) {
-  const spec = FORMS[kind];
-  const form = make('form', 'note');
-  form.noValidate = true;
-  const label = make('label', 'note-label', spec.label);
-  label.htmlFor = 'note-text';
-  const box = make('textarea', 'note-field');
-  box.id = 'note-text';
-  box.rows = 3;
-  box.maxLength = 4000;
-  box.dataset.key = 'note';
-  box.setAttribute('aria-describedby', 'note-hint sheet-problem');
-  // What was typed before the sheet was put away is here again.
-  const key = noteKey(kind);
-  box.value = view.notes[key] || '';
-  box.addEventListener('input', () => {
-    view.notes[key] = box.value;
-  });
-  const marked = markedSlides();
-  // At a stop reviewed item by item, what is marked in its list goes with the note too.
-  const gate = view.run && view.run.gate;
-  const listed = !gate || !REVIEWED.includes(gate.name) || !reviewOf(gate).extra ? ''
-    : gate.name === 'gate:outline' ? ' What you marked or edited in the outline goes with '
-      + 'your note.' : ' What you marked in the list goes with your note.';
-  // On a delivered deck with nothing marked, every part is drawn again: it says what that
-  // took last time, before it is asked for.
-  // At the deck's own stop it is the same: the whole deck, as the last build took. At any
-  // other stop, what is drawn again from it and what that took the last time.
-  const whole = !marked.length && (!gate && view.run && view.run.deliver
-    ? ' ' + wholeDeckSays(view.run.deliver.last_build)
-    : gate && gate.name === 'gate:research' && gate.research_price ? ' ' + gate.research_price.words
-      : gate && gate.name === 'gate:build' ? ' ' + wholeDeckSays(gate.last_build)
-      : gate && gate.redo ? ' ' + gate.redo.says : '');
-  const hint = make('p', 'quiet', spec.hint + (marked.length ? ' The parts of the deck '
-    + 'that hold ' + slidesNamed(marked) + ', which you marked, are drawn again.' : '')
-    + whole + listed + (kind === 'changes' && view.run?.state === 'finished'
-      && view.run.mine && !view.run.driver
-      ? ' It runs from this computer again, and your team sees that.' : ''));
-  hint.id = 'note-hint';
-  // At the research stop, the sources may be read again: the whole research, brought up to
-  // date. It is off unless asked for, and says what it costs.
-  const refreshing = kind === 'changes' && gate && gate.name === 'gate:research'
-    && gate.research_price ? { on: false } : null;
-  // A setting sent with the request, not an action of its own: a native checkbox (ui-kit.md).
-  const refresh = refreshing ? add(make('div', 'field'),
-    StudioLists.tick({ id: 'refresh', label: 'Bring the evidence up to date', on: false,
-      flip: (on) => { refreshing.on = on; } }),
-    make('p', 'quiet field-hint', gate.research_price.refresh
-      || 'Re-reads the sources and checks the report again: about as long and as costly as '
-        + 'the research was.')) : null;
-  const problem = problemLine();
-  const submit = submitButton(spec.send, 'send');
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const text = box.value.trim();
-    if (refreshing && refreshing.on) {
-      decide('changes', text, problem, submit,
-        { ...(extraFor(gate, 'changes') || {}), refresh: true });
-      return;
-    }
-    if (spec.needed && !text) {
-      // Refused here, beside the control, before anything is sent.
-      problem.textContent = spec.needed;
-      problem.hidden = false;
-      box.setAttribute('aria-invalid', 'true');
-      box.focus();
-      return;
-    }
-    decide('changes', text, problem, submit);
-  });
-  add(form, label, box, hint, refresh, problem,
-    add(make('div', 'bar'), submit, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
-  return [sheetTitle(spec.title), form];
-}
-
 function drawSheet() {
   const holder = byId('sheet');
   const shown = Boolean(view.sheet && (view.run || ['companions', 'upgrade', 'brand', 'bring']
@@ -1180,15 +1068,12 @@ function drawSheet() {
   else if (view.sheet === 'brand') body = brandSheet();
   else if (view.sheet === 'bring') body = bringSheet();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
-  else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
-  else if (view.sheet === 'rebrand') body = rebrandSheet();
-  else if (view.sheet === 'reclassify') body = reclassifySheet();
   else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
   else if (view.sheet === 'desk-history') body = window.deckDesk.historySheet();
   else if (view.sheet === 'desk-google') body = window.deckDesk.googleSheet();
   else if (view.sheet === 'desk-migration') body = migrationSheet();
   else if (view.sheet === 'desk-ready') body = readySheet();
-  else body = undoSheet();
+  else body = [];
   holder.replaceChildren(...body);
 }
 
@@ -1223,6 +1108,7 @@ function runWords(found) {
 // Where a deck stands, as a shape and words. What a teammate runs is never said to be
 // working or waiting: that is not known here.
 function standingOf(brief) {
+  if (brief.saved) return SAVED_LISTED[brief.saved] || SAVED_LISTED.unchecked;
   if (elsewhere(brief)) return ['none', 'Run by ' + nameOf(brief.driver)];
   return runWords(brief);
 }
@@ -1338,6 +1224,8 @@ function deckRow(brief, kind) {
     || make('p', 'row-says', brief.sentence || '') : make('p', 'row-says', brief.sentence || ''),
   whoLine(brief), noticeLine(brief));
   if (kind === 'finished') add(text, deliveredLine(brief), sheetThumb(brief));
+  // A record the earlier step-by-step flow saved is opened, never reviewed: nothing waits on
+  // a decision there (GitHub issue #542).
   const go = capsule(kind === 'needs' ? 'Review' : 'Open', kind === 'needs' ? '' : 'quiet',
     openDeck(brief), 'open ' + brief.path);
   go.setAttribute('aria-label', go.textContent + ' ' + title);
@@ -1389,7 +1277,7 @@ function computerLine() {
 function every() {
   const found = view.decks || {};
   return [...list(found.needs), ...list(found.working), ...list(found.finished),
-    ...list(found.elsewhere)];
+    ...list(found.elsewhere), ...list(found.saved)];
 }
 
 function drawHome(fresh) {
@@ -1415,7 +1303,8 @@ function drawHome(fresh) {
       rows('Run by your teammates', list(found.elsewhere), 'elsewhere'),
       ['start', [], startCard],
       ['updates', [upkeepOf()], updatesCard],
-      rows('Finished', list(found.finished), 'finished'));
+      rows('Finished', list(found.finished), 'finished'),
+      rows('Saved by the earlier flow', list(found.saved), 'saved'));
   }
   parts.push(['foot', around(),
     () => add(make('footer', 'foot'), computerLine(), sharingLine(), fetchLine())]);
@@ -1430,7 +1319,11 @@ function drawHome(fresh) {
 
 const DELIVERED = [['', 'Any'], ['yes', 'Delivered'], ['no', 'Not delivered yet']];
 const STANDS = [['', 'Any'], ['needs', 'Needs you'], ['working', 'In progress'],
-  ['finished', 'Finished'], ['elsewhere', 'Run by your teammates']];
+  ['finished', 'Finished'], ['elsewhere', 'Run by your teammates'],
+  ['saved', 'Saved by the earlier flow']];
+// A saved record on a list, by what its small record proves: never what a check found.
+const SAVED_LISTED = { unchecked: ['none', 'Saved earlier'], 'read-only': ['off', 'Read-only'],
+  interrupted: ['late', 'Opening interrupted'] };
 const BEGAN = [['', 'Any'], ...ROUTES.map(([route, name]) => [route, name])];
 
 function deckCard(brief) {
@@ -1460,7 +1353,7 @@ function deckCard(brief) {
 // Every deck with where it stands: the list of the runner's it is in.
 function listed() {
   const found = view.decks || {};
-  return ['needs', 'working', 'finished', 'elsewhere']
+  return ['needs', 'working', 'finished', 'elsewhere', 'saved']
     .flatMap((kind) => list(found[kind]).map((brief) => [brief, kind]));
 }
 
@@ -2512,8 +2405,9 @@ function previewsCard(form) {
   const found = view.setup.previews;
   if (!found) return null;
   const node = card('How slide previews are made');
-  add(node, make('p', '', 'At each stop you see what is made so far: each slide is turned '
-    + 'into a picture. A deck cannot be made without them.'));
+  add(node, make('p', '', 'Slide previews show what is made so far: each slide is turned '
+    + 'into a picture, on the deck’s progress and on the desk. A deck cannot be made without '
+    + 'them.'));
   if (!form.previews) {
     return add(node, state('late', 'This computer cannot make them yet.'),
       make('p', 'fix', 'It needs LibreOffice, or Google access that reaches Drive. The Status '
@@ -3262,145 +3156,9 @@ async function startDeck(pressed, how) {
   refresh();
 }
 
-// --- one deck ------------------------------------------------------------------------------
-// Where a deck stands on its stages, what it is doing, and the gate it waits at, with the
-// slides themselves from the first decision on. It is drawn in parts, and a part that has not
-// changed is left exactly as it is, so a choice being made stays under the cursor while the
-// rest of the screen keeps up with the run.
-
-// What the person has chosen at a gate and not sent yet: kept for the deck, the gate and its
-// round, so that a refresh, or a gate that comes round again, starts from what is true.
-function chosenFor(gate) {
-  const key = [view.path, gate ? gate.name : 'deliver', gate ? gate.round : ''].join('\n');
-  if (!view.chosen[key]) view.chosen[key] = { wrong: false, work: null, edited: false,
-    marked: [], saying: [], prefilled: false, adding: '', brand: '', variant: '',
-    dropped: [], reword: {}, again: {}, leftOut: null, added: [], asking: '', slideNotes: {} };
-  return view.chosen[key];
-}
-
-// Whether the open deck's slides can be marked here: at the deck's gate, or once delivered.
-function marking() {
-  const run = view.run;
-  const gate = run && run.gate;
-  return gate ? gate.name === 'gate:build' : Boolean(run && run.deliver);
-}
-
-function numbered(held) {
-  return held.slice().sort((one, other) => one - other);
-}
-
-function forget(gate) {
-  delete view.chosen[[view.path, gate ? gate.name : 'deliver', gate ? gate.round : '']
-    .join('\n')];
-}
-
-// The slides marked for changes at the deck's gate, or on the delivered deck, by number, in
-// order.
-function markedSlides() {
-  return marking() ? numbered(chosenFor(view.run.gate).marked) : [];
-}
-
-// The slides whose words are to change: they go back to the outline, marked.
-function sayingSlides() {
-  return marking() ? numbered(chosenFor(view.run.gate).saying) : [];
-}
-
-// The lines written against the marked slides, by number, where one was written.
-function slideLines() {
-  return marking() ? filled(chosenFor(view.run.gate).slideNotes) : {};
-}
-
-// What a request for changes to a built deck carries: the slides marked and their lines.
-// Where a line was kept from feedback, the lines go even when none is left, so a line
-// taken away here is taken away for real.
-function deckChanges() {
-  const slides = markedSlides();
-  const lines = slideLines();
-  const gate = view.run && view.run.gate;
-  const kept = Boolean(gate) && list(gate.slides).some((one) => typeof one.kept === 'string');
-  if (!slides.length && !sized(lines) && !kept) return null;
-  return { slides, ...(sized(lines) || kept ? { slide_notes: lines } : {}) };
-}
-
-// Whether a slide's words can go back to the outline: only a deck that has one.
-function canSay(run) {
-  return list(run && run.timeline).some((row) => row.name === 'gate:outline');
-}
-
-// What a whole deck drawn again costs, as its last build did, said before it is asked for.
-function wholeDeckSays(last) {
-  const took = last || {};
-  const minutes = took.seconds ? count(Math.max(1, Math.round(took.seconds / 60)), 'minute',
-    'minutes') : '';
-  // A cost nobody reported is said so, never as $0.00.
-  const dollars = typeof took.dollars === 'number' && took.dollars >= 0.005
-    ? money(took.dollars) : '';
-  const cost = [dollars, minutes].filter(Boolean).join(' and ');
-  return 'No slides marked: the whole deck is drawn again' + (cost ? ' (about ' + cost
-    + ', as the last build took' + (dollars ? '' : '; the assistant reported no cost')
-    + ').' : '.');
-}
-
-// Send the slides whose words should change back to the outline, marked.
-function sayAgain(problem, pressed) {
-  const slides = sayingSlides();
-  if (!slides.length) {
-    say(problem, 'Choose “Change what it says” for a slide first.');
-    return;
-  }
-  decide('changes', '', problem, pressed, { direction_target: 'gate:outline', slides });
-}
-
-// The status line under a deck's slides: what is marked, and what goes back to the outline.
-function tellMarks(status, go) {
-  const marked = markedSlides();
-  const saying = sayingSlides();
-  const said = [marked.length ? 'Marked for changes: ' + slidesNamed(marked) + '. Ask for '
-    + 'changes, and the parts of the deck that hold them are drawn again.' : '',
-  saying.length ? 'Words to change: ' + slidesNamed(saying) + '. Change what they say, and '
-    + 'the outline comes back with them marked; once it is approved, only the parts that '
-    + 'hold them are drawn again.' : ''].filter(Boolean).join(' ');
-  status.textContent = said;
-  status.hidden = !said;
-  if (go) go.hidden = !saying.length;
-}
-
-// What happens to one built slide, as one exclusive choice (ui-kit.md): no change, drawn
-// again (with an optional note), or, where the deck has an outline, its words changed. It is
-// a mark for a later request, never sent by itself: Ask for changes or Change what they say
-// sends it.
-const SLIDE_MARKS = ['No change', 'Draw it again', 'Change what it says'];
-function slideMarks(one, held, repaint, saying) {
-  const marked = held.marked.includes(one.number);
-  const at = marked ? 1 : saying && held.saying.includes(one.number) ? 2 : 0;
-  const parts = [choice('What happens to slide ' + one.number,
-    SLIDE_MARKS.slice(0, saying ? 3 : 2), at, (index) => {
-      held.marked = held.marked.filter((number) => number !== one.number);
-      held.saying = held.saying.filter((number) => number !== one.number);
-      if (index === 1) held.marked.push(one.number);
-      if (index === 2) {
-        held.saying.push(one.number);
-        delete held.slideNotes[String(one.number)];
-      }
-      repaint();
-    }, 'mark ' + one.number)];
-  if (marked) {
-    parts.push(field('slide-note-' + one.number, 'What should change on slide ' + one.number,
-      held.slideNotes, String(one.number), { long: true, limit: LINE, hint: 'Optional: it goes '
-        + 'to the worker that draws this slide again, with your note.' }));
-  }
-  return parts;
-}
-
 // A deck someone else's computer runs, or nobody does, is read here and never changed.
 function theirs(run) {
   return run.mine === false;
-}
-
-function deckStanding(run) {
-  if (theirs(run)) return run.driver ? RUN_WORDS.elsewhere : ['off', 'Nobody is running it'];
-  if (queued(run)) return ['none', 'Waiting its turn'];
-  return runWords(run);
 }
 
 // What it is doing now, in one line: the step, its part, how long it has taken and what it
@@ -3429,39 +3187,6 @@ function tickNow(run) {
   if (shown && fresh && shown.textContent !== fresh.textContent) {
     shown.textContent = fresh.textContent;
   }
-}
-
-function deckIntro(run) {
-  // Offered only when it would be done: the last step is this deck's and not shared yet.
-  const undo = !theirs(run) && run.state !== 'working' && run.undo
-    ? capsule('Undo the last step', 'quiet', openSheet('undo', 'undo'), 'undo') : null;
-  const node = add(make('div', 'intro'),
-    pageHead(make('p', 'lede run-says', run.sentence), [undo]), nowLine(run),
-    state(...deckStanding(run)));
-  const stands = theirs(run) ? '' : run.state;
-  if (queued(run) && stands) add(node, make('p', '', queueSays(run.queue)));
-  if (stands === 'working') {
-    add(node, make('p', 'quiet', 'Nothing is needed from you right now. It carries on by '
-      + 'itself, and this page tells you when it needs you. Stop loses the step in hand; '
-      + 'Pause lets it finish.'));
-  } else if (stands === 'paused') {
-    add(node, make('p', 'quiet', 'Nothing more is started until you resume it. Everything '
-      + 'made so far is kept.'));
-  } else if (stands === 'stopped' && !run.problem) {
-    add(node, make('p', 'quiet', 'Everything made so far is kept. Resume, and it carries on '
-      + 'from where it stopped.'));
-  }
-  if (view.steered) {
-    const problem = make('p', 'problem', view.steered);
-    problem.setAttribute('role', 'alert');
-    add(node, problem);
-  }
-  if (!run.desk && !run.deliver && !theirs(run)) {
-    add(node, make('p', 'quiet', 'Preview opening the saved slide parts for editing in conversation.'),
-      add(make('div', 'bar'), capsule('Open on the desk', '', () => openDeskPreview(run, 'migration'),
-        'unfinished-desk-open')));
-  }
-  return node;
 }
 
 async function openDeskPreview(run, kind) {
@@ -3553,162 +3278,6 @@ function readySheet() {
     } catch (error) { say(problem, error.message); go.disabled = false; }
   });
   return [add(make('div', 'sheet-heading'), sheetTitle('Mark ready')), node];
-}
-
-// --- one deck: a note for the next step ----------------------------------------------------
-
-// Whether a note can be left: the deck is this computer's and has a next step to come.
-function noting(run) {
-  return Boolean(run.note) && !theirs(run)
-    && ['working', 'waiting', 'paused', 'failed'].includes(run.state);
-}
-
-// A note for the next job that starts, sent without stopping anything. One already waiting
-// is shown, and another sent before a job takes it replaces it.
-function notePart(run) {
-  const path = view.path;
-  const waiting = run.note.pending;
-  const label = make('label', 'field-label', 'Note for the next step');
-  label.htmlFor = 'next-note';
-  const box = make('textarea', 'input');
-  box.id = 'next-note';
-  box.rows = 2;
-  box.maxLength = 2000;
-  box.value = view.nextNotes[path] || '';
-  box.dataset.key = 'next-note ' + path;
-  box.spellcheck = true;
-  const hint = make('p', 'quiet field-hint', waiting
-    ? 'Noted for the next step: ' + shortNote(waiting.text) + ' Sending another replaces it.'
-    : 'It goes with the next job that starts, and stops nothing. A reviewer takes no note: '
-      + 'it waits for the next writer.');
-  hint.id = 'next-note-hint';
-  box.setAttribute('aria-describedby', 'next-note-hint next-note-problem');
-  box.addEventListener('input', () => {
-    view.nextNotes[path] = box.value;
-    if (box.getAttribute('aria-invalid')) refuse('next-note', '');
-  });
-  const problem = alertLine('next-note-problem');
-  const go = capsule(waiting ? 'Replace the note' : 'Send the note', '',
-    () => sendNote(run, box, problem, go), 'send-note');
-  go.disabled = Boolean(view.busy);
-  return add(make('div', 'answer'), label, box, hint, problem, add(make('div', 'bar'), go));
-}
-
-async function sendNote(run, box, problem, pressed) {
-  const text = box.value.trim();
-  if (!text) {
-    say(problem, 'Write the note first.');
-    box.setAttribute('aria-invalid', 'true');
-    box.focus();
-    return;
-  }
-  if (view.busy) return;
-  const turn = view.turn;
-  const path = view.path;
-  view.busy = true;
-  pressed.disabled = true;
-  try {
-    const found = await send('note', { path, expected: run.note.expected, text });
-    delete view.nextNotes[path];
-    view.busy = false;
-    toast(run.note.pending ? 'The note is replaced. It goes with the next job that starts.'
-      : 'Noted. It goes with the next job that starts.');
-    if (turn === view.turn && view.screen === 'deck' && view.path === path) {
-      view.run = found;
-      paintDeck(false);
-    }
-    refresh();
-  } catch (failure) {
-    say(problem, failure.message + ' Your note is still here, and nothing was sent.');
-    pressed.disabled = false;
-  }
-  view.busy = false;
-}
-
-// --- one deck: its stages ------------------------------------------------------------------
-
-// Each stage of the deck, as the steps it has say: done, the one it is at, still to come.
-function stagesOf(run) {
-  const rows = list(run.timeline);
-  const found = [];
-  for (const [stage, name] of STAGES) {
-    const own = rows.filter((row) => row.stage === stage);
-    if (!own.length) continue;
-    let at = 'upcoming';
-    if (own.every((row) => row.state === 'done')) at = 'done';
-    else if (own.some((row) => row.state === 'current')) at = 'current';
-    const failed = own.some((row) => row.failed);
-    found.push({ stage, name, at, failed,
-      waiting: at === 'current' && run.gate && own.some((row) => row.name === run.gate.name) });
-  }
-  return found;
-}
-
-function stageBead(found) {
-  if (found.failed) return ['late', 'Stopped here'];
-  if (found.waiting) return ['review', 'Waiting for you'];
-  return STEP_WORDS[found.at];
-}
-
-// One line under the beads: how many steps are left, where the deck next stops for you under
-// its own level, and what it has spent so far, all as the runner says them.
-function aheadLine(run) {
-  const ahead = run.ahead;
-  if (!ahead || !ahead.steps_left) return null;
-  const parts = [count(ahead.steps_left, 'step left', 'steps left')];
-  if (ahead.next_words) parts.push('Next stop: the ' + ahead.next_words);
-  if (ahead.spent) parts.push('So far ' + ahead.spent);
-  return make('p', 'quiet ahead-line', parts.join(' · '));
-}
-
-function timelinePart(run) {
-  const row = make('ol', 'beads timeline');
-  row.setAttribute('aria-label', 'Its stages');
-  for (const found of stagesOf(run)) {
-    const [shape, words] = stageBead(found);
-    const item = make('li', 'bead-stage');
-    item.dataset.state = found.waiting ? 'review' : found.at;
-    add(item, bead(shape), make('span', 'bead-name', found.name),
-      make('span', 'offscreen', ': ' + words));
-    row.append(item);
-  }
-  const told = stagesOf(run).find((found) => found.waiting)
-    || stagesOf(run).find((found) => found.at === 'current');
-  const caption = told ? make('p', 'beads-caption', told.name + ': ' + stageBead(told)[1]) : null;
-  if (caption) caption.setAttribute('aria-hidden', 'true');
-  return add(make('section', 'card shine'), make('h2', 'card-title', 'Where it is'), row,
-    caption, aheadLine(run));
-}
-
-// What a step has taken so far.
-function stepFacts(step) {
-  const facts = [];
-  // A gate the level passes on its own is not the person's decision.
-  if (String(step.name).startsWith('gate:') && !step.automatic) facts.push('Your decision');
-  if (step.attempts > 1) facts.push(count(step.attempts, 'try', 'tries'));
-  if (given(step.seconds)) facts.push(lasted(step.seconds));
-  if (given(step.dollars)) facts.push(money(step.dollars));
-  return facts.join(' · ');
-}
-
-function stepItem(step) {
-  const [shape, words] = step.failed ? ['late', 'Stopped here'] : STEP_WORDS[step.state]
-    || STEP_WORDS.upcoming;
-  const facts = make('p', 'quiet step-facts', stepFacts(step));
-  facts.hidden = !facts.textContent;
-  const text = add(make('div', 'row-text'), make('p', 'step-name', step.label), facts);
-  if (step.error) add(text, make('p', step.failed ? 'problem' : 'quiet', step.error));
-  const item = make('li', 'row step' + (step.state === 'current' ? ' working' : ''));
-  item.dataset.state = step.state;
-  return add(item, bead(shape), text, make('span', 'step-words', words));
-}
-
-function stepsCard(run) {
-  const node = make('details', 'card shine steps');
-  node.dataset.key = 'steps';
-  const items = make('ol', 'rows');
-  for (const step of list(run.timeline)) items.append(stepItem(step));
-  return add(node, make('summary', 'card-title', 'Every step'), items);
 }
 
 // --- one deck: what it asks ----------------------------------------------------------------
@@ -3947,867 +3516,6 @@ function documentPart(label, text) {
   return add(node, window.StudioMarkdown.render(String(text), { files: false }));
 }
 
-// What the worker said of its work, and what the person asked for last time round.
-function gateSaid(gate) {
-  const parts = [];
-  if (gate.round > 1 && gate.note) {
-    parts.push(add(make('p', ''), make('strong', '', 'You asked for: '), gate.note));
-  }
-  if (typeof gate.said === 'string' && gate.said.trim()) {
-    parts.push(add(make('p', 'quiet'), make('strong', '', 'It says of its work: '), gate.said));
-  }
-  return parts;
-}
-
-// The classification of a document: a finished script, or material, with the way to say it
-// is wrong. Of a deck: its slides as they are, with what the inventory found.
-function classifyPanel(gate, readonly) {
-  const node = card('What you gave');
-  if (gate.kind === 'deck') {
-    const slides = list(gate.inventory);
-    const pictured = new Set(list(gate.pictures).map((one) => one.ref));
-    add(node, make('p', '', 'Your deck has ' + count(slides.length, 'slide', 'slides') + '.'
-      + (gate.source ? ' It was read from ' + gate.source + '.' : '')),
-    make('p', 'quiet', 'These are its slides as they are now. Approve, and it carries on from '
-      + 'them; nothing in the original is ever changed.'));
-    const shown = slides.filter((one) => pictured.has(one.number)).map((one) => ({
-      number: one.number, title: one.title || '', words: one.words, hidden: one.hidden,
-      where: pictureOf(view.path, { kind: 'original', ref: one.number }), mark: 'original' }));
-    if (shown.length) {
-      add(node, pager(shown, (one) => [make('p', 'quiet', count(Number(one.words) || 0,
-        'word', 'words') + ' on it.' + (one.hidden ? ' It is hidden in the deck.' : ''))]));
-    } else {
-      add(node, make('p', 'quiet', 'There are no pictures of its slides on this computer.'));
-    }
-    return add(node, ...gateSaid(gate));
-  }
-  const verdict = KINDS[gate.verdict] ? gate.verdict : 'material';
-  const other = verdict === 'spec' ? 'material' : 'spec';
-  const held = chosenFor(gate);
-  add(node, make('p', 'row-title', 'It reads as ' + KINDS[verdict] + '.'),
-    gate.reason ? make('p', '', gate.reason) : null,
-    gate.slides ? make('p', 'quiet', 'Slides it lays out: ' + gate.slides) : null,
-    gate.corrected ? make('p', 'quiet', 'You corrected this before.') : null,
-    make('p', 'quiet', KIND_SAYS[verdict]));
-  const documents = list(gate.documents);
-  if (documents.length) {
-    add(node, make('p', 'row-title', 'Read from'), bullets(documents.map((one) => (one.title
-      || one.name) + (one.readable === false ? ' (it could not be read)' : ''))));
-  }
-  if (!readonly) {
-    const then = make('p', '');
-    const tell = () => {
-      then.textContent = held.wrong ? 'It will be taken as ' + KINDS[other] + ' instead. '
-        + KIND_SAYS[other] : '';
-      then.hidden = !held.wrong;
-    };
-    tell();
-    // Which kind Approve takes it as, named, as one exclusive choice (ui-kit.md).
-    add(node, choice('Take it as', [capital(KINDS[verdict]), capital(KINDS[other])],
-      held.wrong ? 1 : 0, (index) => {
-        held.wrong = index === 1;
-        tell();
-        // Approve, in the toolbar, says what it now does.
-        paintDeck(false);
-      }, 'wrong', 'Choose ' + KINDS[other] + ' if that is what it really is. Your word is '
-        + 'taken: it is not asked again.'), then);
-  }
-  return add(node, ...gateSaid(gate));
-}
-
-// The research plan: each question with the way to drop or reword it, and a box for one
-// more. Drops go with Approve; rewording and new questions go back to be redrafted.
-function researchPlanPanel(gate, readonly) {
-  const node = card('The research plan');
-  const questions = list(gate.questions);
-  const searched = questions.filter((item) => item.search).length;
-  // Searched on the web only for the questions that have search words; the rest are read
-  // from where this research may look.
-  const looks = gate.looks || {};
-  const sites = list(looks.sites).length > 0;
-  const read = looks.documents && sites ? 'read from your documents and sites'
-    : looks.documents ? 'read from your documents' : sites ? 'read from your sites' : null;
-  add(node, reviewCounts([[questions.length, questions.length === 1 ? 'question'
-    : 'questions'], searched || looks.web ? [searched, 'searched on the web'] : null,
-  read && questions.length - searched ? [questions.length - searched, read] : null]
-    .filter(Boolean)));
-  if (!readonly) {
-    add(node, make('p', '', 'Drop a question, or reword it. A drop takes effect when you '
-      + 'approve; rewording and new questions go back to be redrafted, and come back here.'));
-  }
-  const items = make('ol', 'plain review-list');
-  items.id = 'plan-list';
-  add(node, items);
-  paintPlan(gate, items, readonly);
-  if (!readonly) add(node, addedPart(gate), reviewBar(gate));
-  return add(node, fullText('Read the full plan', 'The research plan', gate.text, 'plan-text'),
-    ...gateSaid(gate));
-}
-
-// The plan's questions. They are drawn again together, since dropping one can leave
-// another the last, which cannot be dropped.
-function paintPlan(gate, holder, readonly) {
-  if (!holder) return;
-  holder.replaceChildren(...list(gate.questions).map((item) => planRow(gate, item,
-    readonly)));
-}
-
-function planRow(gate, item, readonly) {
-  const held = chosenFor(gate);
-  const title = item.title || item.id;
-  const dropped = held.dropped.includes(item.id);
-  const rewording = !dropped && owns(held.reword, item.id);
-  // The runner refuses a plan with every question dropped: research needs one to look up.
-  const last = !dropped && list(gate.questions)
-    .filter((one) => !held.dropped.includes(one.id)).length < 2;
-  const row = make('li', 'review-row' + (dropped && !readonly ? ' review-off' : ''));
-  add(row, make('p', 'row-title', title), make('p', '', item.question),
-    item.search ? make('p', 'quiet', 'Searched for: ' + item.search) : null);
-  if (readonly) return row;
-  if (dropped) add(row, make('p', 'quiet', 'Dropped: it is not researched.'));
-  if (rewording) {
-    add(row, field('reword-' + item.id, 'New wording for “' + title + '”', held.reword,
-      item.id, { long: true, limit: LINE, typed: () => reviewChanged(gate) }));
-  }
-  const redraw = (key) => {
-    paintPlan(gate, byId('plan-list'), false);
-    reviewChanged(gate);
-    focusKey(key);
-  };
-  const drop = capsule(dropped ? 'Keep' : 'Drop', 'quiet', () => {
-    held.dropped = dropped ? held.dropped.filter((id) => id !== item.id)
-      : [...held.dropped, item.id];
-    delete held.reword[item.id];
-    redraw('drop ' + item.id);
-  }, 'drop ' + item.id);
-  drop.setAttribute('aria-label', (dropped ? 'Keep “' : 'Drop “') + title + '”');
-  const why = last ? switchedOff(drop, 'drop-why-' + item.id, 'The last question left '
-    + 'cannot be dropped: research needs something to look up.') : null;
-  const reword = dropped ? null : capsule(rewording ? 'Keep the wording' : 'Reword', 'quiet',
-    () => {
-      if (rewording) delete held.reword[item.id];
-      else held.reword[item.id] = item.question;
-      redraw(rewording ? 'reword ' + item.id : 'reword-' + item.id);
-    }, 'reword ' + item.id);
-  if (reword) {
-    reword.setAttribute('aria-label', (rewording ? 'Keep the wording of “' : 'Reword “')
-      + title + '”');
-  }
-  return add(row, why, add(make('div', 'bar'), drop, reword));
-}
-
-// What the research found: the findings that need a look first, as cards, and the answered
-// ones a line each that opens into the same card. Each can be researched again or left out,
-// and a question added.
-function researchPanel(gate, readonly, direction = false) {
-  const node = card('What the research found');
-  // Where it looked, with your sites named, and the pages it could not save from outside
-  // them.
-  add(node, gate.research_from ? make('p', 'quiet', gate.research_from + '.') : null,
-    gate.outside ? callout('', make('p', '', gate.outside)) : null);
-  const items = list(gate.items);
-  if (gate.research) {
-    const found = gate.research;
-    add(node, documentPart('The research brief', found.brief),
-      make('p', 'row-title', 'What the independent check said'),
-      make('p', '', found.check.said), found.check.note ? make('p', '', found.check.note) : null,
-      ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
-      make('p', 'row-title', 'What the research could not settle'),
-      list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
-      ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
-      make('p', 'quiet', found.read),
-      reviewCounts([[items.length, items.length === 1 ? 'finding' : 'findings'], [leftOut(gate).length, 'left out']]));
-    const findings = make('div', '');
-    findings.id = 'findings';
-    add(node, findings);
-    paintFindings(gate, findings, readonly);
-    // A question can be added here too: it runs the investigation again, priced on the
-    // sheet as every research request is.
-    if (!readonly && !direction) add(node, addedPart(gate), reviewBar(gate));
-    return add(node, fullText('Read the full report', 'The research report', found.report, 'report-text'),
-      fullText('The evidence and the check’s notes', 'The evidence', found.evidence, 'evidence-text'), ...gateSaid(gate));
-  }
-  // Without findings to show, as when the plan cannot be read, the report is all there is.
-  if (!items.length) {
-    return add(node, documentPart('The research report', gate.text), ...gateSaid(gate));
-  }
-  const settled = items.filter((item) => item.status === 'supported').length;
-  add(node, reviewCounts([[items.length, items.length === 1 ? 'question' : 'questions'],
-    [settled, 'answered by the sources'], [items.length - settled, 'to look at']]));
-  const findings = make('div', '');
-  findings.id = 'findings';
-  add(node, findings);
-  paintFindings(gate, findings, readonly);
-  if (!readonly) add(node, addedPart(gate), reviewBar(gate));
-  return add(node, fullText('Read the full report', 'The research report', gate.text,
-    'report-text'), ...gateSaid(gate));
-}
-
-// The findings, those that need a look first and then the answered ones. They are drawn
-// again together, since leaving one out can leave another the last, which cannot be left
-// out. What was open stays open.
-function paintFindings(gate, holder, readonly) {
-  if (!holder) return;
-  if (gate.research) {
-    const found = gate.research;
-    const cards = (ids) => ids.map((id) => list(gate.items).find((one) => one.id === id)).filter(Boolean)
-      .map((item) => findingCard(gate, item, readonly, false));
-    const parts = [];
-    if (list(found.questions).length) parts.push(make('p', 'row-title', 'Your questions'));
-    for (const question of list(found.questions)) {
-      parts.push(make('p', 'row-title', question.question));
-      parts.push(list(question.findings).length
-        ? add(make('ul', 'plain review-list'), ...cards(question.findings))
-        : make('p', 'quiet', 'The research did not answer this.'));
-    }
-    if (list(found.unplanned).length) parts.push(make('p', 'row-title', 'Also found'),
-      add(make('ul', 'plain review-list'), ...cards(found.unplanned)));
-    holder.replaceChildren(...parts);
-    return;
-  }
-  const opened = Array.from(holder.querySelectorAll('details')).filter((node) => node.open)
-    .map((node) => node.dataset.key);
-  const items = list(gate.items);
-  const parts = [];
-  for (const [heading, folded] of [['Look at these first', false], ['Answered', true]]) {
-    const shown = items.filter((item) => (item.status === 'supported') === folded);
-    if (!shown.length) continue;
-    parts.push(make('p', 'row-title', heading), add(make('ul', 'plain review-list'),
-      ...shown.map((item) => findingCard(gate, item, readonly, folded))));
-  }
-  holder.replaceChildren(...parts);
-  for (const node of holder.querySelectorAll('details')) {
-    if (opened.includes(node.dataset.key)) node.open = true;
-  }
-}
-
-// The quoted passages behind a finding, folded, each with where it came from.
-function sourcesPart(item) {
-  const sources = list(item.sources);
-  if (!sources.length) return make('p', 'quiet', 'No passage is quoted for it.');
-  const node = make('details', 'card-part');
-  node.dataset.key = 'sources ' + item.id;
-  const quotes = make('ul', 'plain review-sources');
-  for (const one of sources) {
-    quotes.append(add(make('li', ''), outLink(one.origin, one.title || one.origin
-      || 'A source'), make('blockquote', 'review-quote', one.quote)));
-  }
-  return add(node, make('summary', '', 'Sources for “' + (item.title || item.id) + '” ('
-    + sources.length + ')'), quotes);
-}
-
-// A finding: a card, or a line that opens into one. Read only, it is as the runner has it.
-function findingCard(gate, item, readonly, folded) {
-  const held = chosenFor(gate);
-  const title = item.title || item.id;
-  const outs = readonly ? leftBefore(gate) : leftOut(gate);
-  const out = outs.includes(item.id);
-  const again = !readonly && !out && owns(held.again, item.id);
-  const [shape, words] = FINDING_WORDS[item.status] || FINDING_WORDS.pending;
-  const said = out ? 'Left out' : again ? 'To research again' : words;
-  const body = [item.question ? make('p', 'quiet', item.question) : null,
-    item.headline ? make('p', 'review-headline', item.headline) : null,
-    item.unknown ? make('p', 'quiet', 'Not known: ' + item.unknown) : null,
-    sourcesPart(item)];
-  if (!readonly) {
-    if (again) {
-      body.push(field('again-' + item.id, gate.contract ? 'What is wrong with “' + title + '”?'
-        : 'What was wrong with “' + title + '” (optional)',
-        held.again, item.id, { long: true, limit: LINE, hint: gate.research_price?.words || '',
-          typed: () => reviewChanged(gate) }));
-    }
-    // The runner refuses every finding left out: the outline is drafted from them.
-    const last = !out && list(gate.items).filter((one) => !outs.includes(one.id)).length < 2;
-    const redraw = (key) => {
-      paintFindings(gate, byId('findings'), false);
-      reviewChanged(gate);
-      focusKey(key);
-    };
-    const leave = capsule(out ? 'Bring it back' : 'Leave out', 'quiet', () => {
-      held.leftOut = out ? outs.filter((id) => id !== item.id) : [...outs, item.id];
-      delete held.again[item.id];
-      redraw('leave ' + item.id);
-    }, 'leave ' + item.id);
-    leave.setAttribute('aria-label', (out ? 'Bring it back: “' : 'Leave out “') + title + '”');
-    const why = last ? switchedOff(leave, 'leave-why-' + item.id, 'The last finding kept '
-      + 'cannot be left out: the outline is drafted from the findings.') : null;
-    const redo = out || gate.direction ? null : capsule(again ? 'Keep it as it is'
-      : gate.contract ? 'Ask for changes to this finding' : 'Research again',
-      'quiet', () => {
-        if (again) delete held.again[item.id];
-        else held.again[item.id] = '';
-        redraw(again ? 'again ' + item.id : 'again-' + item.id);
-      }, 'again ' + item.id);
-    if (redo) {
-      redo.setAttribute('aria-label', (again ? 'Keep it as it is: “'
-        : gate.contract ? 'Ask for changes to this finding: “' : 'Research again: “') + title
-        + '”');
-    }
-    body.push(why, add(make('div', 'bar'), redo, leave));
-  }
-  // Read only, `out` is what the runner left out, so it is shown as left out there too.
-  const row = make('li', 'review-row' + (out ? ' review-off' : ''));
-  if (folded) {
-    const fold = make('details', 'review-fold');
-    fold.dataset.key = 'finding ' + item.id;
-    return add(row, add(fold, add(make('summary', ''), make('span', 'review-name', title),
-      ' · ' + said + ' · ' + count(list(item.sources).length, 'source', 'sources')),
-    ...body));
-  }
-  return add(row, add(make('div', 'review-top'), make('p', 'row-title', title),
-    state(out ? 'off' : again ? 'review' : shape, said)), ...body);
-}
-
-// The outline as it stands here: the server's, or the person's edit of it.
-function outlineWork(gate) {
-  const held = chosenFor(gate);
-  if (!held.work) held.work = JSON.parse(JSON.stringify(list(gate.slides)));
-  return held.work;
-}
-
-function outlineEdited(gate) {
-  chosenFor(gate).edited = true;
-  storyboardSoon(gate);
-  paintOutline(gate, byId('outline-list'), byId('outline-said'));
-  reviewChanged(gate);
-}
-
-// How long after the last edit the storyboard is drawn again, in milliseconds.
-const STORYBOARD_PAUSE = 1500;
-// How long the address of a drawn storyboard is shown before it is asked for again, in
-// milliseconds: inside the two minutes its ticket holds.
-const STORYBOARD_TICKET = 100000;
-
-// The storyboard follows the outline: a while after the last edit it is drawn again by
-// itself. Until the new one comes, the old one stays, greyed, so nothing jumps.
-function storyboardSoon(gate) {
-  const held = chosenFor(gate);
-  if (!held.redraw) return;
-  const holder = byId('storyboard-surface');
-  if (holder) holder.classList.add('waiting');
-  const waiting = byId('storyboard-waiting');
-  if (waiting) waiting.hidden = false;
-  clearTimeout(held.storyboardTimer);
-  held.storyboardTimer = setTimeout(function redrawStoryboard() {
-    held.storyboardTimer = 0;
-    held.redraw();
-  }, STORYBOARD_PAUSE);
-}
-
-// A name for a slide that is added, unlike every other slide's.
-function newSlideId(title, slides) {
-  const base = 'added-' + (String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '').slice(0, 28).replace(/-+$/, '') || 'slide');
-  let ident = base;
-  for (let number = 2; slides.some((one) => one.id === ident); number += 1) {
-    ident = base + '-' + number;
-  }
-  return ident;
-}
-
-function outlineRow(gate, slides, index, readonly) {
-  const one = slides[index];
-  const title = one.title || 'Untitled slide';
-  const node = make('li', 'outline-slide');
-  add(node, make('p', 'outline-top', 'Slide ' + (index + 1)
-    + (one.kind ? ' · ' + spoken(one.kind) : '')));
-  if (readonly) add(node, make('p', 'outline-title', title));
-  else {
-    add(node, field('outline-title-' + index, 'Title of slide ' + (index + 1), one, 'title',
-      { limit: 300, typed: () => {
-        // The line that says the outline is edited is drawn, and read out, once.
-        const chosen = chosenFor(gate);
-        if (!chosen.edited) {
-          chosen.edited = true;
-          paintOutlineSaid(gate, byId('outline-said'));
-        }
-        storyboardSoon(gate);
-        reviewChanged(gate);
-      } }));
-  }
-  // What the slide must make clear stays in view; the rest opens under it.
-  if (one.understand) add(node, make('p', 'outline-said', one.understand));
-  const points = list(one.points).filter((point) => point && (point.label || point.text));
-  const more = [one.subtitle ? make('p', 'outline-said', one.subtitle) : null,
-    points.length ? bullets(points.map((point) => (point.label && point.text
-      ? point.label + ': ' + point.text : point.label || point.text)), 'outline-points') : null,
-    one.notes ? make('p', 'outline-notes quiet', 'Notes: ' + one.notes) : null]
-    .filter(Boolean);
-  if (more.length) {
-    const fold = make('details', 'card-part');
-    fold.dataset.key = 'slide-more ' + one.id;
-    const top = make('summary', '', 'Points and notes');
-    top.setAttribute('aria-label', 'Points and notes of slide ' + (index + 1));
-    add(node, add(fold, top, ...more));
-  }
-  if (readonly) return node;
-  // A mark asks for changes to this slide, with a line on what should change.
-  const held = chosenFor(gate);
-  const asking = owns(held.slideNotes, one.id);
-  if (asking) {
-    add(node, field('slide-note-' + one.id, 'What should change on “' + title + '”',
-      held.slideNotes, one.id, { long: true, limit: LINE, typed: () => reviewChanged(gate) }));
-  }
-  const ask = capsule(asking ? 'Keep it as it is' : 'Ask for changes', 'quiet', () => {
-    if (asking) delete held.slideNotes[one.id];
-    else held.slideNotes[one.id] = '';
-    paintOutline(gate, byId('outline-list'), byId('outline-said'));
-    reviewChanged(gate);
-    focusKey(asking ? 'slide-ask ' + one.id : 'slide-note-' + one.id);
-  }, 'slide-ask ' + one.id);
-  ask.setAttribute('aria-label', (asking ? 'Keep it as it is: “' : 'Ask for changes to “')
-    + title + '”');
-  const move = (by) => () => {
-    const [taken] = slides.splice(index, 1);
-    slides.splice(index + by, 0, taken);
-    outlineEdited(gate);
-    focusKey('outline ' + (by < 0 ? 'up ' : 'down ') + taken.id);
-  };
-  const up = capsule('Move up', 'quiet', move(-1), 'outline up ' + one.id);
-  const down = capsule('Move down', 'quiet', move(1), 'outline down ' + one.id);
-  const remove = capsule('Remove', 'quiet', () => {
-    // Its mark goes with it, so a slide put back as drafted comes back unmarked.
-    delete held.slideNotes[one.id];
-    slides.splice(index, 1);
-    outlineEdited(gate);
-    if (!focusKey('outline-add')) byId('title').focus({ preventScroll: true });
-  }, 'outline remove ' + one.id);
-  up.setAttribute('aria-label', 'Move up: “' + title + '”');
-  down.setAttribute('aria-label', 'Move down: “' + title + '”');
-  remove.setAttribute('aria-label', 'Remove “' + title + '”');
-  up.disabled = index === 0;
-  down.disabled = index === slides.length - 1;
-  remove.disabled = slides.length < 2;
-  for (const one of [up, down, remove]) one.className = 'menu-item';
-  const pictured = pictureParts(gate, one, title);
-  return add(node, ...pictured.shown, add(make('div', 'bar'), ask, ...pictured.buttons,
-    moreMenu('More for “' + title + '”', [up, down, remove], 'slide-more-menu ' + one.id)),
-  ...pictured.form);
-}
-
-// A picture of the person's own for a cover, section or content slide the deck holds: the
-// file, what it shows and where it came from, recorded by the slides tool when it is sent.
-const PICTURED_KINDS = ['cover', 'section', 'content'];
-const PICTURE_BYTES = 20000000;
-
-function pictureParts(gate, one, title) {
-  const found = { shown: [], buttons: [], form: [] };
-  const given = (gate.pictures || {})[one.id];
-  if (given) found.shown.push(make('p', 'quiet', 'Picture: ' + given.alt));
-  const saved = list(gate.slides).some((slide) => slide && slide.id === one.id);
-  if (!saved || !PICTURED_KINDS.includes(one.kind)) return found;
-  const held = chosenFor(gate);
-  const open = held.picturing === one.id;
-  const toggle = capsule(open ? 'Keep it without a picture' : (given ? 'Change the picture'
-    : 'Add a picture'), 'quiet', () => {
-    held.picturing = open ? null : one.id;
-    held.picture = { alt: '', source: '', file: null };
-    paintOutline(gate, byId('outline-list'), byId('outline-said'));
-    focusKey(open ? 'slide-picture ' + one.id : 'picture-file-' + one.id);
-  }, 'slide-picture ' + one.id);
-  toggle.setAttribute('aria-label', (open ? 'Keep it without a picture: “' : 'Add a picture to “')
-    + title + '”');
-  found.buttons.push(toggle);
-  if (given && !open) {
-    // Taking a picture off: the deck is drawn without it, and one can be given again.
-    const failed = make('p', 'problem');
-    failed.setAttribute('role', 'alert');   // read out, as focus stays on the button
-    failed.hidden = true;
-    const off = capsule('Remove the picture', 'quiet', async () => {
-      say(failed, '');
-      off.disabled = true;
-      const path = view.path;
-      try {
-        await send('picture-remove', { path, slide: one.id, expected: gate.expected });
-        if (path !== view.path) return;
-        toast('The picture is taken off “' + title + '”. The deck is drawn without it.');
-        await refresh();
-        focusKey('slide-picture ' + one.id);
-      } catch (failure) {
-        say(failed, failure.message);
-        off.disabled = false;
-      }
-    }, 'picture-remove ' + one.id);
-    off.setAttribute('aria-label', 'Remove the picture from “' + title + '”');
-    found.buttons.push(off);
-    found.shown.push(failed);
-  }
-  if (!open) return found;
-  const fill = held.picture || (held.picture = { alt: '', source: '', file: null });
-  const problem = make('p', 'problem');
-  problem.setAttribute('role', 'alert');
-  problem.hidden = true;
-  const send_ = capsule('Add the picture', '', async () => {
-    say(problem, '');
-    const file = fill.file;
-    if (!file) return say(problem, 'Choose the picture first.');
-    if (!/^image\/(png|jpeg)$/.test(file.type || '') && !/\.(png|jpe?g)$/i.test(file.name || '')) {
-      return say(problem, 'A picture is a PNG or a JPEG file.');
-    }
-    if (file.size > PICTURE_BYTES) return say(problem, 'A picture is at most 20 MB.');
-    if (!fill.alt.trim()) return say(problem, 'Say what the picture shows, for someone who cannot see it.');
-    if (!fill.source.trim()) return say(problem, 'Say where the picture came from.');
-    send_.disabled = true;
-    const path = view.path;
-    try {
-      await send('picture', { path, slide: one.id, name: file.name, content: await base64Of(file),
-        alt: fill.alt.trim(), source: fill.source.trim(), expected: gate.expected });
-      if (path !== view.path) return;
-      held.picturing = null;
-      held.picture = null;
-      toast('The picture is kept for “' + title + '”. The deck is drawn with it.');
-      await refresh();
-    } catch (failure) {
-      say(problem, failure.message);
-      send_.disabled = false;
-    }
-  }, 'picture-send ' + one.id);
-  found.form.push(add(make('div', 'fields picture-fields'),
-    field('picture-file-' + one.id, 'The picture, a PNG or JPEG file', fill, 'file',
-      { picked: (input) => { fill.file = Array.from(input.files || [])[0] || null; },
-        accept: 'image/png,image/jpeg' }),
-    field('picture-alt-' + one.id, 'What it shows', fill, 'alt', { limit: 300 }),
-    field('picture-source-' + one.id, 'Where it came from', fill, 'source',
-      { limit: 300, hint: 'Your own photograph, or who it belongs to and that you may use it.' }),
-    make('p', 'quiet', 'Pictures you give a slide stay on this computer, with the deck’s other '
-      + 'build files: teammates get the finished deck.'),
-    problem, add(make('div', 'bar'), send_, capsule('Cancel', 'quiet', () => {
-      held.picturing = null;
-      held.picture = null;
-      paintOutline(gate, byId('outline-list'), byId('outline-said'));
-      focusKey('slide-picture ' + one.id);
-    }, 'picture-cancel ' + one.id))));
-  return found;
-}
-
-// Whether the outline here differs from the one the deck holds, in a line.
-function paintOutlineSaid(gate, holder) {
-  if (!holder) return;
-  const held = chosenFor(gate);
-  holder.replaceChildren(...(held.edited ? [state('review', 'Edited here. Your edits go with '
-    + 'your decision, and are checked first.'), capsule('Put it back as drafted', 'quiet', () => {
-    held.work = null;
-    held.edited = false;
-    paintOutline(gate, byId('outline-list'), holder);
-    reviewChanged(gate);
-    focusKey('outline-add');
-  }, 'outline-reset')] : []));
-}
-
-// The slides, drawn again after an edit or a mark. What was open stays open.
-function paintOutline(gate, holder, said) {
-  if (!holder) return;
-  const readonly = holder.dataset.readonly === 'true';
-  const slides = readonly ? list(gate.slides) : outlineWork(gate);
-  const active = document.activeElement;
-  const focused = active && active.dataset && holder.contains(active) ? active.dataset.key : '';
-  const opened = Array.from(holder.querySelectorAll('details')).filter((node) => node.open)
-    .map((node) => node.dataset.key);
-  holder.replaceChildren(...slides.map((one, index) => outlineRow(gate, slides, index,
-    readonly)));
-  for (const node of holder.querySelectorAll('details')) {
-    if (opened.includes(node.dataset.key)) node.open = true;
-  }
-  if (focused) focusKey(focused);
-  paintOutlineSaid(gate, said);
-}
-
-// The reading of a document, in the direction review where it was not stopped at: one
-// line, and the way to say it is wrong.
-function classifyLine(gate, readonly) {
-  const read = gate.classify;
-  if (!read || read.kind !== 'document') return null;
-  const verdict = KINDS[read.verdict] ? read.verdict : 'material';
-  const other = verdict === 'spec' ? 'material' : 'spec';
-  const node = make('div', 'card-part');
-  const problem = alertLine('direction-classify-problem');
-  // It asks first, with what reading it again draws and what that last took.
-  const wrong = capsule('That’s wrong', 'quiet', openSheet('reclassify', 'direction-classify'),
-    'direction-classify');
-  wrong.setAttribute('aria-label', 'That’s wrong: it is ' + KINDS[other]);
-  return add(node, add(make('p', ''), 'Your document was read as ' + KINDS[verdict] + '.'
-    + (read.corrected ? ' You said so.' : '')), make('p', 'quiet', 'If it is really '
-    + KINDS[other] + ', say so: the outline is drafted again from the right reading.'),
-  readonly ? null : add(make('div', 'bar'), wrong), problem);
-}
-
-// The slides a person came back from the deck to change the words of: each is marked on
-// the outline when it is first drawn, with the line they wrote.
-function sayingLine(gate, readonly) {
-  const saying = gate.saying && typeof gate.saying === 'object' ? gate.saying : null;
-  if (!saying) return null;
-  const held = chosenFor(gate);
-  if (!readonly && !held.prefilled) {
-    held.prefilled = true;
-    for (const [id, line] of Object.entries(saying)) {
-      if (!owns(held.slideNotes, id)) held.slideNotes[id] = typeof line === 'string' ? line : '';
-    }
-  }
-  const numbers = list(gate.slides).map((one, index) => (owns(saying, one.id) ? index + 1 : 0))
-    .filter(Boolean);
-  const named = numbers.length ? slidesNamed(numbers) : 'a slide';
-  return callout('yours', make('p', '', 'Back from the deck: ' + named
-    + (numbers.length === 1 ? ' says' : ' say') + ' the wrong thing.'),
-  make('p', 'quiet', 'Say what each should say instead, or retitle it, and send your '
-    + 'changes. Once the outline is approved again, only the parts of the deck that hold '
-    + 'the slides that changed are drawn again.'));
-}
-
-// Asking for the research again from the direction review: a form of its own, with Cancel.
-function researchRequestCard(gate) {
-  const held = chosenFor(gate);
-  const form = make('form', 'note');
-  form.noValidate = true;
-  const label = make('label', 'field-label', 'What should change in the research?');
-  label.htmlFor = 'direction-research-text';
-  const request = make('textarea', 'input');
-  request.id = 'direction-research-text';
-  request.dataset.key = 'direction-research-text';
-  request.rows = 3;
-  request.maxLength = 4000;
-  request.value = held.researchAsk || '';
-  request.addEventListener('input', () => { held.researchAsk = request.value; });
-  const problem = alertLine('direction-research-problem');
-  const submit = submitButton('Research again', 'direction-research');
-  submit.className = 'button button-quiet';
-  const cancel = capsule('Cancel', 'quiet', () => {
-    request.value = '';
-    held.researchAsk = '';
-    say(problem, '');
-    request.focus();
-  }, 'direction-research-cancel');
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    decide('changes', request.value, problem, submit, { direction_target: 'gate:research' });
-  });
-  return add(card('Ask for changes to the research'), add(form, label, request,
-    gate.research.research_price ? make('p', 'quiet', gate.research.research_price.words) : null,
-    problem, add(make('div', 'bar'), submit, cancel)));
-}
-
-function outlinePanel(gate, readonly) {
-  const node = card(gate.look ? 'Review the direction' : 'The outline');
-  add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
-  // The research and the look are read with the outline: cards of their own beside it.
-  const beside = [];
-  if (gate.research?.text) {
-    const research = { ...gate.research, name: 'gate:research', round: gate.round, direction: true };
-    beside.push(add(researchPanel(research, readonly, true),
-      gate.leave_out_price ? make('p', 'quiet', gate.leave_out_price.words) : null));
-  }
-  if (gate.look) {
-    const look = lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
-      gate.look.offered ? gate : null);
-    if (!readonly) {
-      add(look, add(make('div', 'bar'), capsule('Choose another brand', '',
-        openSheet('rebrand', 'direction-brand'), 'direction-brand')));
-    }
-    beside.push(look);
-  }
-  if (gate.look && !readonly && gate.research?.text) beside.push(researchRequestCard(gate));
-  const slides = list(gate.slides);
-  if (gate.expected) add(node, storyboardPanel(gate, readonly));
-  add(node, make('p', '', count(slides.length, 'slide', 'slides') + ', each with its title '
-    + 'and what it must make clear; its points and notes open under it.' + (readonly ? ''
-    : ' Retitle, move, add or remove slides here, or ask for changes to one; your edits go '
-      + 'with your decision.')));
-  const said = make('div', 'bar');
-  said.id = 'outline-said';
-  said.setAttribute('role', 'status');
-  const items = make('ol', 'plain outline');
-  items.id = 'outline-list';
-  items.dataset.readonly = String(Boolean(readonly));
-  add(node, said, items);
-  paintOutline(gate, items, said);
-  if (!readonly) {
-    const held = chosenFor(gate);
-    const live = gate.delivery === 'live';
-    if (held.addingNotes === undefined) held.addingNotes = '';
-    const go = capsule('Add the slide', '', () => {
-      const title = held.adding.trim();
-      const notes = held.addingNotes.trim();
-      refuse('outline-add', '');
-      refuse('outline-add-notes', '');
-      if (!title) {
-        refuse('outline-add', 'Give the new slide a title first.');
-        byId('outline-add').focus();
-        return;
-      }
-      if (live && !notes) {
-        refuse('outline-add-notes', 'A deck presented live needs what the presenter says '
-          + 'on each slide.');
-        byId('outline-add-notes').focus();
-        return;
-      }
-      const work = outlineWork(gate);
-      // A content slide as the outline contract has it: the person's request is what it
-      // rests on, and its points are left for the build to fill. It is light, so it does
-      // not make a long run of dense slides.
-      work.push({ id: newSlideId(title, work), kind: 'content', title, understand: title,
-        relation: 'none', rhythm: 'breathing', points: [], sources: ['request'],
-        ...(notes ? { notes } : {}) });
-      held.adding = '';
-      held.addingNotes = '';
-      byId('outline-add').value = '';
-      byId('outline-add-notes').value = '';
-      outlineEdited(gate);
-    }, 'outline-add-go');
-    add(node, add(make('div', 'paper callout'), field('outline-add', 'A new slide’s title',
-      held, 'adding', { limit: 300, hint: 'It is added at the end. Move it where it belongs.' }),
-    field('outline-add-notes', 'What the presenter says on it', held, 'addingNotes',
-      { long: true, limit: 2000, hint: live ? 'Needed: this deck is presented live.'
-        : 'Optional. These are its speaker notes.' }),
-    add(make('div', 'bar'), go)));
-  }
-  if (!slides.length) add(node, documentPart('The outline', gate.text));
-  if (!readonly) add(node, reviewBar(gate));
-  add(node, ...gateSaid(gate));
-  return beside.length ? add(make('div', 'stack gate-cards'), node, ...beside) : node;
-}
-
-function storyboardPanel(gate, readonly) {
-  const held = chosenFor(gate);
-  const node = add(make('div', 'card-part'), make('p', 'quiet',
-    'Visual storyboard: proposed wording and structure, before native slide construction. '
-    + 'This preview does not approve the outline or choose final slide layouts.'));
-  const problem = problemLine();
-  const holder = make('div', 'storyboard-holder');
-  holder.id = 'storyboard-surface';
-  const waiting = make('p', 'quiet');
-  waiting.id = 'storyboard-waiting';
-  waiting.setAttribute('role', 'status');
-  waiting.textContent = 'The storyboard is redrawn once you stop editing.';
-  waiting.hidden = true;
-  // The storyboard is framed from the runner's own address, opened with a ticket that holds
-  // for two minutes: one older than that is asked for again rather than shown.
-  const fresh = () => held.storyboard && Date.now() - (held.storyboardAt || 0) < STORYBOARD_TICKET;
-  const render = () => {
-    if (!fresh()) return;
-    const src = held.storyboard;
-    holder.replaceChildren(window.DeckPanels.storyboard({
-      title: 'Visual storyboard — wording and structure', load: () => Promise.resolve(src),
-      note: 'The outline drawn plainly: what each slide says and how its points relate. '
-        + 'It is not the design.' }));
-    holder.classList.remove('waiting');
-    waiting.hidden = true;
-  };
-  // The outline as it is here, drawn as a storyboard: by the button, and by itself a while
-  // after the last edit. An edit made while one is drawn asks for another once it comes.
-  const redraw = async (pressed) => {
-    if (held.previewing) {
-      held.redrawAgain = true;
-      return;
-    }
-    held.previewing = true;
-    if (pressed) pressed.disabled = true;
-    say(problem, '');
-    const path = view.path;
-    const slides = readonly ? null : JSON.parse(JSON.stringify(outlineWork(gate)));
-    try {
-      const found = await send('storyboard', {path, expected: gate.expected, slides});
-      if (path !== view.path) return;
-      held.storyboard = found.src;
-      held.storyboardAt = Date.now();
-      render();
-    } catch (failure) { say(problem, failure.message); }
-    finally {
-      held.previewing = false;
-      if (pressed) pressed.disabled = false;
-      if (held.redrawAgain) {
-        held.redrawAgain = false;
-        if (path === view.path) storyboardSoon(gate);
-      }
-    }
-  };
-  held.redraw = () => redraw(null);
-  const preview = capsule('Refresh now', '', (event) => {
-    clearTimeout(held.storyboardTimer);
-    held.storyboardTimer = 0;
-    redraw(event.currentTarget);
-  }, 'storyboard-preview');
-  render();
-  if (held.storyboardTimer) {
-    holder.classList.add('waiting');
-    waiting.hidden = false;
-  }
-  if (!fresh() && !held.previewing) {
-    held.previewing = true;
-    const path = view.path;
-    const before = JSON.stringify(outlineWork(gate));
-    ask('storyboard', {path, expected: gate.expected}).then(found => {
-      if (path !== view.path || before !== JSON.stringify(outlineWork(gate))) return;
-      held.storyboard = found.src;
-      held.storyboardAt = Date.now();
-      render();
-    }).catch(failure => say(problem, failure.message)).finally(() => { held.previewing = false; });
-  }
-  return add(node, add(make('div', 'bar'), preview), waiting, problem, holder);
-}
-
-// The brand: the deck's cover drawn in the brand it is made in, so the person can see it is
-// the one they meant. No layout is chosen here: each slide is designed on its own as it is
-// built.
-function lookPanel(gate, readonly, held, review) {
-  if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate), review);
-  const node = card('The brand');
-  const made = madeIn(gate.brand, gate.variant, gate.made_in);
-  add(node, make('p', 'row-title', 'Made in ' + made + '.'),
-    make('p', '', readonly ? 'Its cover, drawn in that brand.' : 'This is your cover, drawn '
-      + 'in that brand, so you can see it is the one you meant. If it is not, choose another '
-      + 'brand.'),
-    gate.picture ? pictureAt(pictureOf(view.path, gate.picture), 'The cover in ' + made,
-      gate.round) : make('p', 'quiet', 'There is no picture of it on this computer.'),
-    gate.older ? make('p', 'quiet', gate.older) : null);
-  return add(node, ...gateSaid(gate));
-}
-
-// The brand's looks: one slide of the outline drawn in each, in the panel every studio's
-// page shows (window.DeckPanels.lookPicker). The person picks the look the whole deck is
-// drawn in, and may say why in their words; the brand records both. Looks that could not
-// be rendered are never picked blind: the person tries again, or carries on in the brand's
-// default look. `held` keeps the pick until it is sent; `review` is the direction review
-// that hosts the pick under Balanced, or nothing at the look's own gate.
-function looksPanel(gate, readonly, held, review) {
-  const offered = gate.offered;
-  if (gate.again && !held.look) held.look = gate.again.choice || '';
-  const made = madeIn(gate.brand, gate.variant, gate.made_in);
-  const node = card('Choose the look');
-  add(node, make('p', 'row-title', 'Made in ' + made + '.'),
-    make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
-      + 'you choose sets the colours, what each colour means and how cards are drawn on every '
-      + 'slide.'));
-  if (offered.chosen) {
-    add(node, state('done', 'Chosen: ' + offered.chosen.name + '.'),
-      offered.chosen.words ? make('p', 'quiet', '“' + offered.chosen.words + '”') : null);
-    return add(node, ...gateSaid(gate));
-  }
-  if (review) {
-    const edited = make('p', 'quiet', EDITED_LOOKS);
-    edited.id = 'edited-looks';
-    edited.hidden = !held.edited;
-    add(node, edited);
-  }
-  add(node, window.DeckPanels.lookPicker({
-    name: 'the deck', looks: list(offered.looks), defaultId: offered.default,
-    sheet: offered.sheet, notes: list(offered.notes), failed: offered.failed,
-    picked: { choice: held.look || '', words: held.lookWords || '' },
-    changed: (now) => { held.look = now.choice; held.lookWords = now.words; if (review) reviewChanged(review); },
-    picture: (number, alt) => pictureAt(pictureOf(view.path,
-      { kind: 'look', ref: number === 0 ? 'sheet' : number }), alt, gate.round) }));
-  if (offered.failed && !readonly) {
-    const again = capsule('Try again', '', () => decide('changes', '', null, again,
-      review ? { look: 'again', direction_target: 'gate:look' } : { look: 'again' }),
-    'look-again');
-    const proceed = capsule('Carry on in the brand’s default look', '', () => {
-      held.look = 'default';
-      if (review) sendReview(review, proceed);
-      else decide('approve', '', null, proceed, { look: 'default' });
-    }, 'look-default');
-    add(node, add(make('div', 'bar'), again, proceed));
-  }
-  return add(node, ...gateSaid(gate));
-}
-
 // What the review still finds on one slide, the most serious first.
 function findingItems(findings) {
   const order = Object.keys(SEVERITIES);
@@ -4829,261 +3537,6 @@ function findingItems(findings) {
   return items;
 }
 
-// The brand's own check of the deck: its word, and each error and warning in its words.
-function auditPart(gate) {
-  const audit = gate.audit;
-  const node = add(make('div', 'audit'), make('p', 'row-title', 'The brand’s own check'));
-  if (!audit) {
-    return add(node, make('p', 'quiet', gate.auditNote || 'It has not been run on this '
-      + 'deck.'));
-  }
-  const errors = Number(audit.errors) || 0;
-  const warnings = Number(audit.warnings) || 0;
-  if (!errors && !warnings) {
-    return add(node, state('done', 'It raised nothing about the brand’s rules'
-      + (audit.status ? ', and answered “' + audit.status + '”.' : '.')));
-  }
-  add(node, state('late', [errors ? count(errors, 'error', 'errors') : '',
-    warnings ? count(warnings, 'warning', 'warnings') : ''].filter(Boolean).join(' and ')));
-  add(node, bullets(list(audit.messages).map(String), 'look'));
-  return add(node, make('p', 'quiet', 'Approving is still yours to decide. Weigh these first.'));
-}
-
-function buildProgressCard(progress) {
-  const node = card('Slides taking shape');
-  add(node, state('working', view.run?.unreviewed ? 'First draft, not checked' : 'Unreviewed'), make('p', 'quiet', progress.incomplete
-    ? 'The render stopped before it finished. These previews are kept so you can inspect them.'
-    : view.run?.unreviewed ? 'The check is left out of this first draft. You can ask for it when the deck stops for you.' : 'Previews appear as each slide is drawn. The deck still needs its review and your decision.'));
-  const slides = list(progress.slides).map((one) => ({ ...one, partial: true,
-    where: pictureOf(view.path, { kind: 'progress', ref: one.ref }),
-    mark: one.ref }));
-  if (slides.length) add(node, pager(slides, (one) => [
-    make('p', '', 'Rendered preview · Unreviewed'),
-    one.part !== 'whole' && view.run?.mine ? progressFeedback(one) : null]));
-  return node;
-}
-
-function progressFeedback(one) {
-  view.progressNotes ||= {};
-  const held = view.progressNotes[one.ref] ||= {note: ''};
-  const form = make('form', 'note');
-  const problem = problemLine();
-  const submit = submitButton(held.sending ? 'Saving feedback…' : 'Ask for changes to this slide', 'feedback ' + one.ref);
-  if (view.lead) submit.className = 'button';
-  submit.disabled = Boolean(held.sending);
-  add(form, field('feedback-note-' + one.ref, 'What should change on slide ' + one.number + '?',
-    held, 'note', {long: true, limit: 4000}), make('p', 'quiet',
-    'Applies to the slides shown here. Other sections keep working. This does not approve the deck.'), problem, submit);
-  form.addEventListener('submit', async event => {
-    event.preventDefault(); if (held.sending) return;
-    const note = held.note.trim(), path = view.path;
-    if (!note) { say(problem, 'Say what should change first.'); return; }
-    held.sending = true; submit.disabled = true; say(problem, '');
-    try {
-      // Its number too: feedback that comes after the section is drawn is kept for the deck
-      // review, as this slide's mark.
-      const found = await send('build-feedback', {path, ref: one.ref, note, number: one.number});
-      if (held.note.trim() === note) held.note = '';
-      if (path === view.path) { view.run = found; paintDeck(false); }
-      toast('Slide feedback saved.');
-    } catch (failure) { say(problem, failure.message + ' Your note is kept.'); }
-    finally { held.sending = false; submit.disabled = false; }
-  });
-  return form;
-}
-
-// What only someone putting a problem right needs: the model jobs and the preview timing,
-// in a disclosure of their own that starts closed.
-function troubleshootingDetails(run) {
-  const receipts = list(run.model_jobs);
-  const timing = run.build_timing && Object.keys(run.build_timing).length ? run.build_timing : null;
-  if (!receipts.length && !timing) return null;
-  const node = add(make('details', 'card'), make('summary', '', 'Details for troubleshooting'));
-  node.dataset.key = 'troubleshooting';
-  if (receipts.length) add(node, make('p', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
-    `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
-    + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
-  if (timing) add(node, make('p', 'row-title', 'Preview timing'),
-    bullets(Object.entries(timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
-  return node;
-}
-
-function savedDetails(run) {
-  const node = add(make('details', 'card'), make('summary', '', 'Saved inputs, outline and run details'));
-  const holder = make('div', 'card-part'), problem = problemLine();
-  for (const [name, label] of [['intake.md', 'Read intake'], ['classify.md', 'Read source classification'],
-    ['outline.md', 'Read saved outline'], ['research/plan.md', 'Read research plan'], ['research/report.md', 'Read research report']]) {
-    const go = capsule(label, 'quiet', async () => {
-      go.disabled = true; say(problem, '');
-      try {
-        const found = await ask('file', {path: run.path, name});
-        holder.replaceChildren(documentPart(label, found.text),
-          ...(found.truncated ? [make('p', 'quiet', 'This is a shortened preview. The full file remains in your workspace.')] : []));
-      } catch (failure) { say(problem, failure.message); }
-      finally { go.disabled = false; }
-    }, 'read ' + name);
-    add(node, go);
-  }
-
-  if (list(run.build_feedback).length) add(node, make('p', 'row-title', 'Saved slide feedback'),
-    bullets(run.build_feedback.map(item => 'Slide ' + item.number + ': ' + item.note)));
-  const used = list(run.note && run.note.used);
-  if (used.length) add(node, make('p', 'row-title', 'Notes for the next step'),
-    bullets(used.map(item => item.text + ' Went with: ' + stepLabel(run, item.step) + '.')));
-  return add(node, problem, holder);
-}
-
-// The step a note went with, as the timeline names it: a job of a step is named for its step.
-function stepLabel(run, name) {
-  const base = String(name || '').split(':')[0];
-  const row = list(run.timeline).find((step) => step.name === base);
-  return row ? row.label : base;
-}
-
-function buildPanel(gate, readonly) {
-  const node = card(gate.unreviewed ? 'First draft, not checked' : 'The deck');
-  const held = chosenFor(gate);
-  // A look chosen from samples nobody saw rendered: said first, in the shared words.
-  if (gate.look_unreviewed) add(node, callout('', make('p', '', gate.look_unreviewed)));
-  if (gate.unreviewed) {
-    add(node, state('late', 'First draft, not checked'), make('p', '',
-      'Built and rendered. The check and its repairs have not run. Using this first draft or resuming does not start them.'),
-      capsule('Check the deck', '', async event => {
-        const pressed = event.currentTarget; if (held.reviewing) return;
-        held.reviewing = true; pressed.disabled = true;
-        try {
-          const path = view.path;
-          const found = await send('review-draft', {path, expected: gate.expected_deck});
-          if (path === view.path) { view.run = found; paintDeck(false); }
-        } catch (failure) { notify(failure.message); }
-        finally { held.reviewing = false; pressed.disabled = false; }
-      }, 'review-draft'));
-  }
-  const changed = list(gate.changed);
-  const pairs = new Map(list(gate.pairs).map((pair) => [pair.number, pair]));
-  const slides = list(gate.slides).map((one) => ({ number: one.number, title: one.title,
-    findings: list(one.findings), changed: changed.includes(one.number),
-    note: typeof one.note === 'string' ? one.note : null,
-    feedback: list(one.feedback).filter((said) => typeof said === 'string'),
-    kept: typeof one.kept === 'string' ? one.kept : null,
-    where: pictureOf(view.path, one.image || { kind: 'build', ref: one.number }),
-    mark: gate.round }));
-  // Feedback that came after its section was drawn is this slide's mark, until it is sent.
-  if (!readonly && !held.prefilled) {
-    held.prefilled = true;
-    for (const one of slides) {
-      if (one.kept === null || held.marked.includes(one.number)) continue;
-      held.marked.push(one.number);
-      held.slideNotes[String(one.number)] = one.kept;
-    }
-  }
-  const findings = slides.reduce((all, one) => all + one.findings.length, 0);
-  const serious = slides.reduce((all, one) => all + one.findings.filter((finding) => SERIOUS
-    .includes(finding.severity)).length, 0);
-  add(node, make('p', '', count(slides.length, 'slide', 'slides') + '. ' + (findings
-    ? count(findings, 'finding remains', 'findings remain') + ' from the review, each shown '
-      + 'with its slide.' : gate.unreviewed ? 'The check has not run. Whether the deck is useful is yours to judge.' : 'The check has nothing left to raise. Whether the deck is good '
-      + 'is still yours to judge.')),
-  serious ? state('late', count(serious, 'serious finding', 'serious findings')
-    + ' still listed.') : null,
-  changed.length ? make('p', 'quiet', 'Built again after your changes: '
-    + slidesNamed(changed) + '. They are marked “Changed”.') : null);
-  const marked = make('p', 'quiet');
-  marked.setAttribute('role', 'status');
-  const problem = alertLine('say-problem');
-  const go = capsule('Change what they say', '', () => sayAgain(problem, go), 'say-again');
-  const tellMarked = () => tellMarks(marked, go);
-  tellMarked();
-  const about = (one) => {
-    const parts = [];
-    const pair = pairs.get(one.number);
-    if (pair && pair.before) {
-      parts.push(add(make('div', 'pair'),
-        add(make('div', ''), make('p', 'quiet', 'Before'), pictureAt(pictureOf(view.path,
-          pair.before), 'Slide ' + one.number + ' before', 'original')),
-        add(make('div', ''), make('p', 'quiet', 'After'), pair.after
-          ? pictureAt(pictureOf(view.path, pair.after), 'Slide ' + one.number + ' after',
-            gate.round) : make('p', 'quiet', 'There is no picture of it after yet.'))));
-    }
-    if (one.note) parts.push(make('p', 'quiet', one.note));
-    if (one.feedback.length) {
-      parts.push(make('p', 'quiet', 'Your feedback on it: ' + one.feedback.join(' · ')));
-    }
-    if (one.findings.length) parts.push(findingItems(one.findings));
-    else parts.push(make('p', 'quiet', 'The review found nothing on this slide.'));
-    if (one.findings.some((finding) => finding.about === 'content')) {
-      parts.push(make('p', 'quiet', 'A finding is about what this slide says, which drawing '
-        + 'it again cannot put right. Change what it says, and its words go back to the '
-        + 'outline for you to change there.'));
-    }
-    if (!readonly) {
-      // A mark flipped draws this slide's part again, so its line comes and goes with it.
-      parts.push(...slideMarks(one, held, () => {
-        tellMarked();
-        view.viewer.go(one.number);
-      }, canSay(view.run)));
-    }
-    return parts;
-  };
-  if (slides.length) {
-    add(node, pager(slides, about), marked, problem,
-      readonly || !canSay(view.run) ? null : add(make('div', 'bar'), go));
-  } else add(node, make('p', 'quiet', 'There are no pictures of its slides on this computer.'));
-  if (gate.contactSheet) {
-    const sheet = make('details', 'card-part');
-    sheet.dataset.key = 'contact-sheet';
-    add(node, add(sheet, make('summary', '', 'Every slide at once'),
-      pictureAt(pictureOf(view.path, gate.contactSheet), 'Every slide of the deck',
-        gate.round)));
-  }
-  return add(node, auditPart(gate), ...gateSaid(gate));
-}
-
-function gatePanel(run) {
-  const gate = run.gate;
-  const readonly = theirs(run);
-  if (gate.name === 'gate:classify') return classifyPanel(gate, readonly);
-  if (gate.name === 'gate:research-plan') return researchPlanPanel(gate, readonly);
-  if (gate.name === 'gate:research') return researchPanel(gate, readonly);
-  if (gate.name === 'gate:outline') return outlinePanel(gate, readonly);
-  if (gate.name === 'gate:look') return lookPanel(gate, readonly);
-  return buildPanel(gate, readonly);
-}
-
-// What approving each gate does, said before Approve is pressed: it acts at once.
-const APPROVING = {
-  'gate:classify': 'Approve, and it carries on from what you gave. Or ask for changes and '
-    + 'say what should change.',
-  'gate:research-plan': 'Approve, and each question in the plan is researched; the findings '
-    + 'come back to you before anything is written from them. Or ask for changes.',
-  'gate:research': 'Approve, and the outline is drafted from these findings. Or ask for '
-    + 'changes.',
-  'gate:outline': 'Approve, and every slide is designed and built from this outline, with '
-    + 'any edits you made here. Or ask for changes.',
-  'gate:look': 'Approve, and every slide is designed in this brand, in the look you chose. '
-    + 'Or choose another brand.',
-  'gate:build': 'Approve, and the deck is delivered as it is. Or mark slides and ask for '
-    + 'changes.',
-};
-
-// What waits, in a line above the gate: what is to decide, and how.
-function gateLine(run) {
-  const gate = run.gate;
-  if (theirs(run)) {
-    return callout('', make('p', '', (run.driver ? nameOf(run.driver) + ' decides this, on '
-      + 'the computer that runs it.' : 'Nobody is running this deck, so it cannot be decided '
-      + 'until someone takes it.') + ' Here you can read it.'));
-  }
-  const deck = gate.name === 'gate:classify' && gate.kind === 'deck';
-  return callout('yours', make('p', '', capital(gate.label) + '.'),
-    make('p', 'quiet', deck ? 'Approve, and it carries on from these slides. To read '
-      + 'another deck, stop this one and start a new deck from it.'
-      : APPROVING[gate.name] || 'Approve it, or ask for changes and say what should change.'),
-    gate.name === 'gate:build' && run.output === 'google' && !googleReady()
-      ? make('p', '', NOT_CONNECTED) : null,
-    alertLine('gate-problem'));
-}
-
 // Google Slides asked for, and Google not connected here: approving makes PowerPoint.
 const NOT_CONNECTED = 'Google is not connected on this computer, so approving makes a '
   + 'PowerPoint file. Sign in to Google (Status → Check this computer says how), then '
@@ -5092,7 +3545,9 @@ function googleReady() {
   return !(view.setup && view.setup.google === false);
 }
 
-// --- one deck: delivered -------------------------------------------------------------------
+// --- one deck: delivered by the earlier step-by-step flow ---------------------------------
+// A saved record's delivery: read, downloaded and sent to Google Slides as before. It is
+// changed on the desk, once the finished Open on the desk opens it there (savedRecordIntro).
 
 function deliverPart(run) {
   const found = run.deliver;
@@ -5114,26 +3569,9 @@ function deliverPart(run) {
   // A delivery made before its file was shared is on the computer that made it.
   if (found.not_here) add(node, make('p', 'quiet', found.not_here));
   if (found.notice) add(node, make('p', 'fix', found.notice));
-  // A saved deck, delivered the gated way, opens on the desk, still delivered.
-  const desk = !run.desk && !theirs(run) ? capsule(view.opening ? 'Opening…' : 'Open on the desk',
-    '', () => openOnDesk(run, desk), 'desk-open') : null;
-  // What the desk lets change, as the deck's level allows: Brand only and Polish keep the
-  // deck's own words, and Selected changes changes them only on a copy.
-  const deskSays = desk ? make('p', 'quiet', (OPEN_SAYS[run.level] || OPEN_SAYS.other)
-    + ' It stays delivered until you change it; a change makes the next revision.') : null;
-  if (found.to_google && !theirs(run) && googleReady()) {
-    // Nothing goes to Google on this press: its sheet says what goes, and sends it.
-    const google = capsule(view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
-      openSheet('desk-google', 'deliver-google'), 'deliver-google');
-    google.disabled = Boolean(view.delivering);
-    add(node, make('p', 'quiet', 'Once you are signed in to Google with gcloud on this '
-      + 'computer, the same deck goes to Google Slides as the next revision. Nothing in it '
-      + 'is built again, and nothing is sent until you confirm it.'), deskSays,
-    add(make('div', 'bar'), google, desk));
-  } else if (desk) add(node, deskSays, add(make('div', 'bar'), desk));
-  if (found.to_google && !theirs(run) && !googleReady()) add(node, make('p', 'quiet',
-    'Sign in to Google (Status → Check this computer says how) to send this deck to '
-    + 'Google Slides later.'));
+  // It goes to Google Slides from the desk, once it is opened there.
+  if (found.to_google && !theirs(run)) add(node, make('p', 'quiet', 'To send this '
+    + 'PowerPoint file to Google Slides as the next revision, open it on the desk first.'));
   // Every revision's receipt, as the desk's Delivered card lists them: its format, when, and
   // Open in Google Slides or Download revision N while its PowerPoint file is kept here.
   const receipts = list(found.receipts);
@@ -5160,30 +3598,6 @@ function deliverPart(run) {
   if (run.contactSheet) {
     add(node, add(make('div', 'thumb'), pictureAt(pictureOf(view.path,
       { kind: 'build', ref: 'contact-sheet' }), 'Every slide of the deck', found.revision)));
-  }
-  if (!theirs(run)) {
-    const slides = list(found.slides).map((one) => ({ number: one.number, title: one.title,
-      where: pictureOf(view.path, one.image || { kind: 'build', ref: one.number }),
-      mark: found.revision }));
-    const held = chosenFor(null);
-    const marked = make('p', 'quiet');
-    marked.setAttribute('role', 'status');
-    const problem = alertLine('say-problem');
-    const go = capsule('Change what they say', '', () => sayAgain(problem, go), 'say-again');
-    const tellMarked = () => tellMarks(marked, go);
-    tellMarked();
-    add(node, make('p', 'quiet', 'To change it, mark the slides and ask for changes: the '
-      + 'parts that draw them are drawn again, and it is delivered as the next revision. The '
-      + 'one before is kept. A slide that says the wrong thing goes back to the outline '
-      + 'instead.'));
-    if (slides.length) {
-      add(node, pager(slides, (one) => slideMarks(one, held, () => {
-        tellMarked();
-        view.viewer.go(one.number);
-      }, canSay(run))), marked);
-    }
-    add(node, problem, add(make('div', 'bar'), capsule('Ask for changes', '',
-      openSheet('changes', 'changes'), 'changes'), canSay(run) ? go : null));
   }
   return node;
 }
@@ -5301,71 +3715,9 @@ function researchActivity(run) {
   return run.research_progress && typeof StudioResearch !== 'undefined' ? StudioResearch.progress(run.research_progress, {...researchNoteHooks(view.path),workers:run.workers,lines:jobLines(view.path)}) : null;
 }
 
-function researching(run) {
-  return Boolean(run.research_progress && run.research_progress.phase !== 'complete'
-    && typeof StudioResearch !== 'undefined');
-}
-
-function costCard(run) {
-  const node = card('What it has cost');
-  const spent = run.spent || {};
-  const agent = AGENT_NAMES[run.agent] || run.agent || 'an agent';
-  // A cost of nothing is not reported money: it is never said as $0.00.
-  const reported = given(spent.dollars) && Number(spent.dollars) > 0;
-  add(node, make('p', 'cost', !reported ? 'Not reported'
-    : Number(spent.dollars) < 0.005 ? 'Less than $0.01' : money(spent.dollars)));
-  const says = [];
-  const silent = !reported && given(spent.tokens);
-  if (reported) says.push('So far.');
-  else if (silent) says.push(agent + ' says how many tokens it uses, not what they cost.');
-  else says.push('Nothing has been reported yet. An agent says what it used as each step ends.');
-  if (given(spent.tokens)) says.push(Number(spent.tokens).toLocaleString() + ' tokens used.');
-  return add(node, make('p', 'quiet', says.join(' ')),
-    make('p', 'quiet', (run.review_level ? ({balanced: 'Balanced', automatic: 'Automatic draft', step_by_step: 'Step by step'}[run.review_level] + ' review · ') : '') + 'Drafted by ' + agent + (run.model_mode === 'by_task' ? ', using the models chosen for each kind of work' : modelWords(run.model, run.effort)) + '.'));
-}
-
-// --- one deck: a stop reviewed item by item -------------------------------------------------
-// The research plan, the research and the outline are shown as items the person marks one
-// by one: what needs them first, the rest a line each, and one button that says what it
-// will do. Marks are kept with the stop's other choices (`chosenFor`), so a refresh loses
-// nothing, and nothing is sent until the button is pressed.
-
-const REVIEWED = ['gate:research-plan', 'gate:research', 'gate:outline'];
-// As runner/marks.py has them: ADDED questions added at once, and LINE characters in a line
-// written against an item. The runner refuses more.
-const ADDED = 10;
-const LINE = 1000;
-const FINDING_WORDS = { supported: ['done', 'Answered'], insufficient: ['late', 'Not settled'],
-  unavailable: ['late', 'Not found'], contradicted: ['review', 'Contradicted'],
-  pending: ['out', 'Not answered'] };
-
-function sized(value) {
-  return Array.isArray(value) ? value.length : Object.keys(value || {}).length;
-}
-
-function owns(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
-}
-
 // A line with its spaces made single, as the runner keeps it.
 function spaced(text) {
   return String(text || '').trim().split(/\s+/).join(' ');
-}
-
-// A text cut to about `size` characters, to name a control by.
-function clipped(text, size) {
-  const said = spaced(text);
-  return said.length > size ? said.slice(0, size - 1).trimEnd() + '…' : said;
-}
-
-// A mark the runner would refuse: its control switched off, and a quiet line beside it that
-// says why, which a screen reader gives with the control. Returns the line.
-function switchedOff(control, id, reason) {
-  control.disabled = true;
-  const why = make('p', 'quiet', reason);
-  why.id = id;
-  control.setAttribute('aria-describedby', id);
-  return why;
 }
 
 // The lines typed against items, as the runner keeps them, keeping those that say
@@ -5377,400 +3729,6 @@ function filled(lines, unchanged) {
     if (said && (!unchanged || said !== spaced(unchanged(id)))) kept[id] = said;
   }
   return kept;
-}
-
-// The findings the runner leaves out now.
-function leftBefore(gate) {
-  return list(gate.items).filter((item) => item.left_out).map((item) => item.id);
-}
-
-// The findings the person leaves out: as the runner has them until they change it here.
-function leftOut(gate) {
-  const held = chosenFor(gate);
-  if (!held.leftOut) held.leftOut = leftBefore(gate);
-  return held.leftOut;
-}
-
-// How many findings are left out or brought back here, against what the runner has.
-function movedOut(gate, ids) {
-  const before = leftBefore(gate);
-  return ids.filter((id) => !before.includes(id)).length
-    + before.filter((id) => !ids.includes(id)).length;
-}
-
-// What the person has marked at a reviewed stop, as the runner takes it.
-function marksOf(gate) {
-  const held = chosenFor(gate);
-  if (gate.name === 'gate:research-plan') {
-    const asked = new Map(list(gate.questions).map((item) => [item.id, item.question]));
-    return { dropped: held.dropped.slice(),
-      reword: filled(held.reword, (id) => asked.get(id)), add: held.added.slice() };
-  }
-  if (gate.name === 'gate:research') {
-    const again = {};
-    for (const [id, text] of Object.entries(held.again)) again[id] = spaced(text);
-    return { left_out: leftOut(gate).slice(), again, add: held.added.slice() };
-  }
-  if (gate.name === 'gate:outline') {
-    const here = new Set(outlineWork(gate).map((one) => one.id));
-    const slides = filled(held.slideNotes);
-    for (const id of Object.keys(slides)) if (!here.has(id)) delete slides[id];
-    return { slides };
-  }
-  return {};
-}
-
-// What a request for changes at a reviewed stop carries, whether its button or the sheet
-// sends it: the marks, the findings left out only when that changed here, so one left out
-// in an earlier round is not asked for again, and the outline as edited.
-function changesOf(gate) {
-  const held = chosenFor(gate);
-  const marks = marksOf(gate);
-  if (gate.name === 'gate:research' && !movedOut(gate, marks.left_out)) {
-    return { again: marks.again, add: marks.add };
-  }
-  if (gate.name === 'gate:outline' && held.edited) return { ...marks, edited: held.work };
-  return marks;
-}
-
-// What a reviewed stop's button does now: its words, whether it approves, what goes with
-// it, and a tally of the marks. What goes with it is nothing only where nothing is marked.
-function reviewOf(gate) {
-  const held = chosenFor(gate);
-  const marks = marksOf(gate);
-  if (gate.name === 'gate:research-plan') {
-    const dropped = sized(marks.dropped);
-    const asked = sized(marks.reword) + sized(marks.add);
-    const tally = [count(dropped, 'dropped', 'dropped'),
-      count(sized(marks.reword), 'reworded', 'reworded'),
-      count(sized(marks.add), 'added', 'added')].join(' · ');
-    if (asked) {
-      return { label: 'Send ' + count(asked + dropped, 'change', 'changes'), approve: false,
-        extra: changesOf(gate), tally };
-    }
-    if (dropped) {
-      return { label: 'Approve without ' + count(dropped, 'question', 'questions'),
-        approve: true, extra: { dropped: marks.dropped }, tally };
-    }
-    return { label: 'Approve', approve: true, extra: null, tally };
-  }
-  if (gate.name === 'gate:research') {
-    const moved = movedOut(gate, marks.left_out);
-    const asked = sized(marks.again) + sized(marks.add);
-    const tally = [count(sized(marks.again), 'to research again', 'to research again'),
-      count(marks.left_out.length, 'left out', 'left out'),
-      count(sized(marks.add), 'added', 'added')].join(' · ');
-    if (asked) {
-      return { label: 'Send ' + count(asked + moved, 'change', 'changes'), approve: false,
-        extra: changesOf(gate), tally };
-    }
-    if (moved) {
-      return { label: marks.left_out.length ? 'Approve, leaving out '
-        + count(marks.left_out.length, 'finding', 'findings') : 'Approve with every finding',
-      approve: true, extra: { left_out: marks.left_out }, tally };
-    }
-    return { label: 'Approve', approve: true, extra: null, tally };
-  }
-  if (gate.name === 'gate:outline' && gate.look && gate.research) {
-    const research = { ...gate.research, name: 'gate:research', round: gate.round };
-    const ids = leftOut(research);
-    if (movedOut(research, ids)) return { label: 'Redraw the direction', approve: false,
-      extra: { direction_target: 'gate:research', left_out: ids.slice() },
-      tally: count(ids.length, 'finding left out', 'findings left out') };
-  }
-  const slides = sized(marks.slides);
-  const edited = held.edited ? { edited: held.work } : null;
-  let tally = count(slides, 'slide to change', 'slides to change')
-    + (held.edited ? ' · edited here' : '');
-  if (slides) {
-    return { label: 'Send ' + count(slides, 'change', 'changes'), approve: false,
-      extra: changesOf(gate), tally };
-  }
-  // In the direction review the look picked here goes with the approval.
-  const look = gate.look?.offered && !gate.look.offered.chosen && held.look
-    ? { look: held.look } : null;
-  const blocked = gate.name === 'gate:outline' && gate.look?.offered && !gate.look.offered.chosen
-    && !held.look && !held.edited ? 'Pick a look to approve the direction.' : '';
-  if (blocked) tally += ' · 1 look to pick';
-  return { label: 'Approve', approve: true, blocked,
-    extra: edited || look ? { ...(edited || {}), ...(look || {}) } : null, tally };
-}
-
-// Do what a reviewed stop's button says. What refuses it is said in `problem` where one is
-// given, or else at the head of the deck.
-function sendReview(gate, pressed, problem) {
-  const made = reviewOf(gate);
-  if (made.blocked) { say(problem || byId('gate-problem'), made.blocked); return; }
-  const words = made.approve && made.extra?.look ? (chosenFor(gate).lookWords || '').trim() : '';
-  decide(made.approve ? 'approve' : 'changes', words, problem || null, pressed, made.extra);
-}
-
-// Two to four numbers in a row, each with what it counts.
-function reviewCounts(pairs) {
-  const node = make('div', 'review-counts');
-  for (const [number, words] of pairs) {
-    add(node, add(make('p', 'review-count'), make('span', 'review-number', String(number)),
-      ' ', make('span', 'quiet', words)));
-  }
-  return node;
-}
-
-// The full text a stop was drawn from, folded.
-function fullText(summary, label, text, key) {
-  const node = make('details', 'card-part');
-  node.dataset.key = key;
-  return add(node, make('summary', '', summary), documentPart(label, text));
-}
-
-// The tally of the marks and the button that sends them, at the foot of the items. The
-// tally is made once and only its words change, so what it says is read out as it changes.
-// What refuses the decision is said beside the button.
-function reviewBar(gate) {
-  const node = make('div', 'review-bar');
-  node.id = 'review-bar';
-  const tally = make('p', 'quiet');
-  tally.id = 'review-tally';
-  tally.setAttribute('role', 'status');
-  add(node, tally, alertLine('review-problem'));
-  if (narrow() && !view.sheet) {
-    const send = capsule(reviewOf(gate).label, view.lead === 'approve' ? 'filled' : '',
-      () => sendReview(view.run.gate, send, byId('gate-problem')), 'approve');
-    send.id = 'review-send';
-    add(node, add(make('div', 'bar'), send));
-  }
-  paintReviewBar(gate, node);
-  return node;
-}
-
-function paintReviewBar(gate, node) {
-  if (!node) return;
-  const made = reviewOf(gate);
-  const problem = node.querySelector('#review-problem');
-  const tally = node.querySelector('#review-tally');
-  // Only a tally that changed is read out again: typing in a box against an item changes
-  // nothing it counts.
-  if (tally.textContent !== made.tally) tally.textContent = made.tally;
-  // What was refused before is not what the marks say now. The one button that sends the
-  // marks says what it will do with them: the toolbar's, or on a phone this bar's.
-  say(problem, made.blocked || '');
-  const send = node.querySelector('#review-send');
-  if (send) {
-    if (send.textContent !== made.label) send.textContent = made.label;
-    send.disabled = Boolean(made.blocked);
-  }
-}
-
-// A mark changed: the tally, this button and the toolbar's say so at once.
-function reviewChanged(gate) {
-  const edited = byId('edited-looks');
-  if (edited) edited.hidden = !chosenFor(gate).edited;
-  paintReviewBar(gate, byId('review-bar'));
-  if (view.screen === 'deck' && view.run) paintDeck(false);
-}
-
-// New questions the person adds, each with the way to take it back, and a box for one more.
-function addedPart(gate) {
-  const node = make('div', 'review-added');
-  node.id = 'review-added';
-  paintAdded(gate, node);
-  return node;
-}
-
-function paintAdded(gate, node) {
-  if (!node) return;
-  const held = chosenFor(gate);
-  const items = make('ul', 'plain review-list');
-  held.added.forEach((text, index) => {
-    const take = capsule('Take it back', 'quiet', () => {
-      held.added.splice(index, 1);
-      paintAdded(gate, byId('review-added'));
-      reviewChanged(gate);
-      focusKey('added-question');
-    }, 'unadd ' + index);
-    take.setAttribute('aria-label', 'Take it back: “' + clipped(text, 60) + '”');
-    items.append(add(make('li', 'review-row'), make('p', '', text),
-      add(make('div', 'bar'), take)));
-  });
-  // The runner refuses more than ADDED at once, and more than the plan holds, so no more
-  // are taken here: the gate says how many the plan has room for.
-  const room = Number.isInteger(gate.room) ? Math.min(gate.room, ADDED) : ADDED;
-  const full = held.added.length >= room;
-  const most = Number.isInteger(gate.most) ? gate.most : null;
-  // At the research stop an added question runs the investigation again: its price is said
-  // before it is sent.
-  const price = gate.name === 'gate:research' ? gate.research_price?.words || '' : '';
-  const hint = !full ? price : room === ADDED ? 'You have added ' + ADDED + ', as many as can '
-    + 'be added at once. Send these, and add more next time round.'
-    : 'The plan holds ' + (most === null ? 'as many questions as it can' : most
-      + ' questions, the most it can') + '.';
-  const box = field('added-question', 'A question to add', held, 'asking',
-    { long: true, limit: LINE, hint });
-  const go = capsule('Add the question', 'quiet', () => {
-    const text = String(held.asking || '').trim();
-    if (!text) {
-      refuse('added-question', 'Write the question first.');
-      focusKey('added-question');
-      return;
-    }
-    held.added.push(text);
-    held.asking = '';
-    paintAdded(gate, byId('review-added'));
-    reviewChanged(gate);
-    focusKey('added-question');
-  }, 'add-question');
-  go.disabled = full;
-  if (full) go.setAttribute('aria-describedby', 'added-question-hint');
-  node.replaceChildren(...(held.added.length ? [make('p', 'row-title', 'Questions you added'),
-    items] : []), box, add(make('div', 'bar'), go));
-}
-
-// --- one deck: deciding and steering -------------------------------------------------------
-
-// What comes with a decision at the gate, from what the person chose there.
-function extraFor(gate, decision) {
-  const held = chosenFor(gate);
-  if (REVIEWED.includes(gate.name)) {
-    return decision === 'approve' ? reviewOf(gate).extra : changesOf(gate);
-  }
-  if (gate.name === 'gate:classify' && decision === 'approve' && held.wrong
-      && gate.kind === 'document') {
-    return { kind: gate.verdict === 'spec' ? 'material' : 'spec' };
-  }
-  if (gate.name === 'gate:look' && decision === 'changes') {
-    return { brand: held.brand, variant: held.variant || null };
-  }
-  if (gate.name === 'gate:look' && decision === 'approve' && gate.offered
-      && !gate.offered.chosen) {
-    return { look: held.look };
-  }
-  if (gate.name === 'gate:build' && decision === 'changes') return deckChanges();
-  return null;
-}
-
-// Another brand, or another variant of it, chosen at the brand's gate. The cover is drawn
-// again in it and comes back here.
-function rebrandSheet() {
-  const current = view.run.gate;
-  const gate = current?.look ? {...current.look, name: 'gate:look', round: current.round} : current;
-  const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
-  const title = sheetTitle('Choose another brand');
-  if (!gate || gate.name !== 'gate:look') {
-    return [title, make('p', '', 'This deck has moved on from its brand.'),
-      add(make('div', 'bar'), cancel)];
-  }
-  const held = chosenFor(gate);
-  if (!held.brand) {
-    held.brand = gate.brand || '';
-    held.variant = gate.variant || '';
-  }
-  const form = make('form', 'note');
-  form.noValidate = true;
-  const problem = problemLine();
-  const submit = submitButton('Use this brand', 'send');
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    if (held.brand === (gate.brand || '') && (held.variant || '') === (gate.variant || '')) {
-      say(problem, 'It is made in ' + (gate.made_in || 'this brand') + ' already. Choose '
-        + 'another brand or variant.');
-      return;
-    }
-    decide('changes', '', problem, submit, {brand: held.brand, variant: held.variant || null,
-      ...(current?.look ? {direction_target: 'gate:look'} : {})});
-  });
-  add(form, brandFields(held, 'rebrand'), make('p', 'quiet', 'Its looks are drawn again in '
-    + 'the one you choose and come back here for your decision.'), problem,
-  add(make('div', 'bar'), submit, cancel));
-  return [title, form];
-}
-
-// Reading the person's document the other way, from the direction review: what is drawn
-// again and its price, before anything is sent.
-function reclassifySheet() {
-  const gate = view.run && view.run.gate;
-  const read = (gate && gate.classify) || {};
-  const verdict = KINDS[read.verdict] ? read.verdict : 'material';
-  const other = verdict === 'spec' ? 'material' : 'spec';
-  const problem = problemLine();
-  const price = gate && gate.reclassify_price && gate.reclassify_price.says;
-  const confirm = capsule('Read it again', 'filled', (event) => decide('changes', '', problem,
-    event.currentTarget, { direction_target: 'gate:classify', kind: other }), 'send');
-  return [sheetTitle('Read it as ' + KINDS[other] + '?'),
-    make('p', '', 'The outline is drafted again from the right reading.'),
-    price ? make('p', 'quiet', price) : null,
-    problem, add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet,
-      'cancel'))];
-}
-
-function undoSheet() {
-  const problem = problemLine();
-  const confirm = capsule('Undo it', 'filled', () => steer('undo', confirm, problem), 'send');
-  const done = list(view.run && view.run.timeline).filter((row) => row.state === 'done').pop();
-  const took = done ? [given(done.seconds) ? lasted(done.seconds) : '',
-    given(done.dollars) ? money(done.dollars) : ''].filter(Boolean) : [];
-  return [sheetTitle('Undo the last step?'),
-    done ? make('p', '', 'Undo: ' + done.label + (took.length ? ' (' + took.join(', ') + ')'
-      : '')) : null,
-    make('p', '', 'The last thing done to this deck is taken back, and it carries on from '
-      + 'there. Only the last step can be undone, and only while it has not been shared with '
-      + 'your team.'),
-    problem, add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet,
-      'cancel'))];
-}
-
-async function decide(decision, note, problem, pressed, extra) {
-  if (view.busy) return;
-  const turn = view.turn;
-  const run = view.run;
-  const gate = run.gate;
-  const noted = noteKey(decision);
-  const body = { path: view.path, gate: gate ? gate.name : 'gate:build', decision };
-  if (gate?.expected) body.expected = gate.expected;
-  if (note) body.note = note;
-  // On a delivered deck there is no gate: what is marked on its slides goes with the note.
-  const more = extra !== undefined ? extra : gate ? extraFor(gate, decision)
-    : decision === 'changes' ? deckChanges() : null;
-  if (more) body.extra = more;
-  view.busy = true;
-  pressed.disabled = true;
-  let answered;
-  try {
-    answered = await send('decide', body);
-  } catch (failure) {
-    view.busy = false;
-    pressed.disabled = false;
-    if (problem) {
-      say(problem, failure.message + ' Nothing was decided.');
-      // The gate's own line is read where the decision is, and takes focus.
-      if (problem.id === 'gate-problem') {
-        problem.tabIndex = -1;
-        problem.focus();
-      }
-      return;
-    }
-    // A decision pressed in the toolbar has no sheet, whether it approves or sends what was
-    // marked: what refused it is said at the head of the deck.
-    if (turn !== view.turn) return;
-    view.steered = failure.message + ' Nothing was decided.';
-    paintDeck(false);
-    return;
-  }
-  // A note that was sent is not offered again, nor what was chosen with it.
-  delete view.notes[noted];
-  forget(gate);
-  view.busy = false;
-  if (turn !== view.turn) return;
-  view.sheet = '';
-  view.run = answered;
-  view.steered = '';
-  drawSheet();
-  view.barred = '';
-  paintDeck(false);
-  toast(decision === 'approve' ? 'Approved. It carries on by itself. ' + CLOSE
-    : 'Your changes are noted. Once they are made, it comes back to you.',
-  deckToast(answered.path || view.path));
-  window.scrollTo(0, 0);
-  byId('title').focus({ preventScroll: true });
-  refresh();
 }
 
 async function steer(action, pressed, problem) {
@@ -5795,6 +3753,8 @@ async function steer(action, pressed, problem) {
       return;
     }
     view.steered = failure.message + ' Nothing was changed.';
+    // The desk draws no line for it: the refusal is said where every screen shows it.
+    toast(view.steered);
   }
   if (view.sheet) {
     view.sheet = '';
@@ -5809,54 +3769,6 @@ async function steer(action, pressed, problem) {
   refresh();
 }
 
-// The toolbar's side of a deck: the decision at its gate, and pause, stop, resume and undo.
-function deckActions(run, lead) {
-  if (theirs(run)) return [];
-  const actions = [];
-  const press = (label, kind, action) => {
-    const node = capsule(label, kind, () => steer(action, node), action);
-    actions.push(node);
-  };
-  if (run.gate && !run.question) {
-    // Approve acts at once: what it does is said beside the gate before it is pressed. At
-    // a stop reviewed item by item it says what it will do with the marks. Pressed, it
-    // acts on the gate as it is then, as `decide` does.
-    // A document said to be the other kind is taken as that kind: Approve says so.
-    const wrong = run.gate.name === 'gate:classify' && run.gate.kind === 'document'
-      && chosenFor(run.gate).wrong;
-    const other = run.gate.verdict === 'spec' ? 'material' : 'spec';
-    const approve = capsule(REVIEWED.includes(run.gate.name) ? reviewOf(run.gate).label
-      : run.gate.unreviewed ? 'Use this first draft' : wrong ? 'Take it as ' + KINDS[other]
-        : 'Approve', lead === 'approve' ? 'filled' : '', () => {
-      const gate = view.run.gate;
-      // A refusal is said beside the gate, in its own problem line, which takes focus.
-      const problem = byId('gate-problem');
-      if (gate && REVIEWED.includes(gate.name)) sendReview(gate, approve, problem);
-      else if (gate && gate.name === 'gate:look' && gate.offered) {
-        decide('approve', (chosenFor(gate).lookWords || '').trim(), problem, approve);
-      } else decide('approve', '', problem, approve);
-    }, 'approve');
-    approve.disabled = REVIEWED.includes(run.gate.name) && Boolean(reviewOf(run.gate).blocked);
-    const brand = run.gate.name === 'gate:look';
-    // An existing deck's slides are read by code that takes no note: nothing to ask it.
-    const read = run.gate.name === 'gate:classify' && run.gate.kind === 'deck';
-    // On a phone a stop reviewed item by item is sent from its review bar, under the thumb
-    // and above the tab bar, where the marks are counted.
-    const barred = REVIEWED.includes(run.gate.name) && narrow();
-    actions.push(barred ? null : approve, read ? null : capsule(brand ? 'Choose another brand'
-      : 'Ask for changes', '', openSheet(brand ? 'rebrand' : 'changes', 'changes'),
-    'changes'));
-  }
-  const offered = run.problem && run.problem.action;
-  if (run.state === 'working') press('Pause', '', 'pause');
-  if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
-  for (let at = actions.length - 1; at >= 0; at -= 1) if (!actions[at]) actions.splice(at, 1);
-  if (['paused', 'stopped'].includes(run.state) && !offered) {
-    press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
-  }
-  return actions;
-}
-
 function paintDeck(fresh) {
   if (!fresh && document.activeElement?.dataset.composing === 'true') {
     view.paintAfterComposition = true;
@@ -5866,112 +3778,219 @@ function paintDeck(fresh) {
   // A deck the earlier gated flow saved, whose record the runner cannot read, is a read-only
   // record: what it is, why, its saved files, and one way on.
   if (run.saved_record) return paintSavedRecord(run, fresh);
-  // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
-  // desk, and the desk from then on. Every other deck keeps the screen below.
-  if (window.deckDesk.opens(run)) {
-    if (run.desk.arrived || run.desk.migrated) window.deckDesk.desk(run, fresh);
-    else window.deckDesk.progress(run, fresh);
-    return;
-  }
-  const title = run.title || 'Untitled';
-  const read = theirs(run);
-  const driver = run.driver || null;
-  const finished = run.state === 'finished';
-  // One filled button on the screen, for the first thing that is needed. While a sheet is
-  // open it holds that button, so nothing under it is filled.
-  const lead = view.sheet ? '' : read ? (!driver && !finished ? 'take' : '')
-    : run.question ? 'answer' : run.problem && run.problem.action ? 'problem'
-      : run.gate ? 'approve' : ['paused', 'stopped'].includes(run.state) ? 'resume' : '';
-  const route = routeWords(run);
-  const runs = !read ? (driver ? 'Runs on this computer' : '') : driver
-    ? 'Run by ' + nameOf(driver) : finished ? 'Finished' : 'Nobody is running it';
-  const above = [make('span', '', [route, runs].filter(Boolean).join(' · '))];
-  const published = view.issued && view.issued.path === view.path ? view.issued : null;
-  const gate = run.gate;
-  view.lead = lead;
-  placeParts({ title, above, back: true, actions: deckActions(run, lead),
-    mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
-      read, driver,
-      Boolean(run.question), run.problem,
-      gate && REVIEWED.includes(gate.name) && !read
-        ? [reviewOf(gate).label, reviewOf(gate).blocked] : ''] }, [
-    ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
-      run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides,
-      run.undo], () => deckIntro(run)],
-    read && (driver || !finished) ? ['theirs', [driver, lead, run.taken, run.notice,
-      run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
-    !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
-      () => noticePart(run)] : null,
-    run.problem ? ['problem', [run.problem, lead, read, run.build_sections],
-      () => problemPart(run, lead === 'problem')] : null,
-    run.question && read ? ['asked', [run.question, driver], () => askedPart(run)] : null,
-    run.question && !read ? ['question', [run.question, title],
-      () => questionPart(run, title)] : null,
-    gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
-      () => gateLine(run)] : null,
-    gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet), brandsFound()],
-      () => gatePanel(run)] : null,
-    noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
-    run.research_progress && typeof StudioResearch !== 'undefined' ? ['research-progress', [run.research_progress, researching(run) && run.workers],
-      () => StudioResearch.progress(run.research_progress, {...researchNoteHooks(view.path),...(researching(run) ? { workers: run.workers, lines: jobLines(view.path) } : {})})] : null,
-    run.build_progress ? ['build-progress', run.build_progress,
-      () => buildProgressCard(run.build_progress)] : null,
-    // The research panel shows its own assistants; any other work shows them here.
-    list(run.workers).length && !researching(run) ? ['workers', run.workers, () => workersCard(run)] : null,
-    ['timeline', [run.timeline, gate && gate.name, run.ahead], () => timelinePart(run)],
-    run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
-      () => deliverPart(run)] : null,
-    finished && (!read || !driver) ? ['publish', [published, teamSpace()],
-      () => publishCard(run, published)] : null,
-    read && !driver && finished ? ['free', [title], () => finishedFreePart()] : null,
-    ['cost', [run.spent, run.agent, run.model, run.effort, view.setup && view.setup.limits],
-      () => costCard(run)],
-    ['steps', [run.timeline], () => stepsCard(run)],
-    ['activity-log', [view.path], () => activityLogCard(view.path)],
-    ['saved-details', [run.path, run.build_feedback, run.note], () => savedDetails(run)],
-    ['troubleshooting', [run.model_jobs, run.build_timing], () => troubleshootingDetails(run)],
-    // What this computer runs for a team can be handed over, for anyone to take.
-    !read && driver && driver.here ? ['mine', [driver, title, run.kept],
-      () => minePart(driver, run.kept)] : null,
-    deletable(run) ? ['delete', [title], () => deleteCard()] : null,
-  ], fresh);
-  tidyPictures();
+  // Every other deck was started on the desk (or opened there), and is drawn by
+  // deck-desk.js: its progress until it reaches the desk, and the desk from then on.
+  if (!window.deckDesk.opens(run)) return;
+  if (run.desk.arrived || run.desk.migrated) window.deckDesk.desk(run, fresh);
+  else window.deckDesk.progress(run, fresh);
 }
 
-// --- a read-only record ------------------------------------------------------------------
-// A deck saved by the earlier gated flow whose record the runner refuses. Nothing on this
-// screen continues it or opens it on the desk: it is read, and new work starts from it.
+// --- a saved record ------------------------------------------------------------------------
+// A deck the earlier step-by-step flow saved. Nothing continues it any more (GitHub issue
+// #542): it opens on the desk, waits for what stops that to clear, is a finished deck the
+// finished Open on the desk opens, is read-only with its reason, or its opening on the desk
+// was interrupted. What becomes of it is found when the screen opens it, or when the person
+// asks (Check again), never by a poll. Every state has one filled action; its saved files
+// are read in place, and nothing on this screen changes them unless the person asks.
 const SAVED_FILES = { 'README.md': 'Read the deck’s summary', 'intake.md': 'Read intake',
   'classify.md': 'Read source classification', 'outline.md': 'Read saved outline',
   'look.md': 'Read the look', 'research/plan.md': 'Read research plan',
   'research/report.md': 'Read research report', 'research/review.md': 'Read research review' };
+// How each saved state stands, as a bead and words.
+const SAVED_STANDS = {
+  unchecked: ['none', 'Saved earlier: checking how it goes on'],
+  migrates: ['review', 'Saved earlier: opens on the desk'],
+  waiting: ['out', 'Saved earlier: waiting before it can open on the desk'],
+  finished: ['done', 'Delivered earlier: opens on the desk'],
+  'read-only': ['off', 'Read-only: it is not continued and not opened on the desk'],
+  interrupted: ['late', 'Opening on the desk was interrupted'],
+};
+// What taking a saved deck does, as the team's take does it.
+const SAVED_TAKE_SAYS = 'Its saved record is written again naming you as its driver, and the '
+  + 'deck’s folder is committed and shared as it is on this computer, with any change to its '
+  + 'files that was not shared yet. Changes this computer committed to it and never shared '
+  + 'are set aside first, and kept on this computer.';
+const SAVED_DELETE_SAYS = 'If you no longer want this saved deck, delete it: its folder, with '
+  + 'every saved file listed above, goes from this computer and from your team’s workspace. '
+  + 'Nothing else deletes it.';
 
-function paintSavedRecord(run, fresh) {
+// What the screen says while it checks a saved deck it has just opened (the runner's
+// SAVED_UNCHECKED).
+const SAVED_CHECKING = 'This deck was saved by the earlier step-by-step flow, which no longer '
+  + 'continues it. Checking how it goes on from here.';
+
+// A saved record as this opening of its screen may show it: what a check made before it was
+// opened found is not shown, since it is checked again as it opens. From then on the screen
+// keeps what that check found until the person acts on the deck or checks again.
+function savedAsOpened(run, turn) {
+  const saved = run.saved_record;
+  if (!saved.checked_at || view.savedSeen === turn) return run;
+  return Object.assign({}, run, { sentence: SAVED_CHECKING, state: 'saved',
+    saved_record: Object.assign({}, saved, { state: 'unchecked', why: null, remedy: null,
+      waiting: [], retained: [], action: null, holder: null, checked_at: null }) });
+}
+
+function paintSavedRecord(found, fresh) {
+  // What becomes of it is found once when the screen opens it, never on a poll.
+  const turn = found.path + '#' + view.turn;
+  const run = savedAsOpened(found, turn);
   const saved = run.saved_record;
   const title = run.title || 'Untitled';
-  placeParts({ title, above: [make('span', '', [routeWords(run), 'Read-only'].filter(Boolean)
-    .join(' · '))], back: true, actions: [], mark: [title, saved.why, saved.next] }, [
-    ['saved-intro', [run.sentence, saved.next], () => savedRecordIntro(run)],
-    ['saved-why', [saved.why], () => add(card('Why it cannot be continued'),
-      make('p', '', saved.why),
-      make('p', 'quiet', 'Nothing here changes it. Restore its saved record from your workspace '
-        + 'history to continue it, or start new work from it.'))],
+  const kind = saved.state || 'read-only';
+  const read = theirs(run);
+  if (kind === 'unchecked' && view.savedChecked !== turn) {
+    view.savedChecked = turn;
+    savedAct(run, 'saved-check', null);
+  }
+  placeParts({ title, above: [make('span', '', [routeWords(run), kind === 'read-only'
+    ? 'Read-only' : 'Saved earlier'].filter(Boolean).join(' · '))], back: true, actions: [],
+  mark: [title, kind, saved.why, saved.next, read, run.driver] }, [
+    // While a sheet is open it holds the one filled button, so nothing under it is filled.
+    ['saved-intro', [run.sentence, kind, saved.next, saved.action, saved.holder, read,
+      run.driver, view.opening, Boolean(view.sheet), view.busy],
+    () => savedRecordIntro(run)],
+    ['saved-waiting', [kind, saved.waiting, saved.checked_at],
+      () => (['waiting', 'interrupted'].includes(kind) ? savedWaitingPart(run) : null)],
+    kind === 'migrates' ? ['saved-kept', [saved.retained, saved.question],
+      () => savedKeptPart(run)] : null,
+    kind === 'read-only' ? ['saved-why', [saved.why, saved.remedy], () => add(
+      card('Why it cannot be continued'), make('p', '', saved.why),
+      make('p', 'quiet', saved.remedy || 'Nothing here changes it.'))] : null,
+    kind === 'finished' && run.deliver ? ['deliver', [run.deliver, run.contactSheet, read,
+      view.downloading], () => deliverPart(run)] : null,
+    kind === 'finished' && (!read || !run.driver) ? ['publish', [teamSpace()],
+      () => publishCard(run, view.issued && view.issued.path === view.path ? view.issued : null)]
+      : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
+    deletable(run) && kind !== 'interrupted' ? ['delete', [title], () => add(
+      card('Delete this deck'), make('p', 'quiet', SAVED_DELETE_SAYS),
+      add(make('div', 'bar'), capsule('Delete this deck', 'quiet', askDelete('delete'),
+        'delete')))] : null,
   ], fresh);
 }
 
+// Ask the runner about this saved deck: check it again, or finish its interrupted opening.
+// The screen is drawn again from the answer.
+async function savedAct(run, address, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  if (pressed) pressed.disabled = true;
+  try {
+    const found = await send(address, { path: run.path });
+    if (turn !== view.turn) return;
+    if (address === 'saved-check') view.savedSeen = run.path + '#' + turn;
+    view.run = found;
+    if (found.opening === 'opened') toast('It is open on the desk now.');
+    if (found.opening === 'put back') toast('The interrupted opening was put back as it was. '
+      + 'Open it on the desk again when you are ready.');
+  } catch (failure) {
+    if (turn === view.turn) toast(failure.message);
+  } finally {
+    view.busy = false;
+    if (pressed) pressed.disabled = false;
+  }
+  if (turn === view.turn) {
+    paintDeck(true);
+    refresh();
+  }
+}
+
+// What it is, how it stands, and its one way on: the one filled button of the screen.
 function savedRecordIntro(run) {
   const saved = run.saved_record;
+  const kind = saved.state || 'read-only';
   const copying = saved.next === 'copy';
-  const go = capsule(copying ? 'Start new work from this' : 'Start a new deck', 'filled',
-    () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
-      : openNew(undefined, false, go)), 'saved-next');
-  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
-    state('off', 'Read-only: it is not continued and not opened on the desk'),
-    make('p', 'quiet', copying ? 'Start new work from this opens the start form with its '
-      + 'setup and material. This saved deck is kept as it is.'
+  const filled = view.sheet ? '' : 'filled';
+  const copy = (key) => {
+    const node = capsule(copying ? 'Start new work from this' : 'Start a new deck', filled,
+      () => (copying ? copyAsNew({ path: run.path, title: run.title }, key, node)
+        : openNew(undefined, false, node)), key);
+    return node;
+  };
+  const take = () => capsule(run.driver ? 'Take it over' : 'Take it', filled,
+    openSheet('take', 'take'), 'take');
+  let go = null, next = '';
+  if (kind === 'unchecked') {
+    go = capsule(view.busy ? 'Checking…' : 'Check how it goes on', filled,
+      () => savedAct(run, 'saved-check', go), 'saved-check');
+    next = 'Checking reads its saved files and changes nothing.';
+  } else if (kind === 'interrupted') {
+    go = capsule(view.busy ? 'Finishing…' : 'Finish opening on the desk', filled,
+      () => savedAct(run, 'saved-finish', go), 'saved-finish');
+    next = 'What was recorded of the opening is completed, or it is put back as it was. Every '
+      + 'input is checked again first, and nothing you did not preview is applied.';
+  } else if (kind === 'migrates') {
+    go = capsule('Open on the desk', filled, () => openDeskPreview(run, 'migration'),
+      'unfinished-desk-open');
+    next = 'Open on the desk shows first what it keeps and what it changes. Nothing changes '
+      + 'until you apply it, and every saved file is kept as it is.';
+  } else if (kind === 'finished' && theirs(run)) {
+    go = take();
+    next = (run.driver ? nameOf(run.driver) + ' runs it from another computer. ' : 'Nobody runs '
+      + 'it now. ') + 'Take it to open it on the desk here; its confirmation says what taking '
+      + 'it does.';
+  } else if (kind === 'finished') {
+    go = capsule(view.opening ? 'Opening…' : 'Open on the desk', filled,
+      () => openOnDesk(run, go), 'desk-open');
+    next = (OPEN_SAYS[run.level] || OPEN_SAYS.other) + ' It stays delivered until you change '
+      + 'it; a change makes the next revision.';
+  } else if (kind === 'read-only') {
+    go = copy('saved-next');
+    next = copying ? 'Start new work from this opens the start form with its setup and '
+      + 'material. This saved deck is kept as it is.'
       : 'Its start form cannot be read, so a new deck starts from an empty form. This saved '
-        + 'deck is kept as it is.'));
+        + 'deck is kept as it is.';
+  } else if (saved.action === 'take') {
+    go = take();
+    next = (run.driver ? nameOf(run.driver) + ' runs it from another computer; ' + nameOf(run.driver)
+      + ' is told who took it. ' : 'Nobody runs it now. ') + 'Take it to open it on the desk '
+      + 'here; its confirmation says what taking it does.';
+  } else if (saved.action === 'open' && saved.holder) {
+    go = capsule('Open ' + saved.holder.title, filled, () => show('deck',
+      { path: saved.holder.path }), 'saved-holder');
+    next = 'What stops it is on another deck. Once that is put right, come back and check '
+      + 'again.';
+  } else if (saved.action === 'check') {
+    go = capsule(view.busy ? 'Checking…' : 'Check again', filled,
+      () => savedAct(run, 'saved-check', go), 'saved-check');
+    next = 'Checking again reads its saved files and changes nothing.';
+  } else {
+    go = copy('saved-copy');
+    next = 'Nothing in the studio clears this by itself. Once it is cleared, this deck still '
+      + 'opens on the desk; meanwhile new work can start from it.';
+  }
+  return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
+    state(...SAVED_STANDS[kind]), make('p', 'quiet', next));
+}
+
+// What stops it opening on the desk, each in its own words, which say what clears it; when
+// it was found; and a way to look again.
+function savedWaitingPart(run) {
+  const saved = run.saved_record;
+  const node = card(saved.state === 'interrupted' ? 'What happens next' : 'What it waits for');
+  const said = bullets(list(saved.waiting));
+  said.setAttribute('role', 'status');
+  add(node, said);
+  if (saved.state === 'waiting') {
+    const again = capsule(view.busy ? 'Checking…' : 'Check again', 'quiet',
+      () => savedAct(run, 'saved-check', again), 'saved-check-again');
+    add(node, saved.checked_at ? add(make('p', 'quiet'), 'Checked ', when(saved.checked_at),
+      '.') : null, saved.action === 'check' ? null : add(make('div', 'bar'), again));
+  }
+  return node;
+}
+
+// What opening it on the desk keeps, as the preview lists it, and a question its saved run
+// left unanswered.
+function savedKeptPart(run) {
+  const saved = run.saved_record;
+  const node = add(card('What opening it keeps'), bullets(list(saved.retained)));
+  if (saved.question) {
+    add(node, make('p', '', 'A worker asked: “' + String(saved.question.text || '') + '”'),
+      make('p', 'quiet', 'It stays in History, unanswered, and its step stays unfinished.'));
+  }
+  return node;
 }
 
 function savedFilesPart(run) {
@@ -6109,16 +4128,6 @@ function theirsPart(run, lead) {
   add(make('div', 'bar'), capsule('Take it over', '', openSheet('take', 'take'), 'take')));
 }
 
-// A finished deck in a shared workspace is nobody's. It is read and published as it stands;
-// to ask for changes, someone takes it first.
-function finishedFreePart() {
-  return callout('', make('h2', 'aside-title', 'Nobody is running this deck'),
-    make('p', '', 'It is finished, so no computer runs it. It can be read, and published as '
-      + 'it stands, from any computer on your team.'),
-    make('p', '', 'To ask for changes, take it first. It then runs from this computer.'),
-    add(make('div', 'bar'), capsule('Take it', '', openSheet('take', 'take'), 'take')));
-}
-
 // What the runner says about a deck this computer runs: that it was changed on two computers
 // at once, which is put right by carrying on from the shared version, or that it has been.
 function noticePart(run) {
@@ -6129,30 +4138,6 @@ function noticePart(run) {
     make('p', '', run.notice),
     add(make('div', 'bar'), capsule('Carry on from the shared version', '',
       openSheet('take', 'take-shared'), 'take-shared')));
-}
-
-// A question that only the computer running the deck can answer, shown to be read.
-function askedPart(run) {
-  const name = run.driver ? nameOf(run.driver) : '';
-  return add(card('A question is waiting'),
-    make('p', 'row-says', String(run.question.from || 'The assistant')
-      .replace(/^The worker /, 'The assistant ') + ' asks:'),
-    make('p', 'row-quote', run.question.text),
-    make('p', 'quiet', name ? 'Only ' + name + ' can answer it, on the computer that runs '
-      + 'this deck.' : 'It can be answered once someone takes this deck.'));
-}
-
-function minePart(driver, kept) {
-  const aside = keptLine(kept);
-  return add(card('Who runs this deck'), whoSays(driver, ''),
-    make('p', 'quiet', 'Your teammates can read it, and only this computer can change it. '
-      + 'If someone else should carry it on, hand it over: anyone on your team may then '
-      + 'take it.'),
-    aside ? make('p', 'quiet', 'Some of what this computer made for this deck was set aside, '
-      + 'because it had not been shared when the deck carried on from the shared version. It '
-      + 'is kept on this computer, and can be brought back.') : null, aside,
-    add(make('div', 'bar'), capsule('Hand over', '', openSheet('hand-over', 'hand-over'),
-      'hand-over')));
 }
 
 // A finished deck is published from its own screen. Once it is, the card says which revision
@@ -6193,6 +4178,18 @@ function teamAsks(kind, title) {
       make('p', '', 'What this computer made and never shared is set aside. It is kept on '
         + 'this computer and can be brought back; nothing is deleted.')] };
   }
+  // A saved record is offered Take only where it must be taken to open it on the desk. It is
+  // the team's own take, and its confirmation says all that it does.
+  if (kind === 'take' && run.saved_record) {
+    const name = run.driver ? nameOf(run.driver) : '';
+    return { title: 'Take ' + title + (name ? ' over from ' + name : '') + '?',
+      send: name ? 'Take it over' : 'Take it',
+      says: [make('p', '', (name ? 'It is ' + name + '’s, and runs from another computer. '
+        : 'Nobody runs it now. ') + 'Taking it makes it this computer’s, so that it can be '
+        + 'opened on the desk here. Nothing continues it until you open it there.'),
+      make('p', '', SAVED_TAKE_SAYS),
+      name ? make('p', 'quiet', name + ' is told who took it and when.') : null] };
+  }
   if (kind === 'take' && run.driver) {
     const name = nameOf(run.driver);
     const dated = !Number.isNaN(Date.parse(run.driver.since));
@@ -6207,8 +4204,8 @@ function teamAsks(kind, title) {
   }
   if (kind === 'take') {
     return { title: 'Take ' + title + '?', send: 'Take it',
-      says: [make('p', '', 'Nobody is running it. From then on it runs from this computer, '
-        + 'and carries on from where it stands.'),
+      says: [make('p', '', 'Nobody is running it. From then on it runs from this computer, and '
+        + 'carries on from where it stands.'),
       run.state === 'finished' ? make('p', 'quiet', 'It is finished, so nothing more is made '
         + 'until you ask for changes. When you are done, hand it over, so that nobody is '
         + 'shown as running it.') : null] };
@@ -6267,7 +4264,10 @@ async function settleTeam(kind, problem, pressed) {
     toast(publishedSays(found));
   } else {
     view.run = found;
-    toast(kind === 'take' ? found.notice || 'It runs from this computer now.'
+    // A saved record taken here is checked again as it is drawn: what it waits for changed.
+    view.savedChecked = '';
+    toast(kind === 'take' ? found.notice || (found.saved_record ? 'It is this computer’s now.'
+      : 'It runs from this computer now.')
       : 'Handed over. Anyone on your team may take it now.');
   }
   drawSheet();
@@ -6286,15 +4286,12 @@ async function settleTeam(kind, problem, pressed) {
 // person presses the button that names the deck.
 
 // Whether a deck may be offered for deletion here, the open one or one on a list. The runner
-// decides; this only keeps the offer off a deck someone else runs.
+// decides; this only keeps the offer off a deck someone else runs, and off a deck whose
+// opening on the desk was interrupted until that opening is finished.
 function deletable(run) {
+  if (run && (run.saved === 'interrupted'
+    || (run.saved_record && run.saved_record.state === 'interrupted'))) return false;
   return Boolean(run && (run.mine !== false || (run.state === 'finished' && !run.driver)));
-}
-
-function deleteCard() {
-  return add(card('Delete this deck'), make('p', 'quiet', DELETE_SAYS),
-    add(make('div', 'bar'), capsule('Delete this deck', 'quiet', askDelete('delete'),
-      'delete')));
 }
 
 // A deck on Home or on Decks offers the same sheet, beside the way into it. It is plain and
@@ -7405,7 +5402,8 @@ function waitsToast(path) {
 // clicked opens the deck it was about.
 function took(found) {
   view.decks = { needs: list(found.needs), working: list(found.working),
-    finished: list(found.finished), elsewhere: list(found.elsewhere) };
+    finished: list(found.finished), elsewhere: list(found.elsewhere),
+    saved: list(found.saved) };
   const waiting = view.decks.needs;
   view.needs = waiting.length;
   // What the runner says about who has a deck is told once when it is new: that one was

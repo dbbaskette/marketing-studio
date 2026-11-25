@@ -160,7 +160,8 @@ class BatchReadyTests(BatchCase):
         self.assertEqual(self.log(), commits)
 
     def test_row_244_a_saved_training_is_refused(self):
-        root = self.saved_start(levels=['101'])
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'level-document-gate')
         with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
             self.engine.mark_reviewed_ready(root, '101', {})
 

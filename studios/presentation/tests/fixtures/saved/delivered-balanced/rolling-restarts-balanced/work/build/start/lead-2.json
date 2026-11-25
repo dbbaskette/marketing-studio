@@ -1,0 +1,26 @@
+{
+  "direction": {
+    "focal": "headingPrimary",
+    "meanings": {
+      "accentAqua": "Example Platform: the product this deck is about"
+    },
+    "motif": "A strip on each card says what it is about.",
+    "neutral": "canvasSecondary"
+  },
+  "slides": [
+    {
+      "brief": {
+        "rhythm": "anchor"
+      },
+      "id": "closing-practice",
+      "layout": "Big Statement",
+      "notes": "1 min. Point to the sandbox.",
+      "sources": [
+        "outline"
+      ],
+      "title": "Next: try it on a test app"
+    }
+  ],
+  "title": "Rolling restarts",
+  "version": 1
+}

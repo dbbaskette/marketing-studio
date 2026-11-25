@@ -45,8 +45,7 @@ BODY_LIMITS = {
     'marketing': {'/api/library-upload': 12_000_000, '/api/brand-source': 56_000_000},
     'presentation': {'/api/slide-text-draft': 512_000, '/api/decide': 512_000, '/api/intake-draft': 32_000_000,
                      '/api/research-sources': 12_000_000, '/api/decks': 120_000_000,
-                     '/api/desk-source': 12_000_000, '/api/picture': 28_000_000,
-                     '/api/document-intake': 12_000_000},
+                     '/api/desk-source': 12_000_000, '/api/document-intake': 12_000_000},
     'training': {'/api/slide-text-draft': 512_000, '/api/outline': 512_000, '/api/training-plan': 512_000, '/api/intake-draft': 32_000_000,
                  '/api/research-sources': 12_000_000, '/api/documents': 12_000_000,
                  '/api/asset': 12_000_000, '/api/drafts/source': 12_000_000,
@@ -83,8 +82,7 @@ STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/desk-base.js'))
 # GET addresses a studio's page opens in a frame, which cannot send the key: the studio
 # server checks the one-page ticket in its address instead. Every other check still holds.
-FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
-          'training': frozenset(('/api/deck-draft',))}
+FRAMED = {'training': frozenset(('/api/deck-draft',))}
 
 
 def upstream_timeout(identifier, method, path):

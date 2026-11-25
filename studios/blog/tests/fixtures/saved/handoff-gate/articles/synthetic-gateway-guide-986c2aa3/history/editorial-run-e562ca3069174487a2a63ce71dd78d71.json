@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "approval": "conversation",
+  "engine": "codex",
+  "seconds": 900,
+  "brief": {
+    "goal": "Explain a fictional gateway",
+    "audience": "New authors"
+  },
+  "existing": false,
+  "mode": "write",
+  "pipeline": [
+    "outline",
+    "draft",
+    "review",
+    "package"
+  ],
+  "stages": {
+    "outline": {
+      "status": "approved",
+      "hash": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+      "basis": "ef29a14de684c8f1d3bc4e7837426889a665fa246bd483ddd352119f36f8c8f3",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "outline",
+      "accepted_by": "conversation"
+    },
+    "draft": {
+      "status": "approved",
+      "hash": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+      "basis": "c8764a97849c021a0e1bb526f99b49f7d2b71f2cf4f7f068f3e0cf53a2f27474",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "draft",
+      "accepted_by": "conversation"
+    },
+    "review": {
+      "status": "approved",
+      "hash": "50e72369a374d44bbc97e9618d4c34c96321227c368ff9252ec4043f4689a115",
+      "basis": "6ae8a911f292683e7c43e7343b9597e0195d97f91526067eb9f07cbfe7d168ce",
+      "notes": "Synthetic worker judgment.",
+      "request": "",
+      "model_purpose": "review",
+      "accepted_by": "conversation"
+    }
+  },
+  "length": "style",
+  "review_policy": {
+    "schema": 1,
+    "level": "step_by_step"
+  },
+  "model_profiles": {
+    "schema": 1,
+    "policy": 3,
+    "agent": "codex",
+    "mode": "single",
+    "profiles": {
+      "quick": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "research": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "combining": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "checking": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "writing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      },
+      "fixing": {
+        "model": null,
+        "effort": null,
+        "source": "inherit"
+      }
+    }
+  },
+  "decisions": [
+    {
+      "event": "Created from conversation",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve outline",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted draft",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve draft",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "Submitted review",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "event": "approve review",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "approved": {
+    "outline": "e8eec7723645784d50abcfa58e64b4fcc35fd075bfe5dbc4963d16274633d1f9",
+    "draft": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+    "review": "50e72369a374d44bbc97e9618d4c34c96321227c368ff9252ec4043f4689a115"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "owner": "harness-research-asset",
+  "schema": 1,
+  "asset": "topic-afde0488165546e29e239768c1c609d0",
+  "recorded_review": {
+    "status": "complete",
+    "digest": "7f3dc85accaaf10845743f28c415ab21815ae3faa8e5955903504a1f18276b8a"
+  },
+  "integrity": "verified",
+  "problems": [],
+  "artifacts": [
+    {
+      "file": "brief.md",
+      "sha256": "18e70bc644808fe55b21b770fa928551b246455a6de101ee54d0bcef97962336",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "evidence.md",
+      "sha256": "4c5df88e4d1d0abc3ebfbef1705fca94484d6e97edcd6d86e244e24c54ba5749",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "facts.json",
+      "sha256": "2dbabbb5126620be49f001d8a303966c752165b4c9e4d6628712f95bd2a5a73f",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "output.json",
+      "sha256": "822ddc908682ffce0ee6fd5dc9226efa30e0bcb15df942defb4cbb5d9d631214",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "report.md",
+      "sha256": "d305db19e20c6701de88b4c3e2ed44ee30c41cf1d7cde07196241a38ea454060",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "sources.json",
+      "sha256": "5402843f1adc9a6c0c35e378fad4f04249a5be33d0baf2c1b982b15d35f25414",
+      "kind": "metadata"
+    },
+    {
+      "file": "sources/collection/area1/1/sources/docs-example-com-ed83f5c41b25.txt",
+      "sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+      "kind": "capture"
+    },
+    {
+      "file": "sources/revisions/46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc.txt",
+      "sha256": "46e5b26f67fc83898fec80fea2367a69091362c924b2bfba3559fd4ec5451adc",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "sources/revisions/ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da.raw",
+      "sha256": "ed83f5c41b2505e576c2bcf37f2ad39dae9fb9cbafff55b9ef0799832fc208da",
+      "kind": "reviewed-bundle"
+    },
+    {
+      "file": "topic.json",
+      "sha256": "c845275a32e5ba708f46a9896134fb66b71f0ecfc0bbfb99c5ed7b6bc0e6f65e",
+      "kind": "metadata"
+    }
+  ],
+  "note": "Local file integrity only. Recorded review state is separate; verify synthesis before synchronization. Private state and input URL-list snapshots are excluded."
+}

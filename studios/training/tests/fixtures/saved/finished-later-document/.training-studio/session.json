@@ -1,0 +1,371 @@
+{
+  "artifacts": {
+    "blueprint": {
+      "approved": {
+        "at": "2026-11-25T01:27:51Z",
+        "by": "page",
+        "inputs": {
+          "intake": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c",
+          "research": "775c795ffce7ff45b60f217abcbb85433da15b1c556e47bd07b866b04e3f5610"
+        },
+        "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+      },
+      "built_from": {
+        "intake": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c",
+        "research": "775c795ffce7ff45b60f217abcbb85433da15b1c556e47bd07b866b04e3f5610"
+      },
+      "file": "blueprint.md",
+      "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+    },
+    "brief": {
+      "approved": {
+        "at": "2026-11-25T01:27:51Z",
+        "by": "page",
+        "inputs": {
+          "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+          "research": "775c795ffce7ff45b60f217abcbb85433da15b1c556e47bd07b866b04e3f5610",
+          "setting:brief_kind": "product"
+        },
+        "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+      },
+      "built_from": {
+        "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+        "research": "775c795ffce7ff45b60f217abcbb85433da15b1c556e47bd07b866b04e3f5610",
+        "setting:brief_kind": "product"
+      },
+      "file": "product-brief.md",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    "deck": {
+      "approved": {
+        "at": "2026-11-25T01:27:52Z",
+        "by": "page",
+        "inputs": {
+          "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+          "document": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9",
+          "setting:brand": "example-co/light",
+          "setting:deck_target": "pptx"
+        },
+        "sha256": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f"
+      },
+      "built_from": {
+        "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+        "document": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9",
+        "setting:brand": "example-co/light",
+        "setting:deck_target": "pptx"
+      },
+      "file": "deck.pptx",
+      "reviewed_coverage": {
+        "at": "2026-11-25T01:27:52Z",
+        "blueprint_sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35",
+        "deck_sha256": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f",
+        "objectives": {
+          "O1": [
+            2
+          ],
+          "O2": [
+            3
+          ],
+          "O3": [
+            4
+          ]
+        }
+      },
+      "sha256": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f"
+    },
+    "document": {
+      "approved": {
+        "at": "2026-11-25T01:27:51Z",
+        "by": "page",
+        "inputs": {
+          "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+        },
+        "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+      },
+      "built_from": {
+        "blueprint": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+      },
+      "file": "document.md",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    "intake": {
+      "approved": {
+        "at": "2026-11-25T01:27:51Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c"
+    },
+    "research": {
+      "approved": {
+        "at": "2026-11-25T01:27:51Z",
+        "by": "page",
+        "inputs": {
+          "research-plan": "9e1d6b2ad3c43bb5e07183d485405172a52c83297d3a6ccd654289bc97f3cf0b"
+        },
+        "sha256": "9ea01376f172440c04a1c9b5bc527cf946c932ffa687dba8508f83aa04c56e5b"
+      },
+      "built_from": {
+        "research-plan": "9e1d6b2ad3c43bb5e07183d485405172a52c83297d3a6ccd654289bc97f3cf0b"
+      },
+      "file": ".harness-research/research-report.md",
+      "sha256": "9ea01376f172440c04a1c9b5bc527cf946c932ffa687dba8508f83aa04c56e5b"
+    },
+    "research-plan": {
+      "approved": {
+        "at": "2026-11-25T01:27:51Z",
+        "by": "page",
+        "inputs": {
+          "intake": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c"
+        },
+        "sha256": "9e1d6b2ad3c43bb5e07183d485405172a52c83297d3a6ccd654289bc97f3cf0b"
+      },
+      "built_from": {
+        "intake": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c"
+      },
+      "file": ".training-studio/research-plan.json",
+      "sha256": "9e1d6b2ad3c43bb5e07183d485405172a52c83297d3a6ccd654289bc97f3cf0b"
+    },
+    "scenario:main": {
+      "approved": {
+        "at": "2026-11-25T01:27:52Z",
+        "by": "page",
+        "inputs": {},
+        "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+      },
+      "built_from": {},
+      "file": "scenario.md",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "init"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-25T01:27:51Z",
+      "event": "save",
+      "sha256": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-25T01:27:51Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "61349dbc925fbb26a54e5fcde76e77dab0db237e087be10ebe8d5caea9ee446c"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-25T01:27:51Z",
+      "event": "save",
+      "sha256": "9e1d6b2ad3c43bb5e07183d485405172a52c83297d3a6ccd654289bc97f3cf0b"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "research-plan"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-25T01:27:51Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "9e1d6b2ad3c43bb5e07183d485405172a52c83297d3a6ccd654289bc97f3cf0b"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-25T01:27:51Z",
+      "event": "save",
+      "sha256": "9ea01376f172440c04a1c9b5bc527cf946c932ffa687dba8508f83aa04c56e5b"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "research"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-25T01:27:51Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "9ea01376f172440c04a1c9b5bc527cf946c932ffa687dba8508f83aa04c56e5b"
+    },
+    {
+      "artifact": "blueprint",
+      "at": "2026-11-25T01:27:51Z",
+      "event": "save",
+      "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "blueprint"
+    },
+    {
+      "artifact": "blueprint",
+      "at": "2026-11-25T01:27:51Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "c13f7420a89eb6517c9411f3a27ba821af0389210b57bdb064ee82a8defe5d35"
+    },
+    {
+      "artifact": "document",
+      "at": "2026-11-25T01:27:51Z",
+      "event": "save",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "document"
+    },
+    {
+      "artifact": "document",
+      "at": "2026-11-25T01:27:51Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9"
+    },
+    {
+      "artifact": "brief",
+      "at": "2026-11-25T01:27:51Z",
+      "event": "save",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    {
+      "at": "2026-11-25T01:27:51Z",
+      "event": "checkpoint",
+      "stage": "brief"
+    },
+    {
+      "artifact": "brief",
+      "at": "2026-11-25T01:27:51Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf"
+    },
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "event": "checkpoint",
+      "stage": "deck"
+    },
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "event": "checkpoint",
+      "stage": "deck"
+    },
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "event": "checkpoint",
+      "stage": "deck"
+    },
+    {
+      "artifact": "deck",
+      "at": "2026-11-25T01:27:52Z",
+      "event": "save",
+      "sha256": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f"
+    },
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "event": "checkpoint",
+      "stage": "deck"
+    },
+    {
+      "artifact": "deck",
+      "at": "2026-11-25T01:27:52Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "c75680c76b72c3f8b55fd7f8e7d7a4072aa67b5758f379289e30a503cef9988f"
+    },
+    {
+      "artifact": "scenario:main",
+      "at": "2026-11-25T01:27:52Z",
+      "event": "save",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    },
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "event": "checkpoint",
+      "stage": "scenario"
+    },
+    {
+      "artifact": "scenario:main",
+      "at": "2026-11-25T01:27:52Z",
+      "by": "page",
+      "event": "approve",
+      "sha256": "d1eace65847437235b4b3ba0316551efa9b72c0efa425c62f61505b366f865d2"
+    },
+    {
+      "at": "2026-11-25T01:27:52Z",
+      "event": "checkpoint",
+      "stage": "done"
+    }
+  ],
+  "exports": {},
+  "findings": {
+    "availability": "supported",
+    "health-checks": "supported",
+    "instance-min": "supported",
+    "zero-downtime": "contradicted"
+  },
+  "gate": null,
+  "id": "finished-later-document",
+  "level": null,
+  "levels": [],
+  "next_step": "This training is finished. Nothing is left out or limited.",
+  "pending_question": null,
+  "pins": {},
+  "requests": [],
+  "research": {
+    "record_sha256": "de494757b17f0f9178e18d52754b66c980afbe2dee38d0155186745f56cccb29",
+    "report_sha256": "9ea01376f172440c04a1c9b5bc527cf946c932ffa687dba8508f83aa04c56e5b",
+    "run": "8395642a040c5afa0e534133"
+  },
+  "review_policy": {
+    "level": "step_by_step",
+    "schema": 1
+  },
+  "schema": 1,
+  "settings": {
+    "approval": "page",
+    "brand": "example-co/light",
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": "pptx",
+    "delivery": "reading",
+    "stages": [
+      "document",
+      "brief",
+      "deck",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {
+    "": {
+      "modules": [
+        "m1"
+      ],
+      "size": "lesson"
+    }
+  },
+  "stage": "done",
+  "title": "Finished later document",
+  "unavailable": {}
+}

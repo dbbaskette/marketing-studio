@@ -443,6 +443,49 @@ WAITS = ('It is gone from this computer. Your team sees it gone the next time th
 # How what a deck says was kept, when the person did not approve it, as the slides tool is told.
 CONTINUED = {'review-policy': 'Continued under the saved review level',
              'desk': 'Continued on the desk'}
+# What a training the earlier step-by-step flow saved says, on its record and in lists. The
+# earlier flow no longer continues: each such training opens on the desk, keeps its own
+# finished Open on the desk, waits for something that clears, or is kept to read.
+SAVED_RECORD = ('This training was saved by the earlier step-by-step flow, which no longer '
+                'continues, and it cannot be opened on the desk. Its saved files are kept as '
+                'they are.')
+UNREAD_RECORD = ('This training’s run record cannot be read, so it can be neither continued '
+                 'nor opened on the desk. Its saved files are kept as they are.')
+SAVED_MIGRATES = ('This training was saved by the earlier step-by-step flow, which no longer '
+                  'continues. Open it on the desk to carry on with it there; nothing is changed '
+                  'until you apply the preview.')
+SAVED_FINISHED = ('This training was finished by the earlier step-by-step flow. Open it on the '
+                  'desk to change it there; every material you approved stays ready.')
+SAVED_WAITING = ('This training was saved by the earlier step-by-step flow, which no longer '
+                 'continues. It opens on the desk once what it waits for clears.')
+SAVED_BRIEF = 'Saved by the earlier step-by-step flow. Open it to see what can be done with it.'
+UNREAD_BRIEF = 'Its run record cannot be read. Open it to read its saved files.'
+# Said by every route that continued a saved-flow training: what is left to do with it.
+SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which no longer '
+              'continues. Open it on the desk, or start new work from it.')
+# Taking a saved training is only ever for opening it on the desk.
+NOTHING_TO_TAKE = ('This training cannot be opened on the desk, so there is nothing to take it '
+                   'for: nothing continues it. Start new work from it instead.')
+# What clears each thing a saved training can wait for before it opens on the desk.
+WAITS_FOR = {
+    'busy': ('Something else in this workspace is in progress or was interrupted.',
+             'Check again once it is done, or start new work from this training meanwhile.'),
+    'running': (None, 'It opens on the desk once that step ends. Check again then.'),
+    'opening': ('Opening it on the desk was interrupted part way.', 'Finish opening on the '
+                'desk completes the opening you previewed, or puts it back as it was.'),
+    'journal': ('Opening it on the desk was interrupted part way, and the record of that '
+                'opening cannot be read, so it cannot be finished here.', 'Its files are kept as '
+                'they are. Start new work from this training, or restore that record from your '
+                'workspace history and check again.'),
+    'owner': ('Another computer runs this training.', 'Take it over to open it on the desk '
+              'here.'),
+    'shared': ('Its saved records, or files they depend on, have changes that are not committed '
+               'in the shared workspace.', 'Commit them through your workspace’s own history, '
+               'then check again.'),
+    'other': (None, 'Put that right in the workspace, then check again.')}
+# The shared files a read-only record may list and read, by name (`Engine._saved_files`).
+SAVED_FILES = ('intake.md', 'research-report.md', 'blueprint.md', 'document.md',
+               'product-brief.md', 'competitive-brief.md', 'scenario.md', 'deck-link.md')
 DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
          'doc': 'Google Doc'}
 
@@ -452,10 +495,21 @@ def read_record(root: Path) -> dict | None:
     record = workspace.read_run(root)
     if record is None:
         return None
+    return check_record(record, root.name)
+
+
+def check_record(record, name: str) -> dict:
+    """A run record as `read_record` reads it, from its value alone: the record, or the
+    runner's refusal. `name` is the training's folder name, for the refusal's words."""
     schemas = (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA,
                training_plan.RECORD_SCHEMA, outline_first.RECORD_SCHEMA, 8)
     if not isinstance(record, dict) or record.get('schema') not in schemas or not isinstance(record.get('steps'), dict):
-        raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
+        raise WorkspaceError(f'The run record in {name} cannot be read, so the runner '
+                             'will not drive this training.')
+    # Whatever a record holds, a part of the wrong shape is a refusal, never a crash.
+    if not isinstance(record.get('research_contract') or {}, dict) \
+            or not isinstance(record.get('review_policy') or {}, dict):
+        raise WorkspaceError(f'The run record in {name} cannot be read, so the runner '
                              'will not drive this training.')
     schema = record['schema']
     if 'material_flow' in record and not material_flow.enabled(record):
@@ -1654,6 +1708,8 @@ class Engine(Reviewing):
         if space is None:
             return ours
         for root in self.trainings():
+            if self._run(root).busy:
+                continue   # a step running in this process is never touched
             try:
                 with gitstate.workspace_locked(space, self.files, configured=True):
                     gitstate.inside(space, root / IN_HAND)
@@ -1685,7 +1741,13 @@ class Engine(Reviewing):
                             self._store(root, resumed)
                             self._commit(root, 'keep interrupted desk changes ready to try again')
             except (WorkspaceError, OSError):
-                continue  # its view says what is wrong; the others still run
+                # A training whose run record cannot be read at all keeps no leftover marker:
+                # only the marker file goes. Its view says what is wrong; the others still run.
+                if self.saved_kind(root) == 'unread':
+                    marker = root / IN_HAND
+                    if marker.is_file() and not marker.is_symlink():
+                        marker.unlink()
+                continue
             ours.append(root)
         return ours
 
@@ -1787,6 +1849,8 @@ class Engine(Reviewing):
                 record = self._load(root)
                 if run.gone or not self._ours(record) or drafts.in_conversation(record):
                     return  # someone else drives it, or nobody does
+                if not drafts.on_desk(record):
+                    return  # the earlier step-by-step flow no longer continues
                 pending = next((job for job in (record.get('drafts') or {}).get('jobs', [])
                                 if job.get('status') == 'queued'), None)
                 if drafts.on_desk(record) and pending and not self._resting(record):
@@ -1818,21 +1882,6 @@ class Engine(Reviewing):
                     with self.files:
                         self._edits_first(root)
                     self._desk_gate(root, found)
-                    continue
-                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
-                                                               'look') \
-                        and not deck_content.checkpoint(record, step.step.id) \
-                        and review_policy.automatic(record, 'training', step.step.id,
-                                                    holding=pipeline.holding(root, found,
-                                                                             step.step)):
-                    if step.kind == 'look':
-                        self._look_default(root, step.step)
-                    elif pipeline.bare(step.step.id) == 'gate:deck-outline':
-                        if step.kind == 'gate':
-                            self._ask(root, run, found, step)
-                        self._policy_outline(root, self._survey(root, self._load(root)))
-                    else:
-                        self._policy_accept(root, step.step)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
                     with self.files:
@@ -1915,13 +1964,13 @@ class Engine(Reviewing):
             step: pipeline.Next) -> None:
         if step.step.id == 'scan':
             return outline_first.scan(self, root, run, found, step)
-        if step.step.id.startswith('review-sample'):
-            return self._review_sample(root, found, step.step)
         drawing = DECK.get(pipeline.bare(step.step.id)) if step.step.stage == 'deck' else None
         if drawing:
             getattr(self, drawing)(root, run, found, step)
         elif step.kind == 'gate':
-            self._gate(root, step.step)
+            # A desk run passes every gate on its desk (`_desk_gate`); the one it waits at,
+            # what a deck says, is drawn above. The earlier flow's gates went with it (#542).
+            raise WorkspaceError(f'A desk training has no gate to wait at: {step.step.label}.')
         elif step.step.id == 'research-start':
             self._hand_over(root, step.step)
         elif step.step.id == 'research-report':
@@ -2020,16 +2069,6 @@ class Engine(Reviewing):
     @staticmethod
     def _level(step: pipeline.Step) -> str | None:
         return workspace.split(step.artifact)[1] if step.artifact else None
-
-    def _gate(self, root: Path, step: pipeline.Step) -> None:
-        """Put a checked draft to the person, through the core, and wait."""
-        it = workspace.label(step.artifact)
-        with self.files:
-            workspace.checkpoint(root, stage=step.stage, gate=step.artifact,
-                                 question=f'Approve {it}?', level=self._level(step),
-                                 next_step=f'Waiting for your review of {it}')
-            self._commit(root, f'ask for a review of {it}')
-            activity_log.checkpoint(root / ACTIVITY, 'ready', step.id)
 
     # --- the code steps after the blueprint ----------------------------------------------
 
@@ -2652,44 +2691,6 @@ class Engine(Reviewing):
             it = workspace.label(step.artifact)
             self._commit(root, f'continue the look of {it} on the desk' if desk else
                          f"use the brand's default look for {it}, under the saved review level")
-
-    def look(self, path, level: str | None, choice: str, words: str | None = None) -> dict:
-        """Record the look a person chose for a deck from the brand's samples, with their
-        words, as the page heard it, and carry on. AGAIN draws the samples again; DEFAULT,
-        offered when they could not be rendered, carries on in the brand's default look.
-        Nothing else calls this."""
-        root = self._held(path)
-        with self.files:
-            record = self._load(root)
-            step = self._survey(root, record).next
-            if step.kind != 'look' or self._level(step.step) != level:
-                raise WorkspaceError('No look is waiting to be chosen for that deck.')
-            shown = pipeline.read_built(root, level).get('look') or {}
-            if choice == pipeline.AGAIN_LOOK:
-                self._note(root, level, look=None)
-                self._commit(root, f'draw the looks of {workspace.label(step.step.artifact)} '
-                                   'again')
-            else:
-                if choice == pipeline.DEFAULT_LOOK:
-                    if not shown.get('failed'):
-                        raise WorkspaceError('Choose one of the looks the brand drew.')
-                    named = "the brand's default"
-                    said = deck_flow.PROCEED_WORDS.format(name=named)
-                else:
-                    named = next((look['name'] for look in shown.get('looks') or ()
-                                  if look['id'] == choice), None)
-                    if named is None:
-                        raise WorkspaceError('Choose one of the looks the brand drew for this '
-                                             'deck.')
-                    said = (words or '').strip()[:NEXT_NOTE] \
-                        or pipeline.NO_COMMENT.format(name=named)
-                if self._choose_look(root, level, choice, said, 'page'):
-                    self._commit(root, f'choose the look of '
-                                       f'{workspace.label(step.step.artifact)}: {named}')
-                else:
-                    self._commit(root, 'draw the looks again: what the deck says changed')
-        self.carry_on(root)
-        return self.view(root)
 
     def _guide(self, work: Path, chosen: tuple, told: Path, saved: dict,
                root: Path | None = None) -> dict:
@@ -7661,11 +7662,23 @@ class Engine(Reviewing):
         root = self.driven(path)
         if root is None:
             return None
+        kind = self.saved_kind(root)
+        if kind is not None:
+            return self._saved_brief(root, kind)
         try:
             record = self._load(root)
         except (WorkspaceError, OSError) as failure:
             return self._unread(failure)
         return self._brief(root, record)
+
+    def _saved_brief(self, root: Path, kind: str) -> dict:
+        """A saved-flow training in brief: what its two small records prove, and nothing
+        more. Nothing waits for the person and nothing runs; whether it opens on the desk is
+        said when it is opened."""
+        driver, mine = self._saved_driver(root)
+        return {'state': 'saved', 'sentence': UNREAD_BRIEF if kind == 'unread' else SAVED_BRIEF,
+                'needs': False, 'question': None, 'mine': mine, 'driver': driver,
+                'last_shared': None, 'notice': None, 'busy_since': None, 'saved': kind}
 
     @staticmethod
     def _unread(failure: Exception) -> dict:
@@ -7787,11 +7800,230 @@ class Engine(Reviewing):
             row.insert(at, item)
         return row
 
+    @staticmethod
+    def _saved_files(root: Path) -> list[str]:
+        """The shared files a read-only record lists: each of SAVED_FILES, at the top or in
+        a level's folder, that is an ordinary file inside the training's folder, so
+        `/api/saved-file` serves every name listed and nothing else."""
+        inside = root.resolve()
+        found = []
+        for level in ('', *(name + '/' for name in ('101', '201', '301', '401'))):
+            for name in SAVED_FILES:
+                if level and name in ('intake.md', 'research-report.md'):
+                    continue
+                path = root / (level + name)
+                try:
+                    real = path.resolve()
+                except (OSError, RuntimeError):
+                    continue
+                if not path.is_symlink() and not path.parent.is_symlink() \
+                        and inside in real.parents and real.is_file():
+                    found.append(level + name)
+        return found
+
+    def saved_kind(self, root: Path) -> str | None:
+        """'saved' for a training the earlier gated flow saved and nobody opened on the desk,
+        'unread' for one whose run record is not even a JSON object (which flow made it cannot
+        be told), None for desk work (it keeps its own screen, refusal and recovery). Reads
+        only the run and session records, so lists and polling may ask it."""
+        from runner import desk_migration
+        if (root / drafts.RECORD).is_symlink():
+            return None
+        # An opening on the desk that was interrupted waits for the person to finish it.
+        pending = root / desk_migration.format.PENDING
+        if pending.is_file() and not pending.is_symlink():
+            return 'opening'
+        kind = desk_migration.record_kind(root)
+        return None if kind == 'desk' else kind
+
+    def _refusal(self, root: Path) -> str | None:
+        """The runner's own refusal of a training's records, or None when it reads them."""
+        try:
+            read_record(root)
+            workspace.load(root)
+            return None
+        except (WorkspaceError, OSError, ValueError) as failure:
+            return str(failure)
+
+    def _saved_driver(self, root: Path) -> tuple[dict | None, bool]:
+        """Who drives a read-only record, as its readable run record names: (driver as the
+        page is told, whether this computer may change it). Nobody, and this computer, when
+        the record cannot be read."""
+        from studio_core import training_migration
+        try:
+            raw = json.loads((root / RECORD).read_bytes())
+            # Only a driver in the saved shape is read; anything else names nobody.
+            if isinstance(raw, dict) and training_migration.owner(raw.get('driver')):
+                record = {'driver': raw.get('driver')}
+                return team.driver(self.workspace, record), self._ours(record)
+        except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+            pass
+        return None, True
+
+    def saved_record(self, root: Path) -> dict | None:
+        """What the page shows of a training the earlier gated flow saved, or of one whose run
+        record cannot be read: the saved-record screen. None for desk work. Classified once,
+        here, with the whole of its folder read (`desk_migration.outcome`); lists never are.
+
+        `saved_record.outcome` is one of: 'migrates' (Open on the desk, the explicit preview);
+        'finished' (the finished Open on the desk); 'waiting' (it opens on the desk once
+        what it waits for clears: `waits`, each {what, clears, take}); 'read-only' (`why`).
+        Each says `next`, 'copy' (Start new work from this) or 'new' (Start a new training),
+        and lists its saved `files`. Nothing here continues the training or writes."""
+        from runner import desk_migration
+        kind = self.saved_kind(root)
+        if kind is None:
+            return None
+        try:
+            title = json.loads((root / workspace.STATE_DIR / 'session.json').read_bytes()).get('title')
+        except (OSError, ValueError, AttributeError):
+            title = None
+        title = title if isinstance(title, str) and title.strip() else root.name
+        driver, mine = self._saved_driver(root)
+        refusal = self._refusal(root)
+        if kind == 'opening':
+            found = {'outcome': 'waiting', 'next': self._next(root)}
+        elif kind == 'unread':
+            found = {'outcome': 'read-only', 'reason': desk_migration.UNREAD, 'next': 'new'}
+        else:
+            found = desk_migration.outcome(self, root) or {
+                'outcome': 'read-only', 'reason': desk_migration.UNREADABLE, 'next': 'new'}
+        shown = {'outcome': found['outcome'], 'why': found.get('reason'),
+                 'refusal': refusal, 'next': found.get('next') or self._next(root),
+                 'files': self._saved_files(root), 'waits': [], 'retained': [],
+                 'targets': []}
+        sentence = UNREAD_RECORD if kind == 'unread' else SAVED_RECORD
+        can_open = can_migrate = False
+        finished = None
+        if kind == 'opening':
+            # The token of the opening the person previewed, kept in its journal: finishing
+            # runs the existing recovery with it, and never applies anything else.
+            try:
+                journal = json.loads((root / desk_migration.format.PENDING).read_bytes())
+                expected = journal.get('expected') if isinstance(journal, dict) else None
+            except (OSError, ValueError):
+                expected = None
+            usable = isinstance(expected, str)
+            shown.update(waits=[self._waits('opening' if usable else 'journal')],
+                         expected=expected if usable else None)
+            sentence = SAVED_WAITING
+        if found['outcome'] == 'finished':
+            # A finished training keeps what it could do before: published as it stands,
+            # read by a teammate, its files read and downloaded in place.
+            finished = self._finished_shown(root)
+            if not mine:
+                shown.update(outcome='waiting', waits=[self._waits('owner')])
+                sentence = SAVED_WAITING
+            elif self._finished_here(root):
+                sentence, can_open = SAVED_FINISHED, True
+            else:
+                shown.update(outcome='read-only', why=drafts.NOT_FINISHED)
+        elif found['outcome'] == 'migrates':
+            preview = desk_migration.migration_preview(self, root)
+            if preview.get('outcome', {}).get('outcome') not in (None, 'migrates'):
+                found = preview['outcome']
+                shown.update(outcome='read-only', why=found.get('reason'),
+                             next=found.get('next') or shown['next'])
+            elif any(self._waiting_on(said) == 'other' for said in preview['blockers']):
+                # A record or dependency the opening cannot read or understand (a native deck
+                # record, a pending local deck, the research bundle): read-only, with why.
+                # Waiting is only for what clears without repairing files by hand.
+                said = next(said for said in preview['blockers']
+                            if self._waiting_on(said) == 'other')
+                shown.update(outcome='read-only', why=(desk_migration.MISSING + ' ' + said).strip())
+            elif preview['blockers']:
+                shown.update(outcome='waiting', waits=[
+                    self._busy_where(root) if self._waiting_on(said) == 'busy'
+                    else self._waits(self._waiting_on(said), said)
+                    for said in dict.fromkeys(preview['blockers'])])
+                sentence = SAVED_WAITING
+            else:
+                shown.update(retained=preview['retained'], targets=[
+                    workspace.label(name) for name in preview['targets']])
+                sentence, can_migrate = SAVED_MIGRATES, True
+        return {'path': str(root), 'title': title, 'state': 'saved', 'flow': None,
+                'execution': 'saved', 'mine': mine, 'driver': driver, 'sentence': sentence,
+                'can_open_desk': can_open, 'can_migrate_desk': can_migrate,
+                'finished': finished, 'saved_record': shown}
+
+    def _finished_shown(self, root: Path) -> dict | None:
+        """What a finished saved training's record says of it as finished: whether it is
+        ready to use, and its index, for Publish. None where its records cannot be read."""
+        try:
+            record = self._load(root)
+            report = self.index.readiness(root, self._wanted(root, record))
+        except (WorkspaceError, OSError, ValueError):
+            return None
+        return {'ready': bool(report['ready']), 'index': report['file'],
+                'limitations': list(report['limitations']),
+                'blocking': list(report['blocking'])}
+
+    @staticmethod
+    def _waiting_on(said: str) -> str:
+        """Which kind of thing a preview's blocker waits for."""
+        from runner import desk_migration
+        from studio_core.sync_guard import SYNC_WAIT
+        from studio_core.sync_guard import UNCHECKED
+        if said.startswith(UNCHECKED):
+            return 'busy'   # the workspace check could not finish: its own folder and reason
+        return {SYNC_WAIT: 'busy', desk_migration.OWNER: 'owner',
+                desk_migration.SHARED: 'shared'}.get(said, 'other')
+
+    @staticmethod
+    def _waits(kind: str, said: str | None = None) -> dict:
+        what, clears = WAITS_FOR[kind]
+        return {'kind': kind, 'what': what or said, 'clears': clears, 'take': kind == 'owner',
+                'finish': kind == 'opening'}
+
+    def _busy_where(self, root: Path) -> dict:
+        """Why the workspace check is busy for a saved record, saying only what is known: a
+        step running now in a named training of this studio, or something else in the
+        workspace that is in progress or was interrupted."""
+        for other in self.trainings():
+            if self._run(other).busy:
+                try:
+                    title = workspace.load(other)['title']
+                except (WorkspaceError, OSError):
+                    title = other.name
+                return self._waits('running', f'A step is running now in “{title}”.')
+        return self._waits('busy')
+
+    def _next(self, root: Path) -> str:
+        """'copy' where a saved training's start form can be read, else 'new'."""
+        from runner import desk_migration
+        small = {}
+        for name in (desk_migration.format.SESSION, desk_migration.format.RUN, 'intake.md'):
+            path = root / name
+            try:
+                if not path.is_symlink() and path.is_file() \
+                        and path.stat().st_size <= desk_migration.SMALL:
+                    small[name] = path.read_bytes()
+            except OSError:
+                pass
+        return 'copy' if desk_migration._start_form(small) else 'new'
+
+    def _finished_here(self, root: Path) -> bool:
+        """Whether a finished saved training opens on the desk as `open_on_desk` asks: its
+        records read, and its run done with nothing waiting."""
+        try:
+            record = self._load(root)
+            found = self._survey(root, record, self._wanted(root, record))
+            state, _ = self._state(record, found, self._run(root))
+            return state == 'done' and found.next.kind == 'done' \
+                and not workspace.status(root)['gate']
+        except (WorkspaceError, OSError, ValueError):
+            return False
+
     def view(self, path) -> dict | None:
-        """Everything the page shows for one run. None when no run is driving it."""
+        """Everything the page shows for one run. None when no run is driving it. A
+        training the earlier gated flow saved, whose records the runner refuses to read, is
+        shown as a read-only record (`saved_record`)."""
         root = self.driven(path)
         if root is None:
             return None
+        shown = self.saved_record(root)
+        if shown is not None:
+            return shown
         record = self._load(root)
         copies = self._wanted(root, record)
         supplied = self._document_entries(root, record) if record.get('documents') else ()
@@ -8084,6 +8316,23 @@ class Engine(Reviewing):
         is how many trainings work at once."""
         runs, elsewhere = [], []
         for root in self.trainings():
+            kind = self.saved_kind(root)
+            if kind is not None:
+                # A saved-flow training runs nothing: it is listed in what its records prove.
+                found = self._saved_brief(root, kind)
+                try:
+                    title = workspace.load(root)['title']
+                except (WorkspaceError, OSError):
+                    title = root.name
+                shown = {'path': str(root), 'id': root.name, 'title': title,
+                         'state': found['state'], 'sentence': found['sentence'],
+                         'driver': found['driver']}
+                if found['mine']:
+                    runs.append({**shown, 'needs': False, 'queue': None,
+                                 'spent': {'dollars': None, 'tokens': None}, 'notice': None})
+                elif shown['driver'] is not None:
+                    elsewhere.append({**shown, 'last_shared': None, 'notice': None})
+                continue
             # The record is read once, and the title is taken from the survey's own reading
             # of the training. Only where the survey cannot be made is it read on its own.
             try:

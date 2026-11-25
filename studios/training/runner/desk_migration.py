@@ -30,11 +30,43 @@ CONSEQUENCES = ('Open only the listed existing material parts for editing in con
     'This workspace requires Training Studio 4.7.0 or newer. Close older running instances first; '
     'already configured older runners may ignore the requirement. Nothing is installed or updated.')
 CHANGED = 'The training or its saved inputs changed. Preview Open on the desk again.'
+EARLY = ('No usable teaching plan or supported deck outline is saved, so there is nothing to '
+         'open on the desk.')
+FAILED = ('It stopped on a failure or a worker’s question before its teaching plan was '
+          'written, so there is nothing to open on the desk.')
+FINISHED = 'Use the existing finished Open on the desk action.'
+# What the preview says it keeps of a saved failure or worker question, once a plan exists.
+KEPT_FAILURE = ('The earlier failure stays in History. Its step stays unfinished and is not '
+                'tried again.')
+KEPT_QUESTION = ('The worker’s unanswered question stays in History. Its step stays '
+                 'unfinished.')
+DESK_WORK = 'Use this training’s existing desk or explicit migration recovery.'
+# Why a saved-flow training is a read-only record: the sentence its record shows.
+NOTHING_MADE = ('It stopped before its teaching plan was written, so nothing was made that '
+                'could be opened on the desk.')
+UNREADABLE = ('Its saved run or session record cannot be read, or is in a form this version '
+              'does not understand.')
+# A run record that is not even a JSON object: nobody can tell which flow wrote it.
+UNREAD = 'Its run record cannot be read at all, so how this training was made cannot be told.'
+MISSING = 'A saved file it depends on is missing or cannot be read.'
+# Its folder could not be walked to check it: a linked file, or more than this version reads.
+UNWALKED = ('Its folder holds a linked file or more than this version reads, so its saved '
+            'work cannot be checked.')
+# What the preview says when another computer owns the training, and when shared originals
+# are not committed: both clear once the person acts, and the record then opens on the desk.
+OWNER = 'Another computer runs this training. Take it over here first.'
+SHARED = ('Shared saved records, retained inputs and the existing workspace record must first '
+          'be committed through the existing workspace workflow; opening on the desk does not '
+          'commit those edits.')
+# How large a small record may be for lists to read it (a run or a session record).
+SMALL = 16_000_000
+BRING = ('A conversation keeps it outside the workspace. Bring it in first; it is then '
+         'classed like any other saved training.')
 
 
 def _json(files, name):
     if name not in files:
-        raise ValueError(f'{name} is missing. Keep using the saved flow until it is restored.')
+        raise ValueError(f'{name} is missing.')
     return json.loads(files[name])
 
 
@@ -77,7 +109,7 @@ def materials(session, record, files):
                 raise ValueError('The saved deck outline needs attention: ' + ' '.join(problems))
             required.append(outline)
     if not retained:
-        raise ValueError('No usable teaching plan or supported deck outline is saved yet. Continue with the saved flow first.')
+        raise ValueError(EARLY)
     for name, file in names.items():
         base = workspace.split(name)[0].partition(':')[0]
         if base in ('document', 'brief', 'scenario', 'yoodli', 'deck') and file in files:
@@ -92,7 +124,7 @@ def materials(session, record, files):
     for name in retained:
         entry = session['artifacts'].get(name)
         if entry is None:
-            raise ValueError(f'{name} has no saved input record. Continue with its saved flow first.')
+            raise ValueError(f'{name} has no saved input record.')
         for key, value in entry['built_from'].items():
             if key in names and names[key] not in files:
                 raise ValueError(f'{name} needs its saved {key} input. Restore it first.')
@@ -127,22 +159,156 @@ def materials(session, record, files):
     return list(dict.fromkeys(retained)), sorted(set(required))
 
 
+def _small(root: Path, name: str):
+    """One small record read as JSON, or None where it is missing, unreadable, not JSON or
+    larger than SMALL."""
+    try:
+        with (root / name).open('rb') as stream:
+            data = stream.read(SMALL + 1)
+        return json.loads(data) if len(data) <= SMALL else None
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
+def record_kind(root: Path) -> str:
+    """Which kind of training a folder holds, from its two small records alone, as lists and
+    polling ask it: 'desk' (either record says flow desk, or it has desk metadata or an
+    interrupted opening), 'unread' (its run record is not a JSON object and nothing says
+    desk, so which flow made it cannot be told) or 'saved' (a readable run record without
+    flow: the earlier gated flow's). Reads at most the run and session records."""
+    if any((root / name).exists() or (root / name).is_symlink()
+           for name in (*format.WRITES, format.PENDING)):
+        return 'desk'
+    run, session = _small(root, format.RUN), _small(root, format.SESSION)
+    if any(isinstance(raw, dict) and drafts.on_desk(raw) for raw in (run, session)):
+        return 'desk'
+    return 'saved' if isinstance(run, dict) else 'unread'
+
+
+def _start_form(files) -> bool:
+    """Whether a saved training's start form can be read, to start new work from it: a
+    supported session record, its intake and a run record that is at least JSON."""
+    try:
+        session = json.loads(files[format.SESSION])
+        run = json.loads(files[format.RUN])
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        return False
+    return format.session_supported(session) and isinstance(run, dict) \
+        and bool(files.get('intake.md', b'').strip())
+
+
+def _read_only(files, said, reason):
+    return {'outcome': 'read-only', 'said': said, 'reason': reason,
+            'next': 'copy' if _start_form(files) else 'new'}
+
+
+def classify(files) -> dict:
+    """What becomes of one saved-flow training, from its files alone (`desk_chat._files`).
+
+    - {'outcome': 'migrates', 'session', 'record', 'targets', 'required'}: the explicit
+      migration opens it on the desk (the preview may still name a passing blocker: a
+      worker in hand, another computer driving it, originals not yet committed).
+    - {'outcome': 'read-only', 'said', 'reason', 'next'}: it can be neither continued on the
+      desk nor moved there. `said` is the preview's refusal, `reason` the read-only record's
+      sentence, `next` 'copy' (Start new work from this) or 'new' (Start a new training).
+    - {'outcome': 'finished', 'said'}: finished work keeps its own Open on the desk.
+    - {'outcome': 'desk', 'said'}: not saved-flow work: desk work, or an opening's own
+      recovery.
+    Only reads. The read-only outcome is work stopped before its teaching plan, and records
+    or dependencies that cannot be read or understood."""
+    # Desk work first, whatever its records hold: desk metadata, an interrupted opening, or
+    # a run record that says flow desk (a newer version's desk work among it).
+    if any(name in files for name in (*format.WRITES, format.PENDING)):
+        return {'outcome': 'desk', 'said': DESK_WORK}
+    def loaded(name):
+        try:
+            return json.loads(files[name])
+        except (KeyError, TypeError, ValueError, UnicodeError):
+            return None
+    raw = loaded(format.RUN)
+    if any(isinstance(found, dict) and drafts.on_desk(found)
+           for found in (raw, loaded(format.SESSION))):
+        return {'outcome': 'desk', 'said': DESK_WORK}
+    try:
+        session, record = format.originals(files.get(format.SESSION), files.get(format.RUN))
+    except (ValueError, KeyError, TypeError, UnicodeError) as error:
+        # A run record that is not even an object: which flow made it cannot be told.
+        return _read_only(files, str(error), UNREADABLE if isinstance(raw, dict) else UNREAD)
+    # A record the runner itself refuses to read cannot be opened on the desk either: once
+    # opened, the desk reads the same record.
+    from runner.engine import check_record
+    try:
+        check_record(raw, 'this training')
+    except WorkspaceError as error:
+        return _read_only(files, str(error), UNREADABLE)
+    if session['stage'] == 'done':
+        return {'outcome': 'finished', 'said': FINISHED}
+    try:
+        targets, required = materials(session, record, files)
+    except (ValueError, KeyError, TypeError, UnicodeError) as error:
+        if str(error) == EARLY:
+            # A failure or question before any plan keeps its own refusal sentence.
+            said = FAILED if record.get('problem') or record.get('question') else EARLY
+            return _read_only(files, said, NOTHING_MADE)
+        # Missing or unreadable dependencies. A sentence that points at the saved flow is
+        # not repeated on a record that can no longer be continued.
+        detail = str(error) if 'saved flow' not in str(error) else ''
+        return _read_only(files, str(error), (MISSING + ' ' + detail).strip())
+    return {'outcome': 'migrates', 'session': session, 'record': record,
+            'targets': targets, 'required': required}
+
+
+def outcome(engine, path) -> dict | None:
+    """`classify` for a training in the workspace, as the page and the preview ask it. A
+    training a conversation keeps outside the workspace is brought in first ('bring'). None
+    where there is no training at all. Only reads."""
+    from runner.desk_chat import _files
+    root = engine.driven(path)
+    if root is None:
+        folder = Path(path)
+        if (folder / format.SESSION).is_file() and not (folder / format.RUN).exists():
+            return {'outcome': 'bring', 'said': 'There is no saved training there.', 'reason': BRING}
+        return None
+    if record_kind(root) == 'desk':
+        return {'outcome': 'desk', 'said': DESK_WORK}
+    try:
+        files = _files(root)
+    except (OSError, WorkspaceError) as error:
+        # The folder cannot be walked: its start form may still be read from the three
+        # small files the start form needs, each read on its own.
+        small = {}
+        for name in (format.SESSION, format.RUN, 'intake.md'):
+            path = root / name
+            try:
+                if not path.is_symlink() and path.is_file() and path.stat().st_size <= SMALL:
+                    small[name] = path.read_bytes()
+            except OSError:
+                pass
+        return {'outcome': 'read-only', 'said': str(error), 'reason': UNWALKED,
+                'next': 'copy' if _start_form(small) else 'new'}
+    found = classify(files)
+    return {key: value for key, value in found.items() if key not in ('session', 'record')}
+
+
 def prepare_migration(record, saved_inputs):
     blockers, retained, targets, required = [], [], [], []
     try:
-        session, original = format.originals(saved_inputs.get(format.SESSION), saved_inputs.get(format.RUN))
+        _, original = format.originals(saved_inputs.get(format.SESSION), saved_inputs.get(format.RUN))
         if record != original:
             raise ValueError('The saved run does not match the preview inputs.')
-        if any(name in saved_inputs for name in (*format.WRITES, format.PENDING)) or drafts.on_desk(record):
-            raise ValueError('Use this training’s existing desk or explicit migration recovery.')
-        if session['stage'] == 'done':
-            raise ValueError('Use the existing finished Open on the desk action.')
-        if record.get('problem') or record.get('question'):
-            raise ValueError('Resolve the saved failure or question in its saved flow before opening it on the desk.')
-        targets, required = materials(session, record, saved_inputs)
+        found = classify(saved_inputs)
+        if found['outcome'] != 'migrates':
+            raise ValueError(found['said'])
+        targets, required = found['targets'], found['required']
         retained = [workspace.label(name) for name in targets]
         if record.get('halt'):
             retained.append('The earlier ' + record['halt'] + ' runner status stays in History; conversation editing does not resume it.')
+        # A failure or worker question after the plan is kept as History: the step it
+        # stopped stays unfinished, and nothing is tried again or answered.
+        if record.get('problem'):
+            retained.append(KEPT_FAILURE)
+        if record.get('question'):
+            retained.append(KEPT_QUESTION)
     except (ValueError, KeyError, TypeError, UnicodeError) as error:
         blockers.append(str(error))
     return {'blockers': blockers, 'retained': retained + ['Original files, History, source and guidance pins, Google baselines and real decisions'],
@@ -190,7 +356,7 @@ def _snapshot(engine, path):
         who = json.loads(identity) if identity else {}
         driver = record.get('driver')
         if not isinstance(who, dict) or who.get('schema') != 1 or not isinstance(driver, dict) or re.fullmatch(r'[0-9a-f]{16}', str(who.get('id'))) is None or driver.get('computer') != who['id']:
-            blockers.append('This computer does not own the training. Use its saved team controls first.')
+            blockers.append(OWNER)
     for name in session.get('pending_local_decks', {}):
         workspace.pending_local_deck(root, session, name)
         from runner.desk_chat import _read_restore
@@ -226,7 +392,7 @@ def _shared_basis(space, root, session, record, files):
         digest = head.stdout.strip() if head.returncode == 0 else None
         basis[name] = {'head': digest, 'index': staged}
         if head.returncode or current.returncode or current.stdout.strip() != digest or staged != f'100644 {digest} 0\t{relative}\0':
-            blockers.append('Shared saved records, retained inputs and the existing workspace record must first be committed through the existing workspace workflow. Keep the saved flow available; migration does not commit those edits.')
+            blockers.append(SHARED)
     return {'head': gitstate.hub.git(space.repo, 'rev-parse', 'HEAD'), 'inputs': basis}, list(dict.fromkeys(blockers))
 
 
@@ -235,15 +401,27 @@ def _token(files, guard):
     return 'tm1.' + base64.urlsafe_b64encode(hashlib.sha256(json.dumps(value, sort_keys=True).encode()).digest()).decode().rstrip('=')
 
 
+def _said(found) -> dict:
+    """The classification as the preview carries it beside its blockers."""
+    if found is None:
+        return {}
+    return {'outcome': {key: found[key] for key in ('outcome', 'reason', 'next') if key in found}}
+
+
 def migration_preview(engine, path):
     try:
         _, root, record, files, guard, blockers = _snapshot(engine, path)
         prepared = prepare_migration(record, files)
         return {**prepared, 'path': str(root), 'expected': _token(files, guard),
-                'blockers': prepared['blockers'] + blockers, 'consequences': CONSEQUENCES}
+                'blockers': prepared['blockers'] + blockers, 'consequences': CONSEQUENCES,
+                **_said(classify(files))}
     except (OSError, ValueError, TypeError, KeyError, WorkspaceError) as error:
+        try:
+            found = outcome(engine, path)
+        except (OSError, ValueError, TypeError, KeyError, WorkspaceError):
+            found = None
         return {'path': str(path), 'expected': '', 'scope': ['part'], 'targets': [], 'retained': [],
-                'writes': [], 'blockers': [str(error)], 'consequences': CONSEQUENCES}
+                'writes': [], 'blockers': [str(error)], 'consequences': CONSEQUENCES, **_said(found)}
 
 
 def _write(path, data):
@@ -391,9 +569,19 @@ def migrate(engine, path, expected):
         session['flow'] = 'desk'
         effective.update(flow='desk', execution='conversation', conversation_scope=['part'],
                          migration_targets=prepared['targets'], unfinished_migration=True)
+        saved_status = {}
         if effective.get('halt'):
-            effective['migration_saved_status'] = {'halt': effective['halt'], 'halt_after': effective.get('halt_after')}
+            saved_status.update(halt=effective['halt'], halt_after=effective.get('halt_after'))
             effective['halt'] = None
+        # The effective record carries no live failure or question: neither is retried or
+        # answered on the desk. Both stay, as they were, in the original run record and in
+        # the History the desk shows.
+        for key in ('problem', 'question'):
+            if effective.get(key):
+                saved_status[key] = copy.deepcopy(effective[key])
+                effective[key] = None
+        if saved_status:
+            effective['migration_saved_status'] = saved_status
         origin = format.receipt(files[format.SESSION], files[format.RUN], session['id'], expected, prepared['required'], prepared['targets'],
                                 sources='sources/supplied/index.json' in files)
         a, b = {'origin': origin, 'record': session}, {'origin': origin, 'record': effective}

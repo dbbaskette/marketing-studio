@@ -1,0 +1,5 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T22:36:27Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T22:36:27Z"}
+{"id":"cc2b7be0848f","label":"Drafting the research plan","step":"research-plan","started_at":"2026-11-24T22:36:27Z","ended_at":"2026-11-24T22:36:27Z","outcome":"finished","lines":[{"at":"2026-11-24T22:36:27Z","text":"Handing back research-plan"},{"at":"2026-11-24T22:36:27Z","text":"The draft was accepted"},{"at":"2026-11-24T22:36:27Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T22:36:27Z"}
+{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T22:36:27Z"}

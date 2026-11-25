@@ -1,0 +1,53 @@
+{
+  "default": "example-clear",
+  "house": [
+    "Fill cards: a supporting card is a solid neutral box or a bar card.",
+    "Icons: each card that names a concrete concept gets one approved icon."
+  ],
+  "looks": [
+    {
+      "direction": {
+        "focal": "headingPrimary",
+        "meanings": {
+          "accentAqua": "Example Platform: the product this deck is about"
+        },
+        "motif": "A strip on each card says what it is about.",
+        "neutral": "canvasSecondary"
+      },
+      "id": "example-clear",
+      "layouts": {
+        "closing": "Big Statement",
+        "cover": "Title Slide",
+        "section": "Section Header",
+        "thanks": "Thank You"
+      },
+      "name": "Clear",
+      "number": 1,
+      "useWhen": "Most decks: one product explained."
+    },
+    {
+      "direction": {
+        "focal": "accentAqua",
+        "meanings": {
+          "headingPrimary": "Example Platform"
+        },
+        "motif": "One large solid card carries the point.",
+        "neutral": "canvasSecondary"
+      },
+      "id": "example-bold",
+      "layouts": {
+        "closing": "Big Statement",
+        "cover": "Title Slide",
+        "section": "Section Header",
+        "thanks": "Thank You"
+      },
+      "name": "Bold",
+      "number": 2,
+      "useWhen": "Launches and keynotes."
+    }
+  ],
+  "outline": "f659dce3b3e55979547878aec914d098ca7027ded701c6cd9ad1c44ccfce79ca",
+  "route": "local",
+  "says": "Rendered on this computer with LibreOffice.",
+  "slide": "what-it-does"
+}

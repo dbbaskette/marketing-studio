@@ -76,7 +76,11 @@ class DeskPageCase(test_desk.ScriptedPage, PageCase):
         return path
 
     def open_deck(self, path: str, view: dict, steps: list, **more) -> dict:
-        """The deck's own screen, opened as a reload opens it, with `view` as its run."""
+        """The deck's own screen, opened as a reload opens it, with `view` as its run. A saved
+        record is checked as its screen opens, and the check answers `view` unless `more`
+        says otherwise."""
+        if (view or {}).get('saved_record'):
+            more = {'POST /api/saved-check': [ok(view)], **more}
         return self.run_page(self.answers(**{'GET /api/run': [ok(view)], **more}), steps,
                              state={'screen': 'deck', 'path': path})
 
@@ -884,15 +888,6 @@ class ProgressTests(DeskPageCase):
             self.assertNotIn(gone, shot['buttons'])
         self.assertEqual(self.posts(result), [('/api/build-feedback', {
             'path': path, 'ref': 'a' * 32, 'note': 'Fewer words.', 'number': 3})])
-
-    def test_a_gated_deck_keeps_its_own_screen(self):
-        path = self.saved_started()
-        result = self.open_deck(path, self.run_of(path), [{'snapshot': 'gated'}])
-        shot = result['snapshots']['gated']
-        self.assertIsNone(self.run_of(path)['desk'])
-        self.assertEqual(shot['filled'], ['Approve'])
-        self.assertNotIn(NOTHING_NEEDED, shot['text'])
-        self.assertNotIn('Section 1', shot['headings'])
 
 
 class DeskTests(DeskPageCase):
@@ -2591,23 +2586,14 @@ class FinishingPageTests(DeskPageCase):
 class OpenOnDeskPageTests(DeskPageCase):
     """Task 5.1: a saved deck, delivered the gated way, opens on the desk from its screen."""
 
-    def delivered(self, **changes) -> str:
+    def delivered(self, state: str = 'delivered') -> str:
         """A deck started the gated way, approved stop by stop with the first look, and
-        delivered."""
-        path = self.saved_started(**changes)
-        for _ in range(12):
-            gate = self.run_of(path)['gate']
-            if gate is None:
-                break
-            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
-            picked = {'extra': {'look': offered['looks'][0]['id']}} \
-                if offered and not offered['chosen'] else {}
-            self.decided(path, gate['name'], **picked)
-        return path
+        delivered, as the saved flow left it (tests/fixtures/saved/<state>/)."""
+        return str(self.load_saved(state))
 
     def test_open_on_the_desk_says_what_the_deck_s_level_lets_change(self):
         path = self.delivered()
-        view = self.run_of(path)
+        view = self.post('saved-check', {'path': path})   # as its screen asks on opening
         said = {None: 'Open it on the desk to note a slide, or change its words or its speaker '
                       'notes.',
                 'redesign': 'Open it on the desk to note a slide, or change its words or its '
@@ -2629,7 +2615,7 @@ class OpenOnDeskPageTests(DeskPageCase):
                 self.assertNotIn('to change a slide, its words or its speaker notes', text)
 
     def test_an_opened_powerpoint_delivery_still_goes_to_google_slides(self):
-        path = self.delivered(output='pptx')
+        path = self.delivered('delivered-pptx')
         opened = self.post('desk-open', {'path': path})
         self.assertTrue(opened['deliver']['to_google'])
         result = self.open_deck(path, opened, [
@@ -2648,17 +2634,21 @@ class OpenOnDeskPageTests(DeskPageCase):
 
     def test_a_delivered_deck_offers_open_on_the_desk(self):
         path = self.delivered()
-        view = self.run_of(path)
+        view = self.post('saved-check', {'path': path})   # as its screen asks on opening
         self.assertIsNone(view['desk'])
         opened = self.post('desk-open', {'path': path})
         result = self.open_deck(path, view, [
             {'snapshot': 'delivered'}, {'click': 'Open on the desk'}, {'snapshot': 'desk'}],
-            **{'POST /api/desk-open': [ok(opened)], 'GET /api/run': [ok(view), ok(view), ok(opened)]})
+            # Its screen checks it as it opens, and looks at the run again after that.
+            **{'POST /api/desk-open': [ok(opened)],
+               'GET /api/run': [ok(view), ok(view), ok(view), ok(opened)]})
         delivered, desk = result['snapshots']['delivered'], result['snapshots']['desk']
         self.assertIn('Open on the desk', delivered['buttons'])
-        self.assertNotIn('Open on the desk', delivered['filled'])
+        # The one filled action of a finished saved deck (fix round, ruling 3).
+        self.assertEqual(delivered['filled'], ['Open on the desk'])
         self.assertIn('Delivered', delivered['text'])
-        self.assertEqual(self.posts(result), [('/api/desk-open', {'path': path})])
+        self.assertEqual(self.posts(result), [('/api/saved-check', {'path': path}),
+                                              ('/api/desk-open', {'path': path})])
         # The screen is the desk now: the navigator and the slide chosen, still delivered.
         self.assertIn('Previous slide', desk['buttons'])
         self.assertIn('Delivered as revision 1 to Google Slides.', desk['text'])
@@ -3091,8 +3081,8 @@ class MigrationPageTests(DeskPageCase):
             'expected_basis': context['expected_basis'], 'seen': seen, 'response': response})])
 
     def saved(self):
-        root = runner_support.DeskCase.gated(self)
-        return str(root), self.run_of(str(root))
+        root = self.load_saved('build')
+        return str(root), self.post('saved-check', {'path': str(root)})
 
     def test_preview_cancel_preserves_saved_screen_and_has_no_apply(self):
         path, view = self.saved()
@@ -3105,7 +3095,8 @@ class MigrationPageTests(DeskPageCase):
         self.assertIn('Apply', shot['filled'])
         self.assertEqual(shot['sheetCards'], 1)
         self.assertNotIn(preview['expected'], shot['sheet'])
-        self.assertEqual(self.posts(result), [])
+        # Only the check its screen makes as it opens (fix round 2): nothing else is sent.
+        self.assertEqual(self.posts(result), [('/api/saved-check', {'path': path})])
 
     def test_apply_then_explicit_ready_without_delivery(self):
         path, view = self.saved()
@@ -3126,12 +3117,13 @@ class MigrationPageTests(DeskPageCase):
                 'POST /api/desk-migrate': [ok(opened)],
                 'GET /api/desk-ready-context': [ok(context)],
                 'POST /api/desk-ready': [ok(approved)],
-                'GET /api/run': [ok(view), ok(view), ok(opened), ok(approved)]})
+                # Its screen checks it as it opens, and looks at the run again after that.
+                'GET /api/run': [ok(view), ok(view), ok(view), ok(opened), ok(approved)]})
         self.assertNotIn('Deliver', result['snapshots']['desk']['buttons'])
         self.assertEqual(result['snapshots']['approval']['sheetCards'], 1)
         self.assertIn('nothing has been delivered', result['snapshots']['ready']['text'])
         self.assertEqual([address for address, _ in self.posts(result)],
-                         ['/api/desk-migrate', '/api/desk-ready'])
+                         ['/api/saved-check', '/api/desk-migrate', '/api/desk-ready'])
 
 
 if __name__ == '__main__':

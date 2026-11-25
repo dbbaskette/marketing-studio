@@ -1,0 +1,26 @@
+{
+  "id": "specification-a5aae1a4",
+  "name": "Specification",
+  "origin": "/synthetic-capture/input.md",
+  "original_filename": "input.md",
+  "original_path": "original.md",
+  "original_sha256": "afa5f4a6b86a9fce997b16860ba2896039041466cfef571e31e2a1ced159493b",
+  "content_sha256": "afa5f4a6b86a9fce997b16860ba2896039041466cfef571e31e2a1ced159493b",
+  "purposes": [
+    "reference"
+  ],
+  "author": "",
+  "status": "ready",
+  "note": "",
+  "revision": 1,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "retrieved_at": "2026-01-05T09:30:00+00:00",
+  "updated_at": "2026-01-05T09:30:00+00:00",
+  "analysis": {
+    "status": "needs-analysis",
+    "sha256": "afa5f4a6b86a9fce997b16860ba2896039041466cfef571e31e2a1ced159493b",
+    "harness": null,
+    "at": "2026-01-05T09:30:00+00:00",
+    "message": "Select your writing CLI once, then retry analysis."
+  }
+}

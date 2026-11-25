@@ -284,6 +284,10 @@ class StreamedRunsTests(Case):
 
 
 class EngineTests(Case):
+    # Runner code the manuscript editor's own runs still use: its runs are marked as the
+    # editor's (RunnerCase.EDITOR), the only saved runs the runner goes on with.
+    EDITOR = 'revise'
+
     def test_a_run_stage_is_a_job_of_its_blog_in_a_log_git_ignores(self):
         self.agent()
         found = self.create(page=True)
@@ -330,7 +334,7 @@ class EngineTests(Case):
         self.assertNotIn('activity', engine.describe(found['id'], listing=True))
 
     def test_a_tool_job_is_a_job_of_its_blog_and_its_own_owner(self):
-        found = self.create(page=True)
+        found = self.desk()
         ident = 'a' * 32
         tool_jobs.create(
             self.root,

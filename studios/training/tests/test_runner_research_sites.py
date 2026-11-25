@@ -251,7 +251,7 @@ class RunTests(StudioCase):
         self.shared(TANZU)
         self.assertEqual(setup.shared()[0]['research'], {'sites': [TANZU]})
         # A site added for this training does not change the shared list.
-        root = self.saved_start(research_from={'documents': False, 'sites': [TANZU, DOCS + '/'],
+        root = self.start(research_from={'documents': False, 'sites': [TANZU, DOCS + '/'],
                                          'web': False})
         self.assertEqual(studios_config.read()[0]['research'], {'sites': [TANZU]})
         pinned = {'documents': False, 'sites': [TANZU, DOCS], 'web': False}
@@ -274,16 +274,18 @@ class RunTests(StudioCase):
 
         def wanders(tools, job):
             tried.append(tools.save_source(OTHER))
-            return self.workers.question(tools, job)
+            return self.workers.research_result(tools, job)
 
-        self.workers.then('question:availability', wanders)
-        root = self.saved_start(research_from={'sites': [DOCS], 'web': False})
-        self.to_gate(root, 'research')
+        self.workers.then('research-result', wanders)
+        root = self.start(research_from={'sites': [DOCS], 'web': False})
         plan, = self.workers.jobs[:1]
         self.assertEqual(plan[2]['artifacts']['research-plan']['scope'], 'public-web')
         self.assertIn('Allowed sites: docs.example.com. Pages from anywhere else on the public '
                       'web are not allowed.', plan[1].task)
-        for kind, job, spec in self.workers.jobs[1:]:
+        fetching = [(kind, job, spec) for kind, job, spec in self.workers.jobs[1:]
+                    if spec.get('fetch')]   # the desk's research jobs that look on the web
+        self.assertTrue(fetching)
+        for kind, job, spec in fetching:
             with self.subTest(kind):
                 self.assertEqual(spec['research'], {'documents': False, 'sites': [DOCS],
                                                     'web': False})
@@ -294,12 +296,10 @@ class RunTests(StudioCase):
         said = research_sites.outside(1, [DOCS])
         self.assertEqual(said, '1 page was outside your sites (docs.example.com) and was not saved.')
         self.assertEqual(self.view(root)['research_from']['outside'], said)
-        self.assertEqual(page.RunnerPage(8765, self.engine).gate(str(root), 'research')['outside'],
-                         said)
+        # (The saved flow's research gate said it too; the desk has no gate.)
 
     def test_a_training_started_with_the_older_words_researches_as_before(self):
-        root = self.saved_start(source_scope='public-web')
-        self.to_gate(root, 'research')
+        root = self.start(source_scope='public-web')
         self.assertEqual(self.record(root)['research_from'], WEB)
         kind, job, spec = self.workers.jobs[1]
         self.assertEqual(spec['research'], WEB)
@@ -321,16 +321,14 @@ class RunTests(StudioCase):
             with self.subTest(chosen), \
                     mock.patch.object(research_contract, 'snapshot', return_value=contract), \
                     mock.patch.object(research_contract, 'native', native):
-                root = self.saved_start(title=f'Restarts {number}', research_from=chosen, saved_contract=contract)
+                root = self.start(title=f'Restarts {number}', research_from=chosen)
                 if documents:
                     self.send(root, 'handbook.md')
                     self.engine.supply(root, 'done')
-                self.to_gate(root, 'research-plan')
                 planned = self.workers.of('research-plan')[-1]
                 # A plan's search words hold no slash: the filter names the host.
                 self.assertIn('such as site:blogs.vmware.com.', planned.task)
                 self.assertIn('Allowed sites: blogs.vmware.com/tanzu', planned.task)
-                self.decide(root, 'research-plan')
                 task = seen[-1]
                 looks = research_sites.effective(research_sites.choice(chosen))
                 self.assertEqual(task['source_mode'], mode)
@@ -340,30 +338,6 @@ class RunTests(StudioCase):
                       'anywhere else on the public web are not allowed.', seen[0]['scope'])
         self.assertIn('The wider public web may fill gaps', seen[1]['scope'])
         self.assertIn('Use the supplied documents.', seen[2]['scope'])
-
-    def test_a_run_saved_before_the_choice_keeps_its_research_task_scope(self):
-        seen = []
-
-        def native(engine, root, run, task, offered, product):
-            seen.append(task)
-            raise WorkspaceError('Stopped here by the test.')
-
-        contract = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
-        with mock.patch.object(research_contract, 'snapshot', return_value=contract), \
-                mock.patch.object(research_contract, 'native', native):
-            root = self.saved_start(source_scope='public-web', saved_contract=contract)
-            with self.engine.files:   # as a run record written before the choice was saved
-                record = self.engine._load(root)
-                record.pop('research_from')
-                self.engine._store(root, record)
-            self.to_gate(root, 'research-plan')
-            self.decide(root, 'research-plan')
-        task, = seen
-        self.assertEqual(task['source_mode'], 'public')
-        self.assertNotIn(research_sites.scope_text(WEB), task['scope'])
-        self.assertTrue(task['scope'].startswith('Topic: '))
-        # The scope it was always researched under: what the training is about, and no more.
-        self.assertTrue(task['scope'].splitlines()[-1].startswith('Selected materials:'))
 
 
 if __name__ == '__main__':

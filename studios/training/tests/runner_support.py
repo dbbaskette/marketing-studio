@@ -1667,47 +1667,10 @@ class StudioCase(unittest.TestCase):
         self.addCleanup(engine.close)
         return engine
 
-    def start(self, **changes) -> Path:
+    def start(self, engine=None, **changes) -> Path:
         from runner import pipeline
-        return Path(self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
-
-    def saved_start(self, engine=None, saved_contract=None, schema=None, **changes) -> Path:
-        """Construct a saved queue/policy session and run, then resume real readers."""
-        import home
-        import workspace
-        from runner import pipeline, settings, team
-        from studio_core import review_policy
         engine = engine or self.engine
-        space = engine.space()
-        form = pipeline.check_form({**FORM, **{k: v for k, v in changes.items()
-            if k not in ('review_level', 'review_seen', 'review_default')}, 'flow': None})
-        chosen = settings.load()
-        agent = form['agent'] or chosen.agent
-        model = form['model'] if form['agent'] else form['model'] or chosen.model
-        effort = settings.check_effort(form['effort'] if form['agent'] else form['effort'] or chosen.effort, agent, model)
-        root = pipeline.create(space, form)
-        record = self.engines.new_record(agent, model, chosen, form['source_scope'], effort, form.get('research_from'))
-        record['research_questions'] = form.get('research_questions') or []
-        if changes.get('review_level'):
-            record['review_policy'] = {'schema': 1, 'level': changes['review_level']}
-        record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
-        if saved_contract is not None:
-            record['research_contract'] = dict(saved_contract)
-            record['schema'] = 3
-        if schema is not None:
-            record['schema'] = schema
-        session = workspace.load(root)
-        session['review_policy'] = record['review_policy']
-        if saved_contract is not None:
-            session['research_contract'] = dict(saved_contract)
-        workspace.store(root, session)
-        record['driver'] = team.claim(space)
-        engine._tried(record, 'intake', home.now(), 0.0, 'kept')
-        engine._store(root, record)
-        engine._commit(root, 'start the training from the form')
-        engine._claimed(root, space)
-        engine.wake(root)
-        return root
+        return Path(engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
 
     def view(self, root: Path) -> dict:
         return self.engine.view(root)
@@ -1753,6 +1716,50 @@ class StudioCase(unittest.TestCase):
             self.decide(root, waiting)
             approved.append(waiting)
         self.fail('The training never stopped asking')
+
+    def pause_after(self, kind: str, title: str = 'rolling-restarts', engine=None,
+                    workers=None, later: bool = False, nth: int = 0) -> None:
+        """Hold desk work where a saved run waited for a decision: the next job of `kind`
+        pauses its training while it works, so that job finishes and nothing after it
+        starts until the training is resumed. What that job does is unchanged. With
+        `later`, the job after those already queued for `kind` is the one that pauses; with
+        `nth`, the one queued at that place."""
+        engine, workers = engine or self.engine, workers or self.workers
+        queued = workers.queued.setdefault(kind, [])
+        at = len(queued) if later else nth
+        act = queued.pop(at) if at < len(queued) else getattr(
+            workers, kind.partition(':')[0].replace('-', '_'))
+
+        def pausing(tools, job):
+            engine.act(engine.space().training(title), 'pause')
+            return act(tools, job)
+        queued.insert(at, pausing)
+
+    def hold_before(self, kind: str, title: str = 'rolling-restarts', engine=None) -> None:
+        """Hold desk work before the next job of `kind` does anything: that job pauses its
+        training and ends as stopped, handing nothing back, as a job ended by Stop does. What
+        ran before it is all kept; on resume the job is started again."""
+        from runner.agents import Outcome
+        engine = engine or self.engine
+
+        def holding(tools, job):
+            engine.act(engine.space().training(title), 'pause')
+            return Outcome(False, 'stopped', 'Stopped')
+        self.workers.queued.setdefault(kind, []).insert(0, holding)
+
+    def all_ready(self, root: Path, engine=None) -> list[dict]:
+        """Desk work's own end: mark every card of each level ready, as the person does on
+        the desk, each in the version it is now. Says what each level's batch answered."""
+        import workspace
+        engine = engine or self.engine
+        session = workspace.load(root)
+        seen = {}
+        for name in workspace.artifact_names(root, session):
+            file = root / workspace.artifact(root, session, name)['file']
+            if file.is_file():
+                seen[name] = workspace.sha256_file(file)
+        return [engine.mark_level_ready(root, level, seen)
+                for level in session['levels'] or [None]]
 
     def send(self, root: Path, name: str, text: str = 'Capacity holds only when more than '
              'one instance is running.\n') -> dict:

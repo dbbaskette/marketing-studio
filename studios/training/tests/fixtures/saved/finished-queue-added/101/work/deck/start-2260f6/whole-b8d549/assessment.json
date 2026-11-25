@@ -1,0 +1,114 @@
+{
+  "coverage": {
+    "questions": [
+      "After three seconds, is the main point clear, and is it the claim in the title?",
+      "Does the eye land first on the element that carries the point?",
+      "Is there exactly one emphasis?",
+      "Does every element support the title?",
+      "Is each label inside or right beside what it names?",
+      "Is the space balanced, with nothing stranded or crowded?",
+      "Is the slide consistent with its neighbors in style, and different from them in layout unless they are meant to be compared?",
+      "Does every image and icon explain something?"
+    ],
+    "slides": [
+      {
+        "answers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "id": "cover-restarts",
+        "image_sha256": "faf1e400128414c2065ca85c94b5c0809c4bdd0c48fbe52f94bf093efaacd4f5",
+        "note": "Inspected native pixels and all review questions. Slide 1: Rolling restarts",
+        "number": 1
+      },
+      {
+        "answers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "id": "what-it-does",
+        "image_sha256": "46b1e30ff6748163eecba520c8d6625244e789786da19a6c7f39cdba96d0481b",
+        "note": "Inspected native pixels and all review questions. Slide 2: A rolling restart replaces instances one batch at a time",
+        "number": 2
+      },
+      {
+        "answers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "id": "when-capacity-holds",
+        "image_sha256": "27c4acef9c6ab2b761f179db338376d6d710e14c873ee2e3ae7d6bc80a0c026a",
+        "note": "Inspected native pixels and all review questions. Slide 3: Capacity holds only with more than one instance",
+        "number": 3
+      },
+      {
+        "answers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "id": "the-objection",
+        "image_sha256": "d654e813bf19e49ff36aa0b8a5c5b83998f4a19d1e462ff444b1b0ca1c36495c",
+        "note": "Inspected native pixels and all review questions. Slide 4: Rolling does not always mean zero downtime",
+        "number": 4
+      },
+      {
+        "answers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "id": "check-yourself",
+        "image_sha256": "c12a1aaecdcdeb409b0222575828736935ebe7f2b459d5c578a41bcfc492e3f7",
+        "note": "Inspected native pixels and all review questions. Slide 5: Check what you can now explain",
+        "number": 5
+      },
+      {
+        "answers": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "id": "closing-practice",
+        "image_sha256": "c9c688d3c36b2bf12768627a5c9a57c350fc8e06c19c612f6c3a42d862e48ca7",
+        "note": "Inspected native pixels and all review questions. Slide 6: Next: practice the objection",
+        "number": 6
+      }
+    ]
+  },
+  "findings": [],
+  "weakest": []
+}

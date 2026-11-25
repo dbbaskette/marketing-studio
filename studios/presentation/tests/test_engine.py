@@ -32,17 +32,6 @@ class DispatchTests(unittest.TestCase):
             self.assertTrue(callable(getattr(engine.Engine, method)), name)
 
 
-class ReviewLevelFormTests(StudioCase):
-    def test_saved_policy_continues_but_new_desk_work_has_none(self):
-        from studio_core import review_policy
-        root = self.saved_start(review_level='step_by_step')
-        self.assertEqual(review_policy.level(decks.read_run(root)), 'step_by_step')
-        current = self.start(title='Current desk')
-        self.assertNotIn('review_policy', decks.read_run(current))
-        with self.assertRaisesRegex(WorkspaceError, 'review preferences'):
-            self.start(review_level='automatic')
-
-
 class SynthesisAtStartTests(StudioCase):
     """A deck's research is not started on a Harness Research that cannot synthesize: the
     start is refused with nothing made. A deck without research, and a deck brought in, are
@@ -260,7 +249,7 @@ class AheadTests(StudioCase):
     under its own level, and what its agent's jobs have spent so far."""
 
     def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
-        root = self.saved_start()
+        root = self.start()
         record = decks.read_run(root)
         record['steps'] = {name: entry for name, entry in record['steps'].items()
                            if (stages.BY_NAME.get(name) or
@@ -270,52 +259,13 @@ class AheadTests(StudioCase):
         self.assertIsNone(ahead['dollars'])
         self.assertIn('the assistant reported no cost', ahead['spent'])
 
-    def test_the_view_says_steps_left_the_next_stop_and_spent(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.saved_start(research=True)
-        shown = self.view(root)
-        ahead = shown['ahead']
-        self.assertEqual(ahead['next_stop'], 'Review the direction')
-        self.assertEqual(ahead['next_gate'], 'gate:outline')
-        self.assertEqual(ahead['steps_left'], len([row for row in shown['timeline']
-                                                    if row['state'] != 'done']))
-        self.assertEqual(ahead['steps_left'], 10)
-        # The scripted agents report no cost: the line says so, never $0.00.
-        self.assertIsNone(ahead['dollars'])
-        self.assertTrue(ahead['spent'].endswith('; the assistant reported no cost'))
-        # Every agent job priced: the dollars are their sum. A step of the runner's own costs
-        # nothing and reports nothing; it is not counted against the sum.
-        run = decks.read_run(root)
-        for name, entry in run['steps'].items():
-            if (stages.BY_NAME.get(name) or stages.BY_NAME[name.partition(':')[0]]).kind == 'agent':
-                for attempt in entry['tries']:
-                    if not attempt.get('runner'):
-                        attempt['dollars'] = 0.5
-        decks.write_run(root, run)
-        # The plan, two question workers and the outline: the research completion marker
-        # did not start an assistant and has no cost to add.
-        self.assertEqual(len(self.workers.jobs), 4)
-        self.assertEqual(self.view(root)['ahead']['dollars'], 2.0)
-        self.assertTrue(self.view(root)['ahead']['spent'].endswith('and about $2.00'))
-        run['steps']['outline']['tries'][0]['dollars'] = None
-        decks.write_run(root, run)
-        self.assertIsNone(self.view(root)['ahead']['dollars'])
-        # Step by step stops at the next gate there is, the outline.
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'step_by_step'}):
-            plain = self.saved_start(title='Plain deck')
-        self.assertEqual(self.view(plain)['ahead']['next_gate'], 'gate:outline')
-        self.assertEqual(self.view(plain)['ahead']['next_stop'], 'Approve the outline')
-
 
 class NoCostYetTests(StudioCase):
     """Only the runner's own steps have run, or the build's jobs reported no cost: nothing
     is said as $0.00."""
 
     def test_a_deck_that_ran_only_its_own_steps_reports_no_cost_yet(self):
-        root = self.saved_start()
+        root = self.start()
         run = decks.read_run(root)
         run['steps'] = {'intake-source': {'failed': 0, 'done': True,
                                           'tries': [{'seconds': 2, 'dollars': None}]}}
@@ -350,47 +300,6 @@ class NoCostYetTests(StudioCase):
         self.assertEqual(self.engine._last_build(record)['dollars'], 2.0)
 
 
-class RedoTests(StudioCase):
-    """Ask for changes says, before it is sent, what it draws again and what that took."""
-
-    def test_redo_counts_the_steps_reopen_runs_again(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        record = decks.read_run(root)
-        redo = self.view(root)['gate']['redo']
-        again = [step for step in stages.steps(stages.reopen(record, 'gate:outline'))
-                 if step.kind != 'gate'
-                 and step.name in self.engine._reopened(record, 'gate:outline')]
-        self.assertEqual(redo['names'][0], 'Draft the outline')
-        self.assertEqual(redo['steps'], len(again))
-        # The build has never run here: there is no record of what it all costs.
-        self.assertEqual(redo['says'], 'Drawn again: “Draft the outline” and every step after '
-                         f"it, {len(again)} steps; this computer has no record of what they cost.")
-        # Each step takes a minute; each actual assistant job reports ten cents.
-        # Section/repair parent entries only record completion: their child workers do
-        # the paid work, just as in a real build.
-        for step in again:
-            entry = record['steps'].setdefault(step.name, {'failed': 0, 'tries': []})
-            composite = step.name in ('build-sections', 'build-repair')
-            entry['tries'] = [{'seconds': 0 if composite else 60,
-                               'dollars': 0.1 if step.kind == 'agent' and not composite
-                               else None}]
-            if composite:
-                record['steps'][step.name + ':section-1'] = {
-                    'tries': [{'seconds': 60, 'dollars': 0.1}]}
-        decks.write_run(root, record)
-        priced = sum(step.kind == 'agent' for step in again)
-        self.assertEqual(self.view(root)['gate']['redo']['says'], (
-            f'Drawn again: “Draft the outline” and every step after it, {len(again)} steps. '
-            f'Last time they took {len(again)} minutes and about ${0.1 * priced:.2f}.'))
-        # The research stops keep their own wording: Phase 3 prices them.
-        with mock.patch('studio_core.review_policy.capture',
-                        return_value={'schema': 1, 'level': 'step_by_step'}):
-            searched = self.saved_start(title='Searched deck', research=True)
-        self.assertEqual(self.waiting(searched), 'gate:research-plan')
-        self.assertIsNone(self.view(searched)['gate'].get('redo'))
-
-
 class HonestStopTests(StudioCase):
     def test_a_google_doc_document_needs_google_before_the_deck_is_made(self):
         from runner.steps import existing
@@ -405,199 +314,17 @@ class HonestStopTests(StudioCase):
         self.assertEqual(self.engine.decks(), before, 'nothing is made')
 
     def test_an_unexpected_failure_says_its_message_without_its_class(self):
-        root = self.saved_start()
+        root = self.start()
         self.engine._trouble(root, ValueError('boom'))
         problem = self.view(root)['problem']
         self.assertEqual(problem['why'], 'The runner could not go on: boom.')
         self.assertNotIn('ValueError', json.dumps(self.view(root)))
 
 
-class ScratchTests(StudioCase):
-    def test_a_scratch_deck_stops_at_each_gate_and_is_delivered(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        view = self.view(root)
-        self.assertEqual(view['state'], 'waiting')
-        self.assertEqual([slide['id'] for slide in view['gate']['slides']],
-                         [slide['id'] for slide in OUTLINE['slides']])
-        self.assertIn('## 1. Rolling restarts', view['gate']['text'])
-        before = len(self.log())
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
-        look = self.view(root)['gate']
-        self.assertEqual((look['brand'], look['variant'], look['made_in']),
-                         ('example', 'light', 'example (light)'))
-        self.assertEqual(look['picture'], {'kind': 'look', 'ref': 'sample'})
-        self.assertIn('This deck is made in example (light).', look['text'])
-        self.assertTrue(self.engine.picture(root, 'look', 'sample').startswith(b'\x89PNG'))
-        # No assistant drew it, and no look was proposed to choose from.
-        self.assertEqual([seen for seen, job, spec in self.workers.jobs
-                          if seen.startswith('look')], [])
-        self.decide(root, 'gate:look')
-        self.assertFalse((root / 'look.json').exists())
-        kept = json.loads((root / 'outline.json').read_text())
-        self.assertNotIn('direction', kept)
-        self.assertIn('in example (light).', kept['approval'][0])
-        self.assertEqual(self.waiting(root), 'gate:build')
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], build.DIRECTION)
-        shown = self.view(root)['gate']
-        self.assertEqual([slide['number'] for slide in shown['slides']],
-                         list(range(1, len(OUTLINE['slides']) + 1)))
-        self.assertEqual(shown['slides'][0]['image'], {'kind': 'build', 'ref': 1})
-        self.assertNotIn(str(root), json.dumps(shown))
-        self.assertTrue(self.engine.picture(root, 'build', 2).startswith(b'\x89PNG'))
-        self.assertTrue(self.engine.picture(root, 'build', 'contact-sheet')
-                        .startswith(b'\x89PNG'))
-        self.decide(root, 'gate:build')
-        view = self.view(root)
-        self.assertEqual(view['state'], 'finished')
-        self.assertEqual(view['deliver']['revision'], 1)
-        self.assertTrue(view['deliver']['url'].startswith('https://docs.google.com/'))
-        self.assertIsNone(view['gate'])
-        self.assertNotIn('rehearse', [row['name'] for row in view['timeline']])
-        self.assertTrue(all(row['state'] == 'done' for row in view['timeline']))
-        decisions = [line for line in self.log()[before:]
-                     if line.startswith('Rolling restarts: approve the ')]
-        self.assertEqual(decisions, ['Rolling restarts: approve the outline',
-                                     'Rolling restarts: approve the look',
-                                     'Rolling restarts: approve the deck'])
-        name, data = self.engine.download(root)
-        self.assertEqual(name, f'{root.name}.pptx')
-        self.assertTrue(data.startswith(b'PK\x03\x04'))
-        self.assertIn('Rolling restarts', (self.space.root / 'README.md').read_text())
-        self.assertEqual(self.git('status', '--porcelain'), '')
-
-    def test_every_decision_is_a_commit(self):
-        root = self.saved_start()
-        for gate in ('gate:outline', 'gate:look', 'gate:build'):
-            count = int(self.git('rev-list', '--count', 'HEAD'))
-            head = self.git('rev-parse', 'HEAD')
-            self.decide(root, gate)
-            said = self.git('log', '--format=%s', f'{head}..HEAD').splitlines()
-            self.assertIn(f'Rolling restarts: approve the {stages.BY_NAME[gate].label.split()[-1]}'
-                          if gate != 'gate:build' else 'Rolling restarts: approve the deck',
-                          said)
-            self.assertGreater(int(self.git('rev-list', '--count', 'HEAD')), count)
-            decided = self.git('show', '--format=', '--name-only', head + '..HEAD')
-            self.assertIn('run.json', decided)
-
-    def test_changes_at_the_outline_run_it_again_with_the_note(self):
-        root = self.saved_start()
-        self.decide(root, 'gate:outline', 'changes', 'Make the objection its own section.')
-        self.assertEqual(len(self.workers.of('outline')), 2)
-        again = self.workers.of('outline')[-1]
-        self.assertIn('Make the objection its own section.', again.task)
-        self.assertIn("Read a person's note at a gate", again.guidance)
-        gate = self.record(root)['gates']['gate:outline']
-        self.assertEqual(gate['state'], 'waiting')
-        self.assertEqual(gate['round'], 2)
-        self.assertIn('Rolling restarts: ask for changes to the outline', self.log())
-
-    def test_a_note_is_needed_to_ask_for_changes_and_only_a_waiting_gate_moves(self):
-        root = self.saved_start()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:outline', 'changes', '  ', None)
-        self.assertEqual(str(caught.exception), 'Say what should change.')
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:look', 'approve', None, None)
-        self.assertIn('not waiting for a decision', str(caught.exception))
-        with self.assertRaises(WorkspaceError):
-            self.engine.decide(root, 'gate:classify', 'changes', 'No.', None)
-
-    def test_another_brand_is_chosen_at_the_brand_and_its_cover_drawn_again(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:look')
-        exported = json.loads((root / build.CONTRACT).read_text())
-        self.assertEqual(exported['identity']['variant'], 'light')
-        for extra, said in ((None, 'Choose the brand, and its variant'),
-                            ({'brand': 'example', 'variant': 'light'}, 'already'),
-                            ({'brand': 'example', 'variant': 'neon'}, 'neon')):
-            with self.subTest(extra=extra):
-                with self.assertRaises(WorkspaceError) as caught:
-                    self.engine.decide(root, 'gate:look', 'changes', None, extra)
-                self.assertIn(said, str(caught.exception))
-                self.assertEqual(self.record(root)['form']['variant'], 'light')
-        self.engine.decide(root, 'gate:look', 'changes', None,
-                           {'brand': 'example', 'variant': 'dark'})
-        self.assertEqual(self.waiting(root), 'gate:look')
-        record, gate = self.record(root), self.view(root)['gate']
-        self.assertEqual(record['form']['variant'], 'dark')
-        self.assertEqual(record['gates']['gate:look']['round'], 2)
-        self.assertEqual(gate['made_in'], 'example (dark)')
-        self.assertEqual(gate['note'], 'Make it in example (dark).')
-        self.assertIn('example (dark)', (root / 'intake.md').read_text())
-        exported = json.loads((root / build.CONTRACT).read_text())
-        self.assertEqual(exported['identity']['variant'], 'dark')
-        self.assertIn('Rolling restarts: make it in example (dark)', self.log())
-        self.decide(root, 'gate:look')
-        self.assertEqual(self.waiting(root), 'gate:build')
-
-    def test_an_edited_outline_is_checked_and_kept_with_the_approval(self):
-        root = self.saved_start()
-        slides = self.view(root)['gate']['slides']
-        moved = [*slides[:2], slides[3], slides[2], *slides[4:]]
-        self.engine.decide(root, 'gate:outline', 'approve', None, {'edited': moved})
-        kept = json.loads((root / 'outline.json').read_text())
-        self.assertEqual([slide['id'] for slide in kept['slides']],
-                         [slide['id'] for slide in moved])
-        self.assertEqual(self.waiting(root), 'gate:look')
-
-    def test_an_edited_outline_is_kept_before_its_worker_is_asked_for_changes(self):
-        root = self.saved_start()
-        slides = self.view(root)['gate']['slides']
-        moved = [*slides[:2], slides[3], slides[2], *slides[4:]]
-        seen = []
-
-        def again(tools, job):
-            kept = json.loads((root / 'outline.json').read_text())
-            seen.append([slide['id'] for slide in kept['slides']])
-            return self.workers.outline(tools, job)
-
-        self.workers.then('outline', again)
-        self.engine.decide(root, 'gate:outline', 'changes', 'Shorten the close.',
-                           {'edited': moved})
-        self.assertEqual(seen, [[slide['id'] for slide in moved]])
-        self.assertIn('Shorten the close.', self.workers.of('outline')[-1].task)
-
-    def test_changes_to_the_deck_draw_only_the_sections_of_the_named_slides(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', 'Give slide 2 more room.',
-                           {'slides': [2]})
-        again = self.workers.of('section')[drawn:]
-        self.assertEqual(len(again), 1)
-        self.assertIn('Give slide 2 more room.', again[0].task)
-        self.assertEqual(self.waiting(root), 'gate:build')
-        self.assertEqual(self.record(root)['gates']['gate:build']['round'], 2)
-
-    def test_changes_after_delivery_build_and_deliver_a_new_revision(self):
-        root = self.saved_start()
-        self.to_end(root)
-        self.assertEqual(self.state(root), 'finished')
-        self.engine.decide(root, 'gate:build', 'changes', 'Shorter titles, please.', None)
-        self.assertEqual(self.waiting(root), 'gate:build')
-        self.assertIsNone(decks.delivered(root))
-        self.decide(root, 'gate:build')
-        view = self.view(root)
-        self.assertEqual(view['deliver']['revision'], 2)
-        self.assertEqual(len(view['deliver']['revisions']), 2)
-
-    def test_a_review_that_finds_a_grave_drawing_has_its_section_drawn_again(self):
-        self.workers.found = [grave]
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        state = build.read_state(root)
-        self.assertEqual(len(state['rounds']), 2)
-        self.assertEqual(len(self.workers.of('review')), 2)
-        self.assertTrue((root / 'reviews' / 'build-1.md').is_file())
-
-
 class RetryTests(StudioCase):
     def test_a_step_that_fails_three_times_stops_and_retry_carries_on(self):
         self.workers.then('outline', fails(), fails(), fails('The model gave up again.'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertIn('This step did not work in 3 tries: Draft the outline. The last one: '
@@ -607,20 +334,20 @@ class RetryTests(StudioCase):
         self.assertIn('An earlier try at this job did not work',
                       self.workers.of('outline')[1].task)
         self.engine.act(root, 'retry')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertEqual(len(self.workers.of('outline')), 4)
 
     def test_a_draft_the_checks_refuse_is_tried_again_with_the_reason(self):
         def wrong(tools, job):
             tools.submit_outline(json.dumps({'version': 1, 'slides': []}))
         self.workers.then('outline', wrong)
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIn('did not pass the checks', self.workers.of('outline')[1].task)
 
     def test_an_agent_that_cannot_be_used_stops_at_once(self):
         self.workers.then('outline', fails('Not signed in.', reason='unavailable'))
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.state(root), 'failed')
         self.assertIn('could not be used. Not signed in. Check this computer, on the Status '
                       'screen, says what it needs.', self.view(root)['sentence'])
@@ -628,7 +355,7 @@ class RetryTests(StudioCase):
 
     def test_an_account_at_its_usage_limit_stops_at_once_and_says_where_to_look(self):
         self.workers.then('outline', fails("You've hit your usage limit.", reason='limit'))
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.state(root), 'failed')
         self.assertEqual(self.view(root)['sentence'], "scripted's account reached a usage or "
                          'rate limit. Wait until it resets, then Try again.')
@@ -636,7 +363,7 @@ class RetryTests(StudioCase):
 
     def test_no_assistant_job_is_ended_for_how_long_it_takes(self):
         self.workers.then('outline', *[fails()] * 3)
-        root = self.saved_start()
+        root = self.start()
         # No job is given a time limit, whatever Settings still holds.
         self.assertEqual(self.settings.load().step_seconds, 1350)
         self.assertEqual({job.limits.seconds for job in self.workers.of('outline')}, {None})
@@ -648,181 +375,20 @@ class RetryTests(StudioCase):
             self.engine._store(root, record)
             self.engine._commit(root, 'as a deck stopped at a time limit before')
         self.engine.act(root, 'more-time')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIsNone(self.workers.of('outline')[-1].limits.seconds)
 
 
 class QuestionTests(StudioCase):
     def test_a_workers_question_waits_for_an_answer_which_goes_into_the_task(self):
         self.workers.then('outline', asks('Who presents it?'))
-        root = self.saved_start()
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
         self.assertEqual(view['question']['text'], 'Who presents it?')
         self.engine.answer(root, view['question']['id'], 'A platform engineer.')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIn('Answer: A platform engineer.', self.workers.of('outline')[-1].task)
-
-
-class NoteTests(StudioCase):
-    """A note for the next step goes with the next job that starts, once, and stops nothing."""
-
-    def test_a_note_goes_with_the_next_job_only_and_is_kept_in_history(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        before = len(self.workers.jobs)
-        shown = self.view(root)['note']
-        self.assertEqual(shown, {'pending': None, 'used': [], 'expected': '0'})
-        noted = self.engine.note(root, '  Keep the restarts section to one slide.  ', '0')
-        self.assertEqual(noted['note']['pending']['text'], 'Keep the restarts section to one slide.')
-        self.assertEqual(noted['note']['expected'], '1')
-        self.assertEqual(self.log()[-1], 'Rolling restarts: note for the next step: Keep the '
-                         'restarts section to one slide.')
-        # A second note before the first is used replaces it; a stale page is refused.
-        with self.assertRaisesRegex(WorkspaceError, 'The note changed'):
-            self.engine.note(root, 'Lead with the risks.', '0')
-        noted = self.engine.note(root, 'Lead with the risks.', '1')
-        self.assertEqual(noted['note']['pending']['text'], 'Lead with the risks.')
-        self.assertEqual(self.record(root).get('notes_used', []), [])
-        self.assertIn('Rolling restarts: replace the note for the next step: Lead with the risks.',
-                      self.log())
-        self.assertEqual(len(self.workers.jobs), before, 'nothing started for a note')
-        self.decide(root, 'gate:outline')
-        self.decide(root, 'gate:look')
-        self.assertEqual(self.waiting(root), 'gate:build')
-        started = [job for seen, job, spec in self.workers.jobs[before:] if seen != 'review']
-        carried = [job for job in started
-                   if '## Note from the author for this step' in job.task]
-        self.assertEqual(len(carried), len(started), 'every drawing job of the step carries it')
-        self.assertIn('> Lead with the risks.', carried[0].task)
-        self.assertNotIn('Keep the restarts section', carried[0].task)
-        record = self.record(root)
-        self.assertIsNone(record['pending_note'])
-        self.assertEqual([(note['text'], note['step'].partition(':')[0])
-                          for note in record['notes_used']],
-                         [('Lead with the risks.', 'build-sections')])
-        shown = self.view(root)['note']
-        self.assertEqual((shown['pending'], shown['used'][0]['text'], shown['expected']),
-                         (None, 'Lead with the risks.', '3'))
-        self.assertTrue(any(line.startswith('Rolling restarts: the note for the next step '
-                                            'goes with: Draw section') for line in self.log()))
-
-    def test_a_note_made_while_a_job_runs_waits_for_the_next_one(self):
-        def noting(tools, job):
-            [root] = self.engine.every()
-            self.engine.note(root, 'Say who runs the restarts.')
-            return self.workers.outline(tools, job)
-        self.workers.then('outline', noting)
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertNotIn('Note from the author', self.workers.of('outline')[0].task,
-                         'nothing reaches a job already running')
-        self.assertEqual(self.view(root)['note']['pending']['text'], 'Say who runs the restarts.')
-        self.decide(root, 'gate:outline')
-        self.decide(root, 'gate:look')
-        carried = [job for seen, job, spec in self.workers.jobs
-                   if 'Say who runs the restarts.' in job.task]
-        self.assertEqual(len(carried), 1)
-
-    def test_a_note_reaches_every_section_drawn_together_and_a_try_again(self):
-        self.workers.then('section', fails())
-        root = self.saved_start()
-        self.to_gate(root, 'gate:look')
-        self.engine.note(root, 'Name the operator on each slide.\r\nKeep the second short.')
-        self.decide(root, 'gate:look')
-        self.assertEqual(self.waiting(root), 'gate:build')
-        sections = self.workers.of('section')
-        self.assertGreaterEqual(len(sections), 2, 'the section was tried again')
-        for job in sections:
-            self.assertIn('> Name the operator on each slide.\n> Keep the second short.',
-                          job.task)
-        self.assertEqual(len(self.workers.of('review')), 1)
-        self.assertNotIn('Note from the author', self.workers.of('review')[0].task,
-                         'a reviewer does not take the note')
-        self.assertEqual([note['text'] for note in self.record(root)['notes_used']],
-                         ['Name the operator on each slide.\nKeep the second short.'],
-                         'history records it once')
-
-    def test_a_reviewer_does_not_take_a_note_which_waits_for_the_next_writer(self):
-        def noting(tools, job):
-            [root] = self.engine.every()
-            self.engine.note(root, 'Say who restarts what.')
-            return self.workers.section(tools, job)
-        self.workers.then('section', *[noting] * 8)
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        review = self.workers.of('review')[-1]
-        self.assertNotIn('Note from the author', review.task)
-        shown = self.view(root)['note']
-        self.assertEqual(shown['pending']['text'], 'Say who restarts what.',
-                         'the note left while the section was drawn waits past the review')
-        self.assertEqual(self.record(root).get('notes_used', []), [])
-
-    def test_a_note_reaches_every_question_researched_together(self):
-        root = self.saved_start(research=True)
-        self.assertEqual(self.waiting(root), 'gate:research-plan')
-        self.engine.note(root, 'Prefer the vendor\'s own pages.')
-        self.decide(root, 'gate:research-plan')
-        questions = self.workers.of('question')
-        self.assertGreaterEqual(len(questions), 2, 'the questions are researched together')
-        for job in questions:
-            self.assertIn("> Prefer the vendor's own pages.", job.task)
-        self.assertEqual(len(self.record(root)['notes_used']), 1, 'history records it once')
-        self.assertIsNone(self.record(root)['pending_note'])
-
-    def test_research_kept_to_the_deck_s_sites_refuses_a_page_off_them_and_says_so(self):
-        from runner_support import QUOTE, URL
-        from studio_core import research_sites
-        off = self.web.page('https://elsewhere.example.com/restarts', 'Somewhere else.')
-        told, refusals = [], []
-
-        def question(tools, job):
-            told.append((tools.job.get('research'), job.guidance))
-            refused = tools.save_source(off)
-            self.assertFalse(refused[0])
-            refusals.append(refused[1])
-            said = tools.save_source(URL)
-            self.assertTrue(said[0], said[1])
-            ident = tools.job['finding']
-            saved = said[1].split(' as ', 1)[1].split(':', 1)[0]
-            self.assertTrue(tools.submit_finding(
-                ident, 'supported', f'What the page says about {ident}.',
-                headline=f'The page answers {ident}.',
-                evidence=[{'source_id': saved, 'quote': QUOTE}])[0])
-        self.workers.queued['question'] = [question] * 8
-        chosen = {'documents': False, 'sites': ['https://docs.example.com'], 'web': False}
-        root = self.saved_start(research=True, research_from={'sites': ['docs.example.com/']})
-        self.assertEqual(self.record(root)['form']['research_from'], chosen)
-        self.decide(root, 'gate:research-plan')
-        self.assertEqual(self.waiting(root), 'gate:research')
-        job, guidance = told[0]
-        self.assertEqual(job, chosen)
-        self.assertIn(research_sites.guidance(chosen), guidance)
-        self.assertEqual(refusals[0], research_sites.refused(off, chosen))
-        self.assertIn('Where research may look: Allowed sites: docs.example.com.',
-                      self.workers.of('question')[0].task)
-        self.assertEqual([entry['url'] for entry in self.record(root)['research']['outside']], [off])
-        shown = self.view(root)['gate']
-        self.assertEqual(shown['research_from'], 'Research from 1 of your sites (docs.example.com)')
-        self.assertEqual(shown['outside'],
-                         '1 page was outside your sites (docs.example.com) and was not saved.')
-        self.assertIn('yes, from 1 of your sites (docs.example.com)', (root / 'intake.md').read_text())
-
-    def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
-        root = self.saved_start()
-        with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):
-            self.engine.note(root, '   ')
-        with self.assertRaisesRegex(WorkspaceError, 'at most 2000 characters'):
-            self.engine.note(root, 'x' * 2001)
-        self.engine.act(root, 'stop')
-        with self.assertRaisesRegex(WorkspaceError, 'stopped'):
-            self.engine.note(root, 'Too late.')
-        self.engine.act(root, 'resume')
-        self.to_end(root)
-        self.assertEqual(self.state(root), 'finished')
-        with self.assertRaisesRegex(WorkspaceError, 'finished'):
-            self.engine.note(root, 'Too late.')
-        self.assertEqual(self.record(root).get('pending_note'), None)
 
 
 class SharedDataTests(StudioCase):
@@ -836,7 +402,7 @@ class SharedDataTests(StudioCase):
             self.assertIn('PRESENTATION_STUDIO_DATA', said)
             self.assertNotIn('staging', said)
             self.assertEqual(self.engine.status()['problem'], said)
-            root = self.saved_start()
+            root = self.start()
             record = self.record(root)
             self.assertEqual(self.state(root), 'stopped')
             self.assertEqual(record['halted']['why'], said)
@@ -850,7 +416,7 @@ class SharedDataTests(StudioCase):
 
 class HaltTests(StudioCase):
     def test_pause_stop_resume_and_what_is_refused(self):
-        root = self.saved_start()
+        root = self.start()
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.act(root, 'pause')
         self.assertIn('Only a deck that is working can be paused', str(caught.exception))
@@ -861,19 +427,15 @@ class HaltTests(StudioCase):
         with self.assertRaises(WorkspaceError):
             self.engine.act(root, 'stop')
         self.engine.act(root, 'resume')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
 
     def test_a_deck_carries_on_whatever_its_jobs_report_they_cost(self):
         self.workers.cost = 500.0
         self.workers.then('outline', asks('One thing first?'))
-        root = self.saved_start()
+        root = self.start()
         self.assertEqual(self.record(root)['limits'], {'step_seconds': 1350})
         self.assertNotIn('spending_policy', self.record(root))
         self.engine.answer(root, self.view(root)['question']['id'], 'Yes.')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
-        self.decide(root, 'gate:look')
         self.assertEqual(self.waiting(root), 'gate:build')
         view = self.view(root)
         self.assertIsNone(view['problem'])
@@ -888,15 +450,15 @@ class HaltTests(StudioCase):
         self.workers.then('outline', lambda tools, job: Outcome(
             False, 'limit', 'It stopped without finishing: its spending limit was reached',
             cost=1.0))
-        root = self.saved_start()
+        root = self.start()
         # Nothing stopped for money: the step was tried again and worked.
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         tried = self.record(root)['steps']['outline']['tries']
         self.assertEqual([one['outcome'] for one in tried], ['failed', 'kept'])
 
     def test_a_deck_saved_while_spending_was_limited_still_opens_and_resumes(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         with self.engine.files:
             record = self.engine._load(root)
             record.update(
@@ -924,23 +486,17 @@ class HaltTests(StudioCase):
         self.assertEqual((root / 'run.json').read_bytes(), before,
                          'reading it rewrites nothing')
         self.engine.act(root, 'resume')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
+        self.assertEqual(self.waiting(root), 'gate:build')
         kept = self.record(root)
         self.assertEqual((kept['spending_policy'], kept['cleared']), ('hard-stop', 1.5))
 
     def test_a_research_job_that_still_ends_for_its_time_offers_try_again(self):
         from runner import research_steps
         from runner.agents import Outcome
-        root = self.saved_start(research=True)
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
         late = WorkspaceError('Research did not finish its author job in round 1 of 3.')
         late.outcome = Outcome(False, 'timeout', 'It did not finish in 1350 seconds, so it was stopped.')
         with mock.patch.object(research_steps.research_contract, 'native', side_effect=late):
-            self.decide(root, 'gate:research-plan')
+            root = self.start(research=True)
         problem = self.view(root)['problem']
         # No job is given a time limit now, so there is no more time to offer: it is tried
         # again like any other step that failed.
@@ -950,12 +506,17 @@ class HaltTests(StudioCase):
                          'Research did not finish its author job in round 1 of 3.')
 
     def test_undo_takes_back_the_last_step(self):
-        root = self.saved_start()
-        self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
+        root = self.start()
+        self.assertEqual(self.log()[-1], 'Rolling restarts: the deck is on the desk')
+        count = len(self.log())
         self.engine.act(root, 'undo')
-        self.assertEqual(len(self.workers.of('outline')), 2)
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
+        # The step was taken back and taken again: its commit undone, then made again.
+        taken = self.git('reflog', '--format=%gs').splitlines()
+        self.assertEqual(taken[0], 'commit: Rolling restarts: the deck is on the desk')
+        self.assertIn('branch: Reset to HEAD~1', taken[1:3])
+        self.assertEqual(len(self.log()), count)
+        self.assertEqual(self.waiting(root), 'gate:build')
+        self.assertEqual(self.log()[-1], 'Rolling restarts: the deck is on the desk')
 
 
 class OlderSlidesToolTests(StudioCase):
@@ -1015,12 +576,8 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotIn(said, needs['missing'], 'it holds up no deck already exported')
         [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
         self.assertEqual((item['state'], item['fix']), ('problem', said))
-        root = self.saved_start()
-        for _ in range(10):
-            view = self.view(root)
-            if view['state'] != 'waiting':
-                break
-            self.decide(root, view['gate'])
+        root = self.start()
+        view = self.view(root)
         self.assertEqual(view['state'], 'stopped')
         self.assertIn(said, view['sentence'])
         self.assertEqual(self.workers.of('outline'), [], 'nothing that needs the brand ran')
@@ -1028,23 +585,37 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotIn(said, json.dumps(self.engine.deck_needs(fresh=True)['items']))
 
     def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:outline')
-        self.brand.version = '0.13.2'
-        self.engine.deck_needs(fresh=True)
-        self.decide(root, 'gate:outline')
+        def begun(tools, job):
+            # The deck has begun: its outline is being drafted when the brand skill turns old.
+            self.brand.version = '0.13.2'
+            self.engine.deck_needs(fresh=True)
+            return self.workers.outline(tools, job)
+        self.workers.then('outline', begun)
+        root = self.start()
         view = self.view(root)
+        self.assertEqual(self.brand.version, '0.13.2')
         self.assertNotEqual(view['state'], 'stopped', view.get('problem'))
         self.assertNotEqual(view['state'], 'failed', view.get('problem'))
 
     def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:outline')
-        before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
-        with self.too_old():
+        old, before = self.too_old(), []
+
+        def begun(tools, job):
+            # The outline is drafted and checked when the slides tool turns out too old.
+            [root] = self.engine.every()
+            # What it has, but the lock of the job in hand, which is let go when it ends.
+            before.extend(sorted(str(path.relative_to(root)) for path in root.rglob('*')
+                                 if path.name != 'step.lock'))
+            old.start()
             self.engine.deck_needs(fresh=True)
-            self.decide(root, 'gate:outline')
+            return self.workers.text_check(tools, job)
+        self.workers.then('text-check', begun)
+        try:
+            root = self.start()
             view = self.view(root)
+        finally:
+            old.stop()
+        self.assertTrue(before)
         self.assertIn(view['state'], ('stopped', 'failed'))
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.19.0 or newer. '
                       'Update Harness Slides, then try again.', json.dumps(view))
@@ -1054,10 +625,15 @@ class OlderSlidesToolTests(StudioCase):
 
 class BrandTests(StudioCase):
     def test_a_brand_that_changed_stops_the_deck_before_the_next_step_that_uses_it(self):
-        root = self.saved_start()
         rules = self.brand.run.home / 'references' / 'brand-rules.md'
-        rules.write_text(rules.read_text() + 'Round corners now.\n')
-        self.decide(root, 'gate:outline')
+
+        def changed(tools, job):
+            # The brand changes once the outline is drafted and its text checked.
+            said = self.workers.text_check(tools, job)
+            rules.write_text(rules.read_text() + 'Round corners now.\n')
+            return said
+        self.workers.then('text-check', changed)
+        root = self.start()
         view = self.view(root)
         self.assertEqual(view['state'], 'stopped')
         self.assertTrue(view['sentence'].startswith('The brand changed since this deck began'))
@@ -1071,20 +647,18 @@ class BrandTests(StudioCase):
     def test_without_a_brand_skill_a_deck_runs_until_it_needs_its_brand(self):
         from runner import engine
         self.without_a_brand_skill()
-        root = self.saved_start(research=True, brand='', variant='')
+        root = self.start(research=True, brand='', variant='')
         self.assertIn('your brand, chosen when the brand skill is installed',
                       (root / 'intake.md').read_text())
-        self.assertEqual(self.waiting(root), 'gate:research-plan')
-        self.decide(root, 'gate:research-plan')
-        self.assertEqual(self.waiting(root), 'gate:research')
-        self.decide(root, 'gate:research')
+        # The research, which does not need the brand, ran; the deck stopped after it.
+        self.assertTrue(self.record(root)['steps']['research']['done'])
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']), ('stopped', engine.NO_BRAND))
         self.assertEqual(view['problem']['action'], 'retry')
         self.assertEqual(self.workers.of('outline'), [], 'nothing that needs the brand ran')
         self.brand = self.installed
         self.engine.act(root, 'retry')
-        self.assertEqual(self.waiting(root), 'gate:outline')
+        self.assertEqual(self.waiting(root), 'gate:build')
         form = json.loads((root / 'run.json').read_text())['form']
         self.assertEqual((form['brand'], form['variant']), ('example', 'light'),
                          'the first brand the brand skill lists, and its first variant')
@@ -1093,7 +667,7 @@ class BrandTests(StudioCase):
         from dataclasses import replace
         self.settings.save(replace(self.settings.load(), brand='example', variant='dark'))
         self.without_a_brand_skill()
-        root = self.saved_start(brand='', variant='')
+        root = self.start(brand='', variant='')
         self.assertEqual(self.state(root), 'stopped')
         self.brand = self.installed
         self.engine.act(root, 'retry')
@@ -1104,7 +678,7 @@ class BrandTests(StudioCase):
         from runner import engine
         self.without_a_brand_skill()
         with mock.patch.dict('os.environ', {'BRAND_SKILL_RUNTIME': str(self.base / 'nowhere')}):
-            root = self.saved_start(brand='', variant='')
+            root = self.start(brand='', variant='')
         view = self.view(root)
         self.assertNotEqual(view['sentence'], engine.NO_BRAND)
         self.assertEqual(view['sentence'], f"BRAND_SKILL_RUNTIME names {self.base / 'nowhere'}, "
@@ -1121,7 +695,7 @@ class BrandTests(StudioCase):
                  named.NO_VARIANT.format(variant='neon', brand='example',
                                          listed='light, dark'))):
             self.brand = None
-            root = self.saved_start(title=f"Restarts in {form['variant'] or form['brand']}", **form)
+            root = self.start(title=f"Restarts in {form['variant'] or form['brand']}", **form)
             self.brand = self.installed
             self.engine.act(root, 'retry')
             view = self.view(root)
@@ -1133,7 +707,7 @@ class BrandTests(StudioCase):
 
     def test_the_brand_chosen_for_a_deck_is_said_in_its_intake(self):
         self.without_a_brand_skill()
-        root = self.saved_start(brand='', variant='')
+        root = self.start(brand='', variant='')
         self.brand = self.installed
         self.engine.act(root, 'retry')
         self.assertIn('## Brand\nexample (light)\n', (root / 'intake.md').read_text())
@@ -1141,99 +715,15 @@ class BrandTests(StudioCase):
                          (root / 'intake.md').read_text())
 
     def test_without_a_brand_skill_an_existing_deck_is_still_listed_slide_by_slide(self):
+        from runner import engine
+        from runner.steps import outline as outlines
         self.without_a_brand_skill()
-        root = self.saved_start(route='existing', level='polish', brand='', variant='',
+        root = self.start(route='existing', level='polish', brand='', variant='',
                           source={'kind': 'upload', 'name': 'old.pptx'},
                           uploads={'old.pptx': ExistingTests.DECK})
-        self.assertEqual(self.waiting(root), 'gate:classify')
-
-
-class ResearchTests(StudioCase):
-    def test_research_is_planned_approved_done_and_reported(self):
-        root = self.saved_start(research=True)
-        self.assertEqual(self.waiting(root), 'gate:research-plan')
-        gate = self.view(root)['gate']
-        self.assertEqual([q['id'] for q in gate['questions']], ['instance-min', 'health-checks'])
-        self.decide(root, 'gate:research-plan')
-        self.assertEqual(self.waiting(root), 'gate:research')
-        self.assertEqual(len(self.workers.of('question')), 2)
-        report = self.view(root)['gate']['text']
-        self.assertIn('2 of 2 questions have an answer the sources support.', report)
-        self.decide(root, 'gate:research')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertIn('Research report', self.workers.of('outline')[0].task)
-
-    def test_changes_at_the_research_redo_the_questions_the_note_names(self):
-        root = self.saved_start(research=True)
-        self.to_gate(root, 'gate:research')
-        self.engine.decide(root, 'gate:research', 'changes', 'Look again at health-checks.',
-                           None)
-        asked = [spec['finding'] for kind, job, spec in self.workers.jobs
-                 if kind.startswith('question:')]
-        self.assertEqual(asked[-1], 'health-checks')
-        self.assertEqual(len(asked), 3)
-        self.assertEqual(self.waiting(root), 'gate:research')
-
-    def test_marks_at_the_research_are_kept_on_its_stop_and_a_note_alone_clears_them(self):
-        root = self.saved_start(research=True)
-        self.to_gate(root, 'gate:research')
-        self.engine.decide(root, 'gate:research', 'changes', 'Find a second page.',
-                           {'again': {'health-checks': ''}})
-        gate = self.record(root)['gates']['gate:research']
-        self.assertEqual((gate['again'], gate['free']),
-                         ({'health-checks': ''}, 'Find a second page.'))
-        self.assertEqual(gate['note'],
-                         '- Research `health-checks` again.\n\nFind a second page.')
-        self.assertEqual(self.waiting(root), 'gate:research')
-        self.engine.decide(root, 'gate:research', 'changes', 'Look again at health-checks.',
-                           None)
-        gate = self.record(root)['gates']['gate:research']
-        self.assertEqual((gate['again'], gate['free'], gate['note']),
-                         (None, None, 'Look again at health-checks.'))
-
-    def test_each_finding_s_headline_is_kept_with_the_research(self):
-        root = self.saved_start(research=True)
-        self.to_gate(root, 'gate:research')
-        record = json.loads((root / '.harness-research' / 'research.json').read_text())
-        self.assertEqual({ident: result.get('headline')
-                          for ident, result in record['results'].items()},
-                         {'instance-min': 'The page answers instance-min.',
-                          'health-checks': 'The page answers health-checks.'})
-
-    def test_the_research_stops_list_each_question_and_finding(self):
-        root = self.saved_start(research=True)
-        plan = self.view(root)['gate']
-        self.assertEqual(plan['questions'][0], {
-            'id': 'instance-min', 'title': 'Instance min',
-            'question': 'How many instances keep capacity during a restart?',
-            'search': 'rolling restart minimum instances'})
-        self.decide(root, 'gate:research-plan')
-        found = self.view(root)['gate']
-        first = found['items'][0]
-        self.assertEqual({key: first[key] for key in ('id', 'title', 'status', 'headline',
-                                                      'left_out', 'unknown')},
-                         {'id': 'instance-min', 'title': 'Instance min', 'status': 'supported',
-                          'headline': 'The page answers instance-min.', 'left_out': False,
-                          'unknown': ''})
-        self.assertEqual(set(first['sources'][0]), {'title', 'origin', 'quote'})
-        self.assertEqual(first['sources'][0]['quote'], runner_support.QUOTE)
-        self.assertEqual(first['sources'][0]['origin'], runner_support.URL)
-        self.assertNotIn(str(root), json.dumps(found))
-        # A finding kept before headlines were asked for is given its summary's first
-        # sentence.
-        kept = root / '.harness-research' / 'research.json'
-        record = json.loads(kept.read_text())
-        del record['results']['instance-min']['headline']
-        record['results']['instance-min']['summary'] = (
-            'What the page says about instance-min. More besides.')
-        kept.write_text(json.dumps(record))
-        self.assertEqual(self.view(root)['gate']['items'][0]['headline'],
-                         'What the page says about instance-min.')
-        # The report says that sentence once, in the summary.
-        self.engine.decide(root, 'gate:research', 'approve', None, {'left_out': []})
-        report = (root / 'research' / 'report.md').read_text()
-        self.assertEqual(report.count('What the page says about instance-min.'), 1)
-        self.assertIn('What the page says about instance-min. More besides.', report)
+        # Listed slide by slide, then stopped where the brand is first needed.
+        self.assertEqual(len(json.loads((root / outlines.INVENTORY).read_text())['slides']), 3)
+        self.assertEqual(self.view(root)['sentence'], engine.NO_BRAND)
 
 
 class SynthesisStopTests(StudioCase):
@@ -1245,23 +735,19 @@ class SynthesisStopTests(StudioCase):
               'original': 'sources/supplied/handbook-html.original.html',
               'access_error': 'There is no tool to read it.'}]
 
-    def synthesis(self):
-        root = self.saved_start(research=True)
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        self.engine._store(root, record)
-        return root
+    def synthesis(self, refusal):
+        """A desk deck with research, whose research stops as `refusal` says."""
+        from runner import research_steps
+        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
+            return self.start(research=True)
 
     def test_a_check_that_could_not_read_an_original_stops_and_says_whose_problem_it_is(self):
-        from runner import research_steps
         from studio_core import research_contract
-        root = self.synthesis()
         said = str(research_contract.CheckCouldNotFinish(['fact-a (narrow): Not read.'], 0,
                                                         self.CAUSE))
         refusal = WorkspaceError(said)
         refusal.objections, refusal.rounds, refusal.cause = ['fact-a (narrow): Not read.'], 0, self.CAUSE
-        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'gate:research-plan')
+        root = self.synthesis(refusal)
         view = self.view(root)
         self.assertEqual((view['state'], view['problem']['why']), ('failed', said))
         self.assertIn('could not read the original of "Handbook"', view['sentence'])
@@ -1287,13 +773,11 @@ class SynthesisStopTests(StudioCase):
 
     def test_objections_are_kept_under_their_groups(self):
         from runner import research_steps
-        root = self.synthesis()
         refusal = WorkspaceError('The independent check of the research still needs changes.')
         refusal.objections, refusal.rounds = ['f01 (narrow): Too broad.'], 3
         refusal.groups = [{'title': '1 fact the check calls narrow', 'count': 1,
                            'note': 'f01: Too broad.', 'items': ['f01: Too broad.']}]
-        with mock.patch.object(research_steps.research_contract, 'native', side_effect=refusal):
-            self.decide(root, 'gate:research-plan')
+        root = self.synthesis(refusal)
         kept = self.view(root)['problem']['kept']
         self.assertIn('every objection is listed under its group in research/review.md', kept)
         self.assertTrue(kept.endswith('\n- 1 fact the check calls narrow (f01: Too broad.)'))
@@ -1313,7 +797,7 @@ class SynthesisStopTests(StudioCase):
 
     def test_a_dry_read_reads_each_original_as_the_check_would(self):
         from studio_core import research_contract
-        root = self.saved_start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
+        root = self.start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
                           uploads={'handbook.html': b'<p>Restart one batch at a time.</p>'})
         self.assertIsNone(research_contract.dry_read(self.engine, root, self.CAUSE))
         with mock.patch.object(worker_tools.WorkerTools, '_original',
@@ -1329,8 +813,20 @@ class ResearchRoundTests(StudioCase):
     """A deck's research done as one authored report and one independent check: its jobs
     count under the research step, and the page says which round is in hand."""
 
-    def synthesis(self):
-        root = self.saved_start(research=True)
+    def desk_synthesis(self):
+        """A desk deck with research, its research step's jobs as below: the step itself is
+        not finished, as while its rounds are in hand."""
+        import shutil
+        from studio_core import research_contract
+        root = self.start(research=True)
+        record = self.engine._load(root)
+        record['steps'].pop('research')
+        self.engine._store(root, record)
+        # No draft is saved yet, as before the first round handed one back.
+        shutil.rmtree(root / research_contract.CASE / '.harness-research')
+        return self.rounds(root)
+
+    def rounds(self, root):
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         tried = lambda at, seconds, dollars, outcome='kept': {
@@ -1346,12 +842,12 @@ class ResearchRoundTests(StudioCase):
         return root
 
     def test_every_research_job_counts_under_the_research_step(self):
-        root = self.synthesis()
+        root = self.desk_synthesis()
         row = next(row for row in self.view(root)['timeline'] if row['name'] == 'research')
         self.assertEqual((row['attempts'], row['seconds'], row['dollars']), (4, 530.0, 1.5))
 
     def test_the_stop_says_what_the_last_try_of_the_research_took(self):
-        root = self.synthesis()
+        root = self.desk_synthesis()
         self.engine._problem(root, 'research', 'failed', 'It stopped.', 'Kept.')
         self.assertEqual(self.view(root)['problem']['research'], {
             'rounds': 2, 'jobs': 3, 'seconds': 480.0, 'dollars': 1.4, 'most': 3,
@@ -1363,10 +859,7 @@ class ResearchRoundTests(StudioCase):
         self.assertNotIn('research', self.view(root)['problem'])
 
     def test_the_round_in_hand_is_said_while_it_runs(self):
-        root = self.synthesis()
-        record = self.engine._load(root)
-        record['gates']['gate:research-plan']['state'] = 'approved'
-        self.engine._store(root, record)
+        root = self.desk_synthesis()
         self.assertEqual(jobs.first(self.engine._load(root)).name, 'research')
         run = self.engine._run(root)
         run.workers['research:review-2'] = {
@@ -1381,260 +874,6 @@ class ResearchRoundTests(StudioCase):
         self.assertEqual(shown['workers'][0]['label'],
                          'Independently checking the corrected research (round 2 of 3)')
 
-    def test_the_independent_check_takes_no_note(self):
-        from runner.steps import Work
-        root = self.synthesis()
-        self.engine.note(root, 'Lead with the risks.')
-        work = Work('guidance', 'task', 'write', {'artifacts': {}}, 'research-result')
-        self.assertIs(self.engine._noted(root, 'research:review-1', 'Checking', work), work)
-        self.assertEqual(self.record(root)['pending_note']['text'], 'Lead with the risks.')
-        taken = self.engine._noted(root, 'research:author-2', 'Correcting', work)
-        self.assertIn('> Lead with the risks.', taken.task)
-        self.assertIs(self.engine._noted(root, 'research:review-2', 'Checking', work), work)
-
-
-class FormPlanRevisionTests(StudioCase):
-    def test_free_text_revises_a_supplied_only_plan(self):
-        self.revise(False)
-
-    def test_structured_marks_revise_a_supplied_only_plan(self):
-        self.revise(True)
-
-    def revise(self, structured):
-        root = self.saved_start(title='Supplied ' + str(structured), route='document',
-                                research=True, research_questions=['Why?'],
-                                source={'kind': 'paste', 'text': 'Synthetic source notes.'},
-                                saved_contract={'schema': 2})
-        self.decide(root, 'gate:classify')
-        self.assertEqual(self.workers.of('research-plan'), [])
-        original = json.loads((root / 'research/plan.json').read_text())
-        revised = json.loads(json.dumps(original))
-        revised['items'][0]['question'] = 'What does the source say about capacity?'
-        extra = {'reword': {original['items'][0]['id']: revised['items'][0]['question']},
-                 'add': ['What remains unknown?']} if structured else None
-        if structured:
-            revised['items'].append({'id': 'unknown', 'question': 'What remains unknown?',
-                                     'public_query': None, 'claim': None})
-        self.workers.plan = revised
-        self.decide(root, 'gate:research-plan', decision='changes',
-                    note=None if structured else 'Replace Why? with the capacity question.',
-                    extra=extra)
-        self.assertEqual(json.loads((root / 'research/plan.json').read_text()), revised)
-        self.assertEqual(len(self.workers.of('research-plan')), 1)
-        task = self.workers.of('research-plan')[-1].task
-        self.assertIn('Reword `' if structured else 'Replace Why?', task)
-        self.assertIn('only the documents the person supplied', task)
-        self.assertNotIn('Keep each in the plan, in their words', task)
-        self.assertEqual(self.record(root)['research']['plan_from'], 'assistant')
-        self.assertEqual(self.waiting(root), 'gate:research-plan')
-
-
-class PlanMarkTests(StudioCase):
-    def questions(self, root):
-        return [item['id'] for item in
-                json.loads((root / 'research' / 'plan.json').read_text())['items']]
-
-    def test_dropped_questions_go_with_the_approval(self):
-        root = self.saved_start(research=True)
-        self.engine.decide(root, 'gate:research-plan', 'approve', None,
-                           {'dropped': ['health-checks']})
-        self.assertEqual(self.questions(root), ['instance-min'])
-        self.assertNotIn('health-checks', (root / 'research' / 'plan.md').read_text())
-        self.assertEqual(len(self.workers.of('question')), 1)
-        self.assertEqual(self.waiting(root), 'gate:research')
-
-    def test_rewording_and_adding_go_back_to_the_planner_as_one_note(self):
-        root = self.saved_start(research=True)
-        self.engine.decide(root, 'gate:research-plan', 'changes', 'Keep it short.', {
-            'dropped': ['health-checks'],
-            'reword': {'instance-min': 'How many instances keep capacity?'},
-            'add': ['What does a restart cost?']})
-        task = self.workers.of('research-plan')[-1].task
-        self.assertIn('- Reword `instance-min` as: How many instances keep capacity?', task)
-        self.assertIn('- Add a question: What does a restart cost?', task)
-        self.assertIn('Keep it short.', task)
-        # The drop was applied before the planner ran again.
-        self.assertIn('"id": "instance-min"', task)
-        self.assertNotIn('"id": "health-checks"', task)
-        gate = self.record(root)['gates']['gate:research-plan']
-        self.assertEqual((gate['state'], gate['round']), ('waiting', 2))
-
-    def test_marks_that_say_nothing_or_need_a_worker_with_approve_are_refused(self):
-        root = self.saved_start(research=True)
-        for decision, extra, said in (
-                ('approve', {'add': ['Why?']}, marks.AS_CHANGES),
-                ('approve', {'dropped': ['instance-min', 'health-checks']}, marks.ALL_DROPPED),
-                ('changes', {'dropped': ['nowhere']}, 'There is no question nowhere here.'),
-                ('changes', {}, 'Say what should change.')):
-            with self.subTest(extra=extra):
-                with self.assertRaises(WorkspaceError) as caught:
-                    self.engine.decide(root, 'gate:research-plan', decision, None, extra)
-                self.assertIn(said, str(caught.exception))
-        self.assertEqual(self.questions(root), ['instance-min', 'health-checks'])
-        self.assertEqual(self.waiting(root), 'gate:research-plan')
-
-
-class FindingMarkTests(StudioCase):
-    def researched(self):
-        self.workers.then('question', unsettled(self.workers, 'health-checks'),
-                          unsettled(self.workers, 'health-checks'))
-        root = self.saved_start(research=True)
-        self.decide(root, 'gate:research-plan')
-        self.assertEqual(self.waiting(root), 'gate:research')
-        return root
-
-    def asked(self, before):
-        """The questions researched since `before` question jobs had started."""
-        return [spec['finding'] for kind, job, spec in self.workers.jobs
-                if kind.startswith('question:')][before:]
-
-    def test_the_report_is_written_from_each_finding(self):
-        root = self.researched()
-        report = (root / 'research' / 'report.md').read_text()
-        for said in ('1 of 2 questions has an answer the sources support.',
-                     'Not settled (1):', '## Instance min (`instance-min`)',
-                     'The page answers instance-min.', 'Not known: Only one page was found.',
-                     f'"{runner_support.QUOTE}"'):
-            self.assertIn(said, report)
-
-    def test_left_out_findings_go_with_the_approval_and_leave_the_report(self):
-        root = self.researched()
-        self.engine.decide(root, 'gate:research', 'approve', None,
-                           {'left_out': ['health-checks']})
-        report = (root / 'research' / 'report.md').read_text()
-        self.assertIn('1 of 1 question has an answer the sources support.', report)
-        self.assertIn('Left out by you (1):\n- Health checks', report)
-        self.assertNotIn('No page says', report)
-        self.assertEqual(self.record(root)['research']['left_out'], ['health-checks'])
-        self.assertEqual(self.waiting(root), 'gate:outline')
-
-    def test_research_again_redoes_only_the_marked_question_with_its_line(self):
-        root = self.researched()
-        before = len(self.workers.of('question'))
-        self.engine.decide(root, 'gate:research', 'changes', 'Be brief.', {
-            'left_out': [], 'again': {'health-checks': 'Look for the platform docs.'}})
-        self.assertEqual(self.asked(before), ['health-checks'])
-        task = self.workers.of('question')[-1].task
-        self.assertIn('researched again. What they said about it:\n\nLook for the platform '
-                      'docs.', task)
-        self.assertIn('Be brief.', task)
-        gate = self.view(root)['gate']
-        self.assertEqual((gate['name'], gate['round']), ('gate:research', 2))
-        # What was marked is not kept once the research is approved.
-        self.engine.decide(root, 'gate:research', 'approve', None, None)
-        gate = self.record(root)['gates']['gate:research']
-        self.assertEqual((gate['again'], gate['added'], gate['free']), (None, None, None))
-
-    def test_a_question_added_after_the_research_keeps_the_other_findings(self):
-        root = self.researched()
-        before = len(self.workers.of('question'))
-        self.engine.decide(root, 'gate:research', 'changes', None,
-                           {'add': ['What does a restart cost?']})
-        self.assertEqual(self.asked(before), ['what-does-a-restart-cost'])
-        task = self.workers.of('question')[-1].task
-        self.assertIn('The person added your question after reading the research.', task)
-        self.assertNotIn('researched again', task)
-        statuses = {item['id']: item['status'] for item in self.view(root)['gate']['items']}
-        self.assertEqual(statuses, {'instance-min': 'supported', 'health-checks': 'insufficient',
-                                    'what-does-a-restart-cost': 'supported'})
-
-    def test_findings_a_changed_plan_lost_are_researched_again(self):
-        from stand_ins import research as research_stand_in
-        root = self.researched()
-        before = len(self.workers.of('question'))
-        # As when a file the research rests on changed: harness-research keeps nothing.
-        with mock.patch.object(research_stand_in.SavedQueueStandIn, '_kept', lambda *given: {}):
-            self.engine.decide(root, 'gate:research', 'changes', None,
-                               {'add': ['What does a restart cost?']})
-        self.assertEqual(sorted(self.asked(before)),
-                         ['health-checks', 'instance-min', 'what-does-a-restart-cost'])
-        self.assertNotIn('pending', [item['status'] for item in self.view(root)['gate']['items']])
-        self.assertNotIn('Not researched', (root / 'research' / 'report.md').read_text())
-
-    def test_a_left_out_question_is_not_researched_again_for_a_note(self):
-        root = self.researched()
-        before = len(self.workers.of('question'))
-        self.engine.decide(root, 'gate:research', 'changes', 'Be brief.',
-                           {'left_out': ['health-checks']})
-        # The note names no question, so each question kept is researched again, but never
-        # the one left out, though it is unsettled and the note the runner writes names it.
-        self.assertEqual(self.asked(before), ['instance-min'])
-        task = self.workers.of('question')[-1].task
-        self.assertIn('Be brief.', task)
-        self.assertNotIn('Leave out', task)
-        self.assertEqual(self.waiting(root), 'gate:research')
-        report = (root / 'research' / 'report.md').read_text()
-        self.assertIn('Left out by you (1):\n- Health checks', report)
-        self.assertNotIn('No page says', report)
-
-    def test_a_left_out_finding_is_not_researched_again_until_it_is_brought_back(self):
-        root = self.researched()
-        self.engine.decide(root, 'gate:research', 'changes', 'Be brief.',
-                           {'left_out': ['health-checks']})
-        before, kept = len(self.workers.of('question')), self.record(root)
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:research', 'changes', None,
-                               {'again': {'health-checks': ''}})
-        self.assertEqual(str(caught.exception),
-                         'health-checks is left out: bring it back before researching it '
-                         'again.')
-        self.assertEqual(self.record(root), kept)
-        self.assertEqual(len(self.workers.of('question')), before)
-
-    def test_a_question_added_to_a_full_plan_is_refused_and_nothing_is_written(self):
-        root = self.researched()
-        plan = json.loads((root / 'research' / 'plan.json').read_text())
-        plan['items'] += [{'id': f'more-{number}', 'question': f'More {number}?',
-                           'public_query': None, 'claim': None} for number in range(28)]
-        (root / 'research' / 'plan.json').write_text(json.dumps(plan, indent=2))
-        kept = (root / 'research' / 'plan.json').read_text()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:research', 'changes', None,
-                               {'add': ['What does a restart cost?']})
-        self.assertEqual(str(caught.exception), 'A plan holds at most 30 questions.')
-        self.assertEqual((root / 'research' / 'plan.json').read_text(), kept)
-        self.assertEqual(self.waiting(root), 'gate:research')
-
-    def test_marks_that_need_a_worker_go_as_changes(self):
-        root = self.researched()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:research', 'approve', None,
-                               {'again': {'health-checks': ''}})
-        self.assertEqual(str(caught.exception), marks.AS_CHANGES)
-
-
-class OutlineMarkTests(StudioCase):
-    def test_slides_marked_for_changes_reach_the_outline_worker(self):
-        root = self.saved_start()
-        slides = self.view(root)['gate']['slides']
-        moved = [slides[0], slides[2], slides[1], *slides[3:]]
-        # The scripted workers draw the outline they are given, as it now stands.
-        self.workers.outline_said = {**self.workers.outline_said, 'slides': moved}
-        read = []
-
-        def draw(tools, job):
-            read.append(json.loads(tools.read_input('The current outline')[1]))
-            self.workers.outline(tools, job)
-        self.workers.then('outline', draw)
-        self.engine.decide(root, 'gate:outline', 'changes', None, {
-            'edited': moved, 'slides': {slides[1]['id']: 'Split it in two.'}})
-        # The worker found the person's edit already kept when it began.
-        self.assertEqual([[one['id'] for one in outline['slides']] for outline in read],
-                         [[one['id'] for one in moved]])
-        kept = json.loads((root / 'outline.json').read_text())
-        self.assertEqual([one['id'] for one in kept['slides']], [one['id'] for one in moved])
-        task = self.workers.of('outline')[-1].task
-        self.assertIn(f"- Slide `{slides[1]['id']}`: Split it in two.", task)
-        self.assertEqual(self.record(root)['gates']['gate:outline']['round'], 2)
-
-    def test_a_slide_the_outline_does_not_have_is_refused(self):
-        root = self.saved_start()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:outline', 'changes', None,
-                               {'slides': {'no-such-slide': 'Split it.'}})
-        self.assertEqual(str(caught.exception), 'There is no slide no-such-slide here.')
-        self.assertEqual(len(self.workers.of('outline')), 1)
-
 
 PNG_BYTES = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
              b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xcf'
@@ -1642,196 +881,7 @@ PNG_BYTES = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x
              b'\x82')
 
 
-class SuppliedPictureTests(StudioCase):
-    """A picture the person gives a slide at the outline stop, recorded in the deck's asset
-    project with the slides tool's own `assets add-supplied`."""
-
-    def setUp(self):
-        super().setUp()
-        from stand_ins import slides as slides_stand_in
-        with mock.patch.object(self.engines.slides_tool, 'Slides', self.real[0]):
-            self.slides = slides_stand_in.stand_in(assets=True)   # with its asset manifest
-
-    def at_outline(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:outline')
-        gate = self.view(root)['gate']
-        return root, gate, gate['slides']
-
-    def add(self, root, gate, slide, data=PNG_BYTES, alt='A rack of servers in our lab.',
-            source='Our own photograph.', name='rack.png', expected='seen'):
-        return self.engine.add_picture(root, slide, name, data, alt, source,
-                                       gate.get('expected') if expected == 'seen' else expected)
-
-    def test_add_picture(self):
-        from runner.steps import build
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        made = self.add(root, gate, content['id'])
-        self.assertEqual(made, {'asset': f"pic-{content['id']}", 'slide': content['id']})
-        added = [call for call in self.slides.run.calls if call[:2] == ['assets', 'add-supplied']]
-        self.assertEqual(len(added), 1)
-        call = added[0]
-        self.assertIn('--alt=A rack of servers in our lab.', call)
-        self.assertIn('--source=Our own photograph.', call)
-        self.assertEqual((call[call.index('--project') + 1], call[call.index('--id') + 1]),
-                         (str(root / build.ASSETS), f"pic-{content['id']}"))
-        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}")
-        self.assertEqual((build.pictures(root)[content['id']]['kind'],
-                          build.pictures(root)[content['id']]['title']),
-                         ('content', content['title']))
-        shown = self.view(root)['gate']['pictures']
-        self.assertEqual(shown[content['id']]['alt'], 'A rack of servers in our lab.')
-        self.assertFalse(any(call[:2] == ['images', 'generate'] for call in self.slides.run.calls),
-                         'a picture is never generated')
-
-    def test_each_refusal_says_what_to_do(self):
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        closing = next(slide for slide in slides if slide.get('kind') == 'closing')
-        for changes, said in (
-                ({'data': b'GIF89a not a picture'}, 'A picture is a PNG or a JPEG file.'),
-                ({'data': PNG_BYTES + b'0' * 20_000_001}, 'A picture is at most 20 MB.'),
-                ({'alt': '  '}, 'Say what the picture shows, for someone who cannot see it.'),
-                ({'source': ''}, 'Say where the picture came from.'),
-                ({'slide': 'no-such-slide'}, 'no-such-slide is not a slide of this outline.'),
-                ({'slide': closing['id']}, 'A picture goes on a cover, section or content slide.'),
-                ({'expected': 'an older outline'},
-                 'The outline changed. Reload it before adding a picture.')):
-            with self.subTest(said=said):
-                given = {'slide': content['id'], **changes}
-                with self.assertRaises(WorkspaceError) as refused:
-                    self.add(root, gate, given.pop('slide'), **given)
-                self.assertEqual(str(refused.exception), said)
-        self.decide(root, 'gate:outline')
-        with self.assertRaises(WorkspaceError) as refused:
-            self.add(root, gate, content['id'])
-        self.assertEqual(str(refused.exception),
-                         'Add a picture while the outline is waiting for you.')
-
-    def remove(self, root, gate, slide, expected='seen'):
-        return self.engine.remove_picture(root, slide,
-                                          gate.get('expected') if expected == 'seen' else expected)
-
-    def test_a_picture_is_removed_and_one_given_again_takes_a_new_asset(self):
-        from runner.steps import build
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        self.add(root, gate, content['id'])
-        gate = self.view(root)['gate']
-        self.assertEqual(self.remove(root, gate, content['id']), {'slide': content['id']})
-        self.assertEqual(build.pictures(root), {})
-        gate = self.view(root)['gate']
-        self.assertEqual(gate['pictures'], {})
-        # The slides tool's record is never rewritten: a picture given again is a new asset,
-        # even with other bytes, and no asset-conflict is met.
-        made = self.add(root, gate, content['id'], data=PNG_BYTES + b'another picture')
-        self.assertEqual(made['asset'], f"pic-{content['id']}-2")
-        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}-2")
-        self.assertFalse(any(call[:2] == ['images', 'generate'] for call in self.slides.run.calls))
-
-    def test_each_refusal_to_remove_a_picture_says_what_to_do(self):
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        other = next(slide for slide in slides if slide.get('id') != content['id'])
-        with self.assertRaises(WorkspaceError) as refused:
-            self.remove(root, gate, content['id'])
-        self.assertEqual(str(refused.exception),
-                         f"“{content['title']}” has no picture to remove.")
-        self.add(root, gate, content['id'])
-        gate = self.view(root)['gate']
-        for slide, expected, said in (
-                ('no-such-slide', 'seen', 'no-such-slide is not a slide of this outline.'),
-                (other['id'], 'seen', f"“{other['title']}” has no picture to remove."),
-                (content['id'], 'an older outline',
-                 'The outline changed. Reload it before removing a picture.')):
-            with self.subTest(said=said):
-                with self.assertRaises(WorkspaceError) as refused:
-                    self.remove(root, gate, slide, expected)
-                self.assertEqual(str(refused.exception), said)
-        self.decide(root, 'gate:outline')
-        with self.assertRaises(WorkspaceError) as refused:
-            self.remove(root, gate, content['id'])
-        self.assertEqual(str(refused.exception),
-                         'Remove a picture while the outline is waiting for you.')
-
-    def test_a_retry_after_a_record_that_failed_part_way_is_not_an_asset_conflict(self):
-        from runner.steps import build
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        # The slides tool recorded a first attempt, and then the record failed before the deck
-        # kept it: the asset ID is taken in the tool's manifest but not in the deck.
-        original = type(self.slides).asset_supplied
-
-        def records_then_fails(tool, *args, **kwargs):
-            original(tool, *args, **kwargs)
-            raise WorkspaceError('The slides tool stopped answering.')
-
-        with mock.patch.object(type(self.slides), 'asset_supplied', autospec=True,
-                               side_effect=records_then_fails):
-            with self.assertRaises(WorkspaceError):
-                self.add(root, gate, content['id'], data=PNG_BYTES + b'first try')
-        self.assertEqual(build.pictures(root), {})
-        made = self.add(root, gate, content['id'])
-        self.assertEqual(made['asset'], f"pic-{content['id']}-2")
-        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}-2")
-
-    def test_names_the_slides_tool_holds_are_passed_by_and_not_tried_twice(self):
-        from runner import slides as slides_tool
-        from runner.steps import build
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        taken = slides_tool.Refused(['Asset taken'], {'problems': [{'code': 'asset-conflict'}]})
-        tried = []
-
-        def holds_every_name(tool, project, file, ident, *args, **kwargs):
-            tried.append(ident)
-            raise taken
-
-        with mock.patch.object(type(self.slides), 'asset_supplied', autospec=True,
-                               side_effect=holds_every_name):
-            with self.assertRaises(WorkspaceError) as refused:
-                self.add(root, gate, content['id'])
-        self.assertEqual(len(tried), build.PICTURE_TRIES)
-        self.assertEqual(str(refused.exception), 'The slides tool already holds every name '
-                         'tried for this picture. Give it again, and the next names are tried.')
-        self.assertEqual(build.pictures(root), {}, 'nothing is shown as given')
-        # Given again, the next names are tried, and the first free one is taken.
-        made = self.add(root, gate, content['id'])
-        self.assertEqual(made['asset'], f"pic-{content['id']}-{build.PICTURE_TRIES + 1}")
-
-    def test_alt_and_source_text_may_begin_with_a_dash(self):
-        from runner.steps import build
-        root, gate, slides = self.at_outline()
-        content = next(slide for slide in slides if slide.get('kind') == 'content')
-        self.add(root, gate, content['id'], alt='-40 °C at the edge of the rack.',
-                 source='--from our own lab notebook')
-        call, = [call for call in self.slides.run.calls if call[:2] == ['assets', 'add-supplied']]
-        self.assertIn('--alt=-40 °C at the edge of the rack.', call)
-        self.assertIn('--source=--from our own lab notebook', call)
-        self.assertNotIn('--alt', call)
-        self.assertNotIn('--source', call)
-        kept = build.pictures(root)[content['id']]
-        self.assertEqual((kept['alt'], kept['source']),
-                         ('-40 °C at the edge of the rack.', '--from our own lab notebook'))
-        recorded = self.slides.asset_status(root / build.ASSETS)['assets'][0]
-        self.assertEqual((recorded['alt'], recorded['source']),
-                         ('-40 °C at the edge of the rack.', '--from our own lab notebook'))
-
-
 class DocumentTests(StudioCase):
-    def test_a_pasted_document_is_classified_and_a_correction_switches_the_branch(self):
-        root = self.saved_start(route='document', research=True,
-                          source={'kind': 'paste', 'text': '- a\n- b\n- c\n- d\n- e\n'})
-        self.assertFalse((root / 'sources' / 'incoming').exists())
-        self.assertNotIn('- a', (root / 'run.json').read_text())
-        gate = self.view(root)['gate']
-        self.assertEqual((gate['name'], gate['verdict']), ('gate:classify', 'material'))
-        self.assertEqual(gate['reason'], 'Notes to build a talk from.')
-        self.engine.decide(root, 'gate:classify', 'approve', None, {'kind': 'spec'})
-        self.assertEqual(self.record(root)['classified'], 'spec')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(self.workers.of('research-plan'), [])
 
     def test_an_upload_waits_under_sources_and_is_taken_in(self):
         read = []
@@ -1841,12 +891,12 @@ class DocumentTests(StudioCase):
             self.workers.classification(tools, job)
 
         self.workers.then('classification', reads)
-        root = self.saved_start(route='document', source={'kind': 'upload', 'name': 'notes.md'},
+        root = self.start(route='document', source={'kind': 'upload', 'name': 'notes.md'},
                           uploads={'notes.md': b'# Notes\n\nCapacity holds with two.\n'})
-        self.assertEqual(self.waiting(root), 'gate:classify')
+        self.assertEqual(self.waiting(root), 'gate:build')
         self.assertIn('Capacity holds with two.', read[0])
         self.assertFalse((root / 'sources' / 'incoming').exists())
-        self.assertEqual(self.view(root)['gate']['documents'][0]['name'], 'notes.md')
+        self.assertEqual(self.view(root)['desk']['sources'][0]['name'], 'notes.md')
 
     def test_an_upload_that_was_not_sent_starts_nothing(self):
         before = self.log()
@@ -1859,28 +909,6 @@ class DocumentTests(StudioCase):
 
 class ExistingTests(StudioCase):
     DECK = b'PK\x03\x04' + b'stand-in deck'
-
-    def test_the_inventory_shows_the_original_slides(self):
-        root = self.saved_start(route='existing', level='polish',
-                          source={'kind': 'upload', 'name': 'old.pptx'},
-                          uploads={'old.pptx': self.DECK})
-        gate = self.view(root)['gate']
-        self.assertEqual(gate['name'], 'gate:classify')
-        self.assertEqual([row['number'] for row in gate['inventory']], [1, 2, 3])
-        self.assertEqual(gate['pictures'][0], {'kind': 'original', 'ref': 1})
-        self.assertTrue(self.engine.picture(root, 'original', 2).startswith(b'\x89PNG'))
-
-    def test_balanced_redesign_says_it_stops_for_the_look(self):
-        root = self.saved_existing_deck('balanced', 'redesign')
-        ahead = self.view(root)['ahead']
-        self.assertEqual(ahead['next_gate'], 'gate:look')
-        from studio_core import review_policy
-        record = self.engine._load(root)
-        self.assertEqual(review_policy.ahead(record, 'presentation',
-                                             ['gate:look', 'gate:build'],
-                                             run_gates=[s.name for s in
-                                                        stages.steps(record)]),
-                         ['gate:look', 'gate:build'])
 
     def test_a_google_deck_while_google_is_not_reached_starts_nothing(self):
         self.slides.run.drive = False
@@ -1895,8 +923,8 @@ class ExistingTests(StudioCase):
 class PictureTests(StudioCase):
     def test_progress_images_are_named_by_current_refs_and_do_not_replace_the_gate(self):
         from runner import build_progress
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         basis = build.read_state(root)['start']['folder']
         shown = build_progress.view(root, basis)
         self.assertTrue(shown['slides'])
@@ -1907,8 +935,8 @@ class PictureTests(StudioCase):
             self.engine.picture(root, 'progress', '../../private')
 
     def test_only_pictures_the_steps_recorded_are_served(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         (root / 'secret.png').write_bytes(runner_support.png())
         for kind, ref in (('build', 99), ('build', '../secret'), ('look', 7),
                           ('original', 1)):
@@ -1921,37 +949,40 @@ class PictureTests(StudioCase):
 
 class LockTests(StudioCase):
     def test_a_render_in_hand_never_holds_up_a_decision_on_another_deck(self):
-        slow, other = self.saved_start(), self.saved_start(title='Another deck')
+        other = self.start(title='Another deck')
+        expected = self.view(other)['desk']['expected']
         entered, release, real = threading.Event(), threading.Event(), build.render
+        slow = []
 
         def held(root, *args, **named):
-            if Path(root) == slow:
+            if Path(root).name != other.name:
                 entered.set()
                 release.wait(30)
             return real(root, *args, **named)
 
         with mock.patch.object(build, 'render', held):
-            self.decide(slow)                       # the outline; the brand waits next
-            going = threading.Thread(target=self.decide, args=(slow,))
-            going.start()                           # the brand; the build runs to its render
+            going = threading.Thread(target=lambda: slow.append(self.start()))
+            going.start()                           # a new deck runs to its render
             try:
                 self.assertTrue(entered.wait(60), 'the render was reached')
                 clock = time.monotonic()
-                self.engine.decide(other, 'gate:outline', 'changes', 'Shorter, please.')
+                drawn = len(self.workers.of('section'))
+                self.engine.desk_deck_note(other, 'Shorter, please.', expected)
                 self.assertLess(time.monotonic() - clock, 10,
                                 "a decision waited for another deck's render")
-                self.assertEqual(self.waiting(other), 'gate:outline')
+                self.assertEqual(self.waiting(other), 'gate:build')
+                self.assertIn('Shorter, please.', self.workers.of('section')[drawn].task)
             finally:
                 release.set()
                 going.join(60)
-        self.assertEqual(self.waiting(slow), 'gate:build')
+        self.assertEqual(self.waiting(slow[0]), 'gate:build')
 
 
 class ListTests(StudioCase):
     def test_decks_are_listed_by_what_they_need(self):
-        waiting = self.saved_start()
-        done = self.saved_start(title='Second deck')
-        self.to_end(done)
+        waiting = self.start()
+        done = self.start(title='Second deck')
+        self.deliver_desk(done)
         listed = self.engine.decks()
         self.assertEqual([entry['id'] for entry in listed['needs']], [waiting.name])
         self.assertEqual([entry['id'] for entry in listed['finished']], [done.name])
@@ -1962,7 +993,7 @@ class ListTests(StudioCase):
 
 class DrivenTests(StudioCase):
     def test_a_deck_folder_reached_through_a_link_or_dots_is_not_driven(self):
-        root = self.saved_start()
+        root = self.start()
         space = self.engine.space().root
         self.assertEqual(self.engine.driven(root), root)
         self.assertEqual(self.engine.every(), [root])
@@ -1995,10 +1026,14 @@ class ModelProfileTests(StudioCase):
         from runner import setup
         self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
         self.workers.found = [grave]
-        root = self.saved_start()
+        def later(tools, job):
+            # Settings change once the outline is drafted, before the deck is drawn.
+            studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
+            return self.workers.text_check(tools, job)
+        self.workers.then('text-check', later)
+        root = self.start()
         self.assertEqual(self.workers.of('outline')[0].model, 'quick-model')
-        studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
-        self.to_gate(root, 'gate:build')
+        self.assertEqual(self.waiting(root), 'gate:build')
         choices = self.record(root)['model_jobs']
         # Settings saved before the kinds of work: Writing and Checking take Main's model.
         self.assertTrue(any(c['profile'] == 'writing' and c['model'] == 'main-model' for c in choices))
@@ -2014,399 +1049,12 @@ class ModelProfileTests(StudioCase):
 
     def test_codex_and_explicit_work_override(self):
         self.configure('codex')
-        root = self.saved_start(title='By task')
+        root = self.start(title='By task')
         self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
         self.assertEqual(self.workers.of('outline')[-1].model, 'quick-model')
-        other = self.saved_start(title='Work override', agent='codex', model='own-model', effort='high')
+        other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.of('outline')[-1].model, 'own-model')
-
-
-class SayingTests(StudioCase):
-    """Changing what a slide says: the outline is reopened with the slide marked, and only
-    the section that draws it is drawn again once the outline is approved."""
-
-    def setUp(self):
-        super().setUp()
-        self.workers.outline_said = LONG_OUTLINE   # two sections: slides 2-4 and 5-7
-
-    def retitled(self, root: Path, number: int, title: str) -> list[dict]:
-        slides = json.loads(json.dumps(self.view(root)['gate']['slides']))
-        slides[number - 1]['title'] = title
-        # The scripted workers draw the outline they are given, as it now stands.
-        self.workers.outline_said = {**self.workers.outline_said, 'slides': slides}
-        return slides
-
-    def test_changing_what_a_slide_says_reopens_the_outline_and_redraws_its_section(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'direction_target': 'gate:outline', 'slides': [3]})
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        gate = self.view(root)['gate']
-        self.assertEqual(gate['saying'], {OUTLINE['slides'][2]['id']: ''})
-        # The outline is as it was: no worker drafted it again.
-        self.assertEqual(len(self.workers.of('outline')), 1)
-        self.assertEqual(self.record(root)['gates']['gate:outline']['round'], 2)
-        edited = self.retitled(root, 3, 'Capacity holds with several instances')
-        self.decide(root, 'gate:outline', 'approve', None, {'edited': edited})
-        # The brand did not change, so it is not checked again.
-        self.assertEqual(self.waiting(root), 'gate:build')
-        again = self.workers.of('section')[drawn:]
-        self.assertEqual([job.task.split('"')[0].strip() for job in again],
-                         ['Draw section 1 of'])
-        state = build.read_state(root)
-        self.assertEqual(sorted(state['sections']), ['section-1', 'section-2'])
-        self.assertTrue(state['sections']['section-2'].get('kept'))
-        shown = self.view(root)['gate']
-        self.assertEqual(shown['slides'][2]['title'], 'Capacity holds with several instances')
-        self.assertEqual(self.record(root)['gates']['gate:build']['round'], 2)
-
-    def test_changing_what_a_delivered_slide_says_builds_and_delivers_a_new_revision(self):
-        root = self.saved_start()
-        self.to_end(root)
-        self.engine.decide(root, 'gate:build', 'changes', 'Say it plainly.',
-                           {'direction_target': 'gate:outline', 'slides': [6]})
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertIsNone(decks.delivered(root))
-        self.assertEqual(self.view(root)['gate']['saying'],
-                         {LONG_OUTLINE['slides'][5]['id']: 'Say it plainly.'})
-        edited = self.retitled(root, 6, 'Health checks gate the next batch')
-        self.decide(root, 'gate:outline', 'approve', None, {'edited': edited})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        self.assertEqual([job.task.split('"')[0].strip()
-                          for job in self.workers.of('section')[2:]], ['Draw section 2 of'])
-        self.decide(root, 'gate:build')
-        view = self.view(root)
-        self.assertEqual(view['deliver']['revision'], 2)
-        self.assertEqual(len(view['deliver']['revisions']), 2)
-
-    def test_changing_what_slides_say_needs_their_numbers(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:build', 'changes', 'Say it plainly.',
-                               {'direction_target': 'gate:outline'})
-        self.assertEqual(str(caught.exception),
-                         'Name the slides whose words should change, by their numbers.')
-        with self.assertRaises(WorkspaceError):
-            self.engine.decide(root, 'gate:outline', 'changes', 'No.',
-                               {'direction_target': 'gate:outline'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-
-    def test_a_delivered_deck_shows_its_slides_and_what_the_last_build_cost(self):
-        self.workers.cost = 0.25
-        root = self.saved_start()
-        self.to_end(root)
-        shown = self.view(root)['deliver']
-        self.assertEqual([slide['number'] for slide in shown['slides']],
-                         list(range(1, len(LONG_OUTLINE['slides']) + 1)))
-        self.assertEqual(shown['slides'][1]['image'], {'kind': 'build', 'ref': 2})
-        self.assertEqual(shown['slides'][1]['title'], OUTLINE['slides'][1]['title'])
-        # Two sections and a review were drawn by workers, at a quarter dollar each.
-        self.assertEqual(shown['last_build']['dollars'], 0.75)
-        self.assertGreater(shown['last_build']['seconds'], 0)
-        self.assertEqual(self.view(root)['ahead']['dollars'], 0.25 * len(self.workers.jobs))
-        self.assertIsNotNone(self.engine._redo(self.record(root), 'gate:build')['dollars'])
-
-
-    def test_asking_to_change_words_names_the_slides_and_clears_the_deck_s_note(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        self.engine.decide(root, 'gate:build', 'changes', 'Tighter.', {'slides': [2]})
-        self.to_gate(root, 'gate:build')
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'direction_target': 'gate:outline', 'slides': [3, 5]})
-        self.assertEqual(self.log()[-1], 'Rolling restarts: ask to change what slides 3 and 5 say')
-        self.assertIsNone(self.record(root)['gates']['gate:build'].get('note'))
-        self.decide(root, 'gate:outline')
-        self.assertIn('Rolling restarts: approve the outline', self.log())
-
-    def test_one_slide_s_words_are_said_in_the_singular(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'direction_target': 'gate:outline', 'slides': [3]})
-        self.assertEqual(self.log()[-1], 'Rolling restarts: ask to change what slide 3 says')
-
-    def test_the_outline_worker_changes_only_the_marked_slide_and_one_section_is_drawn(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'direction_target': 'gate:outline', 'slides': [6]})
-        slides = json.loads(json.dumps(self.view(root)['gate']['slides']))
-        slides[5]['title'] = 'Health checks gate the next batch'
-        self.workers.outline_said = {**self.workers.outline_said, 'slides': slides}
-        self.decide(root, 'gate:outline', 'changes', None,
-                    {'slides': {slides[5]['id']: 'Say that the check gates the batch.'}})
-        task = self.workers.of('outline')[-1].task
-        self.assertIn('Keep every slide you do not change exactly as it is, its id '
-                      'included', task)
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:build')
-        self.assertEqual([job.task.split('"')[0].strip()
-                          for job in self.workers.of('section')[drawn:]],
-                         ['Draw section 2 of'])
-
-    def test_a_deck_without_an_outline_keeps_its_words_where_they_came_from(self):
-        root = self.saved_start(route='existing', level='polish',
-                          source={'kind': 'upload', 'name': 'old.pptx'},
-                          uploads={'old.pptx': b'PK\x03\x04' + b'stand-in deck'})
-        # The stand-in workers cannot rebuild the stand-in deck, so it is asked at its first
-        # stop: the refusal comes before anything of the deck is looked at.
-        self.assertEqual(self.waiting(root), 'gate:classify')
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:build', 'changes', None,
-                               {'direction_target': 'gate:outline', 'slides': [1]})
-        self.assertEqual(str(caught.exception), "This deck's words come from the deck you "
-                         'gave: change them there, or ask for changes to the slide.')
-        self.assertEqual(self.waiting(root), 'gate:classify')
-
-    def test_from_the_direction_review_the_words_go_back_to_it(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.saved_start(research=True)
-        self.to_gate(root, 'gate:build')
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'direction_target': 'gate:outline', 'slides': [3]})
-        gate = self.view(root)['gate']
-        self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
-        self.assertTrue(gate['expected'])
-        self.assertEqual(gate['saying'], {LONG_OUTLINE['slides'][2]['id']: ''})
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:build')
-
-    def test_what_the_last_build_cost_counts_every_section_after_a_partial_rebuild(self):
-        self.workers.cost = 0.25
-        root = self.saved_start()
-        self.to_end(root)
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'direction_target': 'gate:outline', 'slides': [6]})
-        edited = self.retitled(root, 6, 'Health checks gate the next batch')
-        self.decide(root, 'gate:outline', 'approve', None, {'edited': edited})
-        self.decide(root, 'gate:build')
-        shown = self.view(root)['deliver']
-        # One section was drawn again, at a quarter dollar, and the deck reviewed again; the
-        # section kept from the build before counts as it did then.
-        self.assertEqual(shown['last_build']['dollars'], 0.75)
-        self.assertEqual(shown['last_build']['sections'], 2)
-
-
-class LookStepTests(StudioCase):
-    """A brand that is the entry to slide building and offers looks: the deck's look is
-    chosen from the brand's rendered samples, and the deck pauses for the person where
-    studio_core.deck_flow says, at each review level."""
-
-    def setUp(self):
-        super().setUp()
-        self.brand.run.offers_looks = True
-        self.brand.run.guides = True
-
-    def begin(self, level):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': level}):
-            return self.saved_start()
-
-    def paused(self, root, gates=('gate:outline', 'gate:look', 'gate:build')):
-        """Each gate this deck stopped at for the person, in order, approving each with a
-        look where one is asked for."""
-        seen = []
-        for _ in range(8):
-            gate = self.view(root)['gate']
-            if gate is None:
-                break
-            seen.append(gate['name'])
-            offered = (gate.get('offered') or (gate.get('look') or {}).get('offered'))
-            self.decide(root, gate['name'], 'approve', None,
-                        {'look': 'example-bold'} if offered and not offered['chosen'] else None)
-        return [name for name in seen if name in gates]
-
-    def test_step_by_step_stops_for_the_draft_the_look_and_the_deck(self):
-        from studio_core import deck_flow
-        root = self.begin('step_by_step')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
-        shown = self.view(root)['gate']
-        offered = shown['offered']
-        self.assertEqual([one['id'] for one in offered['looks']],
-                         [entry['id'] for entry in brand_stand_in.DIRECTIONS])
-        self.assertEqual(offered['default'], brand_stand_in.DEFAULT_LOOK)
-        self.assertTrue(offered['sheet'])
-        self.assertEqual(offered['notes'], [deck_flow.route('local')['says']])
-        self.assertFalse(offered['failed'])
-        self.assertIsNone(shown['older'])
-        self.assertTrue(self.engine.picture(root, 'look', 0).startswith(b'\x89PNG'))
-        self.assertTrue(self.engine.picture(root, 'look', 2).startswith(b'\x89PNG'))
-        with self.assertRaises(FileNotFoundError):
-            self.engine.picture(root, 'look', '../../outline')
-        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
-            self.decide(root, 'gate:look')
-        self.decide(root, 'gate:look', 'approve', 'Bold, for the launch.',
-                    {'look': 'example-bold'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        bold = brand_stand_in.DIRECTIONS[1]
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], bold['direction'])
-        self.assertEqual(started['house'][:2], list(brand_stand_in.LOOK_HOUSE))
-        self.assertEqual(started['layouts']['closing'], 'Big Statement')
-        self.assertIn('In their words: "Bold, for the launch."', ' '.join(started['approval']))
-        chose = [call for call in self.brand.run.calls if call[:2] == ['look', 'choose']][-1]
-        self.assertEqual(chose[chose.index('--words') + 1], 'Bold, for the launch.')
-        self.assertIn('--outline', chose)
-        self.assertIn('--write', chose)
-        # Every composer was handed the brand's worker guidance unchanged.
-        composer = [spec for seen, job, spec in self.workers.jobs if seen == 'section'][0]
-        self.assertIn('brand worker guidance', [entry['name'] for entry in composer['inputs']])
-        self.decide(root, 'gate:build')
-        self.assertEqual(self.view(root)['state'], 'finished')
-
-    def test_each_level_pauses_where_the_shared_deck_flow_says(self):
-        from studio_core import deck_flow
-        expected = {'step_by_step': ['gate:outline', 'gate:look', 'gate:build'],
-                    'balanced': ['gate:outline', 'gate:build'],
-                    'automatic': ['gate:build']}
-        for level, gates in expected.items():
-            with self.subTest(level=level):
-                root = self.begin(level)
-                self.assertEqual(self.paused(root), gates)
-                hosts = deck_flow.HOSTS['presentation'].get(level, {})
-                checkpoints = [next((stop for stop, host in hosts.items() if host == gate),
-                                    deck_flow.canonical('presentation', gate)) for gate in gates]
-                self.assertEqual(tuple(checkpoints), deck_flow.pauses(level))
-
-    def test_balanced_asks_for_the_pick_in_the_direction_review(self):
-        root = self.begin('balanced')
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        shown = self.view(root)['gate']
-        self.assertEqual(shown['label'], 'Review the direction')
-        self.assertEqual(len(shown['look']['offered']['looks']), 2)
-        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
-            self.decide(root, 'gate:outline')
-        self.decide(root, 'gate:outline', 'approve', None, {'look': 'example-clear'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
-        self.assertIn('Picked Clear on the page, with no comment.',
-                      ' '.join(started['approval']))
-        self.assertEqual(decks.read_run(root)['look_picked']['choice'], 'example-clear')
-
-    def test_automatic_draft_takes_the_brands_default_and_records_why(self):
-        from studio_core import deck_flow
-        root = self.begin('automatic')
-        self.assertEqual(self.waiting(root), 'gate:build')
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
-        self.assertIn(deck_flow.DEFAULT_WORDS.format(name='Clear'),
-                      ' '.join(started['approval']))
-
-    def test_looks_that_cannot_be_rendered_offer_to_try_again_or_carry_on(self):
-        from studio_core import deck_flow
-        self.brand.run.unrenderable = 'LibreOffice (soffice) is not installed.'
-        root = self.begin('step_by_step')
-        self.decide(root, 'gate:outline')
-        self.assertEqual(self.waiting(root), 'gate:look')
-        offered = self.view(root)['gate']['offered']
-        self.assertTrue(offered['failed'])
-        self.assertEqual(offered['notes'], [deck_flow.LOOK_FAILED.format(
-            why='LibreOffice (soffice) is not installed.')], 'nothing said of a route')
-        self.assertEqual(offered['looks'], [])
-        # The brand kept its samples, drawn without pictures.
-        drawn = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
-        self.assertEqual(['--preview' in call for call in drawn], [True, False])
-        # Trying again draws them again: they render this time.
-        self.brand.run.unrenderable = ''
-        self.decide(root, 'gate:look', 'changes', None, {'look': 'again'})
-        self.assertEqual(self.waiting(root), 'gate:look')
-        self.assertFalse(self.view(root)['gate']['offered']['failed'])
-        # Carrying on knowingly in the brand's default where they cannot.
-        self.brand.run.unrenderable = 'No renderer.'
-        self.decide(root, 'gate:look', 'changes', None, {'look': 'again'})
-        self.assertTrue(self.view(root)['gate']['offered']['failed'])
-        self.decide(root, 'gate:look', 'approve', None, {'look': 'default'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        chose = [call for call in self.brand.run.calls if call[:2] == ['look', 'choose']][-1]
-        self.assertIn('--unrendered', chose)
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
-        self.assertIn(deck_flow.PROCEED_WORDS.format(name="the brand's default"),
-                      ' '.join(started['approval']))
-        self.assertEqual(decks.read_run(root)['look_shown'], 'unrendered')
-        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
-
-    def test_a_brand_that_does_not_take_unrendered_is_recorded_by_the_studio(self):
-        from studio_core import deck_flow
-        self.brand.run.unrenderable = 'No renderer.'
-        self.brand.run.refuses_unrendered = True
-        root = self.begin('step_by_step')
-        self.decide(root, 'gate:outline')
-        self.decide(root, 'gate:look', 'approve', None, {'look': 'default'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        self.assertEqual(decks.read_run(root)['look_shown'], 'unrendered')
-        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
-
-    def test_balanced_carries_on_knowingly_from_the_direction_review(self):
-        from studio_core import deck_flow
-        self.brand.run.unrenderable = 'No renderer.'
-        root = self.begin('balanced')
-        self.assertTrue(self.view(root)['gate']['look']['offered']['failed'])
-        with self.assertRaisesRegex(WorkspaceError, 'Choose one of the looks'):
-            self.decide(root, 'gate:outline')
-        self.decide(root, 'gate:outline', 'approve', None, {'look': 'default'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        self.assertEqual(decks.read_run(root)['look_shown'], 'unrendered')
-        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
-
-    def test_automatic_draft_carries_on_in_the_default_when_looks_cannot_be_rendered(self):
-        from studio_core import deck_flow
-        self.brand.run.unrenderable = 'No renderer.'
-        root = self.begin('automatic')
-        self.assertEqual(self.waiting(root), 'gate:build')
-        said = deck_flow.UNRENDERED_WORDS.format(why='No renderer.', name='Clear')
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[0]['direction'])
-        self.assertIn(said, ' '.join(started['approval']))
-        record = decks.read_run(root)
-        event = next(event for event in record['review_events'] if event['gate'] == 'gate:look')
-        self.assertEqual((event['by'], event['note']), ('review-policy', said))
-        self.assertEqual(self.view(root)['gate']['look_unreviewed'], deck_flow.UNREVIEWED)
-
-    def test_the_direction_review_offers_to_draw_failed_looks_again(self):
-        self.brand.run.unrenderable = 'No renderer.'
-        root = self.begin('balanced')
-        offered = self.view(root)['gate']['look']['offered']
-        self.assertTrue(offered['failed'])
-        self.brand.run.unrenderable = ''
-        self.decide(root, 'gate:outline', 'changes', None,
-                    {'look': 'again', 'direction_target': 'gate:look'})
-        shown = self.view(root)['gate']
-        self.assertEqual(shown['name'], 'gate:outline')
-        self.assertFalse(shown['look']['offered']['failed'])
-        self.decide(root, 'gate:outline', 'approve', None, {'look': 'example-bold'})
-        self.assertEqual(self.waiting(root), 'gate:build')
-        started = json.loads((root / build.START / 'outline.json').read_text())
-        self.assertEqual(started['direction'], brand_stand_in.DIRECTIONS[1]['direction'])
-
-    def test_a_pick_made_before_the_words_changed_waits_for_the_redrawn_looks(self):
-        root = self.begin('balanced')
-        shown = self.view(root)['gate']
-        edited = [dict(slide) for slide in shown['slides']]
-        edited[1]['title'] = 'Batches restart one at a time'
-        self.decide(root, 'gate:outline', 'approve', 'Bold please.',
-                    {'look': 'example-bold', 'edited': edited})
-        # Newly drawn samples need the person's decision before a build can start.
-        record = decks.read_run(root)
-        self.assertEqual(record['gates']['gate:look']['state'], 'waiting')
-        self.assertFalse((root / 'work/look/chosen.json').exists())
-        self.assertFalse((root / build.START).exists())
-        samples = [call for call in self.brand.run.calls if call[:2] == ['look', 'samples']]
-        self.assertEqual(len(samples), 2)
 
 
 class PreviewRepairEngineTests(StudioCase):
@@ -2414,8 +1062,8 @@ class PreviewRepairEngineTests(StudioCase):
         second = OUTLINE['slides'][1]['id']
         self.slides.run.screens = {second: [
             {'severity': 'error', 'code': 'text-overflow', 'detail': 'Text runs off.'}]}
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
+        root = self.start()
+        self.assertEqual(self.waiting(root), 'gate:build')
         state = build.read_state(root)
         # The first round went back to its composer before any review; later rounds within
         # REPAIRS too; the review came after.
@@ -2428,27 +1076,9 @@ class PreviewRepairEngineTests(StudioCase):
         self.assertTrue(told)
 
 
-class HoldingTests(StudioCase):
-    def test_the_decks_gate_is_held_by_grave_findings_and_audit_errors(self):
-        root = self.saved_start()
-        self.assertEqual(self.engine._holding(root, 'gate:outline'), [])
-        self.assertEqual(self.engine._holding(root, 'gate:build'), [])
-        state = build.read_state(root)
-        state['rounds'] = [{'review': {'findings': [
-            {'slide': 'what-it-does', 'severity': 'major', 'note': 'The boxes crowd.'},
-            {'slide': 'the-objection', 'severity': 'minor', 'note': 'A little tight.'}]}}]
-        state['audit'] = {'messages': ['Slide 2: Restore the logo. (error)',
-                                       'Slide 3: Small text. (warning)']}
-        build.write_state(root, state)
-        self.assertEqual(self.engine._holding(root, 'gate:build'),
-                         ['Major on what-it-does: The boxes crowd.',
-                          'Brand check: Slide 2: Restore the logo. (error)'])
-        self.assertEqual(self.engine._holding(root, 'gate:look'), [])
-
-
 class PreviewLinkTests(StudioCase):
     def test_a_pooled_preview_is_never_listed_as_a_file_the_deck_left(self):
-        root = self.saved_start()
+        root = self.start()
         kept = root / build.BUILD / 'drive-preview.json'
         kept.parent.mkdir(parents=True, exist_ok=True)
         own = {'name': 'Preview: Rolling restarts', 'id': 'file-1',
@@ -2459,150 +1089,3 @@ class PreviewLinkTests(StudioCase):
         kept.write_text(json.dumps({**own, 'pool': 'pool-2:7'}))
         self.assertEqual(self.engine.leaving(root)['drive'], [],
                          'its link may show another deck\'s slides by now')
-
-
-class SlideNoteTests(StudioCase):
-    def setUp(self):
-        super().setUp()
-        self.workers.outline_said = LONG_OUTLINE   # two sections: slides 2-4 and 5-7
-
-    def test_a_note_on_a_slide_at_the_deck_gate_reaches_its_composer(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', None,
-                           {'slides': [2], 'slide_notes': {'2': 'Give the batch more room.',
-                                                           '5': ''}})
-        again = self.workers.of('section')[drawn:]
-        self.assertEqual(len(again), 1)
-        self.assertIn('Slide 2: Give the batch more room.', again[0].task)
-        gated = self.record(root)['gates']['gate:build']
-        self.assertEqual((gated['slides'], gated['slide_notes']),
-                         ([2], {'2': 'Give the batch more room.'}))
-        self.assertEqual(self.waiting(root), 'gate:build')
-
-    def test_a_noted_slide_is_marked_even_when_only_its_note_names_it(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', 'Calmer.',
-                           {'slide_notes': {'6': 'Shorter claim.'}})
-        again = self.workers.of('section')[drawn:]
-        self.assertEqual([job.task.split('"')[0].strip() for job in again],
-                         ['Draw section 2 of'])
-        self.assertIn('Slide 6: Shorter claim.', again[0].task)
-        self.assertEqual(self.record(root)['gates']['gate:build']['slides'], [6])
-
-    def test_feedback_after_a_section_finished_is_kept_as_the_slide_s_mark(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.', number=3)
-        shown = self.view(root)
-        kept = shown['build_feedback'][-1]
-        self.assertEqual((kept['number'], kept['note'], kept['late']),
-                         (3, 'Name the batch size.', True))
-        third = shown['gate']['slides'][2]
-        self.assertEqual(third['feedback'], ['Name the batch size.'])
-        self.assertEqual(third['kept'], 'Name the batch size.')
-        with self.assertRaises(WorkspaceError):
-            self.engine.build_feedback(root, 'a' * 32, 'Nowhere.', number=99)
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', 'Keep the rest.', {'slides': [3]})
-        again = self.workers.of('section')[drawn:]
-        self.assertEqual(len(again), 1)
-        self.assertIn('Slide 3: Name the batch size.', again[0].task)
-        self.assertEqual(self.record(root)['build_feedback'], [])
-
-
-    def test_a_slide_the_deck_does_not_have_is_refused_at_its_gate(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        drawn = len(self.workers.of('section'))
-        for extra in ({'slides': [99]}, {'slide_notes': {'99': 'Nowhere.'}}):
-            with self.assertRaises(WorkspaceError) as caught:
-                self.engine.decide(root, 'gate:build', 'changes', 'Shorter.', extra)
-            self.assertEqual(str(caught.exception), 'The deck has no slide 99.')
-        self.assertEqual(len(self.workers.of('section')), drawn)
-        self.assertEqual(self.waiting(root), 'gate:build')
-
-    def test_a_kept_note_is_withdrawn_when_the_page_sends_its_lines_without_it(self):
-        root = self.saved_start()
-        self.to_gate(root, 'gate:build')
-        self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.', number=3)
-        drawn = len(self.workers.of('section'))
-        self.engine.decide(root, 'gate:build', 'changes', 'Keep the rest.',
-                           {'slides': [2], 'slide_notes': {}})
-        again = self.workers.of('section')[drawn:]
-        self.assertEqual(len(again), 1)
-        self.assertNotIn('Name the batch size.', again[0].task)
-        gated = self.record(root)['gates']['gate:build']
-        self.assertEqual((gated['slides'], gated['slide_notes']), ([2], None))
-        self.assertEqual(self.record(root)['build_feedback'], [])
-
-
-class DirectionClassifyTests(StudioCase):
-    def test_the_direction_review_prices_reading_the_document_the_other_way(self):
-        from runner import engine as engines
-        from studio_core import review_policy
-        self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
-                                   'slides': 2}
-        for research in (True, False):
-            with self.subTest(research=research):
-                with mock.patch.object(review_policy, 'capture',
-                                       return_value={'schema': 1, 'level': 'balanced'}):
-                    root = self.saved_start(route='document', research=research,
-                                      title=f'Read {research}',
-                                      **({'research_sources': 'both'} if research else {}),
-                                      source={'kind': 'paste', 'text': 'A slide script.'})
-                shown = self.view(root)['gate']
-                self.assertEqual((shown['name'], shown['classify']['verdict']),
-                                 ('gate:outline', 'spec'))
-                says = shown['reclassify_price']['says']
-                self.assertTrue(says.startswith('Drawn again: “'), says)
-                self.assertEqual(says.endswith(engines.FIRST_RESEARCH), research, says)
-
-    def test_the_synthesis_research_stop_says_how_many_questions_it_takes(self):
-        from synthesis_fixture import research_stop
-        root = self.saved_start(research=True, title='Room for questions')
-        self.decide(root, 'gate:research-plan')
-        research_stop(root / 'research')
-        plan = json.loads((root / 'research' / 'plan.json').read_text())
-        item = plan['items'][0]
-        plan['items'] = [{**item, 'id': f'question-{n}'} for n in range(5)]
-        (root / 'research' / 'plan.json').write_text(json.dumps(plan))
-        record = self.engine._load(root)
-        record['research_contract'] = {'schema': 2}
-        self.engine._store(root, record)
-        gate = self.view(root)['gate']
-        self.assertEqual(gate['name'], 'gate:research')
-        self.assertEqual((gate['room'], gate['most']), (3, worker_tools.PLAN_MOST))
-
-    def test_the_direction_review_shows_the_verdict_and_takes_a_correction(self):
-        from studio_core import review_policy
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.saved_start(route='document', research=True, research_sources='both',
-                              source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
-        shown = self.view(root)['gate']
-        self.assertEqual(shown['name'], 'gate:outline')
-        self.assertEqual((shown['classify']['kind'], shown['classify']['verdict']),
-                         ('document', 'material'))
-        self.assertEqual(len(self.workers.of('outline')), 1)
-        self.engine.decide(root, 'gate:outline', 'changes', None,
-                           {'direction_target': 'gate:classify', 'kind': 'spec'},
-                           shown['expected'])
-        self.assertEqual(self.record(root)['classified'], 'spec')
-        shown = self.view(root)['gate']
-        self.assertEqual((shown['name'], shown['classify']['verdict'],
-                          shown['classify']['corrected']), ('gate:outline', 'spec', True))
-        self.assertEqual(len(self.workers.of('outline')), 2)
-        self.assertNotIn('research', [step.name for step in stages.steps(self.record(root))])
-        # A spec is not researched: what the research wrote is not read into the outline.
-        self.assertFalse((root / 'research' / 'report.md').exists())
-        self.assertFalse((root / 'research' / 'plan.json').exists())
-        self.assertNotIn('Research report', self.workers.of('outline')[-1].task)
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.decide(root, 'gate:outline', 'changes', None,
-                               {'direction_target': 'gate:classify', 'kind': 'spec'},
-                               shown['expected'])
-        self.assertEqual(str(caught.exception), 'Your document is read as a spec already.')

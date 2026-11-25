@@ -73,14 +73,6 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertNotEqual(facts['review']['worker'], self.engine._load(root).get('author'))
         self.assertEqual(facts['review']['digest'], manifest['digest'])
 
-    def test_existing_record_does_not_switch_formats_on_resume(self):
-        from stand_ins.research import saved_queue
-        self.research = saved_queue()
-        root = self.saved_start(research=True)
-        self.assertNotIn('research_contract', self.engine._load(root))
-        self.research = research.Research(Path(RUNTIME))
-        self.assertNotIn('research_contract', self.engine._load(root))
-
     def test_stopping_a_research_worker_keeps_the_draft_without_a_failure(self):
         from runner.agents import Outcome
         self.workers.queued['research-result'] = [lambda tools, job: Outcome(False, 'stopped', 'Stopped')]
@@ -120,54 +112,6 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertTrue(why.startswith('Research did not finish its author job in round 1 of 3: '
                                        'What it handed back did not pass the checks: Return '
                                        'valid JSON'), why)
-
-    def test_finding_marks_use_synthesis_ids_and_never_rewrite_the_checked_report(self):
-        def authored(tools, job):
-            payload = json.loads(tools.read_input('research-task')[1])
-            self.assertTrue(tools.save_source(URL)[0])
-            source = tools._index()[0]
-            value = dossier(payload['worker'], source['file'], source['url'])
-            value['findings'][0]['id'] = 'finding-first'
-            value['findings'][1]['id'] = 'finding-second'
-            value['brief'][0]['blocks'][0]['refs'] = ['finding-first']
-            self.assertTrue(tools.submit_artifact('research-result', json.dumps(value))[0])
-        self.workers.queued['research-result'] = [authored, self.checker, authored, self.checker]
-        root = self.saved_start(research=True, saved_contract=research_contract.snapshot(self.research))
-        self.decide(root)  # research plan
-        self.assertEqual(self.waiting(root), 'gate:research')
-        self.decide(root, decision='changes', note='Explain this boundary.',
-                    extra={'again': {'finding-first': 'Clarify the boundary.'}})
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
-        self.assertEqual(self.waiting(root), 'gate:research')
-        facts, before = research_contract.read_bundle(root / 'research')
-        self.decide(root, extra={'left_out': ['finding-second']})
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertEqual(research_contract.read_bundle(root / 'research')[1], before)
-        self.assertEqual(self.engine._load(root)['research']['left_out'], ['finding-second'])
-        self.assertEqual(self.engine._marked_ids(root, 'gate:research', {}), ['finding-first', 'finding-second'])
-
-    def test_unfinished_research_continues_with_the_installed_helper_after_an_update(self):
-        # Research started on one version goes on with the version an update installs, the
-        # folder it started from removed, and its saved work kept.
-        holder = tempfile.TemporaryDirectory()
-        self.addCleanup(holder.cleanup)
-        shared, old = updated_helper(Path(holder.name).resolve())
-        isolated = mock.patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': str(shared / 'current')})
-        isolated.start()
-        self.addCleanup(isolated.stop)
-        self.research = research.Research(shared / 'current')
-        root = self.saved_start(research=True, saved_contract=research_contract.snapshot(self.research))
-        update(shared)
-        self.assertFalse(old.exists())
-        self.decide(root)  # research plan
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
-        self.assertEqual(self.waiting(root), 'gate:research')
-        research_contract.read_bundle(root / 'research')
-        self.workers.then('research-result', self.author, self.checker)
-        self.decide(root, decision='changes', note='Explain this boundary.')
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
-        research_contract.read_bundle(root / 'research')
 
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')

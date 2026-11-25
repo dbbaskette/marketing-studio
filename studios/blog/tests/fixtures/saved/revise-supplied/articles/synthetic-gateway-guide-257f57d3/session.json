@@ -1,0 +1,48 @@
+{
+  "id": "synthetic-gateway-guide-257f57d3",
+  "title": "Synthetic gateway guide",
+  "mode": "existing",
+  "stage": "draft",
+  "author": "",
+  "stop_point": "review",
+  "research_policy": "supplied-only",
+  "voice": {
+    "mode": "preserve",
+    "tone": ""
+  },
+  "sources": [],
+  "reviews": {},
+  "artifact_hashes": {
+    "original": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+    "draft": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a"
+  },
+  "next_step": "Continue the guided blog in chat.",
+  "pending_question": null,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "guidance": {
+    "revision": "4.19.0",
+    "source": "installed"
+  },
+  "writing_preferences": {
+    "audience": "New authors"
+  },
+  "research_from": null,
+  "material": [],
+  "artifact_events": [
+    {
+      "kind": "original",
+      "before": null,
+      "after_sha256": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+      "label": "supplied manuscript",
+      "at": "2026-01-05T09:30:00+00:00"
+    },
+    {
+      "kind": "draft",
+      "before": null,
+      "after_sha256": "5c47cb92da70757478ee2e46932926174ea863abdf1204ba7afcdcdbe8ef883a",
+      "label": "supplied manuscript",
+      "at": "2026-01-05T09:30:00+00:00"
+    }
+  ],
+  "updated_at": "2026-01-05T09:30:00+00:00"
+}

@@ -4,7 +4,7 @@ This page explains what Training Studio does behind the conversation. [The runne
 
 ## The desk
 
-New trainings run without review stops. The desk shows materials as they arrive; you can edit them or request changes while work continues. When an input changes, dependent materials may be held until you explicitly update them or keep them as they are. Mark ready is your approval, and the index is written once the requested materials are ready. See [the desk](the-desk.md). Trainings started before the desk retain their saved review flow.
+New trainings run without review stops. The desk shows materials as they arrive; you can edit them or request changes while work continues. When an input changes, dependent materials may be held until you explicitly update them or keep them as they are. Mark ready is your approval, and the index is written once the requested materials are ready. See [the desk](the-desk.md). Trainings started before the desk are no longer carried on by their saved review flow: each opens on its saved record, to open it on the desk or, where nothing was made yet or its records cannot be read, to read it and start new work from it.
 
 ## The stages
 
@@ -21,7 +21,7 @@ New trainings run without review stops. The desk shows materials as they arrive;
 | Yoodli, optional | Training Studio | A Yoodli scenario for each scenario file | 8 |
 | Package | Training Studio | The index and a readiness report | |
 
-In a conversation or a saved run, at each gate you approve, ask for changes, have it rebuilt, or skip. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
+In a conversation, at each gate you approve, ask for changes, have it rebuilt, or skip. A run the runner saved before the desk worked the same way and is no longer carried on: it opens on its saved record. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
 
 The blueprint is the hub. The document and brief are written from it, and the deck is built from the blueprint and the document. A Yoodli scenario is built from your scenario file, the brief and the blueprint.
 
@@ -157,6 +157,4 @@ together are Harness Research's `mixed` source mode and sites alone `public`. Se
 
 ## Finish from the page
 
-New combined-review runs prepare every level's guide and deck direction first. Balanced waits for the first review; Automatic draft continues under its saved policy. Briefs are written afterwards. Existing runs keep their saved review order. The first and final combined reviews have timeline beads, and the last decision stays visible while work continues.
-
-Download buttons take away supported made files, Word copies and the finished index. Google changes are looked for, and pulled, only on request: **Look for changes in Google Docs** asks Google, and **Bring the Doc's changes in** brings a change in. When both texts changed, both are kept and a confirmation chooses which text replaces the other; later edits require another pull. Yoodli fields can be copied from the final review and Done.
+Download buttons take away supported made files, Word copies and the finished index. Google changes are looked for, and pulled, only on request: **Look for changes in Google Docs** asks Google, and **Bring the Doc's changes in** brings a change in. When both texts changed, both are kept and a confirmation chooses which text replaces the other; later edits require another pull. Yoodli fields are copied one at a time from each Yoodli layout on the desk.

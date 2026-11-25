@@ -2394,6 +2394,11 @@ def intake_draft(root, data):
 
 
 def dispatch(root, route, data):
+    import saved_gate
+
+    # A blog saved by the earlier step-by-step flow is changed only as saved_gate allows,
+    # before anything is read, fetched or written.
+    saved_gate.page(root, route, data)
     if route == 'desk-create':
         from studio_core import intake_drafts
         from studio_core.process_lock import ProcessRLock
@@ -3018,15 +3023,36 @@ def view(root, name, query):
             if name == 'run-file':
                 return blog_runner.document(root, arg('id'), arg('stage'))
             import desk
+            import desk_migration
 
-            directory, _ = studio.item(root, 'articles', arg('id'))
-            if (
-                desk.on_desk(directory)
-                and not studio.inside(directory, blog_runner.STATE).is_file()
-            ):
-                # A blog on the writing desk has no run: its address opens the desk.
-                return {'id': arg('id'), 'on_desk': True}
-            return blog_runner.engine(root).describe(arg('id'))
+            try:
+                directory, _ = studio.item(root, 'articles', arg('id'))
+                if (
+                    desk.on_desk(directory)
+                    and not studio.inside(directory, blog_runner.STATE).is_file()
+                ):
+                    # A blog on the writing desk has no run: its address opens the desk.
+                    return {'id': arg('id'), 'on_desk': True}
+                if not blog_runner.continues(desk_migration.saved_run(directory)):
+                    # The earlier step-by-step flow continues only the manuscript editor's own
+                    # runs: any other saved run is a saved record (desk work and a blog opened
+                    # on the desk keep their screens).
+                    shown = desk_migration.saved_record(root, arg('id'))
+                    if shown is not None:
+                        return shown
+                return blog_runner.engine(root).describe(arg('id'))
+            except (ValueError, OSError, KeyError, TypeError, AttributeError) as refusal:
+                # A saved blog whose records cannot be read or understood is shown as a
+                # read-only record; any other refusal is said as before.
+                shown = desk_migration.saved_record(root, arg('id'), refusal)
+                if shown is None:
+                    raise
+                return shown
+    if name == 'saved-file':
+        import desk_migration
+
+        with studio.locked(root):
+            return desk_migration.saved_file(root, arg('id'), arg('name'))
     limit, offset = whole(arg('limit', 20)), whole(arg('offset', 0))
     if name == 'board':
         return editorial.board(root, arg('query', ''), arg('stage'), arg('owner'), limit, offset)

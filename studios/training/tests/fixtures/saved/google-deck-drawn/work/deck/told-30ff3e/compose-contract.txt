@@ -1,0 +1,1 @@
+A section is one JSON object. Its roles are label and body.

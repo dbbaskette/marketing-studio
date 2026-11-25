@@ -1081,7 +1081,7 @@ function sDeskBench(held){
   const unchecked=!!reviewing&&!reviewing.any&&!reviewing.failed.length;
   const move=stopped?{title:'It stopped and needs you',text:'See what happened below, then choose how to go on.'}
     :working||finished?null
-    :!hasText?{title:'Write the draft from your outline',text:'Shape the outline, then write the draft or one section at a time.'}
+    :!hasText?{title:'Write the draft from your outline',text:view.kept_notes&&!view.sections.length?'Your saved outline notes are below. Shape the outline from them, then write the draft.':'Shape the outline, then write the draft or one section at a time.'}
     :fixes?{title:fixes===1?'1 fix to review in your text':fixes+' fixes to review in your text',text:'Accept or reject each one where it is marked. Nothing changes until you do.'}
     :unchecked?{title:'Check your draft',text:'Start the check here, or choose what it covers below first. Nothing changes until you accept a fix.',
       action:sDeskCan(held)?{label:'Check spelling and grammar',run:()=>{const go=held.review.head&&sReviewFind(held.review.head,'check');if(go)go.click();}}:null}
@@ -1117,7 +1117,7 @@ function sDeskRender(held){
     // In reading order: an object keyed by part ids lists all-digit ids first, so the cards are
     // placed by the parts' own order, never by the object's.
     column.append(held.problemSlot,...[sActivityNow(view.activity,{id:held.id})].filter(Boolean),...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
-    held.noSections=view.sections.length?null:sDeskNoSections();if(held.noSections)column.append(held.noSections);
+    held.noSections=view.sections.length?null:sDeskNoSections(view);if(held.noSections)column.append(held.noSections);
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
   // Finishing sits beside the draft in place of the sources; on a phone it is a full-screen sheet.
@@ -1198,12 +1198,15 @@ function sDeskReorder(held,before){
   if(keep){const at=parts.indexOf(keep.dataset.part);keep.before(...order.slice(0,at));keep.after(...order.slice(at+1));}
   else held.column.append(...order);
   held.cards=cards;
-  if(!view.sections.length){held.noSections=sDeskNoSections();held.column.append(held.noSections);}
+  if(!view.sections.length){held.noSections=sDeskNoSections(view);held.column.append(held.noSections);}
   const focus=sFocusHeld(held.aside),aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sFocusAgain(focus,aside);
   sDeskPanelSync(held);
   sDeskImagesLoad(held);
 }
-function sDeskNoSections(){return sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections on the Outline tab.'));}
+// A saved blog of the earlier flow whose outline was notes the desk could not read as sections
+// keeps them whole in its start: shown, to shape the outline from, until it has sections.
+function sDeskKeptNotes(view){return view.kept_notes?sCard('Your saved outline notes',sNode('p','quiet','Kept whole when this blog was opened on the desk from the earlier flow. Shape the outline from them on the Outline tab, then write the draft.'),sAdd(sNode('article','paper doc'),window.StudioMarkdown.render(view.kept_notes))):null;}
+function sDeskNoSections(view={}){const kept=sDeskKeptNotes(view);if(kept)return kept;return sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections on the Outline tab.'));}
 // Drawn again once focus leaves a card brought up to date in place.
 function sDeskPartLeft(held,part,card){
   setTimeout(()=>{if(!card.deskStale||held.cards?.[part]!==card||sDeskTyping(card)||!sDeskCurrent(held)||held.mode==='review')return;const fresh=sDeskPart(held,part);card.replaceWith(fresh);held.cards[part]=fresh;sDeskImagesLoad(held);},0);
@@ -1311,7 +1314,9 @@ function sRunOnDesk(found){
   const open=sButton('Open on the desk',()=>sRoute('desk',found.id),'filled');
   sFrame(found.title,[open],'Writing run',()=>sRoute('blogs'));
   const steps=sNode('ol','rows');for(const row of found.stages||[])steps.append(sAdd(sNode('li','row step'),sBead(row.status==='approved'?'done':'none'),sAdd(sNode('div','row-text'),sNode('h3','step-name',row.label),found.unfinished_migration?sNode('p','quiet',row.accepted_by==='review-policy'?'Continued automatically':STAGE_STATUSES[row.status]||row.status):null)));
-  sPage(sNode('p','lede','The saved run stays readable while you edit on the writing desk.'),sCard('This blog is on the writing desk',sNode('p','',found.unfinished_migration?'Its supported materials were opened on the desk as a Draft. Unfinished steps remain incomplete, and the original decisions and files are kept. No work was started.':'It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.')),disclosure('How it was written',steps));
+  // A step that stopped before the blog moved stays in its history, said as it was saved.
+  const stopped=found.unfinished_migration&&found.error?sNode('p','quiet','Before it was opened on the desk, its last step stopped: '+found.error):null;
+  sPage(sNode('p','lede','The saved run stays readable while you edit on the writing desk.'),sCard('This blog is on the writing desk',sNode('p','',found.unfinished_migration?'Its supported materials were opened on the desk as a Draft. Unfinished steps remain incomplete, and the original decisions and files are kept. No work was started.':'It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.'),stopped),disclosure('How it was written',steps));
 }
 
 // The Outline tab: each section's heading and brief, in order, saved as they are edited with
@@ -1323,7 +1328,7 @@ function sDeskOutline(held){
   const add=sButton('Add a section',()=>sDeskOutlineChange(held,rows=>rows.push({heading:'New section',brief:''})));add.disabled=!editable;
   const head=sCard('Outline',sNode('p','','Each brief says what its section must do. The draft is written from the outline, section by section, with your sources.'),sAdd(sNode('div','bar'),write,add));
   const cards=rows.map((row,index)=>sDeskOutlineCard(held,row,index,rows.length));
-  if(!rows.length)cards.push(sCard('No sections yet',sNode('p','','Add a section to start the outline.')));
+  if(!rows.length)cards.push(sCard('No sections yet',sNode('p','','Add a section to start the outline.')),...[sDeskKeptNotes(view)].filter(Boolean));
   // Sections taken out, with their text and History, to bring back.
   if((view.removed||[]).length){const list=sNode('ul','rows');view.removed.forEach((item,index)=>{const back=sButton('Bring back',async button=>{await busy(button,'Bringing back…',async()=>{try{await sDeskOutlineFlush(held);held.view=await api('desk-unremove',{id:held.id,seen:held.view.revision,index});held.outline=null;sDeskRender(held);}catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});});back.setAttribute('aria-label','Bring back '+item.heading);back.disabled=!editable;list.append(sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('span','row-title',item.heading),sNode('span','row-says',(item.words?item.words+(item.words===1?' word':' words'):'No text')+(item.at?' · removed '+deskAge(item.at):''))),back));});cards.push(sCard('Removed sections',list));}
   return [head,...cards];
@@ -1962,7 +1967,7 @@ function sDeskReview(held,keep=null){
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
   held.bench=sDeskBench(held);
-  sPage(held.bench,held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,sActivityLog({id:held.id}));
+  sPage(held.bench,held.review.lede,status,sActivityNow(held.view.activity,{id:held.id}),held.review.head,held.review.paper,held.view.sections.length?null:sDeskKeptNotes(held.view),sActivityLog({id:held.id}));
   sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held,keep);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and

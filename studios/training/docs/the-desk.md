@@ -51,7 +51,7 @@ before the deck is drawn** on the form to have a deck drawn straight from its wo
 New trainings prioritize readable output: each level's plan, guide and brief, then
 practice and Yoodli across levels, then decks. Selected inputs still precede the
 materials that use them. This changes order, not the number of concurrent assistants.
-Saved runs keep their recorded order and scoped updates keep their existing holds.
+Saved runs are not carried on (see below); scoped updates keep their existing holds.
 See the [flow and task map](../../../docs/design/create-training-task-flow.md).
 
 The working desk shows one current step, the number of available drafts and the next
@@ -178,7 +178,7 @@ Conversation-owned work supports explicit person Mark ready through the main des
 
 Once every material is ready and the index is written, the desk offers **Open the index** and **Publish**, which makes the training's next numbered revision as the Published screen describes. Retained helper-page decisions and approval-mode changes refuse conversation ownership under the shared write guard. `studio desk return-delivered` previews and losslessly sets aside an undelivered local deck in History, restoring proven delivered active state or prior absence; it does not publish or invent approval.
 
-Unfinished saved trainings offer **Open on the desk** with a read-only preview and Apply/Cancel. The preview names retained material parts, holds, incomplete work and prerequisites. Apply preserves original records and files and assigns conversation execution; it starts no work and grants no approval or Ready. A known prior paused/stopped runner status stays in History. Later broader work requires explicit checked scope. Early, unsupported, missing-input or worker-marked trainings keep their saved flow; existing saved recovery may discard uncommitted work.
+Unfinished saved trainings offer **Open on the desk** with a read-only preview and Apply/Cancel. The preview names retained material parts, holds, incomplete work and prerequisites. Apply preserves original records and files and assigns conversation execution; it starts no work and grants no approval or Ready. A known prior paused/stopped runner status stays in History, and so does a failure or a worker's unanswered question once a plan exists: its step stays unfinished and nothing is retried or answered. Later broader work requires explicit checked scope. The earlier step-by-step flow no longer continues saved work: every training it saved opens on its saved record, which says which way on it has, with one filled action. Work with a plan offers **Open on the desk**; finished work keeps its own **Open on the desk**; work that waits for something that clears (a step still marked in hand, another computer running it, uncommitted shared originals) says what clears it, offers **Take it over** where taking it clears it and otherwise **Start new work from this**, and opens on the desk once the condition is gone. Work stopped before its teaching plan, and work whose records cannot be read or are unsupported, is read-only: it says why, lists its saved files to read in place, and offers **Start new work from this** (the start form filled in from its setup) or, where its start form cannot be read, **Start a new training**. Lists say only whether a training was saved earlier or cannot be read; an open saved record is read once and again only when you ask (**Check again**) or its records change. Nothing on a saved record continues the training or changes its files; existing saved recovery may discard uncommitted work.
 
 Migration requires Training Studio 4.7.0 or newer and raises the existing workspace requirement. Close older running instances first: older already-configured runtimes may ignore the new requirement. Nothing installs or updates automatically. An interrupted opening requires explicit retry with its original preview token; changed recovery records refuse. Losing one receipt or effective record blocks reading and execution; externally deleting every migration trace cannot be detected from unchanged originals alone. See the [migration commands](../skills/training-studio/references/migration.md).
 
@@ -207,7 +207,7 @@ training's `work/activity-log.jsonl`, which is never committed or shared, for th
 
 Elapsed time includes waiting and stopped time. Active time counts overlapping
 workers once; total assistant time adds their durations. Incomplete older timing
-history is identified. Existing trainings continue with their saved workflow.
+history is identified. Trainings saved by the earlier flow open on their saved record.
 Providers that do not report dollar cost still cannot supply a precise dollar total.
 
 ## The Document Library

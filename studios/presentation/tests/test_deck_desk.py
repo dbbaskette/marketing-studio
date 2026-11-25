@@ -103,11 +103,6 @@ class DeskGateTests(DeskCase):
         self.assertEqual(plan['scope'], 'public-web')
         self.assertTrue(research_contract)
 
-    def test_a_gated_deck_still_stops_at_every_gate(self):
-        root = self.saved_start()
-        self.assertEqual(self.waiting(root), 'gate:outline')
-        self.assertNotIn('flow', self.record(root))
-
 
 class DeskRefusalTests(DeskCase):
     """A desk deck is changed only on the desk, and a gated deck only on its own screen."""
@@ -152,15 +147,6 @@ class DeskRefusalTests(DeskCase):
         told = [job.task for job in self.workers.of('section')
                 if 'Slide 3: Name the batch size.' in job.task]
         self.assertEqual(len(told), 1)
-
-    def test_a_gated_deck_refuses_every_desk_route(self):
-        root = self.gated()
-        for name, given in self.ROUTES:
-            with self.subTest(route=name):
-                with self.assertRaises(WorkspaceError) as caught:
-                    getattr(self.engine, name)(root, *given)
-                self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
-        self.assertEqual(self.waiting(root), 'gate:build')
 
 
 BLOCKED = {'status': 'BLOCKED', 'warnings': [],
@@ -229,10 +215,6 @@ class DeskViewTests(DeskCase):
         self.assertIsNone(seen[0]['minutes_left'], 'nothing was recorded here yet')
         self.assertGreaterEqual(seen[1]['minutes_left'], 1)
         self.assertTrue(seen[1]['started_at'])
-
-    def test_a_gated_deck_has_no_desk_view(self):
-        root = self.saved_start()
-        self.assertIsNone(self.view(root)['desk'])
 
     def test_notes_sent_while_drawing_are_not_sent_again_after_arrival(self):
         sent = []
@@ -761,13 +743,6 @@ class DeliverTests(DeskCase):
         self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1, 2])
         self.assertEqual(self.names(), ['Rolling restarts', 'Rolling restarts (revision 2)'])
 
-    def test_a_gated_deck_still_delivers_with_its_first_draft_title(self):
-        root = self.gated(initial_review='user-first')
-        self.decide(root, 'gate:build')
-        self.assertEqual(self.names(), ['Rolling restarts — first draft, not checked'])
-        name, _ = self.engine.download(root)
-        self.assertEqual(name, f'{root.name}-unreviewed-first-draft.pptx')
-
 
 class DeskTeamTests(DeskCase, runner_support.TeamCase):
     """The team claim holds on the desk: only the computer that drives a deck changes it,
@@ -1028,12 +1003,6 @@ class SecondReviewTests(DeskCase):
         self.assertTrue(shown['working']['halted'])
         self.assertFalse(shown['deliverable'])
 
-    def test_the_older_note_for_the_next_step_is_refused_on_the_desk(self):
-        root = self.deck()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.note(root, 'Keep it short.')
-        self.assertEqual(str(caught.exception), desk.ON_DESK)
-
     def test_a_whole_deck_note_before_the_desk_says_so(self):
         said = []
 
@@ -1113,12 +1082,6 @@ class SourceTests(DeskCase):
             self.engine.desk_source(root, None, text='   ', title='Empty')
         self.assertIn('holds no text', str(caught.exception))
         self.assertEqual(len(self.desk_view(root)['sources']), 1)
-
-    def test_a_gated_deck_adds_no_source_on_the_desk(self):
-        root = self.gated()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.engine.desk_source(root, 'notes.md', b'Two at a time.')
-        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
 
     def test_research_again_is_priced_before_it_runs(self):
         from studio_core import research_contract
@@ -1226,10 +1189,11 @@ class OpenOnDeskTests(DeskCase):
 
     ELSEWHERE = desk.NO_DRAWING + ' Draw it here first, or open it on the computer that made it.'
 
-    def delivered(self, **changes) -> Path:
+    def delivered(self, state: str = 'delivered') -> Path:
+        """A deck delivered the gated way, as the saved flow left it
+        (tests/fixtures/saved/<state>/)."""
         from runner import decks
-        root = self.gated(**changes)
-        self.decide(root, 'gate:build')
+        root = self.load_saved(state)
         self.assertIsNotNone(decks.delivered(root))
         return root
 
@@ -1272,7 +1236,7 @@ class OpenOnDeskTests(DeskCase):
         self.assertEqual(str(caught.exception), desk.ON_DESK)
 
     def test_a_waiting_gated_deck_cannot_be_opened(self):
-        root = self.gated()
+        root = self.load_saved('build')
         self.assertEqual(self.refused(root), 'Deliver this deck, then open it on the desk.')
         record = self.record(root)
         self.assertNotIn('flow', record)
@@ -1298,7 +1262,7 @@ class OpenOnDeskTests(DeskCase):
 
     def test_a_slide_note_on_an_opened_deck_runs_no_review(self):
         root = self.delivered()   # Step by step: its deck was reviewed before it was delivered
-        self.assertTrue(self.workers.of('review'))
+        self.assertTrue(self.record(root)['steps']['build-review']['done'])
         expected = self.engine.open_on_desk(root)['desk']['expected']
         reviews = len(self.workers.of('review'))
         self.engine.desk_note(root, 3, 'Make the diagram a sequence.', expected)
@@ -1309,11 +1273,12 @@ class OpenOnDeskTests(DeskCase):
         self.assertEqual((form.get('initial_review'), form.get('initial_review_source')),
                          ('user-first', 'desk'))
 
-    def opened_at(self, level: str, **changes) -> Path:
+    def opened_at(self, level: str, route: str = 'scratch') -> Path:
         """A deck started the gated way under the review level `level`, delivered and opened
         on the desk."""
         self.review_level = level
-        root = self.delivered(**changes)
+        root = self.delivered(f'delivered-{level}' if route == 'scratch'
+                              else f'delivered-{route}-{level}')
         self.engine.open_on_desk(root)
         return root
 
@@ -1325,7 +1290,7 @@ class OpenOnDeskTests(DeskCase):
     def test_change_the_look_on_an_opened_deck_reads_no_level(self):
         for level in ('balanced', 'automatic'):
             with self.subTest(level):
-                root = self.opened_at(level, title=f'Rolling restarts {level}')
+                root = self.opened_at(level)
                 self.assertEqual(self.view(root)['review_level'], 'step_by_step')
                 self.engine.desk_look_again(root)
                 shown = self.view(root)
@@ -1338,9 +1303,7 @@ class OpenOnDeskTests(DeskCase):
     def test_reading_an_opened_document_the_other_way_reads_no_level(self):
         for level in ('balanced', 'automatic'):
             with self.subTest(level):
-                root = self.opened_at(level, title=f'Notes {level}', route='document',
-                                      source={'kind': 'paste',
-                                              'text': 'Notes on rolling restarts.'})
+                root = self.opened_at(level, 'document')
                 other = 'spec' if self.record(root).get('classified') == 'material' \
                     else 'material'
                 self.engine.desk_reread(root, other)
@@ -1357,7 +1320,7 @@ class OpenOnDeskTests(DeskCase):
     def test_a_gated_balanced_deck_keeps_its_direction_review(self):
         from runner import stages
         self.review_level = 'balanced'
-        root = self.saved_start()
+        root = self.load_saved('balanced')
         names = [step.name for step in stages.steps(self.record(root))]
         self.assertGreater(names.index('gate:outline'), names.index('look-preview'))
         self.assertEqual(self.view(root)['review_level'], 'balanced')
@@ -1401,12 +1364,7 @@ class OpenOnDeskTests(DeskCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def selected(self) -> Path:
-        from test_desk_words import planned
-        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.saved_existing_deck('automatic', 'selected',
-                                  selected='Shorten the words on slide 2')
-        self.decide(root, 'gate:build')
-        return root
+        return self.delivered('delivered-selected')
 
     def test_a_delivered_selected_changes_deck_opens_with_its_copy(self):
         root = self.selected()

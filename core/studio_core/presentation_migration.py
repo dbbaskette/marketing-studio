@@ -8,11 +8,65 @@ RECORD = 'desk/migration.json'
 ORIGIN = 'desk/migration-origin.json'
 PENDING = 'work/desk/migration-transaction.json'
 KINDS = ('text', 'outline', 'research', 'drawing', 'part')
+# Every run record schema the Presentation Studio engine writes: 1 with no research, 2 for an
+# older saved start with a review level, 3 with a research contract, 4 with parallel research,
+# 5 with the slide story on the desk, 6 with section combining as well.
+WRITTEN = (1, 2, 3, 4, 5, 6)
 
 
 def supported(record):
+    """Whether a saved run record may be opened on the desk by the explicit migration.
+
+    Schemas 1 to 3 may, and schema 4, the saved flow's parallel research, when it holds the
+    research collection protocol its loader (`Engine._load`) requires of it as well as its
+    research contract. Schemas 5 and 6 exist only on the desk. Whether the engine wrote a
+    record at all is `written`."""
+    if not _shaped(record, (1, 2, 3, 4)):
+        return False
+    if record['schema'] < 4:
+        return True
+    from studio_core import research_session
+    return bool(research_session.protocol(record))
+
+
+def written(record):
+    """Whether this is a run record the Presentation Studio engine writes, checked as its
+    loader (`Engine._load`) checks each schema: a schema 4 to 6 record without what its
+    schema needs is not one. This only recognises a deck for the running-step check
+    (`sync_guard.worker_in_progress`); it never makes a record eligible to migrate."""
+    if not _shaped(record, WRITTEN):
+        return False
+    if record['schema'] < 4:
+        return True
+    # Imported here: research_session's own imports are heavy, and the shared runner
+    # imports the running-step check while it is itself being imported.
+    from studio_core import research_sections, research_session
+    if not research_session.protocol(record):
+        return False
+    if record['schema'] == 6 and not research_sections.enabled(record):
+        return False
+    return record['schema'] == 4 or (record.get('flow') == 'desk' and _slide_story(record))
+
+
+def _slide_story(record):
+    """The saved slide-story workflow, as Presentation Studio's `slide_story.valid` reads it."""
+    value = record.get('slide_story')
+    if record['schema'] not in (5, 6) or not isinstance(value, dict) \
+            or type(value.get('schema')) is not int or value['schema'] != 1:
+        return False
+    from studio_core import scope_scan
+    try:
+        scope_scan.budget(value.get('limits'))
+        if value.get('outline') is not None:
+            scope_scan.checked(value['outline'])
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return False
+    return type(value.get('revision', 0)) is int and value.get('revision', 0) >= 0
+
+
+def _shaped(record, schemas):
     if not isinstance(record, dict) or type(record.get('schema')) is not int \
-            or record['schema'] not in (1, 2, 3):
+            or record['schema'] not in schemas:
         return False
     if any(not isinstance(record.get(key), str) or not record[key].strip()
            for key in ('id', 'title', 'created', 'agent')):
@@ -49,7 +103,7 @@ def supported(record):
         if not isinstance(policy, dict) or policy.get('schema') != 1 \
                 or policy.get('level') not in ('balanced', 'automatic', 'step_by_step'):
             return False
-    if record['schema'] == 3 and (not isinstance(record.get('research_contract'), dict)
+    if record['schema'] >= 3 and (not isinstance(record.get('research_contract'), dict)
                                  or record['research_contract'].get('schema') != 2):
         return False
     return True

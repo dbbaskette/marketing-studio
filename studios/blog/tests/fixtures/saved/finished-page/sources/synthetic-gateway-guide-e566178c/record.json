@@ -1,0 +1,31 @@
+{
+  "id": "synthetic-gateway-guide-e566178c",
+  "name": "Synthetic gateway guide",
+  "origin": "synthetic-gateway-guide-ee6a2535",
+  "original_filename": null,
+  "original_path": null,
+  "original_sha256": null,
+  "content_sha256": "15b46faf716717861f2962f02dc1431035149333e516faa78ce09231a11dfb5a",
+  "purposes": [
+    "reference",
+    "inspiration"
+  ],
+  "author": null,
+  "status": "ready",
+  "note": "Finished here as a guided blog.",
+  "revision": 1,
+  "created_at": "2026-01-05T09:30:00+00:00",
+  "retrieved_at": "2026-01-05T09:30:00+00:00",
+  "library": {
+    "origin_kind": "written-here",
+    "article": "synthetic-gateway-guide-ee6a2535"
+  },
+  "updated_at": "2026-01-05T09:30:00+00:00",
+  "analysis": {
+    "status": "needs-analysis",
+    "sha256": "15b46faf716717861f2962f02dc1431035149333e516faa78ce09231a11dfb5a",
+    "harness": null,
+    "at": "2026-01-05T09:30:00+00:00",
+    "message": "Select your writing CLI once, then retry analysis."
+  }
+}

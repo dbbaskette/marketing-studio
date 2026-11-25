@@ -1,0 +1,21 @@
+{"checkpoint":"accepted","unit":"","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"output-saved","unit":"intake-source","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"working","unit":"research-plan","at":"2026-11-24T23:35:38Z"}
+{"id":"e4dea46d773c","label":"Deciding what to look up","step":"research-plan","started_at":"2026-11-24T23:35:38Z","ended_at":"2026-11-24T23:35:38Z","outcome":"finished","lines":[{"at":"2026-11-24T23:35:38Z","text":"Handing back research-plan"},{"at":"2026-11-24T23:35:38Z","text":"The draft was accepted"},{"at":"2026-11-24T23:35:38Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research-plan","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"ready","unit":"gate:research-plan","at":"2026-11-24T23:35:38Z"}
+{"checkpoint":"working","unit":"research:investigate-1-area1","at":"2026-11-24T23:35:39Z"}
+{"id":"56f39a6a2214","label":"Investigating research area 1","step":"research:investigate-1-area1","started_at":"2026-11-24T23:35:39Z","ended_at":"2026-11-24T23:35:39Z","outcome":"finished","lines":[{"at":"2026-11-24T23:35:39Z","text":"Reading research-task"},{"at":"2026-11-24T23:35:39Z","text":"Saving a source: https://docs.example.com/restarts"},{"at":"2026-11-24T23:35:39Z","text":"Handing back research-result"},{"at":"2026-11-24T23:35:39Z","text":"The draft was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:investigate-1-area1","at":"2026-11-24T23:35:39Z"}
+{"checkpoint":"working","unit":"research:synthesize-1","at":"2026-11-24T23:35:39Z"}
+{"id":"70bfde38b5ae","label":"Combining the evidence into the research report","step":"research:synthesize-1","started_at":"2026-11-24T23:35:39Z","ended_at":"2026-11-24T23:35:39Z","outcome":"finished","lines":[{"at":"2026-11-24T23:35:39Z","text":"Reading research-task"},{"at":"2026-11-24T23:35:39Z","text":"Handing back research-result"},{"at":"2026-11-24T23:35:39Z","text":"The draft was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:synthesize-1","at":"2026-11-24T23:35:39Z"}
+{"checkpoint":"checking","unit":"research:review-1","at":"2026-11-24T23:35:39Z"}
+{"id":"b7daf187ecbb","label":"Independently checking the research","step":"research:review-1","started_at":"2026-11-24T23:35:39Z","ended_at":"2026-11-24T23:35:39Z","outcome":"finished","lines":[{"at":"2026-11-24T23:35:39Z","text":"Reading research-task"},{"at":"2026-11-24T23:35:39Z","text":"Reading saved source s1"},{"at":"2026-11-24T23:35:39Z","text":"Handing back research-result"},{"at":"2026-11-24T23:35:39Z","text":"The draft was accepted"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"research:review-1","at":"2026-11-24T23:35:39Z"}
+{"checkpoint":"output-saved","unit":"research","at":"2026-11-24T23:35:39Z"}
+{"checkpoint":"output-saved","unit":"research-report","at":"2026-11-24T23:35:40Z"}
+{"checkpoint":"ready","unit":"gate:research","at":"2026-11-24T23:35:40Z"}
+{"checkpoint":"working","unit":"outline","at":"2026-11-24T23:35:40Z"}
+{"id":"2bdf5ef8e5b2","label":"Drafting the outline of your deck","step":"outline","started_at":"2026-11-24T23:35:40Z","ended_at":"2026-11-24T23:35:40Z","outcome":"finished","lines":[{"at":"2026-11-24T23:35:40Z","text":"Checking what the slides say"},{"at":"2026-11-24T23:35:40Z","text":"Handing in what the slides say"},{"at":"2026-11-24T23:35:40Z","text":"The outline was accepted"},{"at":"2026-11-24T23:35:40Z","text":"Writing its own notes on the draft"}],"dropped":0}
+{"checkpoint":"output-saved","unit":"outline","at":"2026-11-24T23:35:40Z"}

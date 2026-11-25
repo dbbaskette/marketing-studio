@@ -55,13 +55,13 @@ class LibraryCase(StudioCase):
         self.library = document_library.opened(create=True)
 
     def waiting(self):
-        """A saved training researched from documents alone, waiting for them."""
-        root = self.saved_start(source_scope='supplied-only')
+        """A desk training researched from documents alone, waiting for them."""
+        root = self.start(source_scope='supplied-only')
         self.assertTrue(self.view(root)['documents']['waiting'])
         return root
 
     def researched(self):
-        """The same training once its documents are all added and its research planned."""
+        """The same training once its documents are all added and its research done."""
         root = self.waiting()
         self.engine.supply(root, 'add', 'handbook.txt', b'Capacity holds with two.\n')
         self.engine.supply(root, 'done')
@@ -110,12 +110,8 @@ class WaitingTests(LibraryCase):
     def test_refusals_change_nothing(self):
         row = self.library.add_upload('brief.md', NOTES)
         picks = [{'id': row['id'], 'revision': 1}]
-        # Research that does not read documents takes none, and is not widened to.
-        web = self.saved_start(title='Web only')
-        with self.assertRaisesRegex(WorkspaceError, 'does not read documents'):
-            self.engine.library_add(web, picks)
-        self.assertEqual(real_documents.listed(web), [])
-        self.assertIsNone(self.record(web)['documents'])
+        # (Research that does not read documents and is not widened is a saved training's:
+        # see DeskTests.test_a_saved_training_that_reads_no_documents_is_not_widened.)
         # A job running keeps the documents it started with.
         root = self.waiting()
         self.engine._run(root).busy = True
@@ -131,28 +127,12 @@ class WaitingTests(LibraryCase):
 
 
 class LaterTests(LibraryCase):
-    def test_pinned_after_the_research_waits_for_the_research_to_be_updated(self):
-        root = self.researched()
-        row = self.library.add_upload('brief.md', NOTES)
-        jobs = len(self.workers.jobs)
-        shown = self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])['documents']
-        self.assertEqual([one['name'] for one in shown['later']], ['brief.md'])
-        self.assertIn('update_price', shown)
-        self.assertEqual(len(self.workers.jobs), jobs, 'nothing is researched yet')
-        self.assertNotIn('Capacity holds only when', ''.join(self.offered(root)))
-        self.assertTrue(self.log()[-1].endswith('not read until the research is updated'))
-        # Only Update the research reads it.
-        with mock.patch.object(self.engine, 'carry_on'):
-            self.engine.supply(root, 'update')
-        self.assertEqual(self.record(root)['documents']['later'], [])
-        self.assertIn('Capacity holds only when', ''.join(self.offered(root)))
-
     def test_a_newer_revision_after_the_research_waits_too(self):
         root = self.researched()
         kept = self.library.retain('blog:launch', 'blog', 'blog', 'Launch post', 'First.\n')
         self.engine.library_add(root, [{'id': kept['document'], 'revision': 1}])
         with mock.patch.object(self.engine, 'carry_on'):
-            self.engine.supply(root, 'update')
+            self.engine.update_research(root)
         self.assertIn('First.\n', self.offered(root))
         self.library.retain('blog:launch', 'blog', 'blog', 'Launch post', 'Second.\n')
         later = self.engine.library_update(root, kept['document'])['documents']['later']
@@ -212,8 +192,8 @@ class DeskTests(DeckCase):
                             for source in self.engine._sources(root, self.record(root))[0]))
 
     def test_a_saved_training_that_reads_no_documents_is_not_widened(self):
-        root = self.saved_start()
-        self.to_end(root)
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'finished')
         row = self.library.add_upload('capacity.md', NOTES)
         with self.assertRaisesRegex(WorkspaceError, 'research does not read documents'):
             self.engine.library_add(root, [{'id': row['id'], 'revision': 1}])

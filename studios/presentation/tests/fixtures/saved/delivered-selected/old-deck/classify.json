@@ -1,0 +1,86 @@
+{
+  "sha256": "d92327c6bbd1d842eb35cbe7cd8674039af6890ec26f2dc40e0209927bde076e",
+  "source": "old.pptx",
+  "slides": [
+    {
+      "number": 1,
+      "id": "256",
+      "title": "A deck",
+      "hidden": false,
+      "objects": [
+        {
+          "id": "2",
+          "type": "sp",
+          "text": "A deck",
+          "runs": [
+            "A deck"
+          ],
+          "alt": "",
+          "title": "",
+          "contentHash": "ae23340713120534179c135fcd8e479a0e02b980cd5109252386aef90c301fcf"
+        },
+        {
+          "id": "3",
+          "type": "sp",
+          "text": "A deck to work from",
+          "runs": [
+            "A deck to work from"
+          ],
+          "alt": "",
+          "title": "",
+          "contentHash": "26bd569d5dbfc3ed1f2dd527fed277d66183ece8c38b4912e45fc11b9cf9d660"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "id": "257",
+      "title": "Run Acme fast",
+      "hidden": false,
+      "objects": [
+        {
+          "id": "2",
+          "type": "sp",
+          "text": "Run Acme fast",
+          "runs": [
+            "Run Acme fast"
+          ],
+          "alt": "",
+          "title": "",
+          "contentHash": "a419dec3b532933b882c0695e5cbea77e3ab83b580965d3343d3ea97000eeb8e"
+        },
+        {
+          "id": "3",
+          "type": "sp",
+          "text": "Ship apps in minutes, not weeks.",
+          "runs": [
+            "Ship apps ",
+            "in minutes, not weeks."
+          ],
+          "alt": "",
+          "title": "",
+          "contentHash": "9e3ba18f52828e6686176638472bb12900160b21fca378b4bb9bb7dda935044e"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "id": "258",
+      "title": "Backup slide",
+      "hidden": true,
+      "objects": [
+        {
+          "id": "2",
+          "type": "sp",
+          "text": "Backup slide",
+          "runs": [
+            "Backup slide"
+          ],
+          "alt": "",
+          "title": "",
+          "contentHash": "7857e26fb45ebf298fd251adb6cd422db5eb5b57b0594b801cb8af6b22002aec"
+        }
+      ]
+    }
+  ]
+}
