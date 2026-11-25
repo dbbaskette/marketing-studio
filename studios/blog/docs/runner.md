@@ -755,6 +755,11 @@ A finished one's Done card works as before, Polish or edit the draft included. O
 invents no approval and starts no step. A blog whose outline was notes the desk could not
 read as sections shows those notes on the desk, to shape the outline from.
 
+A step of the earlier flow that was cut off when Blog Studio closed or stopped is marked
+stopped the next time Blog Studio starts, so sharing no longer waits for it. Only this
+computer's record of the step changes; the blog's own files stay as they are, and no step
+starts again.
+
 The manuscript editor's own checks still run as review and revise runs: **Edit
 manuscript** starts and reads them. A finished one reads on its run and its review pages.
 

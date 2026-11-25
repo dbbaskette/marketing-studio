@@ -2743,11 +2743,39 @@ class Engine:
             if self.closed.wait(60):
                 return
 
+    def settle_interrupted(self):
+        """Start-up recovery for a saved run of the earlier flow: a `working` marker that no
+        worker of this process runs is a step a stopped process left. Nothing takes such a run
+        up again, and the repository's running-step check would read it as busy for good, so
+        it is settled as stopped in this computer's runner record under .blog-runs only.
+        Nothing in the blog's own folder changes and no work starts. A run the manuscript
+        editor's check made keeps its own recovery: the loop takes its step up again."""
+        import desk_migration
+
+        folder = studio.inside(self.root, '.blog-runs')
+        for path in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+            ident = path.stem
+            if ident == self.current or path.is_symlink():
+                continue
+            try:
+                state = self.local(ident)
+                if not isinstance(state, dict) or state.get('status') != 'working':
+                    continue
+                directory, _ = studio.item(self.root, 'articles', ident)
+                run = desk_migration.saved_run(directory)
+                if run is None or continues(run):
+                    continue
+            except (ValueError, OSError):
+                continue
+            state.update(enabled=False, status='stopped')
+            self.keep_local(ident, state)
+
     def serve(self):
         import tool_jobs
 
         with studio.locked(self.root):
             tool_jobs.recover(self.root)
+            self.settle_interrupted()
         while not self.closed.is_set():
             folder = studio.inside(self.root, '.blog-runs')
             for path in sorted(folder.glob('*.json')) if folder.exists() else []:

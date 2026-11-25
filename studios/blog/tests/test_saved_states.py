@@ -569,6 +569,80 @@ class KeptStopTests(SavedStateCase):
             desk_chat.migrate(self.root, ident, shown['expected'] or 'bm1.' + 'x' * 43)
 
 
+class InterruptedStepTests(SavedStateCase):
+    """A step a stopped process left on a saved run: Blog Studio's start-up recovery settles
+    it, so the repository's running-step check reads idle again and sharing can go on."""
+
+    def start_up(self, current=None):
+        """The runner's own start-up recovery as Blog Studio runs it; the loop that runs work
+        never begins. `current` is a step this process is running now."""
+        engine = runner.Engine(self.root)
+        engine.current = current
+        engine.closed.set()
+        with (
+            patch.object(runner.Engine, 'once', side_effect=AssertionError('work started')),
+            patch('tool_jobs.once', side_effect=AssertionError('tool job started')),
+        ):
+            engine.serve()
+
+    def blog(self, ident):
+        directory = studio.inside(self.root, 'articles', ident)
+        return {
+            str(path.relative_to(directory)): path.read_bytes()
+            for path in directory.rglob('*')
+            if path.is_file()
+        }
+
+    def test_a_working_marker_a_stopped_process_left_is_settled_at_start_up(self):
+        from studio_core import sync_guard
+
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                found = self.saved('draft-gate-working')
+                marker = '.blog-runs/' + found['id'] + '.json'
+                studio.write_json(self.root / marker, {'enabled': enabled, 'status': 'working'})
+                self.assertTrue(sync_guard.worker_in_progress(self.root))
+                blog, before = self.blog(found['id']), self.tree()
+                self.start_up()
+                self.assertFalse(sync_guard.worker_in_progress(self.root))
+                local = studio.read_json(self.root / marker)
+                self.assertEqual((local['enabled'], local['status']), (False, 'stopped'))
+                # Only this computer's runner record changed: the blog's own folder is as it was.
+                self.assertEqual(self.blog(found['id']), blog)
+                after = self.tree()
+                self.assertEqual(
+                    {key for key in before.keys() | after.keys() if before.get(key) != after.get(key)},
+                    {marker},
+                )
+                # The saved record then classifies by what the blog holds.
+                self.assertEqual(desk_migration.classify(self.root, found['id'])['outcome'], 'migrates')
+
+    def test_a_step_running_in_this_process_is_not_touched(self):
+        found = self.saved('draft-gate-working')
+        marker = self.root / '.blog-runs' / (found['id'] + '.json')
+        kept = marker.read_bytes()
+        self.start_up(current=found['id'])
+        self.assertEqual(marker.read_bytes(), kept)
+
+    def test_an_editor_run_interrupted_mid_step_is_recovered_as_before(self):
+        import manuscript_editor
+
+        ident = self.article(MANUSCRIPT)
+        shown = manuscript_editor.read(self.root, ident)
+        with studio.locked(self.root), patch.object(runner.Engine, 'control', return_value={}):
+            manuscript_editor.dispatch(
+                self.root, 'check', {'id': ident, 'expected': shown['expected'], 'check': 'proofread'}
+            )
+        marker = self.root / '.blog-runs' / (ident + '.json')
+        studio.write_json(marker, {'enabled': True, 'status': 'working'})
+        kept, blog = marker.read_bytes(), self.blog(ident)
+        self.start_up()
+        # Left for the loop, which takes its step up again: the run reads as queued.
+        self.assertEqual(marker.read_bytes(), kept)
+        self.assertEqual(self.blog(ident), blog)
+        self.assertEqual(runner.engine(self.root).describe(ident)['status'], 'queued')
+
+
 class ReadOnlyRecordTests(SavedStateCase):
     """The page's saved records: read-only, and waiting on something that can clear."""
 
