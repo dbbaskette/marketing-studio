@@ -750,6 +750,21 @@ class SavedTeamTests(TeamCase):
         self.assertEqual(shown['saved_record']['outcome'], 'migrates')
         self.assertTrue(shown['can_migrate_desk'])
 
+    def test_a_saved_record_is_never_handed_over(self):
+        """The reviewer's probe: on a team workspace, Hand over would write driver None into
+        the saved run record and share it. It is refused, and nothing changes."""
+        root = self.saved('Handed saved')
+        before = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*')
+                  if p.is_file()}
+        head = self.git('rev-parse', 'HEAD')
+        native = page.RunnerPage(8765, self.engine)
+        with self.assertRaises(page.desk.Refusal) as caught:
+            native.write('/api/drive', {'path': str(root), 'action': 'hand-over'})
+        self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
+        self.assertEqual({p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*')
+                          if p.is_file()}, before)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+
     def test_uncommitted_shared_originals_wait_until_they_are_committed(self):
         from runner_support import BLUEPRINT
         root = self.saved('Shared uncommitted')
@@ -873,6 +888,35 @@ class DeckStopTests(DeckCase):
         self.assertEqual(shown['outcome'], {'outcome': 'read-only', 'next': 'copy',
                                             'reason': desk_migration.MISSING + ' ' + said})
         SavedStopTests.assert_read_only(self, root, desk_migration.MISSING + ' ' + said, 'copy')
+
+    def test_a_dependency_the_opening_cannot_read_is_read_only_not_waiting(self):
+        """A record or dependency the opening cannot read or understand is read-only with its
+        reason: a native deck record that is not an object (the reviewer's probe), a pending
+        local deck and the research bundle. Waiting is only for what clears by itself or by
+        a person's act on the page."""
+        from unittest import mock
+        root = self.saved('deck-gate-waiting')
+        (root / 'deck/review.json').write_text('[1, 2]')
+        shown = self.record_of(root)
+        self.assertEqual(shown['saved_record']['outcome'], 'read-only')
+        self.assertEqual(shown['sentence'], engines.SAVED_RECORD)
+        self.assertEqual(shown['saved_record']['why'],
+                         desk_migration.MISSING + ' A saved native deck record cannot be read.')
+        self.assertEqual(shown['saved_record']['waits'], [])
+        self.assertFalse(shown['can_migrate_desk'])
+        # The other two the opening reads: each says why it is read-only.
+        from studio_core import research_contract
+        with self.assertRaises(workspace.WorkspaceError) as pending:
+            workspace.pending_local_deck(root, {**workspace.load(root), 'pending_local_decks': {'deck': {}}}, 'deck')
+        with self.assertRaises((workspace.WorkspaceError, ValueError, OSError)) as bundle:
+            research_contract.read_bundle(self.base / 'no-research-bundle')
+        for failure in (pending.exception, bundle.exception):
+            with self.subTest(failure=str(failure)), mock.patch.object(
+                    desk_migration, '_snapshot', side_effect=workspace.WorkspaceError(str(failure))):
+                (root / 'deck/review.json').write_text('{}')
+                found = self.engine.view(root)['saved_record']
+                self.assertEqual((found['outcome'], found['why']),
+                                 ('read-only', desk_migration.MISSING + ' ' + str(failure)))
 
     def test_unreadable_deck_outline_is_a_read_only_record(self):
         root = self.saved('deck-outline-waiting')
@@ -1119,6 +1163,27 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         text = result['snapshots']['status']['text']
         self.assertIn('Stop blueprint', text)
         self.assertIn(engines.SAVED_BRIEF, text)
+
+    def test_an_opening_whose_journal_cannot_be_read_says_so_and_offers_what_exists(self):
+        """Its words and its action agree: no Finish is offered, and none is promised."""
+        def unreadable(root):
+            pending = root / desk_migration.format.PENDING
+            pending.parent.mkdir(parents=True, exist_ok=True)
+            pending.write_text('{not a journal')
+        fixture = self.fixture('blueprint-gate', unreadable)
+        found = fixture['run']['saved_record']
+        self.assertEqual(([wait['kind'] for wait in found['waits']], found['expected']),
+                         (['journal'], None))
+        for narrow in (False, True):
+            with self.subTest(narrow=narrow):
+                result = self.run_page(self.answers(fixture), [{'snapshot': 'record'}],
+                                       state={'screen': 'run', 'path': fixture['path']},
+                                       narrow=narrow)
+                shot = result['snapshots']['record']
+                self.assertEqual(shot['filled'], ['Start new work from this'])
+                self.assertIn(engines.WAITS_FOR['journal'][0], shot['text'])
+                self.assertNotIn('Finish opening on the desk', shot['text'])
+                self.assertNotIn('Finish opening on the desk', shot['buttons'])
 
     def test_home_and_trainings_say_a_saved_record_in_words(self):
         """Home lists saved records apart, each with the words its two small records prove,

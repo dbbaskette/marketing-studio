@@ -436,6 +436,14 @@ class RefusalTests(SettingsCase):
             self.skipTest('The scripted desk training waits for Mark ready here.')
         self.assertEqual(self.view(root)['settings'], {'may': False, 'why': settings_change.FINISHED})
 
+    def test_a_saved_run_says_why_it_cannot_be_changed(self):
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'finished')
+        # A saved record's view no longer carries the settings card; the engine's refusal
+        # is kept.
+        with self.assertRaisesRegex(WorkspaceError, 'started before its settings'):
+            self.engine.change_settings(root, {'expected': 'x'})
+
 
 class StopTests(SettingsCase):
     """What the stop before a change asked for is kept: more time, and

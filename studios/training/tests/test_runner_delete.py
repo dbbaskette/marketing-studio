@@ -338,6 +338,14 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
     def fetch(self, person) -> dict:
         return self.as_(person, person.engine.fetch)
 
+    def finished(self) -> Path:
+        """A desk training Alex started and finished: every material ready, nobody's."""
+        root = self.desk_started()
+        with self.be(self.alex):
+            self.to_end(root)
+            self.all_ready(root)
+        return root
+
     def test_a_teammates_training_cannot_be_deleted_here(self):
         root = self.desk_started()
         self.fetch(self.blake)
@@ -407,6 +415,70 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
         self.assertRegex(self.shared()[0], DELETED.format(name='Alex'))
         self.fetch(self.blake)
         self.assertFalse(self.theirs(self.blake, root).exists())
+
+    def test_a_finished_training_is_deleted_from_any_computer(self):
+        # A finished saved training is nobody's, so anyone may delete it. (A finished desk
+        # training stays its person's: see test_runner_page's DeskTeamTests.)
+        import saved_fixtures
+        with self.be(self.alex):
+            root = saved_fixtures.load(self, 'finished')
+            self.alex.engine.share()
+        self.assertEqual(self.as_(self.alex, self.alex.engine.publish, root)['revision'], 1)
+        self.fetch(self.blake)
+        theirs = self.theirs(self.blake, root)
+        named = title(theirs)
+        with self.be(self.blake):
+            leaving = self.blake.engine.leaving(theirs)
+            self.assertEqual((leaving['may'], leaving['revisions'], leaving['share']),
+                             (True, 1, 'decision'))
+            self.deleted(theirs, self.blake.engine)
+        self.assertRegex(self.shared()[0], DELETED.format(name='Blake').replace(
+            'Rolling restarts', named))
+        self.assertEqual(len(self.tags()), 1, 'the revision stays')
+        self.fetch(self.alex)
+        self.assertFalse(root.exists())
+        with self.be(self.alex):
+            self.assertEqual(self.alex.engine.published(), [])
+
+    def test_a_teammate_who_took_it_first_keeps_their_work(self):
+        root = self.finished()
+        self.fetch(self.blake)
+        theirs = self.theirs(self.blake, root)
+        self.as_(self.blake, self.blake.engine.drive, theirs, 'take')
+        taken = self.shared()[0]
+        self.assertEqual(taken, 'Rolling restarts: Blake takes this training')
+        # Alex has not looked since, so this computer still has it finished and nobody's.
+        with self.be(self.alex):
+            self.assertEqual(self.alex.engine.leaving(root)['may'], True)
+            with self.assertRaisesRegex(WorkspaceError, 'Blake took this training on .*, '
+                                        'before your deletion of it was shared, so it was '
+                                        'not deleted'):
+                self.deleted(root)
+            view = self.alex.engine.view(root)
+            listed = [entry['path'] for entry in home.trainings()]
+        self.assertEqual(self.shared()[0], taken, 'nothing of theirs was deleted')
+        self.assertEqual((view['mine'], view['driver']['name']), (False, 'Blake'))
+        self.assertIn('before your deletion of it was shared, so it was not deleted',
+                      view['notice'])
+        self.assertIn(str(root), listed)
+        self.assertTrue((root / 'README.md').is_file())
+
+    def test_a_teammate_who_took_it_before_share_now_keeps_their_work(self):
+        with self.be(self.alex):
+            gitstate.share_when('asked')
+        root = self.finished()
+        self.as_(self.alex, self.alex.engine.share)
+        self.fetch(self.blake)
+        with self.be(self.alex):
+            self.deleted(root)
+        theirs = self.theirs(self.blake, root)
+        self.as_(self.blake, self.blake.engine.drive, theirs, 'take')
+        with self.be(self.alex):
+            self.alex.engine.share()
+            view = self.alex.engine.view(root)
+        self.assertEqual(self.shared()[0], 'Rolling restarts: Blake takes this training')
+        self.assertEqual((view['mine'], view['driver']['name']), (False, 'Blake'))
+        self.assertIn('so it was not deleted', view['notice'])
 
     def test_the_page_asks_what_would_go_and_deletes_with_every_rule_kept(self):
         made = page.RunnerPage(self.PORT, self.engine)

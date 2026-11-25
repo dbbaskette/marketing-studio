@@ -1,12 +1,10 @@
 """Grouped, revision-bound reviews for new runs; legacy gates remain unchanged."""
-from pathlib import Path
-import shutil
 
 import home
 import workspace
 from workspace import WorkspaceError
-from studio_core import deck_direction, research_view, review_policy
-from runner import pipeline, deck, drafts, worker_tools
+from studio_core import research_view, review_policy
+from runner import pipeline, deck, drafts
 
 LAYOUT = 2
 DIRECTION_PREPARED = ('research-plan', 'research', 'blueprint', 'document')

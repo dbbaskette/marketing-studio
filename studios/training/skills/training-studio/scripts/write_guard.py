@@ -8,6 +8,10 @@ from studio_core.process_lock import ProcessRLock, workspace_lock_path
 from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 
+SAVED_RUNNER = ('This training was saved by the earlier step-by-step flow, which no longer '
+                'continues. Open it on the desk, or start new work from it.')
+
+
 @contextmanager
 def admitted(root, *, held=None):
     """Standalone helpers wait for workers; runner calls borrow their exact owned lock.
@@ -58,6 +62,10 @@ def admitted(root, *, held=None):
                 raise workspace.WorkspaceError(SYNC_WAIT)
             if record.get('execution', 'runner') not in ('runner', 'conversation'):
                 raise workspace.WorkspaceError('The saved execution owner cannot be read.')
+            # A training a runner made is never changed by the helper as a conversation
+            # training: one the earlier step-by-step flow saved is opened on the desk or read.
+            if held is None and record.get('flow') != 'desk':
+                raise workspace.WorkspaceError(SAVED_RUNNER)
             for item in decks.values():
                 notes = item.get('notes', [])
                 if not isinstance(notes, list) or any(not isinstance(note, dict) or not isinstance(note.get('status'), str) for note in notes):

@@ -27,8 +27,8 @@ Changed bundle bytes invalidate research and downstream inputs. Hash checks prov
 saved integrity, not truth or live website currency. Refresh through the original
 helper workflow, save a new dossier and obtain a new content-bound review.
 
-Browser runs perform this handoff and use their saved shared review level. Do not
-modify a page-driven training through conversation commands.
+Browser runs perform this handoff themselves. Do not modify a page-driven training
+through conversation commands.
 
 ## Existing legacy research
 

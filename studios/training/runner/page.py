@@ -296,6 +296,20 @@ LIBRARY_KEEP = f'{DRAFTS}/library-keep'
 LIBRARY_UPLOAD = '/api/documents-library-keep'   # Keep in library again, for an added document
 WRITES = (*WRITES, *library_context.ROUTES, LIBRARY_ADD, LIBRARY_UPDATE, LIBRARY_KEEP,
           LIBRARY_UPLOAD)
+# What may change a saved record, the earlier step-by-step flow's training, or a folder a
+# runner made: every other changing route refuses it, at one place (`write`). A route is
+# changing unless its body asks only to read ({"action": "read"}). Conversation-guided
+# trainings (no run record, outside the workspace) keep their own decisions on the desk's
+# routes; a folder that holds a runner's run record never passes as one.
+SAVED_ALLOWED = {
+    f'{DRAFTS}/migrate': 'the explicit opening on the desk: apply, or finish an interrupted one',
+    f'{DRAFTS}/open': 'the finished Open on the desk',
+    '/api/drive': 'Take over, only where it must be taken to open it on the desk',
+    '/api/delete': 'Delete, the person’s own confirmed act',
+    COPY: 'Start new work from this: reads its setup for the start form',
+    '/api/publish': 'Publish a finished training as it stands: a tag, nothing in its folder',
+    '/api/adopt': 'Bring in: copies a conversation training; the original is not touched',
+}
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -309,9 +323,6 @@ NAMED = re.compile(r'[^A-Za-z0-9._-]+')
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
 DOCUMENT_LIMIT = 12_000_000     # bytes: one document of the largest size, in base64
-CLOSE = 'You can close this page; it says when it needs you again.'
-HALTED = ('This training is not running, so nothing more happens until you resume it or '
-          'try again.')
 RUNNER_DECIDES = ('The runner is driving this training, so its decisions are made on the '
                   'page.')
 
@@ -708,6 +719,27 @@ class RunnerPage(desk.Page):
             raise desk.Refusal(HTTPStatus.CONFLICT, drafts.NOT_ON_DESK)
         return root
 
+    def saved_gate(self, route: str, sent: dict) -> None:
+        """Refuse, in one sentence naming the two ways on, any change to a saved record or to
+        a folder a runner made that no run drives, except what SAVED_ALLOWED names. Hand over
+        is never one of them."""
+        if sent.get('action') == 'read' or not isinstance(sent.get('path'), str):
+            return
+        if route in SAVED_ALLOWED and not (route == '/api/drive' and sent.get('action') != 'take'):
+            return
+        folder = Path(sent['path'])
+        root = self.engine.driven(folder)
+        if root is None:
+            try:
+                runner_made = (folder / engines.RECORD).exists() or (folder / engines.RECORD).is_symlink()
+            except (OSError, ValueError):
+                runner_made = False
+            if runner_made:
+                raise desk.Refusal(HTTPStatus.CONFLICT, engines.SAVED_ONLY)
+            return
+        if self.engine.saved_kind(root) is not None:
+            raise desk.Refusal(HTTPStatus.CONFLICT, engines.SAVED_ONLY)
+
     def not_saved(self, path: str) -> None:
         """Refuse, in one sentence naming the two ways on, any route that continued a
         training the earlier step-by-step flow saved: it no longer continues."""
@@ -994,7 +1026,9 @@ class RunnerPage(desk.Page):
     def write(self, path: str, sent: dict):
         """Every POST the page answers. Once it has run, even when it failed partway, the
         next poll walks the workspace again instead of reusing the last walk, so the
-        change shows at once in every open tab. A read sent as a POST changes nothing."""
+        change shows at once in every open tab. A read sent as a POST changes nothing. A
+        saved record is refused here, before any route, unless SAVED_ALLOWED names it."""
+        self.saved_gate(path, sent)
         try:
             return self.apply(path, sent)
         finally:

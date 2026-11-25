@@ -779,3 +779,11 @@ class DeskCopyTests(runner_support.StudioCase):
         self.assertEqual(self.log(), commits, 'nothing is committed')
         self.assertEqual(self.record(root)['drafts'].get('send') or [], [])
         self.assertEqual(self.copies.drive.docs, {})
+
+    def test_a_saved_run_s_copies_follow_its_approvals(self):
+        # The saved flow no longer makes copies as it is approved; what stays is that a saved
+        # record's copy is never sent from the desk.
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'finished')
+        with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.'):
+            self.engine.send_copy(root, 'brief')

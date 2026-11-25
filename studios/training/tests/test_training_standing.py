@@ -221,3 +221,10 @@ class StandingTests(DeckCase):
         root = self.two_levels_with_a_major_finding()
         told = drafts.standing(self.engine, root)
         self.assertEqual(json.loads(json.dumps(told)), told)
+
+    def test_a_saved_run_keeps_its_own_words(self):
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'finished')
+        item = self.listed(root)[0]
+        self.assertNotIn('standing', item)
+        self.assertIsNone(drafts.standing(self.engine, root))

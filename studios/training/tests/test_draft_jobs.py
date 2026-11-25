@@ -680,3 +680,17 @@ class DraftJobTests(DeckCase):
         self.workers.then('document', worker)
         self.engine.update(root, self.NAME)
         self.assertIsNone(self.record(root)['problem'], self.record(root)['problem'])
+
+    def test_saved_runs_do_not_recover_or_run_desk_job_metadata(self):
+        import saved_fixtures
+        root = saved_fixtures.load(self, 'blueprint-gate')
+        with self.engine.files:
+            record = self.record(root)
+            record['drafts'] = {'jobs': [{'id': 'synthetic', 'status': 'working'}]}
+            self.engine._store(root, record)
+            self.engine._commit(root, 'synthetic saved run metadata')
+        file = root / drafts.RECORD
+        before = file.read_bytes()
+        self.engine._tidy()
+        self.assertEqual(file.read_bytes(), before)
+        self.assertEqual(self.workers.of('part'), [])

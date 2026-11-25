@@ -144,6 +144,12 @@ def desk_command(args, make=engines.Engine, out=None):
             if not isinstance(data, dict):
                 raise WorkspaceError('Supply a JSON object.')
         action = args.desk_action
+        # A saved record is changed only by the explicit opening on the desk; showing it,
+        # reading its context and previewing its opening read only.
+        if action not in ('create', 'show', 'context', 'migration-preview', 'migrate'):
+            root = engine.driven(args.folder)
+            if root is not None and engine.saved_kind(root) is not None:
+                raise WorkspaceError(engines.SAVED_ONLY)
         if action == 'create':
             data = dict(data)
             named = data.pop('uploads', {})
