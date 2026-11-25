@@ -3998,9 +3998,10 @@ function savedHistory(saved) {
   if (saved.halt) said.push('The earlier runner was ' + saved.halt + '.');
   if (saved.problem && saved.problem.what) {
     // The saved words end their sentence, with or without the full stop they were kept with.
+    // A closing bracket or quote ends one only after a sentence's own stop: "(timeout)" does not.
     const what = String(saved.problem.what).trim();
     said.push('The earlier runner stopped on a failure: ' + what
-      + (/[.!?…”"')]$/.test(what) ? '' : '.') + ' That step stays unfinished and is not tried again.');
+      + (/[.!?…][”"’')\]]*$/.test(what) ? '' : '.') + ' That step stays unfinished and is not tried again.');
   }
   if (saved.question && saved.question.text) {
     said.push('A worker asked: “' + saved.question.text + '” It was not answered, and that '

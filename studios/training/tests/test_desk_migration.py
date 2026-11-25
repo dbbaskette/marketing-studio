@@ -1245,7 +1245,7 @@ class MigrationPageTests(ScriptedPage, PageCase):
             self.assertEqual([r for r in result['requests'] if r['method'] == 'POST'], [])
             result = self.run_page(self.answers(fixture, **{
                 'POST /api/drafts/migrate': [ok(fixture['opened'])],
-                'GET /api/run': [ok(fixture['before']), ok(fixture['before']), ok(fixture['opened'])]}), [
+                'GET /api/run': [ok(fixture['before']), ok(fixture['opened'])]}), [
                 {'click': 'Open on the desk'}, {'click': 'Apply'}, {'snapshot': 'desk'}],
                 state={'screen': 'run', 'path': fixture['path']}, narrow=narrow)
             posts = [r for r in result['requests'] if r['method'] == 'POST']
@@ -1257,27 +1257,40 @@ class MigrationPageTests(ScriptedPage, PageCase):
             self.assertIn('Mark ready', result['snapshots']['desk']['buttons'])
             self.assertEqual(fixture['desk']['needs'], [])
 
-    def test_detail_review_remains_the_only_primary_before_migration(self):
+    def test_a_saved_training_s_detail_leads_to_its_record_which_opens_it_on_the_desk(self):
+        """A saved training waiting at a gate offers no review any more: its detail leads to
+        its saved record, whose one filled action is Open on the desk."""
         fixture = self.fixture(review=True)
-        self.assertTrue(fixture['detail']['run']['can_migrate_desk'])
-        review = 'Review ' + fixture['detail']['waiting']['label']
+        self.assertEqual(fixture['detail']['run']['saved'], 'saved')
+        self.assertNotIn('can_migrate_desk', fixture['detail']['run'])
+        self.assertIsNone(fixture['detail']['waiting'])
         for narrow in (False, True):
             result = self.run_page(self.answers(fixture), [
-                {'snapshot': 'detail'}, {'click': 'Open on the desk'}, {'snapshot': 'preview'},
+                {'snapshot': 'detail'}, {'click': 'Open its saved record'}, {'snapshot': 'record'},
+                {'click': 'Open on the desk'}, {'snapshot': 'preview'},
                 {'click': 'Cancel'}, {'snapshot': 'returned'}],
                 state={'screen': 'training', 'path': fixture['path']}, narrow=narrow)
-            self.assertEqual(result['snapshots']['detail']['filled'], [review])
-            self.assertIn('Open on the desk', result['snapshots']['detail']['buttons'])
+            self.assertEqual(result['snapshots']['detail']['filled'], ['Open its saved record'])
+            self.assertNotIn('Review', ' '.join(result['snapshots']['detail']['buttons']))
+            self.assertEqual(result['snapshots']['record']['filled'], ['Open on the desk'])
             self.assertEqual(result['snapshots']['preview']['filled'], ['Apply'])
-            self.assertEqual(result['snapshots']['returned']['filled'], [review])
+            self.assertEqual(result['snapshots']['returned']['filled'], ['Open on the desk'])
             self.assertEqual([request for request in result['requests'] if request['method'] == 'POST'], [])
 
     def test_saved_failure_and_question_are_history_on_the_desk(self):
         fixture = self.fixture()
         opened = {**fixture['opened']}
-        # A saved failure's words end a sentence whether or not they carried a full stop.
-        for narrow, what in ((False, 'Writing the learner guide failed three times.'),
-                             (True, 'Writing the learner guide failed three times')):
+        # A saved failure's words end a sentence whether or not they carried a full stop, and
+        # a closing bracket is not a full stop.
+        for narrow, what, said in (
+                (False, 'Writing the learner guide failed three times.',
+                 'Writing the learner guide failed three times. That step stays unfinished'),
+                (True, 'Writing the learner guide failed three times',
+                 'Writing the learner guide failed three times. That step stays unfinished'),
+                (True, 'The worker stopped (timeout)',
+                 'The worker stopped (timeout). That step stays unfinished'),
+                (False, 'The worker said “Done.”',
+                 'The worker said “Done.” That step stays unfinished')):
             desk = {**fixture['desk'], 'saved_status': {
                 'problem': {'what': what}, 'question': {'text': 'Which platform is this about?'}}}
             result = self.run_page(self.answers(fixture, **{
@@ -1285,7 +1298,7 @@ class MigrationPageTests(ScriptedPage, PageCase):
                 [{'snapshot': 'desk'}], state={'screen': 'run', 'path': fixture['path']}, narrow=narrow)
             text = result['snapshots']['desk']['text']
             self.assertIn('Saved runner history', text)
-            self.assertIn('Writing the learner guide failed three times. That step stays unfinished', text)
+            self.assertIn(said, text)
             self.assertIn('Which platform is this about?', text)
             self.assertIn('no work was resumed', text)
             for word in ('Try again', 'Answer'):

@@ -1023,7 +1023,10 @@ class OpenSavedTrainingTests(DeckCase):
         """A training the saved flow finished at that review level (a stored fixture, see
         saved_fixtures.py)."""
         root = saved_fixtures.load(self, 'finished-level-' + mode.replace('_', '-'))
-        self.assertEqual(self.state(root), 'done')
+        # It opens on its saved record, which keeps the finished Open on the desk.
+        shown = self.view(root)
+        self.assertEqual((shown['state'], shown['saved_record']['outcome'],
+                          shown['can_open_desk']), ('saved', 'finished', True))
         return root
 
     def test_row_157_a_finished_training_opens_on_the_desk_as_it_was(self):

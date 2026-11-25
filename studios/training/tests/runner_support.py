@@ -1662,10 +1662,21 @@ class StudioCase(unittest.TestCase):
                    'documents': self.documents, 'copies': self.copies, 'index': self.index,
                    # Historic fixtures exercise the saved serial protocol. New protocol
                    # integration tests explicitly use the production default.
-                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, 'plan_first': False, 'outline_first': False, 'section_synthesis': False, **options}
+                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, 'plan_first': False, 'outline_first': False, 'section_synthesis': False,
+                   # Once a test drives the earlier step-by-step flow (`saved_flow_on`), every
+                   # engine it makes, a teammate's or one after a restart, drives it too.
+                   'saved_flow': getattr(self, 'saved_flow', False), **options}
         engine = self.engines.Engine(**options)
         self.addCleanup(engine.close)
+        self.__dict__.setdefault('made_engines', []).append(engine)
         return engine
+
+    def saved_flow_on(self) -> None:
+        """Drive the earlier step-by-step flow, as only its own tests and the shared deck
+        contract do (`Engine.saved_flow`): no runner continues saved work any more."""
+        self.saved_flow = True
+        for engine in self.__dict__.get('made_engines', []):
+            engine.saved_flow = True
 
     def start(self, engine=None, **changes) -> Path:
         from runner import pipeline
@@ -1673,12 +1684,16 @@ class StudioCase(unittest.TestCase):
         return Path(engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
 
     def saved_start(self, engine=None, saved_contract=None, schema=None, **changes) -> Path:
-        """Construct a saved queue/policy session and run, then resume real readers."""
+        """Construct a saved queue/policy session and run, then resume real readers. The
+        earlier step-by-step flow no longer continues saved work on any runner: its engine is
+        asked to drive it as that flow did (`Engine.saved_flow`), for the tests of that flow
+        and the shared deck contract."""
         import home
         import workspace
         from runner import pipeline, settings, team
         from studio_core import review_policy
         engine = engine or self.engine
+        self.saved_flow_on()
         space = engine.space()
         form = pipeline.check_form({**FORM, **{k: v for k, v in changes.items()
             if k not in ('review_level', 'review_seen', 'review_default')}, 'flow': None})
