@@ -198,10 +198,6 @@ const NOTIFY_SAYS = 'When no page is open and a deck needs you, this computer te
   + 'decision, once for each thing that needs you.';
 const NOTIFY_DIFFERS = 'This is not the browser’s notification above. That one works only '
   + 'while this page is open in a tab; this one is for when no page is open at all.';
-// Deleting a deck: what the card offers, and what its confirmation says. The runner says
-// what goes and what stays for each deck; these are the words around it.
-const DELETE_SAYS = 'If you no longer want this deck, delete it. It goes from this '
-  + 'computer and from your team’s workspace.';
 const DELETE_STOPS = 'It is working now. Deleting it stops it first, and ends everything it '
   + 'is running.';
 const DELETE_SHARED = { decision: 'Your team sees it gone straight away.',
@@ -1112,6 +1108,7 @@ function runWords(found) {
 // Where a deck stands, as a shape and words. What a teammate runs is never said to be
 // working or waiting: that is not known here.
 function standingOf(brief) {
+  if (brief.saved) return SAVED_LISTED[brief.saved] || SAVED_LISTED.unchecked;
   if (elsewhere(brief)) return ['none', 'Run by ' + nameOf(brief.driver)];
   return runWords(brief);
 }
@@ -1227,13 +1224,14 @@ function deckRow(brief, kind) {
     || make('p', 'row-says', brief.sentence || '') : make('p', 'row-says', brief.sentence || ''),
   whoLine(brief), noticeLine(brief));
   if (kind === 'finished') add(text, deliveredLine(brief), sheetThumb(brief));
+  // A record the earlier step-by-step flow saved is opened, never reviewed: nothing waits on
+  // a decision there (GitHub issue #542).
   const go = capsule(kind === 'needs' ? 'Review' : 'Open', kind === 'needs' ? '' : 'quiet',
     openDeck(brief), 'open ' + brief.path);
   go.setAttribute('aria-label', go.textContent + ' ' + title);
   const row = make('li', 'row' + (kind === 'needs' ? ' row-needs' : '')
     + (brief.state === 'working' && !elsewhere(brief) ? ' working' : ''));
-  const shape = kind === 'needs' ? (brief.state === 'failed' ? 'late'
-    : brief.saved === 'read-only' ? 'off' : 'review')
+  const shape = kind === 'needs' ? (brief.state === 'failed' ? 'late' : 'review')
     : kind === 'finished' ? 'done' : null;
   const others = [copyAsNewButton(brief), deleteButton(brief)].filter(Boolean);
   return add(row, shape ? bead(shape) : null, text,
@@ -1279,7 +1277,7 @@ function computerLine() {
 function every() {
   const found = view.decks || {};
   return [...list(found.needs), ...list(found.working), ...list(found.finished),
-    ...list(found.elsewhere)];
+    ...list(found.elsewhere), ...list(found.saved)];
 }
 
 function drawHome(fresh) {
@@ -1305,7 +1303,8 @@ function drawHome(fresh) {
       rows('Run by your teammates', list(found.elsewhere), 'elsewhere'),
       ['start', [], startCard],
       ['updates', [upkeepOf()], updatesCard],
-      rows('Finished', list(found.finished), 'finished'));
+      rows('Finished', list(found.finished), 'finished'),
+      rows('Saved by the earlier flow', list(found.saved), 'saved'));
   }
   parts.push(['foot', around(),
     () => add(make('footer', 'foot'), computerLine(), sharingLine(), fetchLine())]);
@@ -1320,7 +1319,12 @@ function drawHome(fresh) {
 
 const DELIVERED = [['', 'Any'], ['yes', 'Delivered'], ['no', 'Not delivered yet']];
 const STANDS = [['', 'Any'], ['needs', 'Needs you'], ['working', 'In progress'],
-  ['finished', 'Finished'], ['elsewhere', 'Run by your teammates']];
+  ['finished', 'Finished'], ['elsewhere', 'Run by your teammates'],
+  ['saved', 'Saved by the earlier flow']];
+// A saved record on a list, by what its last current check found: never more than that.
+const SAVED_LISTED = { unchecked: ['none', 'Saved earlier'], migrates: ['review', 'Opens on the desk'],
+  waiting: ['out', 'Waiting'], 'read-only': ['off', 'Read-only'],
+  interrupted: ['late', 'Opening interrupted'] };
 const BEGAN = [['', 'Any'], ...ROUTES.map(([route, name]) => [route, name])];
 
 function deckCard(brief) {
@@ -1350,7 +1354,7 @@ function deckCard(brief) {
 // Every deck with where it stands: the list of the runner's it is in.
 function listed() {
   const found = view.decks || {};
-  return ['needs', 'working', 'finished', 'elsewhere']
+  return ['needs', 'working', 'finished', 'elsewhere', 'saved']
     .flatMap((kind) => list(found[kind]).map((brief) => [brief, kind]));
 }
 
@@ -2402,8 +2406,9 @@ function previewsCard(form) {
   const found = view.setup.previews;
   if (!found) return null;
   const node = card('How slide previews are made');
-  add(node, make('p', '', 'At each stop you see what is made so far: each slide is turned '
-    + 'into a picture. A deck cannot be made without them.'));
+  add(node, make('p', '', 'Slide previews show what is made so far: each slide is turned '
+    + 'into a picture, on the deck’s progress and on the desk. A deck cannot be made without '
+    + 'them.'));
   if (!form.previews) {
     return add(node, state('late', 'This computer cannot make them yet.'),
       make('p', 'fix', 'It needs LibreOffice, or Google access that reaches Drive. The Status '
@@ -3749,6 +3754,8 @@ async function steer(action, pressed, problem) {
       return;
     }
     view.steered = failure.message + ' Nothing was changed.';
+    // The desk draws no line for it: the refusal is said where every screen shows it.
+    toast(view.steered);
   }
   if (view.sheet) {
     view.sheet = '';
@@ -3782,52 +3789,89 @@ function paintDeck(fresh) {
 // --- a saved record ------------------------------------------------------------------------
 // A deck the earlier step-by-step flow saved. Nothing continues it any more (GitHub issue
 // #542): it opens on the desk, waits for what stops that to clear, is a finished deck the
-// finished Open on the desk opens, or is read-only with its reason. Its saved files are read
-// in place, and nothing on this screen changes them.
+// finished Open on the desk opens, is read-only with its reason, or its opening on the desk
+// was interrupted. What becomes of it is found when the screen opens it, or when the person
+// asks (Check again), never by a poll. Every state has one filled action; its saved files
+// are read in place, and nothing on this screen changes them unless the person asks.
 const SAVED_FILES = { 'README.md': 'Read the deck’s summary', 'intake.md': 'Read intake',
   'classify.md': 'Read source classification', 'outline.md': 'Read saved outline',
   'look.md': 'Read the look', 'research/plan.md': 'Read research plan',
   'research/report.md': 'Read research report', 'research/review.md': 'Read research review' };
 // How each saved state stands, as a bead and words.
 const SAVED_STANDS = {
+  unchecked: ['none', 'Saved earlier: checking how it goes on'],
   migrates: ['review', 'Saved earlier: opens on the desk'],
   waiting: ['out', 'Saved earlier: waiting before it can open on the desk'],
   finished: ['done', 'Delivered earlier: opens on the desk'],
   'read-only': ['off', 'Read-only: it is not continued and not opened on the desk'],
+  interrupted: ['late', 'Opening on the desk was interrupted'],
 };
+const SAVED_DELETE_SAYS = 'If you no longer want this saved deck, delete it: its folder, with '
+  + 'every saved file listed above, goes from this computer and from your team’s workspace. '
+  + 'Nothing else deletes it.';
 
 function paintSavedRecord(run, fresh) {
   const saved = run.saved_record;
   const title = run.title || 'Untitled';
   const kind = saved.state || 'read-only';
   const read = theirs(run);
+  // What becomes of it is found once when the screen opens it, never on a poll.
+  const turn = run.path + '#' + view.turn;
+  if (kind === 'unchecked' && view.savedChecked !== turn) {
+    view.savedChecked = turn;
+    savedAct(run, 'saved-check', null);
+  }
   placeParts({ title, above: [make('span', '', [routeWords(run), kind === 'read-only'
     ? 'Read-only' : 'Saved earlier'].filter(Boolean).join(' · '))], back: true, actions: [],
   mark: [title, kind, saved.why, saved.next, read, run.driver] }, [
     // While a sheet is open it holds the one filled button, so nothing under it is filled.
-    ['saved-intro', [run.sentence, kind, saved.next, saved.take, read, view.opening,
-      Boolean(view.sheet)], () => savedRecordIntro(run)],
-    kind === 'waiting' ? ['saved-waiting', [saved.waiting, saved.take, saved.offer_copy,
-      run.driver, Boolean(view.sheet)], () => savedWaitingPart(run)] : null,
+    ['saved-intro', [run.sentence, kind, saved.next, saved.action, saved.holder, read,
+      run.driver, view.opening, Boolean(view.sheet), view.busy],
+    () => savedRecordIntro(run)],
+    ['saved-waiting', [kind, saved.waiting, saved.checked_at],
+      () => (['waiting', 'interrupted'].includes(kind) ? savedWaitingPart(run) : null)],
     kind === 'migrates' ? ['saved-kept', [saved.retained, saved.question],
       () => savedKeptPart(run)] : null,
-    kind === 'read-only' ? ['saved-why', [saved.why], () => add(card('Why it cannot be continued'),
-      make('p', '', saved.why),
-      make('p', 'quiet', 'Nothing here changes it. Restore its saved record from your workspace '
-        + 'history to open it, or start new work from it.'))] : null,
-    kind === 'finished' && read ? ['theirs', [run.driver, run.last_shared, title],
-      () => (run.driver ? theirsPart(run, false) : finishedFreePart())] : null,
+    kind === 'read-only' ? ['saved-why', [saved.why, saved.remedy], () => add(
+      card('Why it cannot be continued'), make('p', '', saved.why),
+      make('p', 'quiet', saved.remedy || 'Nothing here changes it.'))] : null,
     kind === 'finished' && run.deliver ? ['deliver', [run.deliver, run.contactSheet, read,
       view.downloading], () => deliverPart(run)] : null,
     kind === 'finished' && (!read || !run.driver) ? ['publish', [teamSpace()],
       () => publishCard(run, view.issued && view.issued.path === view.path ? view.issued : null)]
       : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
-    // What this computer runs for a team can be handed over, for anyone to take.
-    !read && run.driver && run.driver.here ? ['mine', [run.driver, title, run.kept],
-      () => minePart(run.driver, run.kept)] : null,
-    deletable(run) ? ['delete', [title], () => deleteCard()] : null,
+    deletable(run) && kind !== 'interrupted' ? ['delete', [title], () => add(
+      card('Delete this deck'), make('p', 'quiet', SAVED_DELETE_SAYS),
+      add(make('div', 'bar'), capsule('Delete this deck', 'quiet', askDelete('delete'),
+        'delete')))] : null,
   ], fresh);
+}
+
+// Ask the runner about this saved deck: check it again, finish its interrupted opening, or
+// clear a marker a dead step left. The screen is drawn again from the answer.
+async function savedAct(run, address, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  if (pressed) pressed.disabled = true;
+  try {
+    const found = await send(address, { path: run.path });
+    if (turn !== view.turn) return;
+    view.run = found;
+    if (found.opening === 'opened') toast('It is open on the desk now.');
+    if (found.opening === 'put back') toast('The interrupted opening was put back as it was. '
+      + 'Open it on the desk again when you are ready.');
+  } catch (failure) {
+    if (turn === view.turn) toast(failure.message);
+  } finally {
+    view.busy = false;
+    if (pressed) pressed.disabled = false;
+  }
+  if (turn === view.turn) {
+    paintDeck(true);
+    refresh();
+  }
 }
 
 // What it is, how it stands, and its one way on: the one filled button of the screen.
@@ -3836,58 +3880,85 @@ function savedRecordIntro(run) {
   const kind = saved.state || 'read-only';
   const copying = saved.next === 'copy';
   const filled = view.sheet ? '' : 'filled';
+  const copy = (key) => {
+    const node = capsule(copying ? 'Start new work from this' : 'Start a new deck', filled,
+      () => (copying ? copyAsNew({ path: run.path, title: run.title }, key, node)
+        : openNew(undefined, false, node)), key);
+    return node;
+  };
+  const take = () => capsule(run.driver ? 'Take it over' : 'Take it', filled,
+    openSheet('take', 'take'), 'take');
   let go = null, next = '';
-  if (kind === 'migrates') {
+  if (kind === 'unchecked') {
+    go = capsule(view.busy ? 'Checking…' : 'Check how it goes on', filled,
+      () => savedAct(run, 'saved-check', go), 'saved-check');
+    next = 'Checking reads its saved files and changes nothing.';
+  } else if (kind === 'interrupted') {
+    go = capsule(view.busy ? 'Finishing…' : 'Finish opening on the desk', filled,
+      () => savedAct(run, 'saved-finish', go), 'saved-finish');
+    next = 'What was recorded of the opening is completed, or it is put back as it was. Every '
+      + 'input is checked again first, and nothing you did not preview is applied.';
+  } else if (kind === 'migrates') {
     go = capsule('Open on the desk', filled, () => openDeskPreview(run, 'migration'),
       'unfinished-desk-open');
     next = 'Open on the desk shows first what it keeps and what it changes. Nothing changes '
       + 'until you apply it, and every saved file is kept as it is.';
-  } else if (kind === 'finished' && !theirs(run)) {
-    // The finished Open on the desk, as it always was: plain, beside the delivery.
-    go = capsule(view.opening ? 'Opening…' : 'Open on the desk', '',
+  } else if (kind === 'finished' && theirs(run)) {
+    go = take();
+    next = (run.driver ? nameOf(run.driver) + ' runs it from another computer. ' : 'Nobody runs '
+      + 'it now. ') + 'Take it to open it on the desk here; only its driver changes in its '
+      + 'saved record.';
+  } else if (kind === 'finished') {
+    go = capsule(view.opening ? 'Opening…' : 'Open on the desk', filled,
       () => openOnDesk(run, go), 'desk-open');
     next = (OPEN_SAYS[run.level] || OPEN_SAYS.other) + ' It stays delivered until you change '
       + 'it; a change makes the next revision.';
-  } else if (kind === 'finished') {
-    next = 'It can be opened on the desk on the computer that runs it, or once you take it.';
   } else if (kind === 'read-only') {
-    go = capsule(copying ? 'Start new work from this' : 'Start a new deck', filled,
-      () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
-        : openNew(undefined, false, go)), 'saved-next');
+    go = copy('saved-next');
     next = copying ? 'Start new work from this opens the start form with its setup and '
       + 'material. This saved deck is kept as it is.'
       : 'Its start form cannot be read, so a new deck starts from an empty form. This saved '
         + 'deck is kept as it is.';
+  } else if (saved.action === 'clear-marker') {
+    go = capsule('Clear the step marker', filled,
+      () => savedAct(run, 'saved-clear-marker', go), 'saved-clear-marker');
+    next = 'Only the marker file is removed; every saved file stays as it is.';
+  } else if (saved.action === 'take') {
+    go = take();
+    next = (run.driver ? nameOf(run.driver) + ' runs it from another computer; ' + nameOf(run.driver)
+      + ' is told who took it. ' : 'Nobody runs it now. ') + 'Take it to open it on the desk '
+      + 'here; only its driver changes in its saved record.';
+  } else if (saved.action === 'open' && saved.holder) {
+    go = capsule('Open ' + saved.holder.title, filled, () => show('deck',
+      { path: saved.holder.path }), 'saved-holder');
+    next = 'What stops it is on another deck. Once that is put right, come back and check '
+      + 'again.';
+  } else if (saved.action === 'check') {
+    go = capsule(view.busy ? 'Checking…' : 'Check again', filled,
+      () => savedAct(run, 'saved-check', go), 'saved-check');
+    next = 'A step is in hand somewhere in this workspace. It ends by itself; check again then.';
   } else {
-    next = saved.take ? 'Take it on this computer, then open it on the desk.'
-      : 'This screen looks again by itself, and offers Open on the desk once nothing stops it.';
+    go = copy('saved-copy');
+    next = 'Nothing in the studio clears this by itself. Once it is cleared, this deck still '
+      + 'opens on the desk; meanwhile new work can start from it.';
   }
   return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence), [go]),
     state(...SAVED_STANDS[kind]), make('p', 'quiet', next));
 }
 
-// What stops it opening on the desk, each in the preview's own words, which say what clears
-// it; and what to do meanwhile.
+// What stops it opening on the desk, each in its own words, which say what clears it; when
+// it was found; and a way to look again.
 function savedWaitingPart(run) {
   const saved = run.saved_record;
-  const node = card('What it waits for');
+  const node = card(saved.state === 'interrupted' ? 'What happens next' : 'What it waits for');
   const said = bullets(list(saved.waiting));
   said.setAttribute('role', 'status');
   add(node, said);
-  if (saved.take) {
-    const name = run.driver ? nameOf(run.driver) : '';
-    add(node, make('p', '', name ? name + ' runs it from another computer. Take it over to open '
-      + 'it on the desk here; ' + name + ' is told who took it.'
-      : 'Nobody runs it now. Take it to open it on the desk here.'),
-    add(make('div', 'bar'), capsule(name ? 'Take it over' : 'Take it', view.sheet ? '' : 'filled',
-      openSheet('take', 'take'), 'take')));
-  }
-  if (saved.offer_copy) {
-    const go = capsule('Start new work from this', '', () => copyAsNew({ path: run.path,
-      title: run.title }, 'saved-copy', go), 'saved-copy');
-    add(node, make('p', 'quiet', 'Nothing in the studio clears this by itself. Once it is '
-      + 'cleared, this deck still opens on the desk; meanwhile new work can start from it.'),
-    add(make('div', 'bar'), go));
+  if (saved.state === 'waiting') {
+    const again = capsule(view.busy ? 'Checking…' : 'Check again', 'quiet',
+      () => savedAct(run, 'saved-check', again), 'saved-check-again');
+    add(node, saved.checked_at ? add(make('p', 'quiet'), 'Checked ', when(saved.checked_at),
+      '.') : null, saved.action === 'check' ? null : add(make('div', 'bar'), again));
   }
   return node;
 }
@@ -4039,16 +4110,6 @@ function theirsPart(run, lead) {
   add(make('div', 'bar'), capsule('Take it over', '', openSheet('take', 'take'), 'take')));
 }
 
-// A finished deck in a shared workspace is nobody's. It is read and published as it stands;
-// to ask for changes, someone takes it first.
-function finishedFreePart() {
-  return callout('', make('h2', 'aside-title', 'Nobody is running this deck'),
-    make('p', '', 'It is finished, so no computer runs it. It can be read, and published as '
-      + 'it stands, from any computer on your team.'),
-    make('p', '', 'To ask for changes, take it first. It then runs from this computer.'),
-    add(make('div', 'bar'), capsule('Take it', '', openSheet('take', 'take'), 'take')));
-}
-
 // What the runner says about a deck this computer runs: that it was changed on two computers
 // at once, which is put right by carrying on from the shared version, or that it has been.
 function noticePart(run) {
@@ -4059,19 +4120,6 @@ function noticePart(run) {
     make('p', '', run.notice),
     add(make('div', 'bar'), capsule('Carry on from the shared version', '',
       openSheet('take', 'take-shared'), 'take-shared')));
-}
-
-function minePart(driver, kept) {
-  const aside = keptLine(kept);
-  return add(card('Who runs this deck'), whoSays(driver, ''),
-    make('p', 'quiet', 'Your teammates can read it, and only this computer can change it. '
-      + 'If someone else should carry it on, hand it over: anyone on your team may then '
-      + 'take it.'),
-    aside ? make('p', 'quiet', 'Some of what this computer made for this deck was set aside, '
-      + 'because it had not been shared when the deck carried on from the shared version. It '
-      + 'is kept on this computer, and can be brought back.') : null, aside,
-    add(make('div', 'bar'), capsule('Hand over', '', openSheet('hand-over', 'hand-over'),
-      'hand-over')));
 }
 
 // A finished deck is published from its own screen. Once it is, the card says which revision
@@ -4209,12 +4257,6 @@ async function settleTeam(kind, problem, pressed) {
 // decides; this only keeps the offer off a deck someone else runs.
 function deletable(run) {
   return Boolean(run && (run.mine !== false || (run.state === 'finished' && !run.driver)));
-}
-
-function deleteCard() {
-  return add(card('Delete this deck'), make('p', 'quiet', DELETE_SAYS),
-    add(make('div', 'bar'), capsule('Delete this deck', 'quiet', askDelete('delete'),
-      'delete')));
 }
 
 // A deck on Home or on Decks offers the same sheet, beside the way into it. It is plain and
@@ -5325,7 +5367,8 @@ function waitsToast(path) {
 // clicked opens the deck it was about.
 function took(found) {
   view.decks = { needs: list(found.needs), working: list(found.working),
-    finished: list(found.finished), elsewhere: list(found.elsewhere) };
+    finished: list(found.finished), elsewhere: list(found.elsewhere),
+    saved: list(found.saved) };
   const waiting = view.decks.needs;
   view.needs = waiting.length;
   // What the runner says about who has a deck is told once when it is new: that one was

@@ -1219,7 +1219,7 @@ class OneNameEachTests(unittest.TestCase):
                     'It may tighten, split, merge or reorder content, then redesign.',
                     'Your assistant, workspace, brand and delivery choices apply across all studios.',
                     "toast('Deck copied into this workspace.')",
-                    'At each stop you see what is made so far: each slide is turned'):
+                    'Slide previews show what is made so far: each slide is turned'):
             with self.subTest(new=new):
                 self.assertIn(new, page + runner)
         from runner import engine

@@ -2589,7 +2589,7 @@ class OpenOnDeskPageTests(DeskPageCase):
 
     def test_open_on_the_desk_says_what_the_deck_s_level_lets_change(self):
         path = self.delivered()
-        view = self.run_of(path)
+        view = self.post('saved-check', {'path': path})   # as its screen asks on opening
         said = {None: 'Open it on the desk to note a slide, or change its words or its speaker '
                       'notes.',
                 'redesign': 'Open it on the desk to note a slide, or change its words or its '
@@ -2630,7 +2630,7 @@ class OpenOnDeskPageTests(DeskPageCase):
 
     def test_a_delivered_deck_offers_open_on_the_desk(self):
         path = self.delivered()
-        view = self.run_of(path)
+        view = self.post('saved-check', {'path': path})   # as its screen asks on opening
         self.assertIsNone(view['desk'])
         opened = self.post('desk-open', {'path': path})
         result = self.open_deck(path, view, [
@@ -2638,7 +2638,8 @@ class OpenOnDeskPageTests(DeskPageCase):
             **{'POST /api/desk-open': [ok(opened)], 'GET /api/run': [ok(view), ok(view), ok(opened)]})
         delivered, desk = result['snapshots']['delivered'], result['snapshots']['desk']
         self.assertIn('Open on the desk', delivered['buttons'])
-        self.assertNotIn('Open on the desk', delivered['filled'])
+        # The one filled action of a finished saved deck (fix round, ruling 3).
+        self.assertEqual(delivered['filled'], ['Open on the desk'])
         self.assertIn('Delivered', delivered['text'])
         self.assertEqual(self.posts(result), [('/api/desk-open', {'path': path})])
         # The screen is the desk now: the navigator and the slide chosen, still delivered.
@@ -3074,7 +3075,7 @@ class MigrationPageTests(DeskPageCase):
 
     def saved(self):
         root = self.load_saved('build')
-        return str(root), self.run_of(str(root))
+        return str(root), self.post('saved-check', {'path': str(root)})
 
     def test_preview_cancel_preserves_saved_screen_and_has_no_apply(self):
         path, view = self.saved()

@@ -599,20 +599,6 @@ def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
     return {'asset': ident, 'slide': slide}
 
 
-def remove_picture(root, slide: str) -> dict:
-    """Take a picture the person gave off its slide. The slides tool keeps its record, which
-    is never rewritten, so the count stays and a picture given again takes a new asset ID.
-    Returns {'slide'}."""
-    root = Path(root)
-    held = _picture_record(root)
-    entry = held.get(slide)
-    if not isinstance(entry, dict) or not isinstance(entry.get('asset'), str):
-        raise KeyError(slide)
-    held[slide] = {'n': entry.get('n'), 'removed': home.now()}
-    home.write_json(root / PICTURED, held)
-    return {'slide': slide}
-
-
 def _picture_record(root) -> dict:
     """PICTURED as it is kept, with the count left by a picture taken off."""
     found = home.read_json(Path(root) / PICTURED, {})

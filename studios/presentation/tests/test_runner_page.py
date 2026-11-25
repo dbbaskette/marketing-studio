@@ -58,8 +58,8 @@ POSTS = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/a
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/build-feedback', '/api/progress-seen',
-         '/api/research-site', '/api/picture',
-         '/api/picture-remove', '/api/desk-outline-price', '/api/deck-copy', *DESK_POSTS,
+         '/api/research-site', '/api/desk-outline-price', '/api/deck-copy', *DESK_POSTS,
+         '/api/saved-check', '/api/saved-finish', '/api/saved-clear-marker',
          *LIBRARY_POSTS, '/api/document-intake')
 BOTH = ('/api/research-note', '/api/slide-text-draft', '/api/intake-draft', '/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer',
         '/api/desk-outline-price')
@@ -328,7 +328,7 @@ class RuleTests(PageCase):
         # A spreadsheet read for a deck from a document is as large as a source's file.
         self.assertEqual(self.page.body_limit('/api/document-intake', with_key), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/document-intake', without), server.BODY_LIMIT)
-        for target in set(POSTS) - {'/api/slide-text-draft', '/api/decide', '/api/intake-draft', '/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources', '/api/document-intake'}:
+        for target in set(POSTS) - {'/api/slide-text-draft', '/api/decide', '/api/intake-draft', '/api/decks', '/api/desk-source', '/api/research-sources', '/api/document-intake'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
 
     def test_a_source_added_on_the_desk_may_be_large_only_with_the_key(self):
@@ -336,19 +336,6 @@ class RuleTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/desk-source', with_key), page.SOURCE_LIMIT)
         self.assertGreater(page.SOURCE_LIMIT, 8_000_000 * 4 // 3)
         self.assertEqual(self.page.body_limit('/api/desk-source', without), server.BODY_LIMIT)
-
-    def test_a_picture_may_be_large_only_with_the_key(self):
-        with_key, without = self.headers(), self.headers(token=False)
-        self.assertEqual(self.page.body_limit('/api/picture', with_key), page.PICTURE_LIMIT)
-        self.assertGreater(page.PICTURE_LIMIT, 20_000_000 * 4 // 3)
-        self.assertEqual(self.page.body_limit('/api/picture', without), server.BODY_LIMIT)
-
-    def test_a_picture_that_did_not_arrive_whole_is_refused(self):
-        said = self.post('picture', {'path': 'nowhere', 'slide': 'a-slide', 'name': 'a.png',
-                                     'content': 'not base64!', 'alt': 'A rack.',
-                                     'source': 'Our photo.'}, 400)
-        self.assertEqual(said['error'], 'The picture did not arrive whole. Choose the file '
-                                        'again.')
 
 
 class AgentTests(PageCase):

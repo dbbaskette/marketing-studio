@@ -2,11 +2,11 @@
 
 Only migrate at the person's explicit request. Run `studio desk migration-preview --folder PATH` first. Show retained materials, incomplete work, blockers, consequences; keep its token hidden. Preview and Cancel change nothing.
 
-Schemas 1–4 need a usable outline; Selected changes needs its inventory and original deck. Sources and research pins must verify. Pauses, stops, failures and unanswered questions stay in History, steps unfinished. Pre-outline or unreadable records are read-only. Markers block migration until their step ends; reopening the Studio recovers a leftover one, possibly discarding uncommitted work. Never delete markers or fake completion.
+Schemas 1–4 need a usable outline; Selected changes needs its inventory and original deck. Sources and research pins must verify. Pauses, stops, failures and unanswered questions stay in History, steps unfinished. Pre-outline or unreadable records are read-only. Markers block migration until their step ends; a leftover one goes only on the person's **Clear the step marker**. Never delete markers or fake completion.
 
 After confirmation, run `studio desk migrate --folder PATH --expected TOKEN` with the exact token. Changed inputs, workers, owner, workspace refuse. It opens the same folder in conversation with scope `['part']`: existing slide parts only. Broader work needs explicit `desk scope`. Nothing is approved, drawn, researched, installed or delivered.
 
-Original `run.json`, materials, History, pins, earlier real decisions and Google records stay intact. Effective state lives in `desk/migration.json`, paired with immutable `desk/migration-origin.json`. A local pending transaction blocks execution until explicit migration retry safely finishes or rolls back metadata. Never edit these files. The worker scan knows schemas 1–6; an unknown record blocks all previews in its workspace, naming its folder.
+Original `run.json`, materials, History, pins, earlier real decisions and Google records stay intact. Effective state lives in `desk/migration.json`, paired with immutable `desk/migration-origin.json`. A pending transaction blocks execution until **Finish opening on the desk** (explicit retry) finishes or rolls it back. Never edit these files. The worker scan knows schemas 1–6; an unknown record blocks all previews in its workspace, naming its folder.
 
 Migration raises the workspace requirement to **4.8.1**, preserving higher floors. Close older instances; configured older runtimes may ignore it. Setup/join enforce it. Any installation or update is explicit.
 
