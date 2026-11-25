@@ -553,7 +553,6 @@ def brand_for_workers(root, brand: Path) -> dict:
 ASSETS = Path('work') / 'assets'            # the deck's asset project, for pictures given
 PICTURED = ASSETS / 'pictures.json'         # {slide id: {'asset', 'alt', 'source', ...}}
 PICTURE_KINDS = ('cover', 'section', 'content')
-PICTURE_TRIES = 20                          # asset IDs tried past ones the tool already holds
 
 
 def pictures(root) -> dict:
@@ -562,48 +561,6 @@ def pictures(root) -> dict:
     found = home.read_json(Path(root) / PICTURED, {})
     return {ident: entry for ident, entry in found.items() if isinstance(ident, str)
             and isinstance(entry, dict) and isinstance(entry.get('asset'), str)} \
-        if isinstance(found, dict) else {}
-
-
-def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
-                   name: str | None = None, kind: str | None = None,
-                   title: str | None = None) -> dict:
-    """Record a picture the person gave one slide in the deck's asset project, with the
-    slides tool's `assets add-supplied`, and keep which slide shows it. A slide given
-    another picture records it under a new asset ID, since a recorded asset is never
-    rewritten. Returns {'asset', 'slide'}."""
-    root = Path(root)
-    project = root / ASSETS
-    project.mkdir(parents=True, exist_ok=True)
-    held = _picture_record(root)
-    count = int((held.get(slide) or {}).get('n') or 0)
-    # An ID the slides tool already holds, from a record that failed part way, is passed by.
-    for count in range(count + 1, count + 1 + PICTURE_TRIES):
-        ident = f'pic-{slide}' if count == 1 else f'pic-{slide}-{count}'
-        try:
-            slides.asset_supplied(project, Path(file), ident, alt, source)
-            break
-        except slides_tool.Refused as refused:
-            if refused.codes != ['asset-conflict']:
-                raise
-    else:
-        # The count tried is kept, so the picture given again tries the next names. A picture
-        # the slide already shows stays shown.
-        held[slide] = {**(held.get(slide) or {}), 'n': count}
-        home.write_json(root / PICTURED, held)
-        raise WorkspaceError('The slides tool already holds every name tried for this '
-                             'picture. Give it again, and the next names are tried.')
-    held[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
-                   'kind': kind, 'title': title, 'at': home.now(), 'n': count}
-    home.write_json(root / PICTURED, held)
-    return {'asset': ident, 'slide': slide}
-
-
-def _picture_record(root) -> dict:
-    """PICTURED as it is kept, with the count left by a picture taken off."""
-    found = home.read_json(Path(root) / PICTURED, {})
-    return {ident: entry for ident, entry in found.items()
-            if isinstance(ident, str) and isinstance(entry, dict)} \
         if isinstance(found, dict) else {}
 
 

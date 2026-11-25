@@ -94,17 +94,17 @@ A deck started from the desk's start runs the same steps as any other, with its 
 
 ### Decks the earlier flow saved
 
-Nothing continues a deck the earlier step-by-step flow saved ([#542](https://github.com/dbbaskette/marketing-studio/issues/542)): its screen is a saved record, never a run, and its stops, questions and failures are not offered. What becomes of it is found when its screen opens, or when you press **Check again**, never in the background; Home and Decks list saved records apart, under **Saved by the earlier flow**, and say only what such a check found. Each says what it is and offers one filled way on:
+Nothing continues a deck the earlier step-by-step flow saved ([#542](https://github.com/dbbaskette/marketing-studio/issues/542)): its screen is a saved record, never a run, and its stops, questions and failures are not offered. What becomes of it is found when its screen opens, or when you press **Check again**, never in the background, and the screen keeps what it found until you act on the deck or check again; each action checks again for itself when you press it. Home and Decks list saved records apart, under **Saved by the earlier flow**, and say only what the deck's small record proves: that the earlier flow saved it, that it is read-only because its record cannot be read, or that its opening on the desk was interrupted. Each screen says what it is and offers one filled way on:
 
 | It is | Its screen offers |
 | --- | --- |
 | Saved with an outline (at Selected changes, its inventory) | **Open on the desk**: a preview of what it keeps, then Apply |
 | Delivered | **Open on the desk** (the finished Open on the desk), its delivery to read and download, and **Publish**; a teammate's is taken first |
-| Waiting | What it waits for and the one action that clears it: **Clear the step marker** for a step a runner that stopped left marked in this deck (only the marker file goes); **Take it** where another computer runs it (only its driver changes in its saved record); **Open** the other deck whose interrupted opening or leftover marker holds every opening; **Check again** while a step is in hand; **Start new work from this** where nothing in the studio clears it (its shared files are not committed, or another deck's record cannot be understood) |
+| Waiting | What it waits for and the one action that clears it: **Take it** where another computer runs it, as any deck is taken (its confirmation says what taking does); **Open** the other deck whose interrupted opening holds every opening; **Check again** where a step runs, here (it names the deck) or somewhere this Presentation Studio cannot see (another Studio that shares the workspace, or another Presentation Studio); **Start new work from this** where nothing in the studio clears it (its shared files are not committed, or a record elsewhere in the workspace cannot be understood, named with its folder and why) |
 | Its opening on the desk was interrupted | **Finish opening on the desk**: the migration's own recovery completes what was recorded or puts it back as it was, checking everything again |
 | Stopped before its outline was drafted, or a record or file it needs cannot be read | Read-only, with its reason, and **Start new work from this** (or **Start a new deck** where its start form cannot be read) |
 
-Every saved record lists its saved files, to read in place, and nothing changes them unless you ask: starting Presentation Studio leaves a saved deck's folder as it is, and **Delete this deck** deletes it only after you confirm. Continue, Try again, Answer and every gate decision refuse it: "The earlier step-by-step flow no longer continues the decks it saved. Open this one on the desk, or start new work from it." A delivered PowerPoint file goes to Google Slides from the desk, once it is opened there.
+Every saved record lists its saved files, to read in place. Starting Presentation Studio recovers a step a stopped runner left in a saved deck this computer runs as it always did (what the step half-made is put back and its markers go), and then continues nothing; in a deck whose record cannot be read, or that another computer runs, only the step's markers go. A step running in Presentation Studio is never touched. **Delete this deck** deletes a saved deck only after you confirm, and a deck whose opening was interrupted is not offered for deletion until its opening is finished. Continue, Try again, Answer and every gate decision refuse it: "The earlier step-by-step flow no longer continues the decks it saved. Open this one on the desk, or start new work from it." A delivered PowerPoint file goes to Google Slides from the desk, once it is opened there.
 
 ### Every deck
 
@@ -264,14 +264,6 @@ reviewed bundle stays intact.
   again, as before, and the deck's stop shows that result.
 - **Code spans.** Outline writers and composers write a configuration field, command, API
   or file name as a code span, with plain English first; a title takes none.
-- **Pictures.** At the outline stop a cover, section or content slide can be given a
-  picture of your own: a PNG or JPEG of up to 20 MB, what it shows and where it came from.
-  It is recorded in the deck's asset project with the slides tool's `assets add-supplied`,
-  drawn by its asset ID, and checked again before the deck stop. No picture is generated.
-  "Remove the picture" takes it off its slide (`/api/picture-remove`); the tool's record
-  stays, so a picture given again, or a retry after a record that failed part way, takes a
-  new asset ID. What it shows and where it came from go joined to `--alt=` and `--source=`,
-  so words that begin with "-" are kept.
 - **Previews.** Previews through Google Drive, on a slides tool with a preview pool, run side
   by side, up to `HARNESS_PREVIEW_POOL_SIZE` (4 when unset); LibreOffice renders one at a
   time.

@@ -1,9 +1,11 @@
 """Decks the earlier step-by-step flow saved, as saved records (GitHub issue #542, the fix
-round): an opening on the desk that was interrupted waits and is finished on the person's
-word; a list says only what a current check found; a list and a poll read no material file;
-a read-only record's next step is true for its reason; starting changes nothing in a saved
-deck, and a dead step's marker is cleared only on the person's word; taking a saved deck
-changes only its driver; and each state of the screen has one filled action."""
+rounds): an opening on the desk that was interrupted waits and is finished on the person's
+word; a list says only what the small record proves, and an open record keeps what its check
+found until the person acts or checks again; a list and a poll read no material file; a
+read-only record's next step is true for its reason; a wait says only what is known;
+start-up recovers a step a stopped runner left as it always did and continues nothing;
+taking a saved deck is the team's take as it always was; and each state of the screen has
+one filled action."""
 import json
 import os
 import subprocess
@@ -14,7 +16,9 @@ from unittest import mock
 import runner_support
 import test_desk_page
 from runner import decks, desk_chat, desk_migration
+from runner import research as research_cli
 from runner import engine as engines
+from studio_core import sync_guard, work_summary
 from studio_core.sync_guard import SYNC_WAIT
 from workspace import WorkspaceError
 from test_desk import ok
@@ -108,26 +112,41 @@ class InterruptedOpeningTests(SavedRecordCase):
 
 
 class SavedListTests(SavedRecordCase):
-    def test_a_list_says_only_what_a_current_check_found(self):
+    def test_a_list_says_only_what_the_small_record_proves(self):
         root = self.load_saved('build', title='Listed')
-        kind, brief = self.listed()[root.name]
-        self.assertEqual((kind, brief['saved'], brief['sentence'], brief['needs']),
-                         ('saved', 'unchecked', engines.SAVED_SAYS['unchecked'], False))
+        unread = self.load_saved('outline', title='Unread')
+        (unread / 'run.json').write_text('{not json')
+        checks = (lambda: None, lambda: self.engine.saved_check(root))
+        for check in checks:
+            check()
+            listed = self.listed()
+            kind, brief = listed[root.name]
+            self.assertEqual((kind, brief['saved'], brief['sentence'], brief['needs']),
+                             ('saved', 'unchecked', engines.SAVED_SAYS['unchecked'], False))
+            self.assertEqual(listed[unread.name][1]['saved'], 'read-only')
+        # What a check found stays on the record's screen, never on a list.
         with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
-            self.engine.saved_check(root)
-        kind, brief = self.listed()[root.name]
-        self.assertEqual((brief['saved'], brief['sentence']),
-                         ('waiting', engines.SAVED_SAYS['waiting']))
-        self.engine.saved_check(root)
-        self.assertEqual(self.listed()[root.name][1]['sentence'], engines.SAVED_SAYS['migrates'])
-        # Its record changed since: the list no longer says what the check found.
-        os.utime(root / 'run.json', ns=(1, 1))
+            self.assertEqual(self.engine.saved_check(root)['saved_record']['state'], 'waiting')
         self.assertEqual(self.listed()[root.name][1]['saved'], 'unchecked')
-        # Files that cannot be read whole wait, and the list never says it opens.
-        (root / 'linked.md').symlink_to(root / 'outline.md')
-        saved = self.engine.saved_check(root)['saved_record']
-        self.assertEqual((saved['state'], saved['action']), ('waiting', 'copy'))
-        self.assertEqual(self.listed()[root.name][1]['sentence'], engines.SAVED_SAYS['waiting'])
+
+    def test_an_open_record_keeps_what_its_check_found_until_the_person_acts(self):
+        root = self.load_saved('build', title='Kept')
+        beside = self.load_saved('outline', title='Beside')
+        found = self.engine.saved_check(root)
+        self.assertEqual(found['saved_record']['state'], 'migrates')
+        # A fetch, and a step's write in another deck, change nothing it shows.
+        self.engine._fetched += 1
+        os.utime(beside / 'run.json', ns=(1, 1))
+        (beside / engines.IN_HAND).write_text('outline\n')
+        shown = self.engine.view(root)
+        self.assertEqual((shown['sentence'], shown['saved_record']['state'],
+                          shown['saved_record']['checked_at']),
+                         (engines.SAVED_OPENS, 'migrates', found['saved_record']['checked_at']))
+        # Its action checks again for itself when it is pressed.
+        self.assertIn(SYNC_WAIT, desk_chat.migration_preview(self.engine, root)['blockers'])
+        # Check again finds it as it is now.
+        again = self.engine.saved_check(root)['saved_record']
+        self.assertEqual((again['state'], again['action']), ('waiting', 'check'))
 
     def test_a_list_and_a_poll_read_no_material_file(self):
         root = self.load_saved('build', title='Polled')
@@ -154,30 +173,127 @@ class SavedActionTests(SavedRecordCase):
         refused = self.engine.view(self.load_saved('unleveled'))['saved_record']
         self.assertIn('Restore its saved record', refused['remedy'])
 
-    def test_starting_changes_nothing_in_a_saved_deck_and_its_marker_is_cleared_on_request(self):
+    def test_what_a_wait_says_is_only_what_is_known(self):
+        root = self.load_saved('build', title='Waits')
+        other = self.load_saved('outline', title='Other deck')
+        # A step this Presentation Studio runs is named, and is waited for.
+        (other / engines.IN_HAND).write_text('outline\n')
+        self.engine._active_steps.add(str(other))
+        try:
+            saved = self.engine.saved_check(root)['saved_record']
+        finally:
+            self.engine._active_steps.discard(str(other))
+        self.assertEqual((saved['waiting'], saved['action']),
+                         ([engines.HOLDER_SAYS['working'].format(title='Other deck')], 'check'))
+        # A marker of a step it does not run: never said to end by itself.
+        saved = self.engine.saved_check(root)['saved_record']
+        self.assertEqual((saved['waiting'], saved['action']),
+                         ([engines.HOLDER_SAYS['marked'].format(title='Other deck')], 'check'))
+        (other / engines.IN_HAND).unlink()
+        # Something it cannot see: another Studio in the workspace, say.
+        with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
+            saved = self.engine.saved_check(root)['saved_record']
+        self.assertEqual((saved['waiting'], saved['action']), ([engines.ELSEWHERE_WAITS], 'check'))
+        for said in (engines.HOLDER_SAYS['marked'], engines.ELSEWHERE_WAITS):
+            self.assertNotIn('by itself', said)
+            self.assertNotIn('Wait for it to end', said)
+        # The shared check could not look: its folder and reason are said as it gives them.
+        unchecked = sync_guard.unchecked('team-work/x', 'its Presentation Studio run record '
+                                         'cannot be understood')
+        with mock.patch.object(desk_migration, 'worker_in_progress',
+                               side_effect=WorkspaceError(unchecked)):
+            saved = self.engine.saved_check(root)['saved_record']
+        self.assertEqual((saved['waiting'], saved['action']), ([unchecked], 'copy'))
+
+    def test_finishing_an_interrupted_opening_says_what_it_waits_for(self):
+        root = self.interrupted('Interrupted')
+        other = self.load_saved('outline', title='Marked deck')
+        (other / engines.IN_HAND).write_text('outline\n')
+        with self.assertRaises(WorkspaceError) as refused:
+            self.engine.finish_opening(root)
+        self.assertEqual(str(refused.exception),
+                         engines.HOLDER_SAYS['marked'].format(title='Marked deck'))
+        self.assertNotIn(SYNC_WAIT, str(refused.exception))
+        self.assertTrue((root / desk_migration.format.PENDING).exists())
+        (other / engines.IN_HAND).unlink()
+        self.assertEqual(self.engine.finish_opening(root)['opening'], 'opened')
+
+
+class StartUpRecoveryTests(SavedRecordCase):
+    """Start-up recovers a step a stopped runner left in a saved deck as it always did, and
+    continues nothing (fix round 2: the replaced marker ruling)."""
+
+    def test_a_saved_deck_this_computer_runs_is_recovered_as_before_and_not_continued(self):
         root = self.load_saved('build', title='Left marked')
         (root / engines.IN_HAND).write_text('outline\n')
+        (root / research_cli.LOCK).parent.mkdir(parents=True, exist_ok=True)
+        (root / research_cli.LOCK).write_text('')
+        committed = (root / 'outline.md').read_bytes()
         with open(root / 'outline.md', 'a') as stream:
-            stream.write('\nA line not committed.\n')
-        before = files_of(root)
+            stream.write('\nA line a stopped step left.\n')
+        raw, log, jobs = (root / 'run.json').read_bytes(), self.log(), list(self.workers.jobs)
         self.engine.resume()
-        self.assertEqual(files_of(root), before)
-        saved = self.engine.saved_check(root)['saved_record']
-        self.assertEqual((saved['state'], saved['action'], saved['waiting']),
-                         ('waiting', 'clear-marker', [engines.LEFTOVER_HERE]))
-        # Another saved deck goes there to clear it.
-        beside = self.load_saved('outline', title='Beside it')
-        other = self.engine.saved_check(beside)['saved_record']
-        self.assertEqual((other['action'], other['holder']['path']), ('open', str(root)))
-        shown = self.engine.clear_marker(root)
+        # What the stopped step half-made is put back, and its markers go: as before.
         self.assertFalse((root / engines.IN_HAND).exists())
-        del before[engines.IN_HAND]
-        self.assertEqual(files_of(root), before)
-        self.assertEqual(shown['saved_record']['state'], 'migrates')
+        self.assertFalse((root / research_cli.LOCK).exists())
+        self.assertEqual((root / 'outline.md').read_bytes(), committed)
+        # Nothing continues it: no job, no commit, its record as it was.
+        self.assertEqual(((root / 'run.json').read_bytes(), self.log(), self.workers.jobs),
+                         (raw, log, jobs))
+        self.assertEqual(self.engine.saved_check(root)['saved_record']['state'], 'migrates')
+
+    def test_a_read_only_or_unreadable_deck_loses_only_its_markers(self):
+        # The reviewer's probes: neither deck holds the workspace after start-up.
+        nothing = self.load_saved('research-plan', title='Nothing made')
+        bad = self.load_saved('outline', title='Bad')
+        (bad / 'run.json').write_text('{not json')
+        beside = self.load_saved('outline', title='Has outline')
+        for root in (nothing, bad):
+            (root / engines.IN_HAND).parent.mkdir(parents=True, exist_ok=True)
+            (root / engines.IN_HAND).write_text('research-plan\n')
+        unreadable = files_of(bad)
+        self.engine.resume()
+        for root in (nothing, bad):
+            self.assertFalse((root / engines.IN_HAND).exists(), root.name)
+        del unreadable[engines.IN_HAND]
+        self.assertEqual(files_of(bad), unreadable)
+        other = self.engine.saved_check(beside)['saved_record']
+        self.assertEqual((other['state'], other['waiting']), ('migrates', []))
+        preview = desk_chat.migration_preview(self.engine, beside)
+        self.assertEqual(preview['blockers'], [])
+        self.assertEqual(desk_chat.migrate(self.engine, beside, preview['expected'])['execution'],
+                         'conversation')
+
+    def test_a_step_running_in_this_process_is_never_touched(self):
+        root = self.load_saved('build', title='Running')
+        (root / engines.IN_HAND).write_text('outline\n')
+        self.engine._active_steps.add(str(root))
+        try:
+            self.engine.resume()
+            self.assertTrue((root / engines.IN_HAND).exists())
+        finally:
+            self.engine._active_steps.discard(str(root))
+
+
+class StartUpTeamTests(runner_support.DeskCase, runner_support.TeamCase):
+    def test_after_start_up_a_desk_deck_shares_starts_and_edits_in_conversation(self):
+        # The reviewer's probe: a saved deck left with a marker held the whole workspace.
+        nothing = self.load_saved('research-plan', title='Nothing made')
+        form = {**runner_support.FORM, 'flow': 'desk', 'scope': ['outline']}
+        desk_deck = Path(desk_chat.create(self.engine, form)['path'])
+        self.engine.share()
+        (nothing / engines.IN_HAND).parent.mkdir(parents=True, exist_ok=True)
+        (nothing / engines.IN_HAND).write_text('research-plan\n')
+        self.engine.resume()
+        self.assertFalse((nothing / engines.IN_HAND).exists())
+        self.assertTrue(self.engine.share()['shared'])
+        started = Path(desk_chat.create(self.engine, form)['path'])
+        self.assertTrue(started.is_dir())
+        self.assertEqual(desk_chat._root(self.engine, desk_deck, change=True)[0], desk_deck)
 
 
 class SavedTakeTests(runner_support.DeskCase, runner_support.TeamCase):
-    def test_taking_a_saved_deck_changes_only_its_driver_and_then_it_opens_on_the_desk(self):
+    def test_taking_a_saved_deck_is_the_teams_take_as_before_and_continues_nothing(self):
         root = self.load_saved('build', title='Taken')
         self.engine.share()
         other = self.theirs(self.blake, root)
@@ -185,18 +301,31 @@ class SavedTakeTests(runner_support.DeskCase, runner_support.TeamCase):
             self.blake.engine.fetch()
             saved = self.blake.engine.saved_check(other)['saved_record']
             self.assertEqual((saved['state'], saved['action']), ('waiting', 'take'))
-            before, raw = files_of(other), json.loads((other / 'run.json').read_bytes())
+            # The reviewer's probe: a change not shared yet goes with the take, as it always
+            # did (the confirmation says so).
+            with open(other / 'outline.md', 'a') as stream:
+                stream.write('\nHand edit not committed.\n')
+            expected = self.blake.engine._load(other)
+            jobs = list(self.workers.jobs)
+            self.assertFalse((other / work_summary.FILE).exists())
             self.blake.engine.drive(other, 'take')
+            # As any deck's record is stored: its summary for the studio's lists is kept too.
+            self.assertTrue((other / work_summary.FILE).is_file())
+            space = self.blake.engine.space()
+            subject = self.git('log', '-1', '--format=%s', repo=space.repo)
+            self.assertEqual(subject, 'Taken: Blake takes this deck over from Alex')
+            changed = self.git('show', '--name-only', '--format=', 'HEAD', repo=space.repo)
+            self.assertIn((other / 'outline.md').relative_to(space.repo).as_posix(),
+                          changed.splitlines())
+            # Its record is written as the team's take writes any deck's: the record as the
+            # runner reads it, with this computer as its driver.
             after = json.loads((other / 'run.json').read_bytes())
-            # The same keys in the same order, each the same but the driver.
-            self.assertEqual(list(after), list(raw))
-            for key in raw:
-                if key != 'driver':
-                    self.assertEqual(after[key], raw[key], key)
+            expected['driver'] = after['driver']
+            self.assertEqual(after, expected)
+            self.assertEqual((other / 'run.json').read_text(),
+                             json.dumps(expected, indent=2, ensure_ascii=False) + '\n')
             self.assertEqual(after['driver']['name'], 'Blake')
-            now = files_of(other)
-            self.assertEqual({name: data for name, data in now.items() if name != 'run.json'},
-                             {name: data for name, data in before.items() if name != 'run.json'})
+            self.assertEqual(self.workers.jobs, jobs)
             # Nothing continues it, so there is no run to hand over.
             with self.assertRaises(WorkspaceError) as refused:
                 self.blake.engine.drive(other, 'hand-over')
@@ -207,18 +336,6 @@ class SavedTakeTests(runner_support.DeskCase, runner_support.TeamCase):
             opened = desk_chat.migrate(self.blake.engine, other, preview['expected'])
             self.assertEqual(opened['execution'], 'conversation')
 
-    def test_a_read_only_saved_deck_is_not_taken(self):
-        root = self.load_saved('research-plan', title='Nothing made')
-        self.engine.share()
-        other = self.theirs(self.blake, root)
-        with self.be(self.blake):
-            self.blake.engine.fetch()
-            before = files_of(other)
-            with self.assertRaises(WorkspaceError) as refused:
-                self.blake.engine.drive(other, 'take')
-            self.assertEqual(str(refused.exception), engines.SAVED_NOT_TAKEN)
-            self.assertEqual(files_of(other), before)
-
 
 class SavedScreenTests(test_desk_page.DeskPageCase):
     """Every state of a saved record's screen has exactly one filled action."""
@@ -227,6 +344,9 @@ class SavedScreenTests(test_desk_page.DeskPageCase):
         return self.post('saved-check', {'path': str(root)})
 
     def shot(self, root, view, steps=(), **more) -> dict:
+        """The screen as it opens on `view`: it checks the deck as it opens, and the check
+        answers what `view` says."""
+        more = {'POST /api/saved-check': [ok(view)], 'GET /api/run': [ok(view)] * 6, **more}
         result = self.open_deck(str(root), view, [{'snapshot': 'saved'}, *steps], **more)
         shot = result['snapshots']['saved']
         self.assertLayout(shot)
@@ -267,13 +387,15 @@ class SavedScreenTests(test_desk_page.DeskPageCase):
         cases = []
         with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
             cases.append(('Check again', self.checked(root)))
-        (root / engines.IN_HAND).write_text('outline\n')
-        cases.append(('Clear the step marker', self.checked(root)))
-        (root / engines.IN_HAND).unlink()
         holder = self.load_saved('outline', title='Holder')
         (holder / engines.IN_HAND).write_text('outline\n')
-        cases.append(('Open Holder', self.checked(root)))
+        cases.append(('Check again', self.checked(root)))
         (holder / engines.IN_HAND).unlink()
+        pending = holder / desk_migration.format.PENDING
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text('{}')
+        cases.append(('Open Holder', self.checked(root)))
+        pending.unlink()
         self.load_saved('unleveled', title='No review level')
         cases.append(('Start new work from this', self.checked(root)))
         for button, view in cases:
@@ -282,6 +404,9 @@ class SavedScreenTests(test_desk_page.DeskPageCase):
                 _, shot = self.shot(root, view)
                 self.assertEqual(shot['filled'], [button])
                 self.assertIn('What it waits for', shot['text'])
+                # Nothing is said to end by itself unless a step is known to run.
+                self.assertNotIn('ends by itself', shot['text'])
+                self.assertNotIn('Clear the step marker', shot['buttons'])
         # Someone else's: take it, to open it here.
         taken = {**cases[0][1], 'mine': False, 'driver': {'name': 'Alex', 'here': False},
                  'saved_record': {**cases[0][1]['saved_record'], 'action': 'take'}}
@@ -302,6 +427,60 @@ class SavedScreenTests(test_desk_page.DeskPageCase):
         view = {**view, 'mine': True, 'driver': {'name': 'Alex', 'here': True, 'computer': 'x'}}
         _, shot = self.shot(root, view)
         self.assertNotIn('Hand over', shot['buttons'])
+
+    def test_a_check_made_before_it_opened_is_made_again_and_then_kept(self):
+        root = self.load_saved('build', title='Checked before')
+        with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
+            before = self.checked(root)
+        now = self.checked(root)
+        self.assertEqual((before['saved_record']['state'], now['saved_record']['state']),
+                         ('waiting', 'migrates'))
+        # What the earlier check found is not shown as the screen opens: it checks again, and
+        # while that has not answered the screen says only that it checks.
+        refused = {'status': 409, 'body': {'error': 'The deck could not be read completely.'}}
+        result = self.open_deck(str(root), before, [{'snapshot': 'opening'}],
+                                **{'POST /api/saved-check': [refused],
+                                   'GET /api/run': [ok(before)] * 4})
+        opening = result['snapshots']['opening']
+        self.assertEqual(self.posts(result), [('/api/saved-check', {'path': str(root)})])
+        self.assertNotIn('What it waits for', opening['text'])
+        self.assertIn(engines.SAVED_UNCHECKED, opening['text'])
+        self.assertEqual(opening['filled'], ['Check how it goes on'])
+        # Once it answers, the screen keeps what that check found, polls and all.
+        result = self.open_deck(str(root), before, [{'poll': True}, {'poll': True},
+                                                    {'snapshot': 'opened'}],
+                                **{'POST /api/saved-check': [ok(now)],
+                                   'GET /api/run': [ok(before)] + [ok(now)] * 6})
+        opened = result['snapshots']['opened']
+        self.assertEqual(self.posts(result), [('/api/saved-check', {'path': str(root)})])
+        self.assertEqual(opened['filled'], ['Open on the desk'])
+        self.assertNotIn('Checking how it goes on', opened['text'])
+
+    def test_taking_a_saved_deck_says_what_taking_does(self):
+        root = self.load_saved('build', title='Theirs')
+        view = self.checked(root)
+        view = {**view, 'mine': False, 'driver': {'name': 'Alex', 'here': False},
+                'saved_record': {**view['saved_record'], 'state': 'waiting', 'action': 'take',
+                                 'waiting': [desk_migration.NOT_OURS]}}
+        result, _ = self.shot(root, view, [{'click': 'Take it over'}, {'snapshot': 'asked'}])
+        shot = result['snapshots']['asked']
+        self.assertIn('Take Theirs over from Alex?', shot['text'])
+        self.assertIn('committed and shared as it is on this computer', shot['text'])
+        self.assertIn('Nothing continues it until you open it there', shot['text'])
+        self.assertNotIn('only its driver changes', shot['text'])
+        self.assertNotIn('runs from this computer', shot['text'])
+
+    def test_an_interrupted_opening_is_not_offered_for_deletion_on_a_list(self):
+        root = self.load_saved('build', title='Interrupted listed')
+        pending = root / desk_migration.format.PENDING
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text('{}')
+        self.load_saved('outline', title='Deletable')
+        result = self.run_page(self.answers(), [{'snapshot': 'home'}])
+        shot = result['snapshots']['home']
+        self.assertIn('Open Interrupted listed', shot['buttons'])
+        self.assertNotIn('Delete Interrupted listed', shot['buttons'])
+        self.assertIn('Delete Deletable', shot['buttons'])
 
     def test_saved_records_have_their_own_list_with_open(self):
         self.load_saved('build', title='Listed earlier')

@@ -196,29 +196,35 @@ SAVED_READ_ONLY = ('This deck was saved by the earlier step-by-step flow, which 
                    'as they are.')
 SAVED_UNCHECKED = ('This deck was saved by the earlier step-by-step flow, which no longer '
                    'continues it. Checking how it goes on from here.')
-# How a list says each saved record stands: what the small record says, or, while its check
-# is current, what that check found. A list never says an outcome nobody checked.
+# How a list says each saved record stands: only what its small record proves. What a check
+# finds is said on the record's own screen, never on a list.
 SAVED_SAYS = {'unchecked': 'Saved by the earlier step-by-step flow. Open it to see how it goes '
                            'on.',
-              'migrates': 'Saved by the earlier step-by-step flow. It opens on the desk.',
-              'waiting': 'Saved by the earlier step-by-step flow. It waits before it can open '
-                         'on the desk; open it to see for what.',
               'read-only': 'Read-only: {why}',
               'interrupted': 'Opening it on the desk was interrupted. Open it to finish opening '
                              'it.'}
 # The step markers a deck's folder may hold while a step is in hand (the shared running-step
 # check reads the same names).
 SAVED_MARKERS = ('work/step.lock', 'work/.harness-slides/design/.lock', '.studio-research/lock')
-LEFTOVER_HERE = ('A step of the earlier flow was left marked as in hand in this deck when '
-                 'Presentation Studio last stopped; nothing runs it now. Clearing the marker '
-                 'removes only the marker file.')
+# What makes the shared running-step check wait, as far as this Presentation Studio knows it.
+# Start-up recovers every step a stopped runner left marked, so a marker that is still there
+# belongs to a step running somewhere. Only a step known to run here is said to end.
 HOLDER_SAYS = {
     'interrupted': 'Opening {title} on the desk was interrupted, and every opening in this '
                    'workspace waits for it. Open {title} and finish opening it there.',
-    'marker': '{title} was left with a step of the earlier flow marked as in hand, and every '
-              'opening in this workspace waits for it. Open {title} and clear its marker.',
-    'working': '{title} has a step in hand. It ends by itself; this deck can be opened once '
-               'it does.'}
+    'working': '{title} has a step running in this Presentation Studio. Wait for it to end, '
+               'then check again.',
+    'marked': '{title} is marked as having a step in progress, but this Presentation Studio '
+              'is not running it: another Presentation Studio may be, or the step was '
+              'interrupted. If it was interrupted, reopen Presentation Studio to recover it, '
+              'then check again.',
+    'checking': 'Presentation Studio is still looking at what your team shared since it '
+                'started. Check again in a moment.'}
+ELSEWHERE_WAITS = ('Something else in this workspace is in progress or was interrupted, outside '
+                   'the decks of this Presentation Studio: a step of another Studio that shares '
+                   'this workspace, or one this Presentation Studio cannot see. Look in the '
+                   'other Studio that shares this workspace, or reopen Presentation Studio to '
+                   'recover an interrupted step, then check again.')
 INTERRUPTED = ('Opening this deck on the desk was interrupted. Its saved files are kept as they '
                'are.')
 INTERRUPTED_CLEARS = ('Finish opening it on the desk: what was recorded is completed, or it is '
@@ -228,8 +234,6 @@ PUT_BACK = 'The interrupted opening was rolled back. Preview Open on the desk ag
 RESTORE_RECORD = ('Nothing here changes it. Restore its saved record from your workspace history '
                   'to open it on the desk, or start new work from it.')
 UNREAD_WHY = 'unread'   # a record nobody can read: restoring it is the only way back
-SAVED_NOT_TAKEN = ('This deck cannot be opened on the desk, so it is not taken: nothing '
-                   'continues it. Start new work from it instead.')
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
 # opened the same way.
@@ -420,9 +424,9 @@ class Engine(Jobs, Researching, DeskActions):
         self._deferred_share = False
         self._fetched = 0
         self._as_of: dict[tuple, tuple[int, object]] = {}
-        # What becomes of each deck the earlier step-by-step flow saved, kept by its files.
-        self._checks: dict[str, tuple[tuple, dict]] = {}
-        self._marked: tuple | None = None   # the workspace's mark while a list is read
+        # What the last check found of each deck the earlier step-by-step flow saved: kept as
+        # it was found until the person acts on the deck or checks it again.
+        self._checks: dict[str, dict] = {}
         self._tags_unsent = True
         self._looked: tuple[float, dict] | None = None
         self._looking = threading.Lock()
@@ -596,7 +600,7 @@ class Engine(Jobs, Researching, DeskActions):
         if action == 'hand-over':
             self._hand(root, space)
             return self.view(root)
-        self._take_saved_only_to_open(root)
+        self._checks.pop(str(root), None)
         kept = self._take(root, space)
         self.wake(root)
         shown = self.view(root)
@@ -631,11 +635,7 @@ class Engine(Jobs, Researching, DeskActions):
                                 'Take it over from them if you mean to.')
             mine = team.claim(space)
             record['driver'] = mine
-            if decks.on_desk(record):
-                self._store(root, record)
-            else:
-                # A deck the earlier step-by-step flow saved: only its driver changes.
-                self._store_saved_driver(root, mine)
+            self._store(root, record)
             run.gone = False
             self._commit(root, f"{mine['name']} takes this deck" + (
                 f" over from {now.get('name') or 'someone'}" if now else ''))
@@ -676,29 +676,6 @@ class Engine(Jobs, Researching, DeskActions):
             gitstate.forget(space, lost.get('kept'))
             self._as_of.pop(('kept', str(root)), None)
             team.keep('taken', taken)
-
-    def _take_saved_only_to_open(self, root: Path) -> None:
-        """A deck the earlier step-by-step flow saved is taken only to open it on the desk:
-        a read-only record is not (GitHub issue #542). Reads its files, as the person asked."""
-        try:
-            record = self._load(root)
-        except WorkspaceError:
-            raise WorkspaceError(SAVED_NOT_TAKEN) from None
-        if decks.on_desk(record):
-            return
-        if self._saved_classify(root)['state'] == 'read-only':
-            raise WorkspaceError(SAVED_NOT_TAKEN)
-
-    def _store_saved_driver(self, root: Path, driver: dict) -> None:
-        """Write a saved deck's new driver into its run.json and change nothing else: no
-        default is filled in and no other key is added, changed or moved. Call it holding
-        `files`."""
-        path = root / decks.RUN
-        raw = json.loads(path.read_bytes())
-        if not isinstance(raw, dict):
-            raise WorkspaceError(f'The run record in {root.name} cannot be read.')
-        raw['driver'] = driver
-        write_atomic(path, json.dumps(raw, indent=2, ensure_ascii=False) + '\n')
 
     def _hand(self, root: Path, space: gitstate.Workspace) -> None:
         run = self._run(root)
@@ -1118,16 +1095,27 @@ class Engine(Jobs, Researching, DeskActions):
         if space is None:
             return ours
         for root in self.every():
+            saved = False
             try:
                 with gitstate.workspace_locked(space, self.files, configured=True):
                     gitstate.inside(space, root / IN_HAND)
-                    record = self._load(root)
-                    if not team.ours(space, record) or decks.in_conversation(record):
+                    if self._stepping(root):
+                        continue    # a step running in this process is never touched
+                    try:
+                        record = self._load(root)
+                    except WorkspaceError:
+                        # A record that cannot be read: only the markers a stopped step
+                        # left go, and nothing else in the folder changes.
+                        self._unmark(root)
                         continue
-                    if not decks.on_desk(record):
-                        # Starting changes nothing in a deck the earlier step-by-step flow
-                        # saved: a marker a dead step left is cleared on its saved record,
-                        # when the person asks (`clear_marker`).
+                    if decks.in_conversation(record):
+                        continue
+                    # A deck the earlier step-by-step flow saved is recovered as it always
+                    # was, and then nothing continues it (GitHub issue #542).
+                    saved = not decks.on_desk(record)
+                    if not team.ours(space, record):
+                        if saved:
+                            self._unmark(root)
                         continue
                     research_cli.unlock(root)
                     if (root / IN_HAND).exists() and not self._resting(record):
@@ -1136,8 +1124,20 @@ class Engine(Jobs, Researching, DeskActions):
                     self._step_marker(root)
             except (WorkspaceError, OSError):
                 continue
-            ours.append(root)
+            if not saved:
+                ours.append(root)
         return ours
+
+    def _stepping(self, root: Path) -> bool:
+        """True while this process runs a step of a deck."""
+        run = self._runs.get(str(root))
+        return bool(run and run.busy) or str(root) in self._active_steps
+
+    def _unmark(self, root: Path) -> None:
+        """Remove the markers a stopped step left in a deck, as start-up recovery removes
+        them, and nothing else. Call it at start-up, holding the workspace."""
+        research_cli.unlock(root)
+        self._step_marker(root)
 
     def _pick_up(self, ours: list[Path]) -> None:
         try:
@@ -3194,48 +3194,10 @@ class Engine(Jobs, Researching, DeskActions):
     #
     # Nothing continues it. Its view is a saved record. What becomes of it is found only when
     # the person opens it or asks (`saved_check`): that reads the deck's files and runs the
-    # migration's preview. A view, and a list, read only its small records (run.json,
-    # deliver.json and the migration's own files), and say an outcome only while the check
-    # that found it is still current.
-
-    def _saved_key(self, root: Path) -> tuple:
-        """What a check of a saved deck depends on, read cheaply: its small records' sizes and
-        times, and the last fetch. A check made under another key is not current."""
-        from studio_core import presentation_migration as migration
-        seen = []
-        for name in (decks.RUN, decks.DELIVER, migration.PENDING, migration.RECORD,
-                     migration.ORIGIN, *SAVED_MARKERS):
-            try:
-                details = (root / name).lstat()
-                seen.append((name, details.st_size, details.st_mtime_ns))
-            except OSError:
-                seen.append((name, None, None))
-        return tuple(seen), self._fetched, self._workspace_mark()
-
-    def _workspace_mark(self) -> tuple:
-        """What the rest of the workspace holds that a saved deck's wait depends on, read
-        cheaply: each deck's run.json size and time, and whether it holds an interrupted
-        opening or a step marker. A list reads it once for all its decks (`decks`)."""
-        from studio_core import presentation_migration as migration
-        if self._marked is not None:
-            return self._marked
-        seen = []
-        for root in self.every():
-            try:
-                details = (root / decks.RUN).lstat()
-                run = (details.st_size, details.st_mtime_ns)
-            except OSError:
-                run = None
-            seen.append((root.name, run, (root / migration.PENDING).exists(),
-                         tuple(name for name in SAVED_MARKERS if (root / name).exists())))
-        return tuple(seen)
-
-    def _saved_checked(self, root: Path) -> dict | None:
-        """The last check of a saved deck, while it is still current; else None."""
-        kept = self._checks.get(str(root))
-        if kept is None or kept[0] != self._saved_key(root):
-            return None
-        return kept[1]
+    # migration's preview. A view and a list read only its small records (run.json,
+    # deliver.json and the migration's own files). A list says only what those prove; the
+    # record's screen says what its last check found, as it was found, until the person acts
+    # on the deck or checks again. Every action checks again for itself when it is pressed.
 
     @staticmethod
     def _saved_title(root: Path) -> tuple[dict | None, str]:
@@ -3250,38 +3212,45 @@ class Engine(Jobs, Researching, DeskActions):
         title = raw.get('title')
         return raw, title.strip() if isinstance(title, str) and title.strip() else root.name
 
-    def _leftover(self, root: Path) -> list[str]:
-        """The step markers a saved deck still holds although nothing here runs a step of it:
-        what a runner that stopped in the middle of a step left behind."""
-        run = self._runs.get(str(root))
-        if (run and run.busy) or str(root) in self._active_steps:
-            return []
-        return [name for name in SAVED_MARKERS if (root / name).exists() or (root / name).is_symlink()]
-
-    def _holders(self, root: Path) -> list[dict]:
-        """The other decks of the workspace that make the shared running-step check wait: an
-        opening on the desk that was interrupted, a step marker a saved deck was left with,
-        or a step in hand. Each with its path, title and kind. Only small files are read."""
+    def _holders(self) -> list[dict]:
+        """What in this workspace's decks makes the shared running-step check wait, as far as
+        this Presentation Studio knows it: an opening on the desk that was interrupted, a step
+        this process runs, or a step marker of a step it does not run. Each with the deck's
+        path, title and kind. Only small files are read."""
         from studio_core import presentation_migration as migration
         found = []
         for other in self.every():
-            if other == root:
-                continue
-            raw, title = self._saved_title(other)
-            if (other / migration.PENDING).exists():
+            title = self._saved_title(other)[1]
+            if (other / migration.PENDING).exists() or (other / migration.PENDING).is_symlink():
                 found.append({'path': str(other), 'title': title, 'kind': 'interrupted'})
-            elif any((other / name).exists() for name in SAVED_MARKERS):
-                saved = not (isinstance(raw, dict) and decks.on_desk(raw)) \
-                    and not (other / migration.RECORD).exists()
-                kind = 'marker' if saved and self._leftover(other) else 'working'
-                found.append({'path': str(other), 'title': title, 'kind': kind})
+            elif self._stepping(other):
+                found.append({'path': str(other), 'title': title, 'kind': 'working'})
+            elif any((other / name).exists() or (other / name).is_symlink()
+                     for name in SAVED_MARKERS):
+                found.append({'path': str(other), 'title': title, 'kind': 'marked'})
         return found
+
+    def _waits_for(self, root: Path) -> tuple[list[str], dict | None]:
+        """What the shared running-step check waits for, in words true for what is known,
+        and the deck to go to when an interrupted opening there is what it waits for."""
+        holders = self._holders()
+        said, go = [], None
+        if self._checking:
+            said.append(HOLDER_SAYS['checking'])
+        for holder in holders:
+            if holder['kind'] == 'interrupted' and holder['path'] == str(root):
+                continue    # this deck's own opening is finished on its own screen
+            title = 'This deck' if holder['path'] == str(root) else holder['title']
+            said.append(HOLDER_SAYS[holder['kind']].format(title=title))
+            if holder['kind'] == 'interrupted' and go is None:
+                go = {key: holder[key] for key in ('path', 'title')}
+        return (said or [ELSEWHERE_WAITS]), go
 
     def saved_check(self, path) -> dict:
         """Find what becomes of a saved deck now, as the person opened it or asked: the
         migration's one answer over its files (`desk_migration.outcome`) and, for a deck that
         would open on the desk, what its preview says it waits for, with the one action that
-        clears that. Kept as current until its small records or the workspace change. Only
+        clears that. Kept as found until the person acts on the deck or checks again. Only
         reads. Returns its view."""
         root = self.driven(path)
         if root is None:
@@ -3295,8 +3264,7 @@ class Engine(Jobs, Researching, DeskActions):
             return self.view(root)
         if decks.on_desk(record):
             return self.view(root)
-        key = self._saved_key(root)
-        self._checks[str(root)] = (key, self._saved_classify(root))
+        self._checks[str(root)] = self._saved_classify(root)
         return self.view(root)
 
     def _saved_classify(self, root: Path) -> dict:
@@ -3326,28 +3294,24 @@ class Engine(Jobs, Researching, DeskActions):
         if not waiting:
             return {**found, 'state': 'migrates'}
         found.update(state='waiting')
-        # The one action that clears a wait, in this order: this deck's own leftover step
-        # marker; taking it from another computer; going to the deck that holds the shared
-        # running-step check; else new work starts from it, as nothing here clears the rest.
-        own = self._leftover(root)
-        holders = [holder for holder in self._holders(root)] \
-            if desk_migration.SYNC_WAIT in waiting else []
+        # The one action that clears a wait, in this order: taking it from another computer;
+        # going to the deck whose interrupted opening the shared running-step check waits
+        # for; checking again, where only a step in progress stops it; else new work starts
+        # from it, as nothing here clears the rest (a record the shared check cannot
+        # understand is named, with its folder and why, in its own sentence).
+        holder = None
         said = []
         for line in waiting:
-            if line == desk_migration.SYNC_WAIT and own:
-                said.append(LEFTOVER_HERE)
-            elif line == desk_migration.SYNC_WAIT and holders:
-                said.extend(HOLDER_SAYS[holder['kind']].format(title=holder['title'])
-                            for holder in holders)
+            if line == desk_migration.SYNC_WAIT:
+                words, holder = self._waits_for(root)
+                said.extend(words)
             else:
                 said.append(line)
         found['waiting'] = list(dict.fromkeys(said))
-        if desk_migration.SYNC_WAIT in waiting and own:
-            found['action'] = 'clear-marker'
-        elif desk_migration.NOT_OURS in waiting:
+        if desk_migration.NOT_OURS in waiting:
             found['action'] = 'take'
-        elif desk_migration.SYNC_WAIT in waiting and holders:
-            found.update(action='open', holder={key: holders[0][key] for key in ('path', 'title')})
+        elif holder is not None:
+            found.update(action='open', holder=holder)
         elif waiting == [desk_migration.SYNC_WAIT]:
             found['action'] = 'check'
         else:
@@ -3371,15 +3335,15 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _saved_view(self, root: Path, record: dict) -> dict:
         """What the page shows of a deck the earlier step-by-step flow saved, whose record
-        the runner reads: a saved record, never a run. `saved_record['state']` is what the
-        last current check found ('migrates', 'waiting', 'finished' or 'read-only'), or
-        'unchecked' when there is none; `action` names the one thing that clears a wait.
-        Reads only its small records."""
+        the runner reads: a saved record, never a run. `saved_record['state']` is what its
+        last check found ('migrates', 'waiting', 'finished' or 'read-only'), as it was found
+        (`checked_at` says when), or 'unchecked' when there is none; `action` names the one
+        thing that clears a wait. Reads only its small records."""
         run = self._run(root)
         state, sentence = self._state(root, record, run)
         mine, who, state, sentence, last = self._whose(root, record, state, sentence)
         said = decks.delivered(root)
-        checked = self._saved_checked(root) or {'state': 'unchecked', 'why': None,
+        checked = self._checks.get(str(root)) or {'state': 'unchecked', 'why': None,
                                                 'remedy': None, 'next': 'copy', 'waiting': [],
                                                 'retained': [], 'action': None,
                                                 'holder': None, 'checked_at': None}
@@ -3454,29 +3418,17 @@ class Engine(Jobs, Researching, DeskActions):
             raise WorkspaceError('The interrupted opening cannot be verified. Keep its recovery record.') from None
         if not isinstance(expected, str) or not expected:
             raise WorkspaceError('The interrupted opening cannot be verified. Keep its recovery record.')
+        self._checks.pop(str(root), None)
         try:
             shown = desk_migration.migrate(self, root, expected)
         except WorkspaceError as refusal:
+            if str(refusal) == desk_migration.SYNC_WAIT:
+                # Said as the saved record says it: what is known of what it waits for.
+                raise WorkspaceError(' '.join(self._waits_for(root)[0])) from None
             if str(refusal) != PUT_BACK:
                 raise
             return {**self.view(root), 'opening': 'put back'}
         return {**shown, 'opening': 'opened'}
-
-    def clear_marker(self, path) -> dict:
-        """Clear the step markers a saved deck was left with, as the person asked: only
-        those marker files are removed, and only while nothing here runs a step of it.
-        Nothing else in its folder changes. Returns its view."""
-        root = self.driven(path)
-        if root is None:
-            raise WorkspaceError('There is no deck there.')
-        record = self._load(root)
-        if decks.on_desk(record):
-            raise WorkspaceError(desk.ON_DESK)
-        with self.files:
-            for name in self._leftover(root):
-                (root / name).unlink(missing_ok=True)
-        self._checks.pop(str(root), None)
-        return self.saved_check(root)
 
     def view(self, path) -> dict | None:
         """Everything the page shows for one deck. None when there is no deck there. A deck
@@ -3761,12 +3713,11 @@ class Engine(Jobs, Researching, DeskActions):
                      or (halted and halted.get('state') == 'failed'))
         saved = None
         if not decks.on_desk(record) and state != 'finished':
-            # GitHub issue #542: a saved record, never a run. It says what its last current
-            # check found, or only that the earlier flow saved it.
-            checked = self._saved_checked(root) or {'state': 'unchecked'}
-            saved = checked['state'] if checked['state'] != 'finished' else 'unchecked'
+            # GitHub issue #542: a saved record, never a run. A list says only what its small
+            # record proves: that the earlier flow saved it. Its screen says what a check found.
+            saved = 'unchecked'
             state, needs = 'saved', False
-            sentence = SAVED_SAYS[saved].format(why=checked.get('why'))
+            sentence = SAVED_SAYS[saved]
         mine, who, state, sentence, last = self._whose(root, record, state, sentence) \
             if not saved else (*self._whose(root, record, state, sentence)[:2], state,
                                sentence, None)
@@ -3787,13 +3738,7 @@ class Engine(Jobs, Researching, DeskActions):
         run by a teammate or by nobody, and `saved`, the records the earlier step-by-step flow
         saved and nothing continues (GitHub issue #542)."""
         found = {'needs': [], 'working': [], 'finished': [], 'elsewhere': []}
-        self._marked = None
-        self._marked = self._workspace_mark()
-        try:
-            briefs = [self._brief(root) for root in self.every()]
-        finally:
-            self._marked = None
-        for brief in briefs:
+        for brief in (self._brief(root) for root in self.every()):
             if brief['state'] == 'finished':
                 found['finished'].append(brief)
             elif brief.get('saved'):

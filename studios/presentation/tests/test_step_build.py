@@ -1192,12 +1192,22 @@ class SuppliedPictureBuildTests(Deck):
                             if slide['kind'] == 'content')
 
     def picture(self, slide):
+        """A picture a deck was given before pictures could no longer be given: recorded in
+        its asset project, and its slide kept in PICTURED, as a saved deck holds it."""
         file = self.base / 'rack.png'
         file.write_bytes(PNG_ONE)
         kind = next((one['kind'] for one in OUTLINE['slides'] if one['id'] == slide), None)
-        return build.record_picture(self.root, self.slides, slide, file,
-                                    'A rack of servers in our lab.', 'Our own photograph.',
-                                    kind=kind)
+        project, ident = self.root / build.ASSETS, f'pic-{slide}'
+        project.mkdir(parents=True, exist_ok=True)
+        self.slides.asset_supplied(project, file, ident, 'A rack of servers in our lab.',
+                                   'Our own photograph.')
+        held = json.loads((self.root / build.PICTURED).read_text()) \
+            if (self.root / build.PICTURED).is_file() else {}
+        held[slide] = {'asset': ident, 'alt': 'A rack of servers in our lab.',
+                       'source': 'Our own photograph.', 'name': None, 'kind': kind,
+                       'title': None, 'at': '2026-01-01T00:00:00Z', 'n': 1}
+        (self.root / build.PICTURED).write_text(json.dumps(held))
+        return {'asset': ident, 'slide': slide}
 
     def compiles(self):
         return [call for call in self.slides.run.calls if call[:2] == ['compose', 'compile']]

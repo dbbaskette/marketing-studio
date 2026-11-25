@@ -149,21 +149,22 @@ class GatedSavedStateTests(runner_support.DeskCase):
                          'saved review level. Restore its run record.')
         self.assertEqual(listed['corrupt']['state'], 'saved')
         for brief in listed.values():
-            # A list says what a current check found, or only that the earlier flow saved it.
-            if brief.get('saved') in ('migrates', 'unchecked', 'waiting'):
-                self.assertEqual(brief['sentence'], self.engines.SAVED_SAYS[brief['saved']])
+            # A list says only what the small record proves: that the earlier flow saved it.
+            if brief.get('saved') == 'unchecked':
+                self.assertEqual(brief['sentence'], self.engines.SAVED_SAYS['unchecked'])
             elif brief['state'] != 'finished':
                 self.assertTrue(brief['sentence'].startswith('Read-only: '), brief)
 
     def test_a_saved_deck_that_waits_says_what_for_and_what_clears_it(self):
-        # A step in hand ends by itself; a record elsewhere in the workspace that cannot be
-        # understood is cleared by nothing in the studio, so new work may start from it.
+        # A step somewhere this Presentation Studio cannot see is said as that, with what to
+        # do; a record elsewhere in the workspace that cannot be understood is cleared by
+        # nothing in the studio, so new work may start from it.
         root = self.load_saved('build', title='Waits')
         with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
             saved = self.checked(root)['saved_record']
-        # A step in hand nowhere this computer can see: it ends by itself; check again then.
         self.assertEqual((saved['state'], saved['waiting'], saved['action']),
-                         ('waiting', [SYNC_WAIT], 'check'))
+                         ('waiting', [self.engines.ELSEWHERE_WAITS], 'check'))
+        self.assertNotIn(SYNC_WAIT, saved['waiting'])
         refused = self.load_saved('unleveled', title='No review level')
         saved = self.checked(root)['saved_record']
         self.assertEqual((saved['state'], saved['waiting'], saved['action']),
@@ -583,10 +584,12 @@ class SavedRecordScreenTests(test_desk_page.DeskPageCase):
         with mock.patch.object(desk_migration, 'worker_in_progress', return_value=True):
             view = self.post('saved-check', {'path': str(root)})
         shot = self.screen(root, view)
-        # A step in hand ends by itself: Check again is the one filled action (fix round).
+        # A step somewhere this Presentation Studio cannot see: it says only that, with what to
+        # do, and Check again is the one filled action (fix round 2).
         self.assertEqual(shot['filled'], ['Check again'])
         self.assertIn('What it waits for', shot['text'])
-        self.assertIn(SYNC_WAIT, shot['text'])
+        self.assertIn(self.engines.ELSEWHERE_WAITS, shot['text'])
+        self.assertNotIn(SYNC_WAIT, shot['text'])
         self.assertNotIn('Open on the desk', shot['buttons'])
         # Nothing in the studio clears a record elsewhere it cannot understand: new work
         # starts from this one meanwhile, as its one filled action.

@@ -2,7 +2,7 @@
 
 Only migrate at the person's explicit request. Run `studio desk migration-preview --folder PATH` first. Show retained materials, incomplete work, blockers, consequences; keep its token hidden. Preview and Cancel change nothing.
 
-Schemas 1–4 need a usable outline; Selected changes needs its inventory and original deck. Sources and research pins must verify. Pauses, stops, failures and unanswered questions stay in History, steps unfinished. Pre-outline or unreadable records are read-only. Markers block migration until their step ends; a leftover one goes only on the person's **Clear the step marker**. Never delete markers or fake completion.
+Schemas 1–4 need a usable outline; Selected changes needs its inventory and original deck. Sources and research pins must verify. Pauses, stops, failures and unanswered questions stay in History, steps unfinished. Pre-outline or unreadable records are read-only. Markers block migration until their step ends; Presentation Studio's start-up recovers a step a stopped runner left. Never delete markers or fake completion.
 
 After confirmation, run `studio desk migrate --folder PATH --expected TOKEN` with the exact token. Changed inputs, workers, owner, workspace refuse. It opens the same folder in conversation with scope `['part']`: existing slide parts only. Broader work needs explicit `desk scope`. Nothing is approved, drawn, researched, installed or delivered.
 
