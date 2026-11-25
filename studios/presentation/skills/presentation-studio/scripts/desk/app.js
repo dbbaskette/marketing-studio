@@ -4235,6 +4235,8 @@ async function settleTeam(kind, problem, pressed) {
     toast(publishedSays(found));
   } else {
     view.run = found;
+    // A saved record taken here is checked again as it is drawn: what it waits for changed.
+    view.savedChecked = '';
     toast(kind === 'take' ? found.notice || 'It runs from this computer now.'
       : 'Handed over. Anyone on your team may take it now.');
   }
