@@ -2,7 +2,7 @@
 
 Only migrate at the person's explicit request. Run `studio desk migration-preview --folder PATH` first. Show retained materials, incomplete work, blockers, consequences; keep its token hidden. Preview and Cancel change nothing.
 
-Schemas 1–4 need a usable outline; Selected changes needs its inventory and original deck. Sources and research pins must verify. Pauses, stops, failures and unanswered questions stay in History, steps unfinished. Pre-outline work keeps its saved flow; unreadable records are read-only. Worker markers block migration: use saved-flow Stop/recovery, which may discard uncommitted work. Never delete markers or fake completion.
+Schemas 1–4 need a usable outline; Selected changes needs its inventory and original deck. Sources and research pins must verify. Pauses, stops, failures and unanswered questions stay in History, steps unfinished. Pre-outline or unreadable records are read-only. Markers block migration until their step ends; reopening the Studio recovers a leftover one, possibly discarding uncommitted work. Never delete markers or fake completion.
 
 After confirmation, run `studio desk migrate --folder PATH --expected TOKEN` with the exact token. Changed inputs, workers, owner, workspace refuse. It opens the same folder in conversation with scope `['part']`: existing slide parts only. Broader work needs explicit `desk scope`. Nothing is approved, drawn, researched, installed or delivered.
 
@@ -10,9 +10,9 @@ Original `run.json`, materials, History, pins, earlier real decisions and Google
 
 Migration raises the workspace requirement to **4.8.1**, preserving higher floors. Close older instances; configured older runtimes may ignore it. Setup/join enforce it. Any installation or update is explicit.
 
-Shared migration requires retained deck files and the workspace record to match HEAD and index, including tracked ignored files. Commit intended changes through the saved flow or Git, then preview again. Migration commits only desk records and the floor. Private ignored inputs stay local; local dirty work is supported, not a complete Git backup. Marketing Studio Connect claims effective ownership, preserving originals/receipt; unsupported runtimes refuse.
+Shared migration requires retained deck files and the workspace record to match HEAD and index, including tracked ignored files. Commit intended changes with Git, then preview again. Migration commits only desk records and the floor. Private ignored inputs stay local; local dirty work is supported, not a complete Git backup. Marketing Studio Connect claims effective ownership, preserving originals/receipt; unsupported runtimes refuse.
 
-The page offers **Open on the desk**, preview, Apply/Cancel. Finished decks retain adoption and delivery guards. `studio saved-work` reports original compatibility dependencies and unknown records; local inventory cannot establish other installations' needs.
+Saved decks offer **Open on the desk** (preview, Apply/Cancel) or say what blocks it. Finished decks retain adoption and delivery guards. `studio saved-work` reports original compatibility dependencies and unknown records; local inventory cannot establish other installations' needs.
 
 ## The person's final approval
 
