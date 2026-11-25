@@ -112,6 +112,11 @@ class WholeCase(DeckCase):
         return self.saved_start(**{'deck_target': 'pptx', 'brand': CHOSEN,
                              'walkthrough': self.WALKTHROUGH, **changes})
 
+    def desk_begin(self, **changes) -> Path:
+        """The same deck begun on the desk, which passes its outline on by itself."""
+        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN,
+                             'walkthrough': self.WALKTHROUGH, **changes})
+
     def asked(self, name: str) -> list[list[str]]:
         """Every call of one command the slides stand-in was given."""
         return [call for call in self.tool.calls if ' '.join(call[:2]) == name]
@@ -169,10 +174,9 @@ class WholeDeckTests(WholeCase):
 
     def test_a_deck_for_google_slides_is_the_previewed_deck_imported(self):
         self.workers.outline_said = OUTLINE     # one section, so one composer
-        root = self.begin(deck_target='google')
-        view = self.drawn(root)
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
+        root = self.desk_begin(deck_target='google')
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']), ('done', None), view.get('problem'))
         last = self.built(root)['rounds'][-1]
         sent = self.asked('drive import')
         self.assertEqual(len(sent), 1)
@@ -185,9 +189,9 @@ class WholeDeckTests(WholeCase):
         self.assertIn(f"with the SHA-256 {last['deck']}", link)
         self.assertRegex(link, r'- URL: https://\S+\n- Title: Rolling restarts\n- ID: \S+\n')
         self.assertFalse((root / 'deck.pptx').exists())
-        self.assertEqual(len(self.gate(root)['slides']), 6)
+        self.assertEqual(len(self.deck_shown(root)['slides']), 6)
         self.assertEqual(self.kinds().count('section'), 1)
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
+        self.assertEqual(self.to_end(root), [])
         self.assertEqual([entry['name'] for entry in self.engine.previews_left()],
                          ['Preview: Rolling restarts'])
 
@@ -211,11 +215,9 @@ class WholeDeckTests(WholeCase):
     def test_with_levels_and_previews_on_this_computer_nothing_goes_to_drive(self):
         self.tool.local = True
         self.set_previews('local')
-        root = self.begin(levels=['101', '201'])
-        self.to_outline(root, '101')
-        view = self.engine.outline(root, '101', 'approve')
-        self.assertEqual((workspace.status(root)['gate'], view['deck']['level']),
-                         ('deck@101', '101'), view.get('problem'))
+        root = self.desk_begin(levels=['101', '201'])
+        view = self.view(root)
+        self.assertIsNone(view['problem'], view.get('problem'))
         self.assertEqual(self.tool.files, {})
         self.assertEqual(self.engine.previews_left(), [])
         self.assertTrue((root / '101' / 'deck.pptx').is_file())
@@ -308,8 +310,8 @@ class AssetDeckTests(WholeCase):
                                    design=shown['design']['revision'])
 
     def test_an_icon_the_brand_does_not_have_keeps_the_deck_waiting(self):
-        root = self.begin()
-        view = self.approve(root)
+        root = self.desk_begin()
+        view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
         self.assertIn('Slide `what-it-does` needs the icon "server" (An instance), and the '
                       "brand's icon library has none by that name.", view['problem']['what'])
@@ -321,10 +323,9 @@ class AssetDeckTests(WholeCase):
         design = runner_support.designed(PARTED)
         design['slides'][1]['asset']['candidates'][0]['ref'] = 'database'
         self.workers.design_said = design
-        root = self.begin()
-        view = self.approve(root)
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
+        root = self.desk_begin()
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']), ('done', None), view.get('problem'))
         manifest = json.loads((root / pipeline.ASSETS).read_text())
         [icon] = manifest['assets']
         self.assertEqual((icon['assetId'], icon['ref'], icon['provenance']['label']),
@@ -358,12 +359,9 @@ class JudgedDeckTests(WholeCase):
         self.workers.design_said = design
 
     def test_a_deck_is_reviewed_against_its_design_and_the_deck_it_rendered_is_kept(self):
-        root = self.begin()
-        shown = self.to_outline(root)['outline']
-        view = self.engine.outline(root, None, 'approve', seen=shown['sha256'],
-                                   design=shown['design']['revision'])
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
+        root = self.desk_begin()
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']), ('done', None), view.get('problem'))
         project, last = str(root / pipeline.DESIGNS), self.built(root)['rounds'][-1]
         review = root / 'work' / 'deck' / last['preview']
         reviewed = [call for call in self.tool.calls if call[:1] == ['review']]
@@ -392,13 +390,13 @@ class JudgedDeckTests(WholeCase):
         for number in range(1, 8):
             self.assertEqual(self.engine.picture(root, number, artifact='deck'),
                              next(review.glob(f'slide-{number:03d}-*.png')).read_bytes())
-        gate = self.gate(root)
+        gate = self.deck_shown(root)
         self.assertEqual(gate['review']['findings'], [])
         self.assertEqual([entry['slide'] for entry in gate['review']['direct']],
                          ['cover-restarts', 'part-two', 'closing-practice'])
         reviewer = [spec for kind, _, spec in self.workers.jobs if kind == 'review'][-1]
         self.assertTrue(reviewer['review']['judged']['packets'])
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
+        self.assertEqual(self.to_end(root), [])
 
 
 class CurrentDeckTests(WholeCase):
@@ -482,22 +480,23 @@ class TroubleTests(WholeCase):
             {'name': self.brand.name, 'path': str(self.brand.runtime), 'chosen': True}])
 
     def test_a_brand_that_changed_underneath_stops_the_deck_and_says_so(self):
-        root = self.begin()
-        self.to_outline(root)
-        tokens = self.skill.home / 'brand' / 'tokens.json'
-        tokens.write_text(tokens.read_text() + '\n')
-        view = self.engine.outline(root, None, 'approve')
+        def outline(tools, job):
+            # What the deck says is written; the brand changes before its slides are drawn.
+            returned = self.workers.outline(tools, job)
+            tokens = self.skill.home / 'brand' / 'tokens.json'
+            tokens.write_text(tokens.read_text() + '\n')
+            return returned
+        self.workers.then('outline', outline)
+        root = self.desk_begin()
+        view = self.view(root)
         self.assertEqual(view['state'], 'stopped')
         self.assertIn('The brand changed underneath this deck after it was exported. The '
                       'brand skill refused:', view['problem']['what'])
         self.assertEqual(self.kinds().count('section'), 0)
         view = self.engine.act(root, 'retry')
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
+        self.assertEqual((view['state'], view['problem']), ('done', None), view.get('problem'))
 
     def test_a_preview_that_fails_after_its_upload_is_still_listed_as_left_in_drive(self):
-        root = self.begin()
-        self.to_outline(root)
         # As the tool fails when its upload worked and its render did not: the file is there.
         self.tool.files['file-9'] = {'name': 'Preview: Rolling restarts', 'uploads': 1}
         self.tool.fails['compose preview'] = (
@@ -519,9 +518,9 @@ class TroubleTests(WholeCase):
 
         self.engine = self.make(at_once=1)
         self.workers.then('section', composer)
-        view = self.engine.outline(root, None, 'approve')
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
+        root = self.desk_begin()
+        view = self.view(root)
+        self.assertEqual((view['state'], view['problem']), ('done', None), view.get('problem'))
         self.assertFalse(tried[0][0])
         self.assertIn('could not be rendered, and this did not use up a preview', tried[0][1])
         self.assertNotIn(str(self.base), tried[0][1])
@@ -539,8 +538,7 @@ class GivenTests(WholeCase):
 
     def test_a_composer_reads_the_tools_guidance_and_an_example_of_each_relation_it_draws(self):
         self.engine = self.make(at_once=1)
-        root = self.begin()
-        self.drawn(root)
+        root = self.desk_begin()
         first, second = self.composers.read['s1_'], self.composers.read['s2_']
         fixed = ['brief', 'composition contract', 'brand design', 'design guidance',
                  'composition guidance', 'gallery']
@@ -550,7 +548,7 @@ class GivenTests(WholeCase):
         self.assertNotIn(str(self.base), ''.join(first.values()))
         told = self.slides.reading(self.base / 'nowhere.json')
         self.assertEqual(first['design guidance'].strip(), told['design guidance'].strip())
-        writer = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
+        writer = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][0]
         self.assertEqual([entry['name'] for entry in writer['inputs']], [
             'handoff', 'outline contract', 'drafting guidance', 'brand design', 'blueprint',
             'Shared case for all materials', 'learner guide', 'research findings', 'naming rules'])
@@ -558,8 +556,7 @@ class GivenTests(WholeCase):
         self.assertEqual([entry['name'] for entry in reviewer['inputs']], ['Assessment map', 'Reader view of the export', 'the review'])
 
     def test_a_composer_is_offered_only_the_icons_the_slides_tool_can_place(self):
-        root = self.begin()
-        self.drawn(root)
+        root = self.desk_begin()
         found = self.composers.icons[-1]
         self.assertIn('- ex-database: Icon database', found)
         self.assertEqual(self.ok(self.picture_search('photo')).count('\n- '), 0)
@@ -580,8 +577,7 @@ class GivenTests(WholeCase):
         return folder / 'brand-contract.json'
 
     def test_the_engine_and_a_workers_tools_use_the_same_tool_and_the_same_brand_skill(self):
-        root = self.begin()
-        self.drawn(root)
+        root = self.desk_begin()
         for kind, _, spec in self.workers.jobs:
             if kind in ('outline', 'section', 'review'):
                 self.assertEqual(spec['runtimes'], {'slides': str(self.slides.runtime),
