@@ -273,8 +273,6 @@ class MigrationTests(RunnerCase):
             (local, {'enabled': 0, 'status': 'paused'}),
             (local, {'enabled': False, 'status': 'paused', 'owner': 'unknown-computer'}),
             (local, {'enabled': False, 'status': 'paused', 'notes': []}),
-            (local, {'enabled': False, 'status': 'working'}),
-            (local, {'enabled': True, 'status': 'paused'}),
         ]
         for field, value in (
             ('schema', 999),
@@ -310,6 +308,15 @@ class MigrationTests(RunnerCase):
                 self.assertEqual(self.snapshot(), before)
                 self.assertFalse((directory / 'desk').exists())
                 path.unlink()
+        # Known markers the earlier flow left, which no runner picks up again, are idle.
+        for value in (
+            {'enabled': False, 'status': 'working'},
+            {'enabled': True, 'status': 'paused'},
+        ):
+            with self.subTest(idle=value):
+                studio.write_json(local, value)
+                self.assertTrue(self.preview(ident)['eligible'])
+                local.unlink()
 
     def test_known_worker_states_and_settled_tools_have_explicit_eligibility(self):
         ident, _ = self.eligible()
@@ -1104,12 +1111,8 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
                     self.root / '.blog-runs' / (i + '.json'), {'enabled': False, 'status': 'future'}
                 ),
             ),
-            'worker-busy': (
-                'wait',
-                lambda d, i: studio.write_json(
-                    self.root / '.blog-runs' / (i + '.json'), {'enabled': True, 'status': 'queued'}
-                ),
-            ),
+            # A step running now waits; a marker no runner picks up again does not (below).
+            'worker-busy': ('wait', lambda d, i: setattr(runner.engine(self.root), 'current', i)),
             'tool-format': (
                 'read-only',
                 lambda d, i: studio.write_json(
@@ -1169,6 +1172,13 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
                     self.root / '.team-hub.json',
                 ):
                     path.unlink(missing_ok=True)
+                runner.engine(self.root).current = None
+        # A queued marker the earlier flow left, which no runner picks up again, is idle.
+        ident, directory = self.eligible()
+        studio.write_json(
+            self.root / '.blog-runs' / (ident + '.json'), {'enabled': True, 'status': 'queued'}
+        )
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'migrates')
         # A team driver on another computer waits until this computer takes the blog.
         ident, directory = self.eligible()
         directory.rename(self.root / ident)
@@ -1224,6 +1234,68 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
         self.assertEqual(said['outcome'], 'wait')
         self.assertIn('Take this blog', said['reason'])
         self.assertEqual((self.snapshot(), identity.read_bytes()), before)
+
+    def test_a_waiting_tool_job_is_named_with_the_way_to_it(self):
+        """A tool job of the blog that waits for the person (ready, not applied) is named on
+        the record, which opens it where it is finished; once it is, the blog opens on the
+        desk. Reading the record writes nothing."""
+        import desk_migration
+
+        ident, directory = self.eligible()
+        tool = self.root / '.blog-runs/tools' / ('a' * 32 + '.json')
+        job = self.tool_record(ident, 'repurpose')
+        job.update(status='ready', result={'content': 'Synthetic channel copy.'})
+        studio.write_json(tool, job)
+        with studio.locked(self.root):
+            pass  # The page view takes the lock; its marker file is not saved work.
+        before = self.snapshot()
+        shown = management.view(self.root, 'run', {'id': [ident]})
+        self.assertEqual(self.snapshot(), before)
+        saved = shown['saved_record']
+        self.assertEqual((saved['outcome'], saved['clear'], saved['next']), ('wait', 'job', None))
+        self.assertEqual(saved['job'], {'id': 'a' * 32, 'kind': 'repurpose', 'status': 'ready'})
+        job['applied'] = {'id': ident, 'status': 'saved'}
+        studio.write_json(tool, job)
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'migrates')
+
+    def test_an_identity_recorded_by_taking_the_blog_offers_take(self):
+        """In a team workspace, an unreadable computer identity is recorded again by taking
+        the blog, as its reason says: the record offers Take."""
+        from types import SimpleNamespace
+
+        from studio_sync import support
+        import team_workspace
+
+        ident, directory = self.eligible()
+        directory.rename(self.root / ident)
+        studio.write_json(
+            self.root / 'hub.json',
+            {
+                'schema': 1,
+                'tool': 'blog-studio',
+                'name': 'Synthetic workspace',
+                'folder': self.root.name,
+                'branch': 'synthetic',
+                'minimum_runtime': '4.9.0',
+                'repository': 'synthetic-remote',
+            },
+        )
+        studio.write_json(support.data_root() / 'computer.json', {'schema': 999, 'id': 'a' * 16})
+        (self.base / 'team-repo' / '.git').mkdir(parents=True)
+        joined = SimpleNamespace(address='synthetic-remote', repo=self.base / 'team-repo')
+        with (
+            patch.object(team_workspace, 'space', return_value=joined),
+            patch.object(team_workspace, 'driver', return_value=None),
+        ):
+            shown = management.view(self.root, 'run', {'id': [ident]})
+        saved = shown['saved_record']
+        self.assertIn('Take this blog', saved['why'])
+        self.assertEqual((saved['outcome'], saved['clear'], shown['team']), ('wait', 'take', True))
+        # Outside a team repository taking records nothing: new work is offered meanwhile.
+        with patch.object(team_workspace, 'space', return_value=None):
+            shown = management.view(self.root, 'run', {'id': [ident]})
+        said = shown['saved_record']
+        self.assertEqual((said['clear'], said['next']), (None, 'copy'))
 
     def test_a_run_record_that_is_not_an_object_is_read_only(self):
 

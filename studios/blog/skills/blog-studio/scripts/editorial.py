@@ -106,7 +106,13 @@ def board(root, query='', stage=None, owner=None, limit=20, offset=0):
                         'draft': studio.artifact_fingerprint(directory, 'DRAFT.md'),
                     },
                 )
-                rows.append(row(record, record['id'], 'local', binding.get('revision')))
+                found = row(record, record['id'], 'local', binding.get('revision'))
+                import desk_migration
+
+                if desk_migration.saved_flow(directory, record):
+                    # Its session's own next step was written while the earlier flow ran.
+                    found['next_step'] = desk_migration.BOARD_WORDS
+                rows.append(found)
             except UNREADABLE:
                 errors.append(unreadable(directory.name, 'local'))
     if adapter:

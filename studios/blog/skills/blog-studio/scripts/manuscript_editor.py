@@ -317,8 +317,14 @@ def dispatch(root, action, data):
             record['sources'] = pins
         state = directory / blog_runner.STATE
         if state.is_file():
-            research = blog_runner.research_scope(research, record['sources'])
             _, _, run = blog_runner.load(root, ident)
+            if not blog_runner.continues(run):
+                # An unfinished run the earlier flow saved is a saved record: the check would
+                # rewrite its run. A finished one is the editor's to check, as it always was.
+                shown = blog_runner.survey(root, ident, listing=True)
+                if not (shown['complete'] or shown['finished']):
+                    raise ValueError(blog_runner.SAVED_FLOW)
+            research = blog_runner.research_scope(research, record['sources'])
             run['approval'] = 'page'
             run['mode'] = 'revise' if check == 'revise' else 'review'
             run['existing'] = True
