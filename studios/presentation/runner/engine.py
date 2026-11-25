@@ -8,7 +8,7 @@ What a caller needs to know
     made = engine.start(form, uploads)       # {'path', 'id'}; the run starts at once
     engine.view(path)                        # what the page shows for one deck
     engine.decks()                           # every deck: needs, working, finished, elsewhere
-    engine.decide(path, 'gate:outline', 'approve', note, extra)   # the only way a gate moves
+    engine.decide(path, 'gate:outline', 'approve', note, extra)   # the slide text stop
     engine.act(path, 'pause')                # or 'resume', 'stop', 'retry', 'undo', 'more-time'
     engine.answer(path, question_id, text)   # a person answers a worker's question
     engine.picture(path, 'build', 3)         # one slide's picture, as PNG bytes
@@ -30,7 +30,11 @@ What a caller needs to know
   is the next: a step is done when its entry says so, a gate when it is approved. RUN maps
   every step of `stages.PIPELINE` to what the engine does for it, which is a call into one
   of the step modules (`runner.steps.*`). Starting the runner again resumes every deck
-  where its record says it is.
+  where its record says it is. A deck the earlier step-by-step flow saved (its record has
+  no `flow: desk`) is never continued (GitHub issue #542): its view is a saved record
+  (`_saved_view`) that opens on the desk through the explicit migration or the finished
+  Open on the desk, waits for what stops that, or is read-only with its reason; and `act`,
+  `answer`, `decide` and `build_feedback` refuse it with SAVED_FLOW_ENDED.
 - The run record holds, besides what decks.py lists: each try at each step with its times,
   cost, outcome and error (`steps[name]['tries']`, and `failed`, the failures in a row);
   a worker's `question` and the person's `answers`; `halted`, why the deck stopped, as
@@ -48,28 +52,16 @@ What a caller needs to know
   doubled. A research job is recorded as `research:author-<round>` or
   `research:review-<round>` under the research step.
 - A gate is opened by the step that feeds it, or by the engine when the deck reaches it,
-  and the run waits. `decide` is the only way a gate moves: it records the decision on the
-  gate ({'state', 'note', 'at', 'by', 'round'}), applies what the gate takes beside it
-  (gate:classify {'kind'}, gate:outline {'edited'}, gate:build {'slides', 'slide_notes'}),
-  commits, shares when the workspace shares after each decision, and wakes the run. Asking
-  for changes sets the gate to 'changes' first and then reopens it (`stages.reopen`), so
-  the step that feeds it runs again with the person's note. Asking for changes at gate:look
-  is choosing another brand or variant ({'brand', 'variant'}, with no note needed): the
-  deck's contract is exported again for it and its looks drawn again. {'look': 'again'}
-  there, or in the direction review with 'direction_target' gate:look, draws the brand's
-  looks again and approves nothing. Asking for changes at
-  gate:build once the deck is delivered builds it again (deliver.again). A line against a
-  slide at gate:build ('slide_notes', by number) marks it and goes into its section's brief.
-  "Change what it says" is a request for changes at gate:build, or on a delivered deck, with
-  {'direction_target': 'gate:outline', 'slides'}: the outline is reopened as it is, with
-  those slides marked ('saying' on the gate), and once it is approved again build-start
-  keeps every section whose slides did not change. From the direction review (balanced),
-  {'direction_target': 'gate:classify', 'kind'} corrects how a document was read.
+  and the run waits. The desk meets the stops it continues past itself (`_desk_gate`), and
+  the person meets the rest on the desk: the slide story (`slide_story.decide`), the
+  content-first slide text (`decide`, which records the decision on the gate {'state',
+  'note', 'at', 'by', 'round'}, applies an edited outline {'edited'}, commits, shares when
+  the workspace shares after each decision, and wakes the run; asking for changes sets the
+  gate to 'changes' and reopens it, `stages.reopen`, so the outline runs again with the
+  person's note), the look (`desk_look`), the redesign and the deck itself (`desk_*`).
 - At a stop reviewed item by item (`marks.REVIEWED`) the marks are checked, once the stop
-  is waiting, before anything is written. Questions dropped at the plan and findings left
-  out at the research go with either decision, with no worker. A drop, rewording, new
-  question, research-again or slide mark is enough for changes without a note; a leave-out
-  is not. The marks, then the person's own words, are the note the stop's worker reads.
+  is waiting, before anything is written. A slide mark is enough for changes without a
+  note. The marks, then the person's own words, are the note the stop's worker reads.
 - The brand is exported once, with the first step that needs it, and checked before every
   step that uses it: the outline, the sample of the brand, the patch, each step of the
   build and its render. A brand that changed since stops the deck with build's sentence.
@@ -282,23 +274,12 @@ CHANGED_IN_GOOGLE = ('The deck in Google Slides changed since this deck was read
 AGAIN_HERE = ('carry on here: {steps} again, as what was made for them is kept on the '
               'computer that made it')
 NOT_WAITING = 'The {it} is not waiting for a decision now.'
-# The parts of the direction review a request for changes can be sent to.
 LOOK_AGAIN = ('What the deck says changed after you picked {name}, so its looks were drawn '
               'again. Pick again; your earlier pick is marked.')
 EDITED_LOOKS = ('You edited the outline, so the looks will be drawn again from it. You pick '
                 'from the new ones before the deck is built.')
 
-DIRECTION_TARGETS = ('gate:research-plan', 'gate:research', 'gate:look', 'gate:classify')
-NOTE_CHANGED = ('The note changed since this page read it: another page sent one, or a job '
-                'took it. Read the latest before sending.')
-NO_NEXT_STEP = {'finished': 'This deck is finished: there is no next step to leave a note for.',
-                'stopped': 'This deck is stopped. Resume it, then leave a note for the next step.'}
 NO_NOTE = 'Say what should change.'
-NO_BRAND_CHOSEN = 'Choose the brand, and its variant, to make the deck in.'
-DRAFTS = Path('work') / 'drafts'   # the storyboards drawn for the page: never shared
-DRAFT_NAME = re.compile(r'storyboard-[0-9a-f]{12}\.html')
-KEPT_DRAFTS = 4                   # storyboards kept, the newest; older ones are removed
-STORYBOARD_LIMIT = 4_000_000      # bytes of one storyboard
 LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they are drawn '
                'again. Choose once they are.')
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
@@ -1178,9 +1159,11 @@ class Engine(Jobs, Researching, DeskActions):
     def _work(self, root: Path, run: _Run) -> None:
         """Do one step after another until the deck waits, ends or is halted."""
         # Unknown/pending effective records must not reach exception cleanup/marker repair.
+        # Nothing continues a deck the earlier step-by-step flow saved (GitHub issue #542).
         try:
             with gitstate.workspace_locked(self.space(), self.files, configured=True):
-                if decks.in_conversation(self._load(root)):
+                found = self._load(root)
+                if decks.in_conversation(found) or not decks.on_desk(found):
                     return
         except WorkspaceError:
             return
@@ -1224,17 +1207,10 @@ class Engine(Jobs, Researching, DeskActions):
                     return   # no drawing of this desk deck here: drawn only when asked
                 if self._patched_elsewhere(root, record, step.name):
                     return   # its plan was made on another computer: made here when asked
-                if step.kind == 'gate' and decks.on_desk(record):
+                if step.kind == 'gate' and desk.passes(record, step.name, root):
                     # A desk deck's stops are met on the desk: those it continues past, and
                     # the look when the start chose to pick it, and the desk itself.
-                    if desk.passes(record, step.name, root):
-                        self._desk_gate(root, step)
-                        continue
-                    if gate_state(record, step.name) == 'waiting':
-                        return
-                elif step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
-                        record, step.name, holding=self._holding(root, step.name)):
-                    self._policy_gate(root, step)
+                    self._desk_gate(root, step)
                     continue
                 if step.kind == 'gate' and gate_state(record, step.name) == 'waiting':
                     return
@@ -1298,7 +1274,6 @@ class Engine(Jobs, Researching, DeskActions):
             if decks.in_conversation(record) or decks.delivered(root) is not None:
                 return False
             names = [step.name for step in stages.steps(record)]
-            desk_deck = decks.on_desk(record)
 
             def did(name: str) -> bool:
                 return name in names and bool(tries(record, name).get('done'))
@@ -1321,9 +1296,7 @@ class Engine(Jobs, Researching, DeskActions):
                     and not (root / looks.SAMPLE).is_file() and looks.shown_looks(root) is None:
                 again.append('look-preview')
             # A desk deck's plan is made here only when asked (desk_draw_here).
-            if did('patch') and not desk_deck and (lacks or not (root / existing.PATCH).is_file()):
-                again += ['patch', 'build-render']
-            if desk_deck and not build.read_state(root).get('start') and desk.opened(record) \
+            if not build.read_state(root).get('start') and desk.opened(record) \
                     and any(did(name) for name in BUILT):
                 # A desk deck is drawn here only when asked (desk_draw_here): what the driving
                 # computer was drawing for its notes is drawn here then.
@@ -1334,10 +1307,6 @@ class Engine(Jobs, Researching, DeskActions):
                             item['status'] = 'waiting'
                         self._store(root, record)
                         self._commit(root, 'keep the notes to draw here when asked')
-            if not desk_deck and any(did(name) for name in BUILT) and (
-                    not build.read_state(root).get('start') and 'build-start' in names
-                    or did('build-render') and not self._rendered(root, record)):
-                again += [name for name in BUILT if name in names]
             again = [name for name in names if name in again and did(name)]
             if not again:
                 return False
@@ -1409,65 +1378,6 @@ class Engine(Jobs, Researching, DeskActions):
         space = self.workspace
         if space is not None and space.share == gitstate.SHARE[0]:
             self.share_soon()
-
-    def _holding(self, root: Path, gate: str) -> list[str]:
-        """What keeps a gate for the person whatever the saved level: for the deck's own
-        gate, the grave findings its last review still has and the brand audit's errors;
-        nothing for any other gate."""
-        if gate != 'gate:build':
-            return []
-        state = build.read_state(root)
-        last = state['rounds'][-1] if state.get('rounds') else {}
-        audit = state.get('audit') or {}
-        blockers = [line for line in audit.get('messages') or () if str(line).endswith('(error)')]
-        return review_policy.held(((last or {}).get('review') or {}).get('findings'), blockers)
-
-    @staticmethod
-    def _automatic(record: dict, gate: str, holding=()) -> bool:
-        """Whether the run's level accepts `gate` without the person, with every gate this
-        deck has, so a combined stop is held where the deck has a stop."""
-        return review_policy.automatic(stages.unleveled(record), 'presentation', gate, holding=holding,
-                                       run_gates=[step.name for step in stages.steps(record)])
-
-    def _policy_gate(self, root: Path, step: stages.Step) -> None:
-        """Continue under the saved policy, without claiming a person's approval."""
-        with self.files:
-            record = self._load(root)
-            if decks.in_conversation(record):
-                return
-            if not self._automatic(record, step.name,
-                                   holding=self._holding(root, step.name)):
-                raise WorkspaceError('This step needs your review.')
-            evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
-            if step.name == 'gate:look':
-                # The look the person picked in the direction review, in their words; else,
-                # under Automatic draft, the brand's default, saying why.
-                policy = self._look_policy(root, record)
-                if policy == 'stop':
-                    self._store(root, record)
-                    self._gate(root, self._run(root), step)
-                    return
-                if not policy:
-                    record['steps']['look-preview'] = {
-                        **(record['steps'].get('look-preview') or {}), 'done': False}
-                    self._store(root, record)
-                    self._commit(root, 'draw the looks again: what the deck says changed')
-                    return
-                looks.approve(root, record, 'Continued under the saved review level.',
-                              by='review-policy')
-                record = self._load(root)
-            else:
-                record = self._approve(root, record, step.name, None, {}, {})
-            at = home.now()
-            gate = record['gates'].get(step.name) or {}
-            record['gates'][step.name] = {**gate, 'state': 'approved', 'by': 'review-policy',
-                                          'at': at, 'note': 'Continued automatically.'}
-            # A look chosen from samples nobody saw rendered says so, and why.
-            picked = looks.chosen(root) if step.name == 'gate:look' else None
-            note = picked['words'] if picked and picked.get('shown') == 'unrendered' else None
-            review_policy.receipt(record, step.name, evidence, at, note=note)
-            self._store(root, record)
-            self._commit(root, f'continue the {WORDS[step.name]} under the saved review level')
 
     def _gate(self, root: Path, run: _Run, step: stages.Step) -> None:
         """Put what the gate decides on in front of the person, and wait."""
@@ -2262,30 +2172,6 @@ class Engine(Jobs, Researching, DeskActions):
         self._commit(root, f'keep feedback on slide {number} for the deck review')
         return self.view(root)
 
-    def review_draft(self, path, expected: str) -> dict:
-        """Explicitly request normal AI review for the exact native draft on screen."""
-        root = self._held(path)
-        self._not_saved(self._load(root))
-        desk.refuse_on_desk(self._load(root))   # a desk deck is reviewed from Finishing
-        with self.files:
-            record = self._load(root)
-            last = (build.read_state(root).get('rounds') or [{}])[-1]
-            if not expected or last.get('deck') != expected:
-                raise WorkspaceError('The draft changed. Reload it before asking for the check.')
-            if record.get('review_requested'):
-                return self.view(path)
-            if not decks.user_first(record) or gate_state(record, 'gate:build') != 'waiting':
-                raise WorkspaceError('The check can be asked for while the first draft waits '
-                                     'for you.')
-            record['review_requested'] = {'at': home.now(), 'deck': expected}
-            for name in ('build-review', 'build-repair', 'build-render'):
-                record['steps'].pop(name, None)
-            record['gates'].pop('gate:build', None)
-            self._store(root, record)
-            self._commit(root, 'request AI review of the first draft')
-        self.wake(root)
-        return self.view(path)
-
     @staticmethod
     def _note(note) -> str | None:
         if note is None:
@@ -2297,30 +2183,15 @@ class Engine(Jobs, Researching, DeskActions):
             raise WorkspaceError(f'Say it in at most {NOTE} characters.')
         return note or None
 
-    @staticmethod
-    def _numbers(extra: dict) -> list[int] | None:
-        named = extra.get('slides')
-        if named is None:
-            return None
-        if not isinstance(named, list) or not all(type(one) is int and one > 0
-                                                  for one in named):
-            raise WorkspaceError('Name the slides by their numbers.')
-        return sorted(set(named))
-
-    @staticmethod
-    def _sections_for(root: Path, numbers: list[int] | None) -> list[str]:
-        """The sections that draw the slides a person named: every section when they named
-        none."""
-        state = build.read_state(root)
-        began = state.get('start') or {}
-        sections = [entry['id'] for entry in began.get('sections') or ()]
-        if not numbers or not state.get('rounds'):
-            return sections
-        ids = {slide['number']: slide['id'] for slide in state['rounds'][-1]['slides']}
-        wanted = {ids.get(number) for number in numbers}
-        named = [entry['id'] for entry in began.get('sections') or ()
-                 if wanted & set(entry['slides'])]
-        return named or sections
+    def review_draft(self, path, expected: str) -> dict:
+        """The check of a first draft, asked for at a saved deck's own stop. Nothing asks it
+        any more: a deck the earlier step-by-step flow saved is not continued (GitHub issue
+        #542), and a desk deck is reviewed from Finishing. Kept only to say so, as
+        test_deck_desk's refusal test asks of a desk deck."""
+        root = self._held(path)
+        self._not_saved(self._load(root))
+        desk.refuse_on_desk(self._load(root))
+        raise WorkspaceError(desk.ON_DESK)
 
     def decide(self, path, gate: str, decision: str, note: str | None = None,
                extra: dict | None = None, expected: str | None = None) -> dict:
@@ -2351,112 +2222,32 @@ class Engine(Jobs, Researching, DeskActions):
         note, extra = self._note(note), extra or {}
         if not isinstance(extra, dict):
             raise WorkspaceError('What comes with a decision was not understood.')
-        target = extra.get('direction_target')
-        # "Change what it says" at the deck's gate, or on a delivered deck, goes back to
-        # the outline with the slides named. Every other target is a part of the direction
-        # review.
-        saying = gate == 'gate:build' and decision == 'changes' and target == 'gate:outline'
-        if target is not None and not saying and (
-                gate != 'gate:outline' or decision != 'changes'
-                or target not in DIRECTION_TARGETS):
-            raise WorkspaceError('Choose research or brand from the direction review.')
-        extra = {key: value for key, value in extra.items() if key != 'direction_target'}
-        # Asking for changes to the look is choosing another brand, or, for looks that could
-        # not be rendered, drawing them again.
-        again = extra.get('look') == looks.AGAIN and decision == 'changes'
-        if again:
-            note = note or 'Draw the looks again.'
-        rebrand = (gate == 'gate:look' or target == 'gate:look') and decision == 'changes' \
-            and not again
-        if rebrand and not (isinstance(extra.get('brand'), str) and extra['brand'].strip()):
-            raise WorkspaceError(NO_BRAND_CHOSEN)
-        brands = self.brands() if rebrand else None
         space = self.space()
-        if gate == 'gate:build' and decision == 'changes' and self._delivered_here(saved):
-            self._take(root, space)
         self.hold(root)
         by = gitstate.identity(space.repo)
         with self.files:
             record = self._load(root)
-            at = home.now()
-            if saying:
-                said, also = self._say_again(root, record, extra, note, at, by, space)
-                self._commit(root, said, also)
-            else:
-                said, also = self._decided(root, record, gate, decision, note, extra, target,
-                                           expected, rebrand, brands, at, by, space)
-                self._commit(root, said, also)
+            said = self._decided(root, record, gate, decision, note, extra, expected,
+                                 home.now(), by)
+            self._commit(root, said)
         if space.share == gitstate.SHARE[0]:
             self.share_soon()
         self.wake(root)
         return self.view(root)
 
     def _decided(self, root: Path, record: dict, gate: str, decision: str, note: str | None,
-                 extra: dict, target: str | None, expected: str | None, rebrand: bool,
-                 brands, at: str, by, space) -> tuple[str, tuple]:
-        """A decision at a gate, applied and stored. Call it holding `files`. Returns what
-        the commit says, and what else it lists."""
+                 extra: dict, expected: str | None, at: str, by) -> str:
+        """A decision at the desk's content-first slide text stop (the only gate a person
+        decides through `decide` besides the slide story), applied and stored. Call it
+        holding `files`. Returns what the commit says."""
         it = WORDS[gate]
-        if deck_content.checkpoint(record, gate) and expected != self._direction_signature(root, record):
+        if expected != self._direction_signature(root, record):
             raise WorkspaceError('The slide text changed. Read the latest text before deciding.')
-        combined = gate == 'gate:outline' and stages.level(record) == 'balanced'
-        if combined and (not expected or expected != self._direction_signature(root, record)):
-            raise WorkspaceError('The direction changed. Read the latest review before deciding.')
-        if target:
-            if not combined or gate_state(record, gate) != 'waiting' or target not in {
-                    step.name for step in stages.steps(record)}:
-                raise WorkspaceError('That part is not available in this direction review.')
-            if target == 'gate:classify':
-                return self._reclassify(root, record, extra, note, at, by), ()
-            gate, it = target, WORDS[target]
-            record['gates'][gate] = {**(record['gates'].get(gate) or {}), 'state': 'waiting'}
-        after = gate == 'gate:build' and decision == 'changes' \
-            and decks.delivered(root) is not None
-        if not after and gate_state(record, gate) != 'waiting':
+        if gate_state(record, gate) != 'waiting':
             raise WorkspaceError(NOT_WAITING.format(it=it))
         marked = marks.check(gate, decision, extra, self._marked_ids(root, gate, extra))
-        if combined and target == 'gate:research' and decision == 'changes' and not note and set(marked) == {'left_out'}:
-            self._leave_out(root, record, marked['left_out'], at, by)
-            return 'leave research findings out of the direction', ()
-        if gate == 'gate:research' and 'left_out' not in marked:
-            out = (record.get('research') or {}).get('left_out') or ()
-            for ident in marked.get('again') or ():
-                if ident in out:
-                    raise WorkspaceError(f'{ident} is left out: bring it back before '
-                                         'researching it again.')
-        noted = None
-        if gate == 'gate:build' and decision == 'changes':
-            # A line against a slide names it as surely as its mark does. The page's lines
-            # are the person's last word: only where none were sent does feedback that came
-            # after its section was drawn stand as the slide's line.
-            noted = self._slide_notes(extra)
-            if noted is None:
-                noted = self._late_feedback(record)
-            named = sorted({*(self._numbers(extra) or ()), *(int(one) for one in noted)})
-            self._check_numbers(root, named)
-            if noted and not note:
-                note = '\n'.join(f'Slide {number}: {noted[str(number)]}'
-                                 for number in sorted(int(one) for one in noted))
-        if decision == 'changes' and not note and not rebrand and not marks.asks(marked):
+        if decision == 'changes' and not note and not marks.asks(marked):
             raise WorkspaceError(NO_NOTE)
-        if gate == 'gate:build':
-            # Feedback kept for this gate is decided here: as the slides' lines, or not at all.
-            record['build_feedback'] = [item for item in record.get('build_feedback') or []
-                                        if not item.get('late')]
-        if after:
-            gated = record['gates'].get(gate) or {}
-            record['gates'][gate] = {**gated, 'slides': named or None,
-                                     'slide_notes': noted or None}
-            try:
-                record = delivering.again(root, record, self.slides(), note, space)
-            except ValueError:
-                raise WorkspaceError(f'This deck has no {it} to change.') from None
-            record['gates'][gate].update(by=by)
-            for step in self._reopened(record, gate):
-                self._fresh(record, step)
-            self._ask_again(root, named or None, note, at)
-            self._store(root, record)
-            return f'ask for changes to the delivered {it}', self._listed(space)
         if decision == 'approve':
             record = self._approve(root, record, gate, note, extra, marked)
             gated = record['gates'].get(gate) or {}
@@ -2468,7 +2259,7 @@ class Engine(Jobs, Researching, DeskActions):
                                      'at': at, 'by': by,
                                      'round': int(gated.get('round') or 1), **cleared}
             self._store(root, record)
-            return f'approve the {it}', ()
+            return f'approve the {it}'
         gated = record['gates'].get(gate) or {}
         more = {'again': None, 'added': None, 'free': None, 'refresh': None} \
             if gate == 'gate:research' else {'saying': None} \
@@ -2478,22 +2269,12 @@ class Engine(Jobs, Researching, DeskActions):
         look = {name: dict(record['steps'].get(name) or {}) for name in ('brand', 'look-preview')} \
             if gate == 'gate:outline' and gated.get('saying') else None
         look_gate = dict(record['gates'].get('gate:look') or {}) if look else None
-        if rebrand:
-            record.pop('look_picked', None)   # a pick of the old brand's looks is not one
-            looks.rebrand(root, record, extra['brand'], extra.get('variant'), brands)
-            note = note or ('Make it in ' + decks.brand_words(record['form']) + '.')
-        if extra.get('look') == looks.AGAIN:
-            looks.drop(root)
-            record.pop('look_picked', None)
         if gate == 'gate:outline' and extra.get('edited') is not None:
             self._edit_outline(root, record, extra['edited'])
         if marked:
             record, note, more = self._apply_marks(root, record, gate, marked, note)
         record['gates'][gate] = {**gated, 'state': 'changes', 'note': note, 'at': at,
-                                 'by': by, 'round': int(gated.get('round') or 1),
-                                 **more,
-                                 **({'slides': named or None, 'slide_notes': noted or None}
-                                    if gate == 'gate:build' else {})}
+                                 'by': by, 'round': int(gated.get('round') or 1), **more}
         try:
             record = stages.reopen(record, gate)
         except ValueError:
@@ -2506,11 +2287,8 @@ class Engine(Jobs, Researching, DeskActions):
                 record['gates']['gate:look'] = look_gate
         for step in self._reopened(record, gate):
             self._fresh(record, step)
-        if gate == 'gate:build':
-            self._ask_again(root, named or None, note, at)
         self._store(root, record)
-        return ('make it in ' + decks.brand_words(record['form']) if rebrand
-                else f'ask for changes to the {it}'), ()
+        return f'ask for changes to the {it}'
 
     def _leave_out(self, root: Path, record: dict, ids, at, by) -> None:
         record['research'] = {**(record.get('research') or {}), 'left_out': list(ids)}
@@ -2522,15 +2300,6 @@ class Engine(Jobs, Researching, DeskActions):
         record['gates']['gate:research'] = {**(record['gates'].get('gate:research') or {}),
                                             'state': 'approved', 'at': at, 'by': by}
         self._store(root, record)
-
-    @staticmethod
-    def _leave_out_price(record):
-        tried = [own[-1] for name in ('outline', 'look-preview') if (own := attempts(record, name))]
-        dollars = [a['dollars'] for a in tried if a.get('dollars') is not None]
-        cost = research_contract.took(sum(a.get('seconds') or 0 for a in tried),
-                                      sum(dollars) if dollars else None)
-        return {'words': 'Leaving findings out redraws the outline and the look samples without researching again.'
-                         + (f' They last took {cost}.' if cost else '')}
 
     def _reclassify(self, root: Path, record: dict, extra: dict, note: str | None, at: str,
                     by) -> str:
@@ -2555,108 +2324,6 @@ class Engine(Jobs, Researching, DeskActions):
         self._store(root, record)
         return 'correct what the document is'
 
-    def _say_again(self, root: Path, record: dict, extra: dict, note: str | None, at: str,
-                   by, space) -> tuple[str, tuple]:
-        """"Change what it says": the outline is reopened with the slides the person named
-        marked, as it is, for them to edit or mark. Nothing is drafted again, and the brand
-        is not checked again. Once the outline is approved, build-start keeps every section
-        whose slides did not change. Returns what the commit says, and what else it lists."""
-        named = self._numbers(extra)
-        if not named:
-            raise WorkspaceError('Name the slides whose words should change, by their '
-                                 'numbers.')
-        if 'gate:outline' not in {step.name for step in stages.steps(record)}:
-            raise WorkspaceError("This deck's words come from the deck you gave: change them "
-                                 'there, or ask for changes to the slide.')
-        state = build.read_state(root)
-        if not state.get('rounds'):
-            raise WorkspaceError('There is no drawing of this deck on this computer to name '
-                                 'its slides from: it was built elsewhere. Ask for changes '
-                                 'with a note instead.')
-        ids = {slide['number']: slide['id'] for slide in state['rounds'][-1]['slides']}
-        self._check_numbers(root, named)
-        delivered = decks.delivered(root) is not None
-        if not delivered and gate_state(record, 'gate:build') != 'waiting':
-            raise WorkspaceError(NOT_WAITING.format(it=WORDS['gate:build']))
-        which = self._words_of(named)
-        if delivered:
-            # The delivered deck is taken down: the next revision is built from here.
-            record = delivering.again(root, record, self.slides(),
-                                      note or f'Change {which}.', space)
-        kept = {name: dict(record['steps'].get(name) or {})
-                for name in ('outline', 'outline-check', 'extract', 'brand', 'look-preview')}
-        look = dict(record['gates'].get('gate:look') or {})
-        record = stages.reopen(record, 'gate:outline')
-        for name, entry in kept.items():
-            if name in record['steps']:
-                record['steps'][name] = entry
-        if look:
-            record['gates']['gate:look'] = look
-        gated = record['gates'].get('gate:outline') or {}
-        record['gates']['gate:outline'] = {
-            **gated, 'state': 'waiting', 'note': note, 'at': at, 'by': by,
-            'round': int(gated.get('round') or 1) + 1,
-            'saying': {ids[number]: note or '' for number in named}}
-        built = record['gates'].get('gate:build') or {}
-        # The deck's own request for changes, if one was made, is not what this one says.
-        record['gates']['gate:build'] = {**built, 'slides': None, 'slide_notes': None,
-                                         'note': None}
-        record['build_feedback'] = [item for item in record.get('build_feedback') or []
-                                    if not item.get('late')]
-        for step in self._reopened(record, 'gate:outline'):
-            self._fresh(record, step)
-        self._store(root, record)
-        return f'ask to change {which}', (self._listed(space) if delivered else ())
-
-    @staticmethod
-    def _words_of(numbers: list[int]) -> str:
-        """'what slide 3 says', or 'what slides 3 and 5 say'."""
-        if len(numbers) == 1:
-            return f'what slide {numbers[0]} says'
-        return 'what slides ' + ', '.join(map(str, numbers[:-1])) + f' and {numbers[-1]} say'
-
-    @staticmethod
-    def _check_numbers(root: Path, numbers) -> None:
-        """Refuse a slide number the deck's last drawing does not have."""
-        rounds = build.read_state(root).get('rounds') or []
-        if not numbers or not rounds:
-            return
-        had = {slide['number'] for slide in rounds[-1]['slides']}
-        unknown = [number for number in numbers if number not in had]
-        if unknown:
-            raise WorkspaceError(f'The deck has no slide {unknown[0]}.')
-
-    @staticmethod
-    def _slide_notes(extra: dict) -> dict | None:
-        """The line a person wrote against each slide at the deck's gate, by the slide's
-        number: {'3': 'Say it plainly.'}. Empty lines are left out."""
-        given = extra.get('slide_notes')
-        if given is None:
-            return None
-        if not isinstance(given, dict):
-            raise WorkspaceError('Give each slide its line, by its number.')
-        noted = {}
-        for key, line in given.items():
-            number = int(key) if isinstance(key, int) or (isinstance(key, str)
-                                                          and key.isdigit()) else 0
-            if number < 1:
-                raise WorkspaceError('Name each noted slide by its number.')
-            if line is not None and not isinstance(line, str):
-                raise WorkspaceError(f'What you wrote for slide {number} is not text.')
-            line = ' '.join((line or '').split())
-            if len(line) > marks.LINE:
-                raise WorkspaceError(f'Say it for slide {number} in at most '
-                                     f'{marks.LINE:,} characters.')
-            if line:
-                noted[str(number)] = line
-        return noted
-
-    @staticmethod
-    def _late_feedback(record: dict) -> dict:
-        """Feedback kept for the deck's gate, as each slide's line: the last one wins."""
-        return {str(item['number']): item['note'] for item in record.get('build_feedback') or ()
-                if item.get('late') and item.get('number')}
-
     @staticmethod
     def _reopened(record: dict, gate: str) -> list[str]:
         """The steps a request for changes at `gate` runs again: its feeder and every step
@@ -2664,15 +2331,6 @@ class Engine(Jobs, Researching, DeskActions):
         names = [step.name for step in stages.steps(record)]
         back = stages.feeder(record, gate)
         return names[names.index(back):] if back in names else []
-
-    def _ask_again(self, root: Path, named: list[int] | None, note: str, at: str) -> None:
-        """Send the sections back that draw what the person named at gate:build."""
-        state = build.read_state(root)
-        if not state.get('start'):
-            return
-        state.update(asked={'note': note, 'sections': self._sections_for(root, named),
-                            'at': at}, repaired=0)
-        build.write_state(root, state)
 
     def _approve(self, root: Path, record: dict, gate: str, note: str | None,
                  extra: dict, marked: dict) -> dict:
@@ -2702,21 +2360,6 @@ class Engine(Jobs, Researching, DeskActions):
             record.pop('look_again', None)
             if picked:
                 record['look_picked'] = picked
-        if gate == 'gate:outline' and stages.level(record) == 'balanced':
-            # The direction review shows the looks: the person's pick is part of approving
-            # it. It is kept in the run, so that whichever computer goes on draws the deck in
-            # it, and is chosen with the brand when the look's own gate continues.
-            edited = extra.get('edited') is not None
-            offered = looks.shown_looks(root)
-            picked = self._look_picked(root, extra, note) if extra.get('look') or not edited else None
-            if picked:
-                record['look_picked'] = picked
-            if edited and offered:
-                earlier = picked or looks.chosen(root) or record.get('look_picked') or {}
-                record['look_again'] = {'name': earlier.get('name'), 'choice': earlier.get('choice')}
-                looks.drop(root)
-                record['steps']['look-preview'] = {
-                    **(record['steps'].get('look-preview') or {}), 'done': False}
         return record
 
     def _look_picked(self, root: Path, extra: dict, note: str | None) -> dict | None:
@@ -2735,29 +2378,6 @@ class Engine(Jobs, Researching, DeskActions):
             raise WorkspaceError(looks.NO_LOOK)
         return {'choice': choice, 'words': said or looks.NO_COMMENT.format(name=picked['name']),
                 'shown': sha256_of(root / looks.SHOWN), 'name': picked['name']}
-
-    def _look_policy(self, root: Path, record: dict) -> bool | str:
-        """A look gate the saved level does not stop at: the look picked in the direction
-        review, in the person's words; else the brand's default, saying why. False when the
-        outline changed since the looks were drawn, which are then drawn again."""
-        shown = looks.shown_looks(root)
-        if shown is None or looks.chosen(root) is not None:
-            return True
-        picked = record.get('look_picked') or {}
-        known = [look['id'] for look in shown.get('looks') or ()]
-        if picked and picked.get('shown') != sha256_of(root / looks.SHOWN):
-            record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
-                                    'choice': picked.get('choice')}
-            return 'stop'
-        if picked.get('choice') in known or (picked.get('choice') == looks.DEFAULT
-                                              and shown.get('failed')):
-            made = looks.choose(root, self._skill(), picked['choice'], picked['words'])
-            if made is None:
-                record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
-                                        'choice': picked.get('choice')}
-        else:
-            made = looks.choose_default(root, self._skill(), stages.level(record))
-        return made is not None
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
         """The outline as the person edited it on the page, checked and saved."""
@@ -2891,36 +2511,6 @@ class Engine(Jobs, Researching, DeskActions):
             self._store(root, record)
             self._commit(root, "a worker's question was answered on the page")
         self.wake(root)
-        return self.view(root)
-
-    def note(self, path, text, expected: str | None = None) -> dict:
-        """A person's note for the next step. It goes with the next job that starts for
-        this deck, and stops nothing; a second note before then replaces the first. `expected`
-        is the note's version the page read: a page that read an older one is refused."""
-        root = self._held(path)
-        self._not_saved(self._load(root))
-        # A desk deck's notes are on its cards: the next step's note would reach a composer
-        # by a second way.
-        desk.refuse_on_desk(self._load(root))
-        if not isinstance(text, str) or not text.strip():
-            raise WorkspaceError('Write the note first.')
-        text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
-        if len(text) > NEXT_NOTE:
-            raise WorkspaceError(f'Say it in at most {NEXT_NOTE} characters.')
-        with self.files:
-            record = self._load(root)
-            state = self._state(root, record, self._run(root))[0]
-            if state in NO_NEXT_STEP:
-                raise WorkspaceError(NO_NEXT_STEP[state])
-            version = int(record.get('note_version') or 0)
-            if expected is not None and expected != str(version):
-                raise WorkspaceError(NOTE_CHANGED)
-            replaced = bool(record.get('pending_note'))
-            record['pending_note'] = {'text': text, 'at': home.now()}
-            record['note_version'] = version + 1
-            self._store(root, record)
-            self._commit(root, ('replace the ' if replaced else '') + 'note for the next step: '
-                         + (text if len(text) <= 120 else text[:119].rstrip() + '…'))
         return self.view(root)
 
     @staticmethod
@@ -3289,11 +2879,6 @@ class Engine(Jobs, Researching, DeskActions):
         for row in rows:
             if row['name'] == 'research-plan' and (record.get('research') or {}).get('plan_from') == 'form':
                 row['label'] = FROM_FORM
-            if row['name'].startswith('gate:') and not (row['name'] == 'gate:look' and record.get('look_again')) and self._automatic(
-                    record, row['name'],
-                    holding=self._holding(root, row['name']) if root else ()):
-                row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
-                row['automatic'] = True
             tried = attempts(record, row['name'])
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
@@ -3323,17 +2908,6 @@ class Engine(Jobs, Researching, DeskActions):
             shown['last_build'] = self._last_build(record)
         elif nxt.name not in ('gate:research-plan', 'gate:research', 'gate:story'):
             shown['redo'] = self._redo(record, nxt.name)
-        if nxt.name == 'gate:outline' and stages.level(record) == 'balanced':
-            shown['research'] = self._show_research(root, record)
-            shown['leave_out_price'] = self._leave_out_price(record)
-            shown['look'] = self._show_look(root, record)
-            shown['label'] = 'Review the direction'
-            shown['expected'] = self._direction_signature(root, record)
-            # The reading of the person's document was continued without a stop, so it is
-            # shown here, where a wrong reading can be put right.
-            if record['route'] == 'document':
-                shown['classify'] = self._show_classify(root, record)
-                shown['reclassify_price'] = self._reclassify_price(record)
         return shown
 
     def _direction_signature(self, root: Path, record: dict) -> str:
@@ -3414,62 +2988,6 @@ class Engine(Jobs, Researching, DeskActions):
                 'research_from': 'Research ' + research_sites.summary(looks),
                 'outside': research_sites.outside(
                     len((record.get('research') or {}).get('outside') or []), looks['sites'])}
-
-    def storyboard(self, path, edited, expected: str) -> dict:
-        """Preview the current or unsaved outline without saving or approving it."""
-        started = time.monotonic()
-        root = self.driven(path)
-        if root is None:
-            raise WorkspaceError('There is no deck there.')
-        with self.files:
-            record = self._load(root)
-            self._not_saved(record)
-            gate = self._gate_view(root, record)
-            if not gate or gate.get('name') != 'gate:outline' or gate.get('expected') != expected:
-                raise WorkspaceError('The outline changed. Reload it before previewing again.')
-            outline = home.read_json(root / outlines.OUTLINE)
-            if not isinstance(outline, dict):
-                raise WorkspaceError('The outline is not ready to preview.')
-            if edited is not None:
-                if not isinstance(edited, list) or not edited or not all(isinstance(s, dict) for s in edited):
-                    raise WorkspaceError('The slides are a nonempty list of objects.')
-                outline['slides'] = edited
-            contract = root / build.CONTRACT
-            if not contract.is_file():
-                raise WorkspaceError('The outline needs its saved brand contract before previewing.')
-            # The input never enters the shared workspace or the approval record. The draft
-            # the slides tool draws is kept in the deck's work/drafts/ (never shared), under a
-            # name of its own, for the page to frame by a ticket for that one file.
-            with tempfile.TemporaryDirectory(prefix='presentation-storyboard-') as temporary:
-                source, output = Path(temporary) / 'outline.json', Path(temporary) / 'draft.html'
-                source.write_text(json.dumps(outline), encoding='utf-8')
-                self.slides().outline_draft(source, contract, output)
-                data = output.read_bytes()
-                if len(data) > STORYBOARD_LIMIT:
-                    raise WorkspaceError('The storyboard is too large to show in the page.')
-            folder = root / DRAFTS
-            folder.mkdir(parents=True, exist_ok=True)
-            name = f'storyboard-{secrets.token_hex(6)}.html'
-            write_atomic(folder / name, data.decode('utf-8', errors='replace'))
-            kept = sorted((one for one in folder.glob('storyboard-*.html') if one.is_file()),
-                          key=lambda one: one.stat().st_mtime, reverse=True)
-            for old in kept[KEPT_DRAFTS:]:
-                old.unlink(missing_ok=True)
-        return {'draft': name, 'expected': expected,
-                'milliseconds': round((time.monotonic() - started) * 1000, 1)}
-
-    def storyboard_page(self, path, name) -> bytes:
-        """A storyboard the runner drew for a deck, by the name `storyboard` gave it: only a
-        file of that form inside the deck's own work/drafts/, never a path a request names.
-        FileNotFoundError for anything else."""
-        root = self.driven(path)
-        if root is None or not isinstance(name, str) or not DRAFT_NAME.fullmatch(name):
-            raise FileNotFoundError(NO_PICTURE)
-        folder = (root / DRAFTS).resolve()
-        file = folder / name
-        if file.is_symlink() or folder not in file.resolve().parents or not file.is_file():
-            raise FileNotFoundError(NO_PICTURE)
-        return file.read_bytes()
 
     def _show_outline(self, root: Path, record: dict) -> dict:
         found = home.read_json(root / outlines.OUTLINE, None)
@@ -4270,6 +3788,8 @@ class Engine(Jobs, Researching, DeskActions):
         space, slides = self.space(), self.slides()
         with self.files:
             record = self._load(root)
+            # A deck the earlier step-by-step flow delivered goes on from the desk.
+            self._not_saved(record)
             who = team.driver(space, record)
             if who is not None and not who['here']:
                 raise Elsewhere(team.elsewhere(space, record))
