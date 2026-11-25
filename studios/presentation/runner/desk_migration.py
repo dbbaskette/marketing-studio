@@ -89,7 +89,11 @@ def _json(files, name, required=False):
         if required:
             raise Kept(f'{name} is missing.')
         return None
-    return json.loads(files[name])
+    try:
+        return json.loads(files[name])
+    except ValueError:
+        # Said in plain words, as the read-only record says it (fix round 3).
+        raise Kept(UNREAD if name == 'run.json' else f'{name} cannot be read.') from None
 
 
 def materials(record, files):
@@ -547,7 +551,11 @@ def migrate(engine, path, expected):
             if value.get('expected') != expected:
                 raise WorkspaceError(CHANGED)
             return engine.view(root)
-        _, current_root, record, files, guard, blockers = _snapshot(engine, path)
+        try:
+            _, current_root, record, files, guard, blockers = _snapshot(engine, path)
+        except Kept as kept:
+            # A record or file the migration cannot read: its one refusal, in plain words.
+            raise WorkspaceError(f'{kept.why} It cannot be opened on the desk.') from None
         prepared = prepare_migration(record, files)
         if current_root != root or prepared['blockers'] or blockers:
             raise WorkspaceError(' '.join(prepared['blockers'] + blockers))

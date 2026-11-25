@@ -145,7 +145,7 @@ import home
 import server
 from workspace import WorkspaceError
 
-from runner import decks, gitstate, marks, settings, setup
+from runner import decks, gitstate, marks, saved_gate, settings, setup
 from runner import engine as engines
 
 from studio_core import modules, polling
@@ -213,6 +213,33 @@ WRITES = (*WRITES, *library_context.ROUTES)
 # document a deck from a document is made from (`studio_core.source_intake`).
 DOCUMENT_INTAKE = '/api/document-intake'
 WRITES = (*WRITES, DOCUMENT_INTAKE)
+# What each changing route may do to a deck the earlier step-by-step flow saved (GitHub issue
+# #542; `saved_gate`): every entry of `RunnerPage.writes` has one decision, and one without
+# a decision is refused for every saved deck.
+SAVED_ROUTES = {
+    # About no deck.
+    **dict.fromkeys(('/api/computer', '/api/intake-draft', '/api/research-sources',
+                     '/api/setup/check', '/api/setup', '/api/decks', '/api/share',
+                     '/api/fetch', '/api/bring', '/api/companions', '/api/upgrade',
+                     '/api/restart', '/api/versions', '/api/brand', '/api/brand/install',
+                     '/api/shared', '/api/research-site', DOCUMENT_INTAKE,
+                     *library_context.ROUTES), saved_gate.WORKSPACE),
+    # A deck's queued research note and slide-text corrections: read only.
+    '/api/research-note': saved_gate.READS, '/api/slide-text-draft': saved_gate.READS,
+    # Reading it, its setup copied into a new deck's form, and deleting it.
+    '/api/saved-check': saved_gate.ALL, '/api/saved-finish': saved_gate.ALL,
+    COPY: saved_gate.ALL, '/api/delete': saved_gate.ALL,
+    # The explicit migration, which finishes an interrupted opening too.
+    '/api/desk-migrate': frozenset({'saved', 'unreadable', 'interrupted'}),
+    # Take, to open it on the desk; never Hand over.
+    '/api/drive': saved_gate.TAKE,
+    # What a delivered deck could always do that does not continue the flow.
+    '/api/desk-open': frozenset({'finished'}), '/api/publish': frozenset({'finished'}),
+    # Continuing it, and desk work: never.
+    **dict.fromkeys(('/api/run', '/api/decide', '/api/answer', '/api/deliver',
+                     '/api/build-feedback', '/api/progress-seen', '/api/desk-outline-price',
+                     '/api/desk-ready', SOURCE,
+                     *(path for path in DESK if path != '/api/desk-open')), saved_gate.NEVER)}
 DOCUMENT_ENDINGS = ('.txt', '.md', '.html', '.htm', '.docx', '.pdf')   # the page's DOCUMENT_TYPES
 DOCUMENT_MOST = 8_000_000    # bytes: the largest document the runner reads
 INTAKE_LIMIT = 12_000_000    # bytes: a spreadsheet sent to be read, in base64
@@ -453,6 +480,13 @@ class RunnerPage(server.Page):
         next poll walks the workspace again instead of reusing the last walk, so the
         change shows at once in every open tab. A read sent as a POST changes nothing."""
         try:
+            # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`).
+            decision = SAVED_ROUTES.get(path, saved_gate.NEVER)
+            if decision != saved_gate.WORKSPACE:
+                try:
+                    saved_gate.check(self.engine, decision, sent.get('path'), sent)
+                except WorkspaceError as refusal:
+                    raise server.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
             return self.apply(path, sent)
         finally:
             if sent.get('action') != 'read':

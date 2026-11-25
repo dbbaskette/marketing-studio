@@ -49,7 +49,7 @@ import server  # noqa: E402
 from workspace import WorkspaceError  # noqa: E402
 
 from runner import engine as engines  # noqa: E402
-from runner import gitstate, page, setup, upkeep as upkeeping  # noqa: E402
+from runner import gitstate, page, saved_gate, setup, upkeep as upkeeping  # noqa: E402
 
 # ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
 # test_shared_runner_use checks the bound parts, and the suites call the rest.
@@ -142,6 +142,20 @@ def fake(args, out=None, opener=server.show) -> int:
     return serve(args, make=made.engine, out=out, opener=opener, keeper=made.keeper)
 
 
+# What each desk command may do to a deck the earlier step-by-step flow saved (GitHub issue
+# #542; `saved_gate`): every desk command has one decision, and one without a decision is
+# refused for every saved deck.
+SAVED_COMMANDS = {
+    'create': saved_gate.WORKSPACE,
+    # Reading it.
+    **dict.fromkeys(('show', 'context', 'migration-preview'), saved_gate.ALL),
+    # The explicit migration, which finishes an interrupted opening too.
+    'migrate': frozenset({'saved', 'unreadable', 'interrupted'}),
+    # Conversation work, which continues a deck: never.
+    **dict.fromkeys(('save', 'submit', 'answer', 'ready', 'scope', 'handoff', 'take'),
+                    saved_gate.NEVER)}
+
+
 def desk_command(args, make=engines.Engine, out=None):
     """JSON conversation commands; no server, setup, upkeep or assistant launch."""
     from runner import desk_chat
@@ -164,6 +178,9 @@ def desk_command(args, make=engines.Engine, out=None):
             if not isinstance(data, dict):
                 raise WorkspaceError('Supply a JSON object.')
         action = args.desk_action
+        # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`).
+        saved_gate.check(engine, SAVED_COMMANDS.get(action, saved_gate.NEVER),
+                         getattr(args, 'folder', None), data)
         if action == 'create':
             data = dict(data)
             named = data.pop('uploads', {})

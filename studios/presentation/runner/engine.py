@@ -206,6 +206,12 @@ SAVED_SAYS = {'unchecked': 'Saved by the earlier step-by-step flow. Open it to s
 # The step markers a deck's folder may hold while a step is in hand (the shared running-step
 # check reads the same names).
 SAVED_MARKERS = ('work/step.lock', 'work/.harness-slides/design/.lock', '.studio-research/lock')
+# The lock files the shared running-step check counts in a deck's folder
+# (`sync_guard.worker_in_progress`): at its top, and in any folder under its work/ and
+# sources/. Start-up removes them from a deck that nothing continues (`Engine._unmark`).
+SAVED_LOCKS = ('work/step.lock', '.training-studio/step.lock',
+               'work/.harness-slides/design/.lock', '.studio-research/lock')
+NESTED_LOCKS = ('.harness-slides/design/.lock', '.studio-research/lock')
 # What makes the shared running-step check wait, as far as this Presentation Studio knows it.
 # Start-up recovers every step a stopped runner left marked, so a marker that is still there
 # belongs to a step running somewhere. Only a step known to run here is said to end.
@@ -234,6 +240,8 @@ PUT_BACK = 'The interrupted opening was rolled back. Preview Open on the desk ag
 RESTORE_RECORD = ('Nothing here changes it. Restore its saved record from your workspace history '
                   'to open it on the desk, or start new work from it.')
 UNREAD_WHY = 'unread'   # a record nobody can read: restoring it is the only way back
+NOTHING_TO_TAKE = ('This deck cannot be opened on the desk, so there is nothing to take it '
+                   'for: nothing continues it. Start new work from it instead.')
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
 # opened the same way.
@@ -600,6 +608,7 @@ class Engine(Jobs, Researching, DeskActions):
         if action == 'hand-over':
             self._hand(root, space)
             return self.view(root)
+        self._take_only_to_open(root)
         self._checks.pop(str(root), None)
         kept = self._take(root, space)
         self.wake(root)
@@ -676,6 +685,28 @@ class Engine(Jobs, Researching, DeskActions):
             gitstate.forget(space, lost.get('kept'))
             self._as_of.pop(('kept', str(root)), None)
             team.keep('taken', taken)
+
+    def _take_only_to_open(self, root: Path) -> None:
+        """A deck the earlier step-by-step flow saved is taken only to open it on the desk
+        (GitHub issue #542): one that opens there once taken, or a delivered one, is taken as
+        any deck is (`_take`); one that is read-only, or whose record cannot be read, is not.
+        Reads its files, as the person asked."""
+        from runner import desk_migration
+        from runner.desk_chat import _files
+        try:
+            record = self._load(root)
+        except WorkspaceError:
+            raise WorkspaceError(NOTHING_TO_TAKE) from None
+        if decks.on_desk(record):
+            return
+        try:
+            files = _files(root)
+            raw = json.loads(files['run.json'])
+        except (OSError, WorkspaceError, KeyError, ValueError):
+            raise WorkspaceError(NOTHING_TO_TAKE) from None
+        if desk_migration.outcome(raw if isinstance(raw, dict) else None,
+                                  files)['outcome'] != 'migrates':
+            raise WorkspaceError(NOTHING_TO_TAKE)
 
     def _hand(self, root: Path, space: gitstate.Workspace) -> None:
         run = self._run(root)
@@ -1122,6 +1153,10 @@ class Engine(Jobs, Researching, DeskActions):
                         with self.files:
                             gitstate.discard(space, root)
                     self._step_marker(root)
+                    if saved:
+                        # Nothing continues it, so no later step settles its other locks:
+                        # start-up does (fix round 3).
+                        self._unmark(root)
             except (WorkspaceError, OSError):
                 continue
             if not saved:
@@ -1134,10 +1169,33 @@ class Engine(Jobs, Researching, DeskActions):
         return bool(run and run.busy) or str(root) in self._active_steps
 
     def _unmark(self, root: Path) -> None:
-        """Remove the markers a stopped step left in a deck, as start-up recovery removes
-        them, and nothing else. Call it at start-up, holding the workspace."""
+        """Remove every marker and lock file a stopped step left in a deck that nothing
+        continues (one the earlier step-by-step flow saved, or one whose record cannot be
+        read), and nothing else: the step marker, the research lock, and each lock file the
+        shared running-step check counts for the deck (`sync_guard.worker_in_progress`). Call
+        it at start-up, holding the workspace, for a deck no step of this process runs."""
         research_cli.unlock(root)
         self._step_marker(root)
+        for name in SAVED_LOCKS:
+            self._unlock(root, root / name)
+        for cache in ('work', 'sources'):
+            top = root / cache
+            if top.is_symlink() or not top.is_dir():
+                continue
+            for folder, directories, _ in os.walk(top, followlinks=False):
+                here = Path(folder)
+                directories[:] = [name for name in directories if not (here / name).is_symlink()]
+                for name in NESTED_LOCKS:
+                    self._unlock(root, here / name)
+
+    @staticmethod
+    def _unlock(root: Path, lock: Path) -> None:
+        """Remove one lock file, never through a link."""
+        if any(part.is_symlink() for part in (lock, *lock.parents) if part != root
+               and root in part.parents):
+            return
+        if lock.is_file():
+            lock.unlink(missing_ok=True)
 
     def _pick_up(self, ours: list[Path]) -> None:
         try:
@@ -3879,6 +3937,10 @@ class Engine(Jobs, Researching, DeskActions):
         space = self.space()
         with self.files:
             record = self._load(root)
+            if not decks.on_desk(record) and decks.delivered(root) is None:
+                # Publishing is for a finished deck: a saved deck not delivered has the two
+                # ways on its record names (GitHub issue #542).
+                raise WorkspaceError(SAVED_FLOW_ENDED)
             who = team.driver(space, record)
             if who is not None and not who['here']:
                 raise Elsewhere(team.elsewhere(space, record))

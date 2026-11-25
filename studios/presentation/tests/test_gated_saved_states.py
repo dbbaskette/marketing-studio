@@ -458,11 +458,11 @@ class GatedSavedStateTests(runner_support.DeskCase):
     def test_records_the_runner_refuses_open_as_read_only_records(self):
         corrupt = self.load_saved('corrupt')
         unleveled = self.load_saved('unleveled')
-        # What the preview says of each: the record that cannot be parsed, its parser's
-        # words; the one with no review level, the shared running-step check's refusal
-        # naming its folder, as its own reason, the unsupported format, comes after it.
-        self.assertEqual(self.preview(corrupt)['blockers'],
-                         ['Expecting property name enclosed in double quotes: line 1 column 2 (char 1)'])
+        # What the preview says of each: the record that cannot be parsed, that in plain
+        # words (fix round 3: it was the parser's own words); the one with no review level,
+        # the shared running-step check's refusal naming its folder, as its own reason, the
+        # unsupported format, comes after it.
+        self.assertEqual(self.preview(corrupt)['blockers'], [desk_migration.UNREAD])
         self.assertEqual(self.preview(unleveled)['blockers'], [self.refused(unleveled)])
         self.assertEqual(desk_chat.prepare_migration(self.record(unleveled), self.snapshot(unleveled))['blockers'],
                          [UNSUPPORTED])
@@ -620,8 +620,7 @@ class ReadOnlyRecordPageTests(test_runner_page.PageCase):
                 status, reply, _ = self.answer('POST', '/api/' + endpoint, json.dumps(sent).encode(),
                                                origin=self.origin, kind='application/json')
                 self.assertGreaterEqual(status, 400, reply)
-                # Act and decide read the record and say why; in a workspace on this computer
-                # drive refuses before it, as there is nothing to take or hand over.
-                self.assertIn('folder on this computer' if endpoint == 'drive' else 'review level',
-                              reply['error'])
+                # Each reads the record and says why (the saved-deck gate refuses each with
+                # the runner's own reason: fix round 3).
+                self.assertIn('review level', reply['error'])
         self.assertEqual(self.on_disk(), before)

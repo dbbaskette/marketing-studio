@@ -700,14 +700,16 @@ class DeskRouteTests(PageCase):
         said = self.post('desk-skip', {'path': path, 'set': '../x', 'ids': ['p1']}, 400)
         self.assertIn('Choose a set of suggestions on this deck.', said['error'])
 
-    def test_a_desk_note_on_a_gated_deck_is_400_with_its_sentence(self):
+    def test_a_desk_note_on_a_gated_deck_is_refused_with_its_sentence(self):
+        # Fix round 3: the saved-deck gate refuses every desk route for a deck the earlier
+        # flow saved, 409 with the sentence that names its two ways on, before the route
+        # reads what it was sent (it was 400 with desk.NOT_ON_DESK).
+        from runner import saved_gate
         path = self.saved_started()
-        said = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
-                                       'expected': 'x'}, 400)
-        self.assertEqual(said['error'], desk.NOT_ON_DESK)
-        said = self.post('desk-note', {'path': path, 'number': 'three', 'note': 'Shorter.',
-                                       'expected': 'x'}, 400)
-        self.assertEqual(said['error'], 'Name the slide by its number.')
+        for number in (3, 'three'):
+            said = self.post('desk-note', {'path': path, 'number': number, 'note': 'Shorter.',
+                                           'expected': 'x'}, 409)
+            self.assertEqual(said['error'], saved_gate.FLOW_ENDED)
 
 
 class BuildFeedbackTests(PageCase):
