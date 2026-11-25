@@ -779,10 +779,3 @@ class DeskCopyTests(runner_support.StudioCase):
         self.assertEqual(self.log(), commits, 'nothing is committed')
         self.assertEqual(self.record(root)['drafts'].get('send') or [], [])
         self.assertEqual(self.copies.drive.docs, {})
-
-    def test_a_saved_run_s_copies_follow_its_approvals(self):
-        root = self.saved_start(levels=['101'], copies=['google'])
-        self.to_end(root)
-        self.assertEqual(self.docs(root), ['brief@101', 'document@101'])
-        with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.'):
-            self.engine.send_copy(root, 'brief@101')

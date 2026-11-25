@@ -113,12 +113,6 @@ class DeleteTests(Deleting, StudioCase):
         self.assertFalse(root.exists())
         self.assertRegex(self.log()[-1], DELETED.format(name='Alex'))
 
-    def test_a_training_waiting_at_a_gate_is_deleted(self):
-        root = self.saved_start()
-        self.assertEqual(self.state(root), 'waiting')
-        self.deleted(root)
-        self.assertFalse(root.exists())
-
     def test_a_finished_published_training_is_deleted_and_its_revisions_and_drive_files_stay(self):
         root = self.start(copies=['google'])
         self.to_end(root)
@@ -335,11 +329,6 @@ class Asking:
 class TeamDeleteTests(Deleting, Asking, TeamCase):
     """Two people sharing one workspace."""
 
-    def started(self, person=None, **changes) -> Path:
-        person = person or self.alex
-        with self.be(person):
-            return self.saved_start(engine=person.engine, **changes)
-
     def desk_started(self, person=None, **changes) -> Path:
         """A training started on the desk as one person, on their own engine."""
         person = person or self.alex
@@ -348,12 +337,6 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
 
     def fetch(self, person) -> dict:
         return self.as_(person, person.engine.fetch)
-
-    def finished(self) -> Path:
-        root = self.started()
-        with self.be(self.alex):
-            self.to_end(root)
-        return root
 
     def test_a_teammates_training_cannot_be_deleted_here(self):
         root = self.desk_started()
@@ -406,23 +389,6 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
             self.assertEqual(self.blake.engine.standing()['elsewhere'], [])
         self.assertEqual(self.ask(self.blake, 'trainings')['trainings'], [])
 
-    def test_a_finished_training_is_deleted_from_any_computer(self):
-        root = self.finished()
-        self.assertEqual(self.as_(self.alex, self.alex.engine.publish, root)['revision'], 1)
-        self.fetch(self.blake)
-        theirs = self.theirs(self.blake, root)
-        with self.be(self.blake):
-            leaving = self.blake.engine.leaving(theirs)
-            self.assertEqual((leaving['may'], leaving['revisions'], leaving['share']),
-                             (True, 1, 'decision'))
-            self.deleted(theirs, self.blake.engine)
-        self.assertRegex(self.shared()[0], DELETED.format(name='Blake'))
-        self.assertEqual(len(self.tags()), 1, 'the revision stays')
-        self.fetch(self.alex)
-        self.assertFalse(root.exists())
-        with self.be(self.alex):
-            self.assertEqual(self.alex.engine.published(), [])
-
     def test_with_sharing_only_when_asked_the_deletion_waits_for_share_now(self):
         with self.be(self.alex):
             gitstate.share_when('asked')
@@ -441,46 +407,6 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
         self.assertRegex(self.shared()[0], DELETED.format(name='Alex'))
         self.fetch(self.blake)
         self.assertFalse(self.theirs(self.blake, root).exists())
-
-    def test_a_teammate_who_took_it_first_keeps_their_work(self):
-        root = self.finished()
-        self.fetch(self.blake)
-        theirs = self.theirs(self.blake, root)
-        self.as_(self.blake, self.blake.engine.drive, theirs, 'take')
-        taken = self.shared()[0]
-        self.assertEqual(taken, 'Rolling restarts: Blake takes this training')
-        # Alex has not looked since, so this computer still has it finished and nobody's.
-        with self.be(self.alex):
-            self.assertEqual(self.alex.engine.leaving(root)['may'], True)
-            with self.assertRaisesRegex(WorkspaceError, 'Blake took this training on .*, '
-                                        'before your deletion of it was shared, so it was '
-                                        'not deleted'):
-                self.deleted(root)
-            view = self.alex.engine.view(root)
-            listed = [entry['path'] for entry in home.trainings()]
-        self.assertEqual(self.shared()[0], taken, 'nothing of theirs was deleted')
-        self.assertEqual((view['mine'], view['driver']['name']), (False, 'Blake'))
-        self.assertIn('before your deletion of it was shared, so it was not deleted',
-                      view['notice'])
-        self.assertIn(str(root), listed)
-        self.assertTrue((root / 'README.md').is_file())
-
-    def test_a_teammate_who_took_it_before_share_now_keeps_their_work(self):
-        with self.be(self.alex):
-            gitstate.share_when('asked')
-        root = self.finished()
-        self.as_(self.alex, self.alex.engine.share)
-        self.fetch(self.blake)
-        with self.be(self.alex):
-            self.deleted(root)
-        theirs = self.theirs(self.blake, root)
-        self.as_(self.blake, self.blake.engine.drive, theirs, 'take')
-        with self.be(self.alex):
-            self.alex.engine.share()
-            view = self.alex.engine.view(root)
-        self.assertEqual(self.shared()[0], 'Rolling restarts: Blake takes this training')
-        self.assertEqual((view['mine'], view['driver']['name']), (False, 'Blake'))
-        self.assertIn('so it was not deleted', view['notice'])
 
     def test_the_page_asks_what_would_go_and_deletes_with_every_rule_kept(self):
         made = page.RunnerPage(self.PORT, self.engine)

@@ -116,17 +116,6 @@ class ParallelNativeTests(StudioCase):
         self.assertIn('does not repeat investigation', problem['kept'])
         self.assertEqual(self.engine._load(root)['problem']['check_incomplete']['unread'], 2)
 
-    def test_saved_serial_run_does_not_acquire_parallel_protocol(self):
-        # Existing histories stay with their original transport even on the new engine.
-        from test_synthesis_integration import SynthesisIntegrationTests
-        serial = SynthesisIntegrationTests
-        self.workers.queued['research-result'] = [lambda tools, job: serial.author(self, tools, job),
-                                                 lambda tools, job: serial.checker(self, tools, job)]
-        root = self.saved_start(saved_contract=contract.snapshot(self.research))
-        self.to_gate(root, 'research')
-        self.assertNotIn('research_execution', self.engine._load(root))
-        self.assertEqual(len(self.workers.of('research-result')), 2)
-
     def test_stop_keeps_terminal_agent_observation_without_accepting_research(self):
         from unittest.mock import patch
         def stopping(root, task, invoke, sources, **options):

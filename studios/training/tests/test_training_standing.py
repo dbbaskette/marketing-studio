@@ -217,13 +217,6 @@ class StandingTests(DeckCase):
         self.assertEqual((item['state'], item['standing']), ('needs-you', told))
         self.assertFalse(self.workers.of('section'), 'nothing is drawn before the decision')
 
-    def test_a_saved_run_keeps_its_own_words(self):
-        root = self.saved_begin(levels=['101'])
-        self.to_end(root)
-        item = self.listed(root)[0]
-        self.assertNotIn('standing', item)
-        self.assertIsNone(drafts.standing(self.engine, root))
-
     def test_the_standing_is_plain_json(self):
         root = self.two_levels_with_a_major_finding()
         told = drafts.standing(self.engine, root)

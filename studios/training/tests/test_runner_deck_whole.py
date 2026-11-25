@@ -108,10 +108,6 @@ class WholeCase(DeckCase):
         self.assertTrue(outcome[0], outcome[1])
         return outcome[1]
 
-    def begin(self, **changes) -> Path:
-        return self.saved_start(**{'deck_target': 'pptx', 'brand': CHOSEN,
-                             'walkthrough': self.WALKTHROUGH, **changes})
-
     def desk_begin(self, **changes) -> Path:
         """The same deck begun on the desk, which passes its outline on by itself."""
         return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN,
@@ -124,53 +120,6 @@ class WholeCase(DeckCase):
 
 class WholeDeckTests(WholeCase):
     EARLIER = True
-
-    def test_a_deck_goes_from_the_handoff_to_approved_as_powerpoint(self):
-        root = self.begin()
-        view = self.to_outline(root)
-        self.assertEqual([slide['kind'] for slide in view['outline']['slides']], [
-            'cover', 'content', 'content', 'section', 'content', 'content', 'closing'])
-        self.assertTrue(self.asked('outline check'), 'the tool itself checked the outline')
-        view = self.engine.outline(root, None, 'approve', seen=view['outline']['sha256'])
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
-        self.assertEqual(sorted(self.kinds()[-3:]), ['review', 'section', 'section'])
-        saved, last = (root / 'deck.pptx').read_bytes(), self.built(root)['rounds'][-1]
-        self.assertEqual(saved[:4], workspace.PPTX_SIGNATURE)
-        self.assertEqual(saved, (root / 'work' / 'deck' / last['file']).read_bytes(),
-                         'the deck that is saved is the deck that was previewed')
-        self.assertEqual(workspace.sha256_file(root / 'deck.pptx'), last['deck'])
-        self.assertEqual(self.asked('compose render'), [],
-                         'a fresh render would be another file than the one reviewed')
-        self.assertEqual(len(self.asked('compose critique')), 1)
-        self.assertEqual(len(self.tool.files), 1, 'one preview file in Drive for the deck')
-        # The one call with `--section` is the question whether the tool checks a section,
-        # asked of a file that is not there, since this tool lists no capabilities.
-        self.assertEqual([call for call in self.asked('compose compile')
-                          + self.asked('compose preview') if {'--design-project', '--section',
-                                                              '--json'} & set(call)
-                          and Path(call[3]).name != 'none.json'], [],
-                         'a deck without a design is built as 0.13.1 builds it')
-        shown = self.gate(root)
-        self.assertEqual([(slide['number'], slide['id']) for slide in shown['slides']],
-                         list(enumerate((slide['id'] for slide in PARTED['slides']), 1)))
-        self.assertEqual(shown['review'], {'round': 1, 'findings': []})
-        self.assertEqual(shown['audit']['status'], 'warnings')
-        self.assertTrue(all(warning['code'] and warning['count'] and warning['says']
-                            for warning in shown['audit']['warnings']), shown['audit'])
-        objectives = list(pipeline.checks.parse_blueprint(BLUEPRINT)['objectives'])
-        self.assertEqual([(row['objective'], row['cited']) for row in shown['coverage']],
-                         [('O1', [2, 6]), ('O2', [3, 6]), ('O3', [5, 6])],
-                         "the tool's own mark on a lead slide is no objective")
-        self.assertEqual([row['objective'] for row in shown['coverage']], objectives)
-        for number in range(1, 8):
-            self.assertEqual(self.engine.picture(root, number, artifact='deck')[:8],
-                             worker_tools.PNG)
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
-        view = self.view(root)
-        self.assertEqual((view['state'], view['finished']['ready'], view['outline'],
-                          view['deck']), ('done', True, None, None))
-        self.assertEqual(workspace.status(root)['artifacts']['deck'], 'approved')
 
     def test_a_deck_for_google_slides_is_the_previewed_deck_imported(self):
         self.workers.outline_said = OUTLINE     # one section, so one composer
@@ -195,23 +144,6 @@ class WholeDeckTests(WholeCase):
         self.assertEqual([entry['name'] for entry in self.engine.previews_left()],
                          ['Preview: Rolling restarts'])
 
-    def test_a_major_finding_about_drawing_has_its_section_drawn_again(self):
-        self.workers.found = [[MAJOR, SMALL]]
-        root = self.begin()
-        view = self.drawn(root)
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
-        self.assertEqual(self.kinds()[-6:], ['outline', 'section', 'section', 'review',
-                                             'section', 'review'])
-        spec = [spec for kind, _, spec in self.workers.jobs if kind == 'section'][-1]
-        self.assertEqual(spec['artifacts']['section']['prefix'], 's1_')
-        self.assertEqual([slide['number'] for slide in spec['look']], [2, 3])
-        self.assertEqual(len(self.asked('compose critique')), 2,
-                         'each render takes its own assessment')
-        self.assertEqual(len(self.tool.files), 1, 'and the deck still has one preview file')
-        self.assertEqual(self.gate(root)['review'], {'round': 2, 'findings': []})
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
-
     def test_with_levels_and_previews_on_this_computer_nothing_goes_to_drive(self):
         self.tool.local = True
         self.set_previews('local')
@@ -227,69 +159,6 @@ class WholeDeckTests(WholeCase):
         from runner import settings
         settings.save(replace(settings.load(), previews=how))
         self.engine.deck_needs(fresh=True)
-
-
-class DesignedDeckTests(WholeCase):
-    """The same deck through a slides tool with a design session: the outline's writer
-    proposes how each slide is drawn, the tool keeps the proposal, and the person's one
-    decision on the page is the tool's answer. That tool is a build before 0.14.0, without
-    the asset manifest or the review against the design."""
-    WALKTHROUGH = True   # its decks walk through each slide's design
-    EARLIER = True
-
-    def setUp(self):
-        super().setUp()
-        self.slides, self.brand = self.stand_ins(design=True)
-        self.tool, self.skill = self.slides.run, self.brand.run
-        self.engine.deck_needs(fresh=True)
-
-    def test_a_deck_with_its_design_goes_from_the_handoff_to_approved(self):
-        root = self.begin()
-        view = self.to_outline(root)
-        shown = view['outline']
-        self.assertEqual([slide['design']['family'] for slide in shown['slides']], [
-            'text', 'diagram', 'diagram', 'text', 'diagram', 'diagram', 'text'])
-        self.assertEqual(shown['design']['asked'], [slide['id'] for slide in PARTED['slides']])
-        checked = [call for call in self.asked('design propose') if '--expected' not in call]
-        self.assertGreaterEqual(len(checked), 3, 'probed, checked by the worker, proposed')
-        self.assertEqual(self.asked('design respond'), [])
-        status = json.loads(self.tool(['node', 'script', 'design', 'status', '--project',
-                                       str(root / pipeline.DESIGNS)])[1])
-        self.assertEqual((status['mode'], status['buildAllowed'], status['revision']),
-                         ('batch', False, shown['design']['revision']))
-        view = self.engine.outline(root, None, 'approve', seen=shown['sha256'],
-                                   design=shown['design']['revision'])
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
-        responded = self.asked('design respond')
-        self.assertEqual(len(responded), 1)
-        self.assertEqual(len(self.asked('design check')), 1)
-        session = json.loads((root / pipeline.DESIGNS / '.harness-slides' / 'design' /
-                              'session.json').read_text())
-        self.assertEqual({approval['response'] for approval in session['approvals'].values()},
-                         {'Approve the whole plan'})
-        self.assertEqual(len(session['approvals']), len(PARTED['slides']))
-        for job in self.base.glob('data/**/drafts/design-*'):
-            self.fail(f'a worker check left its project behind: {job}')
-        # Each composer copied its intents from its brief, in an order of its own, and every
-        # check and preview of a section was made against the design as that section; the
-        # whole deck was compiled and previewed against it as the deck.
-        project = str(root / pipeline.DESIGNS)
-        built = self.asked('compose compile') + self.asked('compose preview')
-        sections = [call for call in built if '--design-project' in call and '--section' in call]
-        self.assertTrue(sections)
-        for call in sections:
-            self.assertEqual(call[call.index('--design-project') + 1:][:3],
-                             [project, '--section', '--json'])
-        whole = [call for call in built if '--design-project' in call and '--section' not in call]
-        self.assertEqual([call[1] for call in whole], ['compile', 'preview'])
-        unbound = [call for call in built if '--design-project' not in call]
-        self.assertEqual([call[-2:] for call in unbound], [['--section', '--json']],
-                         'only the question whether it can, asked once')
-        for prefix, read in self.composers.read.items():
-            self.assertIn('## The approved design', read['brief'])
-            self.assertIn('## Icons across the deck', read['brief'])
-        self.assertEqual(self.to_end(root), ['deck', 'scenario:main'])
 
 
 class AssetDeckTests(WholeCase):
@@ -397,61 +266,6 @@ class JudgedDeckTests(WholeCase):
         reviewer = [spec for kind, _, spec in self.workers.jobs if kind == 'review'][-1]
         self.assertTrue(reviewer['review']['judged']['packets'])
         self.assertEqual(self.to_end(root), [])
-
-
-class CurrentDeckTests(WholeCase):
-    """The same deck through Harness Slides 0.14.1, as the stand-in plays it: the design names
-    its icon by its ID in the brand's library, which is checked when it is proposed and
-    recorded with no search; the tool says itself what the approved design still wants; the
-    review's packets come in one call and its assessment takes each slide's sources; and the
-    deck is put to the person with its review, whose approval at gate 6 is sent to it."""
-    WALKTHROUGH = True   # its decks walk through each slide's design
-
-    def setUp(self):
-        super().setUp()
-        self.slides, self.brand = self.stand_ins(current=True)
-        self.tool, self.skill = self.slides.run, self.brand.run
-        self.engine.deck_needs(fresh=True)
-        design = runner_support.designed(PARTED)
-        design['slides'][1]['asset']['candidates'][0].update(ref='ex-database',
-                                                             refType='library-id')
-        self.workers.design_said = design
-
-    def test_a_deck_is_drawn_reviewed_and_approved_as_0_14_1_takes_it(self):
-        root = self.begin()
-        shown = self.to_outline(root)['outline']
-        self.assertEqual(self.engine.deck_needs()['lacks'], [])
-        view = self.engine.outline(root, None, 'approve', seen=shown['sha256'],
-                                   design=shown['design']['revision'])
-        self.assertEqual((view['state'], workspace.status(root)['gate']), ('waiting', 'deck'),
-                         view.get('problem'))
-        project, contract = str(root / pipeline.DESIGNS), str(pipeline.contract(
-            root, self.engine._survey(root, self.record(root)).decks[None]))
-        proposed = [call for call in self.asked('design propose') if project in call]
-        self.assertEqual(proposed[-1][-2:], ['--brand', contract])
-        self.assertIn(['assets', 'icon', 'ex-database', '--project', project, '--id',
-                       'icon_instance'], [call[:7] for call in self.asked('assets icon')])
-        self.assertNotIn('ex-database', [call[call.index('--query') + 1] for call
-                                         in self.skill.calls if call[:1] == ['icons']])
-        self.assertTrue(all('--design-project' in call for call in self.asked('assets check')))
-        reviewed = [call for call in self.tool.calls if call[:1] == ['review']]
-        self.assertEqual((sum('--packets' in call for call in reviewed),
-                          sum('--slide' in call for call in reviewed)), (1, 1),
-                         'every packet in one call; one more to check the receipts')
-        last = self.built(root)['rounds'][-1]
-        review = root / 'work' / 'deck' / last['preview']
-        record = json.loads((review / 'review.json').read_text())
-        self.assertEqual(record['creativeAssessment']['slides'][1]['checks'][0]['sources'],
-                         ['O1'], 'taken from the slide by the tool')
-        [present] = self.asked('design present')
-        self.assertEqual(present[-2:], ['--accept-findings', '--json'])
-        self.assertEqual(len(self.asked('design respond')), 1, 'the outline, and no more yet')
-        self.decide(root, 'deck')
-        self.assertEqual(len(self.asked('design respond')), 2)
-        status = json.loads(self.tool(['node', 'script', 'design', 'status', '--project',
-                                       project])[1])
-        self.assertEqual((status['renderedAcceptance'], status['question']), (True, None))
-        self.assertEqual(self.to_end(root), ['scenario:main'])
 
 
 class TroubleTests(WholeCase):

@@ -103,11 +103,6 @@ class RefusalTests(ModelsCase):
         finally:
             run.busy = False
 
-    def test_a_training_started_before_change_settings_may_still_use_them(self):
-        root = self.older(self.saved_start())
-        self.assertFalse(self.view(root)['settings']['may'])
-        self.assertTrue(model_settings.preview(self.engine, root)['changes'])
-
 
 class RouteTests(ModelsCase, PageCase):
     def test_the_preview_and_its_save_through_the_page(self):

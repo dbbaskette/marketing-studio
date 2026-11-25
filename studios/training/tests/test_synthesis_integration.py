@@ -108,29 +108,6 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(len(self.workers.of('research-result')), 2)
 
-    def test_research_change_request_gets_a_new_review_and_returns_to_gate(self):
-        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
-        self.to_gate(root, 'research')
-        before = research_contract.read_bundle(root / 'research')[1]['digest']
-        self.workers.then('research-result', self.author, self.checker)
-        self.decide(root, 'research', 'revise', 'Explain the limits more clearly.')
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
-        after = research_contract.read_bundle(root / 'research')[1]['digest']
-        self.assertNotEqual(before, after)
-        self.assertEqual(len(self.workers.of('research-result')), 4)
-
-    def test_explicit_conversation_import_uses_typed_findings(self):
-        import workspace
-        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
-        self.to_gate(root, 'research')
-        session = workspace.load(root)
-        session['settings']['approval'] = 'chat'
-        workspace.store(root, session)
-        with mock.patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': RUNTIME}):
-            imported = workspace.import_research(root, root / research_contract.CASE)
-        self.assertEqual(imported['status'], 'ready-for-review')
-        self.assertEqual(workspace.research_record(root)['schema'], 2)
-
     def test_stopping_a_research_worker_keeps_the_draft_without_a_failure(self):
         from runner.agents import Outcome
         self.workers.queued['research-result'] = [lambda tools, job: Outcome(False, 'stopped', 'Stopped')]
@@ -140,30 +117,6 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertFalse((root / 'research/output.json').exists())
         entry = self.engine._load(root)['steps']['research:author-1']
         self.assertIn('stopped', str(entry))
-
-    def test_unfinished_research_continues_with_the_installed_helper_after_an_update(self):
-        # Research started on one version goes on with the version an update installs, the
-        # folder it started from removed, and its saved work kept.
-        holder = tempfile.TemporaryDirectory()
-        self.addCleanup(holder.cleanup)
-        shared, old = updated_helper(Path(holder.name).resolve())
-        isolated = mock.patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': str(shared / 'current')})
-        isolated.start()
-        self.addCleanup(isolated.stop)
-        self.research = research.Research(shared / 'current')
-        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
-        self.to_gate(root, 'research')
-        before = research_contract.read_bundle(root / 'research')[1]['digest']
-        update(shared)
-        self.assertFalse(old.exists())
-        self.workers.then('research-result', self.author, self.checker)
-        self.decide(root, 'research', 'revise', 'Explain the limits more clearly.')
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
-        self.assertNotEqual(research_contract.read_bundle(root / 'research')[1]['digest'], before)
-        self.assertEqual(self.engine._load(root)['research_contract']['version'], '9.9.9')
-        self.workers.then('research-result', self.author, self.checker)
-        self.decide(root, 'research', 'revise', 'Explain the limits again.')
-        self.assertIsNone(self.view(root)['problem'], self.view(root))
 
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for the real helper integration.')

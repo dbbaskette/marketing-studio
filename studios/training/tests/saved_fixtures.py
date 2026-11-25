@@ -3,10 +3,11 @@
 Each folder under `fixtures/saved/<state>/` is one training exactly as the earlier gated
 ("saved") flow left it on disk at one stop: its session and run records, its materials,
 reviews, history and research, byte for byte. They were captured by running that flow with
-the suite's scripted workers (`test_saved_fixtures.py`, which also proves, while the flow
-still exists, that each stored tree is what the flow writes today). Tests of the explicit
-migration, of saved states and of the finished Open on the desk load them with `load` instead
-of running the saved flow, so those tests keep working once the flow is removed.
+the suite's scripted workers while it existed; it went with phase C, and
+`test_saved_fixtures.py` checks each stored tree against itself. Tests of the explicit
+migration, of saved states and of the finished Open on the desk load them with `load`.
+`finished-later-document.documents.json` beside them is what the documents stand-in held for
+that training (the stand-in keeps its documents in memory).
 
     root = saved_fixtures.load(case, 'blueprint-gate')
 

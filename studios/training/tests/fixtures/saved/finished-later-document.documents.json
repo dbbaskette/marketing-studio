@@ -1,0 +1,26 @@
+[
+  {
+    "name": "first.txt",
+    "bytes": 60,
+    "readable": true,
+    "problem": null,
+    "id": "first",
+    "title": "first",
+    "file": "sources/supplied/first.text",
+    "original": "sources/supplied/first.txt",
+    "distinct": false,
+    "sha256": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+  },
+  {
+    "name": "later.txt",
+    "bytes": 60,
+    "readable": true,
+    "problem": null,
+    "id": "later",
+    "title": "later",
+    "file": "sources/supplied/later.text",
+    "original": "sources/supplied/later.txt",
+    "distinct": false,
+    "sha256": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+  }
+]

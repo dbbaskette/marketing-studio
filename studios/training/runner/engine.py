@@ -724,15 +724,8 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True, section_synthesis=True,
-                 saved_flow=False):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True, outline_first=True, section_synthesis=True):
         self.adapters = dict(adapters or agents.AGENTS)
-        # The earlier step-by-step flow no longer continues saved work: a training it saved
-        # opens on its saved record (`saved_record`). Only the root suite's shared deck
-        # contract between Training Studio and Presentation Studio (tests/deck_contract.py)
-        # still takes a deck through that flow's review levels, and the suite's tests of
-        # that flow with it; `saved_flow` is theirs alone, and no runner sets it.
-        self.saved_flow = saved_flow
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
         self._asked: float | None = None    # when a page last asked anything
@@ -1872,7 +1865,7 @@ class Engine(Reviewing):
                 record = self._load(root)
                 if run.gone or not self._ours(record) or drafts.in_conversation(record):
                     return  # someone else drives it, or nobody does
-                if not drafts.on_desk(record) and not self.saved_flow:
+                if not drafts.on_desk(record):
                     return  # the earlier step-by-step flow no longer continues
                 pending = next((job for job in (record.get('drafts') or {}).get('jobs', [])
                                 if job.get('status') == 'queued'), None)
@@ -7916,7 +7909,7 @@ class Engine(Reviewing):
         if (root / drafts.RECORD).is_symlink():
             return None
         kind = desk_migration.record_kind(root)
-        return None if kind == 'desk' or (kind == 'saved' and self.saved_flow) else kind
+        return None if kind == 'desk' else kind
 
     def _refusal(self, root: Path) -> str | None:
         """The runner's own refusal of a training's records, or None when it reads them."""

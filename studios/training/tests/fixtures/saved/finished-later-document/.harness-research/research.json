@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "owner": "harness-research",
+  "run": "8395642a040c5afa0e534133",
+  "topic": "Rolling restarts",
+  "purpose": "planning",
+  "scope": "supplied-only",
+  "input_files": [
+    "sources/supplied/first.text",
+    "sources/supplied/first.txt"
+  ],
+  "items": [
+    {
+      "id": "availability",
+      "question": "When does a rolling restart keep capacity?",
+      "public_query": null,
+      "claim": null
+    },
+    {
+      "id": "instance-min",
+      "question": "How many instances keep capacity during a restart?",
+      "public_query": null,
+      "claim": null
+    },
+    {
+      "id": "health-checks",
+      "question": "What starts the next batch?",
+      "public_query": null,
+      "claim": null
+    },
+    {
+      "id": "zero-downtime",
+      "question": "Do rolling restarts guarantee zero downtime?",
+      "public_query": null,
+      "claim": null
+    }
+  ],
+  "sources": [
+    {
+      "file": "sources/supplied/first.text",
+      "id": "first",
+      "limits": "none",
+      "original_file": "sources/supplied/first.txt",
+      "title": "first"
+    }
+  ],
+  "inputs": {
+    "sources/supplied/first.text": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4",
+    "sources/supplied/first.txt": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+  },
+  "results": {
+    "availability": {
+      "status": "supported",
+      "summary": "What the page says about availability.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/supplied/first.text",
+          "locator": "characters 0 to 59",
+          "origin": "Supplied: first.txt",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "source_id": "first",
+          "start": 0,
+          "title": "first",
+          "sha256": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+        }
+      ],
+      "checked_at": "2026-11-25T01:27:51.000Z"
+    },
+    "instance-min": {
+      "status": "supported",
+      "summary": "What the page says about instance-min.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/supplied/first.text",
+          "locator": "characters 0 to 59",
+          "origin": "Supplied: first.txt",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "source_id": "first",
+          "start": 0,
+          "title": "first",
+          "sha256": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+        }
+      ],
+      "checked_at": "2026-11-25T01:27:51.000Z"
+    },
+    "health-checks": {
+      "status": "supported",
+      "summary": "What the page says about health-checks.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/supplied/first.text",
+          "locator": "characters 0 to 59",
+          "origin": "Supplied: first.txt",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "source_id": "first",
+          "start": 0,
+          "title": "first",
+          "sha256": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+        }
+      ],
+      "checked_at": "2026-11-25T01:27:51.000Z"
+    },
+    "zero-downtime": {
+      "status": "contradicted",
+      "summary": "What the page says about zero-downtime.",
+      "limits": "none",
+      "evidence": [
+        {
+          "file": "sources/supplied/first.text",
+          "locator": "characters 0 to 59",
+          "origin": "Supplied: first.txt",
+          "quote": "Capacity holds only when more than one instance is running.",
+          "source_id": "first",
+          "start": 0,
+          "title": "first",
+          "sha256": "a1f23084694cea40aa02e62f94f60b5c4fb44449df617c861491034c52c79aa4"
+        }
+      ],
+      "checked_at": "2026-11-25T01:27:51.000Z"
+    }
+  },
+  "created_at": "2026-11-25T01:27:51.000Z"
+}
