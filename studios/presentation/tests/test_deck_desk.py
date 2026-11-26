@@ -1393,3 +1393,31 @@ def cards_of(shown: dict) -> list:
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OpenOnDeskTeamTests(DeskCase, runner_support.TeamCase):
+    """Review of #549: in a team workspace, a deck this computer delivered the gated way is
+    taken back, then opened on the desk, as a change to a delivered desk deck is."""
+
+    def test_a_deck_delivered_here_is_taken_back_and_opened(self):
+        from runner import decks, team
+        with self.be(self.alex):
+            root = self.load_saved('delivered', title='Delivered earlier')
+            record = decks.read_run(root)
+            record.pop('driver', None)
+            record['delivered_by'] = team.computer()
+            record['steps'].setdefault('deliver', {})['done'] = True
+            decks.write_run(root, record)
+            self.git('add', '-A', repo=self.space.repo)
+            self.git('commit', '-qm', 'Delivered here, driven by nobody', repo=self.space.repo)
+            self.engine.share()
+            self.assertTrue(self.engine._delivered_here(self.engine._load(root)))
+            shown = self.engine.open_on_desk(root)
+        self.assertEqual((shown['mine'], (shown['driver'] or {}).get('name')), (True, 'Alex'))
+        self.assertTrue(shown['desk']['arrived'])
+        self.assertTrue(decks.on_desk(decks.read_run(root)))
+        # A teammate still takes it first.
+        self.as_(self.blake, self.blake.engine.fetch)
+        with self.be(self.blake):
+            with self.assertRaises(self.engines.Elsewhere):
+                self.blake.engine.open_on_desk(self.theirs(self.blake, root))

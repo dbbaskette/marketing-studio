@@ -1151,8 +1151,18 @@ class DeskActions:
         of it. The gates it passed stay as they were and deliver.json is left as it is: the
         revision delivered stays delivered until a change is made, and the first change makes
         the next revision, as any desk change to a delivered deck does. One version of each
-        slide's words is kept first. A deck on the desk already is returned as it is."""
-        root = self._held(path)
+        slide's words is kept first. A deck on the desk already is returned as it is. As in
+        `_desk_change`, nobody drives a deck delivered here, so it is not refused for that:
+        it is taken back below, once it is known to open (GitHub issue #549)."""
+        from runner.engine import Elsewhere
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('There is no deck there.')
+        try:
+            self.hold(root)
+        except Elsewhere:
+            if not self._delivered_here(self._load(root)):
+                raise
         if decks.on_desk(self._load(root)):
             return self.view(root)
         space = self.space()
