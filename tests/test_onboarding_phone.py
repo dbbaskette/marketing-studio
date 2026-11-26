@@ -262,6 +262,14 @@ class OnboardingPhoneTests(BrandFolders):
                                      brand_catalog.REMOTE_SKILL)
             choices.assert_not_called()
 
+    def test_the_products_own_advice_reaches_a_phone_as_it_is(self):
+        # Second review, item 6: a fixed sentence that says "~/" names no folder here.
+        for changes, said in (({'local': {'root': ' /x'}}, 'Choose an absolute work folder, or one beginning with ~/.'),
+                              ({'brand': {'skill': 'relative'}}, 'Use Git repository for a brand skill URL. Installed '
+                               'skill folder needs an absolute path or one beginning with ~/.')):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.save(changes), (409, {'error': said}))
+
     def test_an_outdated_form_from_a_phone_is_refused_as_from_the_computer(self):
         # Second review, item 4: the outdated-form check answers first, with its fields.
         first, second = str(self.root / 'first'), str(self.root / 'second')

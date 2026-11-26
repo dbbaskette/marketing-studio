@@ -181,8 +181,10 @@ def bring(address) -> dict:
 
 REMOTE_UNGOT = ('The brands could not be got. See why on the computer Marketing Studio runs on, '
                 'where the brands folder is.')
-# An absolute or home folder written in a sentence: at its start, or after a space or a quote.
-_A_FOLDER = re.compile(r'''(?:^|[\s'"(`=])(?:/|~/)[^\s'"`)]*''')
+# An absolute or home folder written in a sentence: at its start, or after a space or a quote,
+# and naming something. "~/." in "one beginning with ~/." names no folder: the product's own
+# advice is said as it is.
+_A_FOLDER = re.compile(r'''(?:^|[\s'"(`=])(?:/|~/)(?=[^\s'"`)]*\w)[^\s'"`)]*''')
 
 
 def names_a_folder(text) -> bool:

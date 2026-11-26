@@ -352,6 +352,18 @@ class HomePhoneTests(BrandFolders):
                     self.assertEqual(self.ask('/api/brands', {'skill': other})[1]['problem'], brand_catalog.REMOTE_SKILL)
             choices.assert_not_called()
 
+    def test_the_products_own_advice_reaches_a_phone_as_it_is(self):
+        # Second review, item 6: a fixed sentence that says "~/" names no folder here.
+        for changes, said in (({'local': {'root': ' /x'}}, 'Choose an absolute work folder, or one beginning with ~/.'),
+                              ({'brand': {'skill': 'relative'}}, 'Use Git repository for a brand skill URL. Installed '
+                               'skill folder needs an absolute path or one beginning with ~/.')):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.save(changes), (409, {'error': said}))
+        for text in ('/x', '~/brands', "No folder at '/srv/brands'.", 'Read from /x/y.'):
+            self.assertTrue(brand_data.names_a_folder(text), text)
+        for text in ('one beginning with ~/.', 'https://example.com/a', 'and/or', 'a / b'):
+            self.assertFalse(brand_data.names_a_folder(text), text)
+
     def test_an_outdated_form_from_a_phone_is_refused_as_from_the_computer(self):
         # Second review, item 4: the outdated-form check answers first, with its fields.
         first, second = str(self.root / 'first'), str(self.root / 'second')
