@@ -901,15 +901,17 @@ class RunnerPage(desk.Page):
         return [self.listed(item) for item in super().trainings()]
 
     def detail(self, path: str) -> dict:
-        return self.listed(super().detail(path))
+        return self.listed(super().detail(path), opened=True)
 
-    def listed(self, item: dict) -> dict:
+    def listed(self, item: dict, opened: bool = False) -> dict:
         """`with_run`, for one training of a list: no single training, whatever its records
         hold, takes the list down. One that cannot be read is listed as its own row, with
         the runner's refusal as its sentence."""
         try:
             if 'error' in item and self.engine.conversation_unread(item['path']):
                 return self.with_unread(item)
+            if 'error' in item and workspace.made_in_conversation(Path(item['path'])):
+                return self.with_unread_file(item, opened)
             if item.get('saved') == 'conversation' and 'error' not in item:
                 return self.with_conversation(self.with_run(item))
             return self.with_run(item)
@@ -937,6 +939,37 @@ class RunnerPage(desk.Page):
                                   'retained': [], 'targets': []})
         return item
 
+    @staticmethod
+    def saved_artifacts(path) -> dict:
+        """Each artifact of a saved training and its status, read from its files; none when its
+        record cannot be read, which then says nothing was saved."""
+        root = Path(path)
+        try:
+            return workspace.statuses(root, workspace.load(root))
+        except (WorkspaceError, OSError, ValueError):
+            return {}
+
+    def with_unread_file(self, item: dict, opened: bool) -> dict:
+        """A training a conversation made whose session record reads but one of its files or
+        folders does not, so the helper's own reading of it failed: Bring in would fail on
+        that file, so it is said as Bring in says it (`Engine.bring_refusal`), a read-only
+        record with a new training as its way on. Any other failure stays as it was said."""
+        refusal = self.engine.bring_refusal(item['path'])
+        if not refusal:
+            return item
+        item.pop('error', None)
+        item.update(state='saved', saved='conversation', waiting=None,
+                    sentence=engines.CONVERSATION_KEPT if opened else desk.CONVERSATION_BRIEF)
+        if opened:
+            where = self.engine.where(item['path'])
+            item['saved_record'] = {**desk.conversation_record(Path(item['path'])),
+                                    'outcome': 'read-only', 'why': refusal, 'next': 'new',
+                                    'elsewhere': None, 'where': where,
+                                    'outside': where == 'outside'}
+            if caller.remote():
+                item['saved_record'].update(next=None, elsewhere=engines.KEPT_ON_COMPUTER)
+        return item
+
     def with_conversation(self, item: dict) -> dict:
         """A training a conversation made, as the runner says it (GitHub issue #547): its one
         action is Bring it in only where Bring in would take it, decided by the same checks
@@ -947,15 +980,18 @@ class RunnerPage(desk.Page):
         record = item.get('saved_record')
         if record is None:   # a list's row: its sentence and stages are the helper's own
             return item
-        if caller.remote():
-            record.update(next=None, elsewhere=engines.BRING_ON_COMPUTER)
-            return item
         where = self.engine.where(item['path'])
         record.update(where=where, outside=where == 'outside')
         refusal = self.engine.bring_refusal(item['path'])
         if refusal:
             item['sentence'] = engines.CONVERSATION_KEPT
             record.update(outcome='read-only', why=refusal, next='new', elsewhere=None)
+        # On a phone nothing is offered that is done on the computer: one Bring in would
+        # take says that bringing it in is done there; one it would not says why, and that
+        # anything more is done there too.
+        if caller.remote():
+            record.update(next=None, elsewhere=engines.KEPT_ON_COMPUTER if refusal
+                          else engines.BRING_ON_COMPUTER)
         return item
 
     def with_run(self, item: dict) -> dict:
@@ -970,12 +1006,11 @@ class RunnerPage(desk.Page):
             item.update(driver=found['driver'], mine=found['mine'], notice=None,
                         last_shared=None, state='saved', sentence=found['sentence'],
                         waiting=None)
-            # Nothing of it is waiting for the person or being worked on: its stages say
-            # only what is done.
-            item['stages'] = [{**stage, 'state': 'not-started',
-                               'words': desk.STAGE_STATES['not-started']}
-                              if stage.get('state') in ('current', 'review') else stage
-                              for stage in item.get('stages') or ()]
+            # Nothing of it is waiting for the person or being worked on: a stage it was at
+            # says what it saved, waiting for a review that no longer happens here, or that
+            # it was not started.
+            item['stages'] = desk.kept_stages(item.get('stages'),
+                                              self.saved_artifacts(item['path']))
             return item
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),

@@ -184,7 +184,13 @@ class SavedGuardTests(StudioCase):
                     self.assertEqual(said, write_guard.SAVED_CONVERSATION
                                      if argv[0] == 'google' else training.ENDED)
                     self.assertEqual(self.folder(top), before)
-        # ENDED is one plain sentence, said only for a training a conversation made.
+        # ENDED is one plain sentence, said only for a training a conversation made. Not every
+        # such training can be brought in, so it points to its record, which says what can be
+        # done, and never promises Bring in.
+        for said in (training.ENDED, write_guard.SAVED_CONVERSATION, workspace.CONVERSATION_NEXT):
+            self.assertNotIn('Bring it in', said)
+            self.assertNotIn('bring it in', said)
+            self.assertIn('record on the Training Studio page', said)
         self.assertEqual(training.ENDED.count('. '), 0)
         self.assertTrue(training.ENDED.endswith('.'))
 

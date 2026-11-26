@@ -39,6 +39,6 @@ Keep it to what someone can scan before a meeting. Detail that teaches belongs i
 
 ## On the desk
 
-Read `studio desk context --folder PATH --target brief` (`brief@<level>` with levels) and follow its requirements. Submit it as kind `text` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. Say where the brief is weakest. Marking it ready makes no copies; the workspace reference says how copies are kept, and which one a Yoodli user uploads. It is Ready only when the person marks it so, as the completion reference describes.
+Read `studio desk context --folder PATH --target brief` (`brief@<level>` with levels) and follow its requirements. Submit it as kind `text` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. Say where the brief is weakest. Marking it ready makes no copies, and no checked operation in a conversation makes them; the workspace reference says how a training the runner runs keeps them, and which one a Yoodli user uploads. It is Ready only when the person marks it so, as the completion reference describes.
 
 A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.

@@ -28,7 +28,7 @@ For each, present the scenario and its Yoodli file together:
 - whether the brief's Google Doc or export is `current`, since it is the file the user uploads,
 - your judgment of whether the context and goals agree with the brief.
 
-Each is Ready only when the person marks it so, as the completion reference describes. Marking it ready makes no copies; the workspace reference says how copies are kept.
+Each is Ready only when the person marks it so, as the completion reference describes. Marking it ready makes no copies, and no checked operation in a conversation makes them; the workspace reference says how a training the runner runs keeps them.
 
 A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.
 

@@ -86,8 +86,10 @@ def plugins() -> list:
 # way (DESK_WAY), and everywhere else they change nothing.
 DESK_COMMANDS = ('save', 'checkpoint', 'export')
 ENDED_COMMANDS = ('approve', 'skip', 'research-import', 'pin')
+# Not every such training can be brought in (a folder in the workspace's repository, a file
+# that cannot be read, a name already taken): its record on the page says what can be done.
 ENDED = ('Training Studio no longer continues a training made in a conversation with this '
-         'helper: bring it in on the Training Studio page, or start a new training.')
+         'helper: its record on the Training Studio page says what can be done with it.')
 DESK_WAY = {
     'approve': ('On the desk a material is approved by marking it ready: Mark ready on the '
                 'page, or `studio desk ready` in a conversation once the person says so.'),

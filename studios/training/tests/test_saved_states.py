@@ -13,6 +13,7 @@ import shutil
 import helpers
 import saved_fixtures
 from runner_support import StudioCase
+import desk
 import home
 import workspace
 from runner import desk_chat, desk_migration, engine as engines, gitstate, page
@@ -689,6 +690,23 @@ class CarriedOverTests(SavedStopTests):
                 self.assertIn(said, listing[str(root)]['sentence'])
 
 
+class SavedStageTests(SavedStopTests):
+    """GitHub issue #547: a saved record's row of stages says what is true of the work it
+    saved: a teaching plan saved and waiting for review is neither "not started" nor in
+    progress, but saved, waiting for a review that no longer happens here."""
+
+    def test_a_saved_stage_says_it_was_saved_and_is_not_reviewed_here(self):
+        root = saved_fixtures.load(self, 'blueprint-gate')
+        self.assertTrue((root / 'blueprint.md').is_file())
+        native = page.RunnerPage(8765, self.engine)
+        listed = {item['path']: item for item in native.trainings()}[str(root)]
+        for stages in (listed['stages'], native.detail(str(root))['stages']):
+            said = {stage['name']: (stage['state'], stage['words']) for stage in stages}
+            self.assertEqual(said['Blueprint'], ('kept', desk.STAGE_STATES['kept']))
+            self.assertEqual(said['Guide'], ('not-started', 'not started'))
+            self.assertFalse({'current', 'review'} & {state for state, _ in said.values()})
+
+
 from runner_support import TeamCase  # noqa: E402
 
 
@@ -1069,6 +1087,72 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
             self.assertNotIn(absent, shot['buttons'])
         self.assertIn(engines.BRING_ON_COMPUTER, shot['text'])
         self.assert_no_continuing(shot, result)
+
+    def test_an_open_conversation_record_is_not_read_again_on_a_timer(self):
+        """GitHub issue #547: deciding a conversation's record reads its whole folder, so the
+        open record is decided once; the page's own refresh asks for it again only when its
+        small records, as the list says them, change."""
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.root = top
+        path = str(top)
+        listing = self.get('trainings')
+        detail = self.get('training', path=path)
+        changed = json.loads(json.dumps(listing))
+        for item in changed['trainings']:
+            if item['path'] == path:
+                item['touched_at'] = '2099-01-01T00:00:00+00:00'
+        answers = {'GET /api/capabilities': [RUNNER], 'GET /api/setup': [ok(SET_UP)],
+                   'GET /api/trainings': [ok(listing), ok(listing), ok(listing), ok(changed)],
+                   'GET /api/training': [ok(detail)],
+                   'GET /api/computer': [ok({'items': []})], 'GET /api/agents': [ok(AGENTS_FOUND)],
+                   **MODELS}
+        result = self.run_page(answers, [{'snapshot': 'open'}, {'poll': True}, {'poll': True},
+                                         {'snapshot': 'polled'}, {'poll': True},
+                                         {'snapshot': 'changed'}],
+                               state={'screen': 'training', 'path': path})
+        asked = [r for r in result['requests'] if r['address'].startswith('/api/training?')]
+        self.assertIn('Read teaching plan', result['snapshots']['polled']['buttons'])
+        # Opened once, then asked again only after the list said its records changed.
+        self.assertEqual(len(asked), 2, [r['address'] for r in asked])
+
+    def test_bring_in_over_the_page_never_fails_raw(self):
+        """GitHub issue #547: `/api/adopt` of a conversation's training with a file it cannot
+        read, and of one whose copy fails half-way, answers one plain sentence, with no path
+        of this computer and no operating-system words, and leaves the workspace as it was."""
+        import os
+        import shutil
+        from unittest import mock
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.root = top
+        notes = top / 'notes.txt'
+        notes.write_text('Synthetic notes.\n')
+        os.chmod(notes, 0)
+        self.addCleanup(os.chmod, notes, 0o644)
+        before = sorted(path.name for path in self.space.root.iterdir())
+        said = self.post('adopt', {'path': str(top)}, expect=409)
+        self.assertEqual(said['error'], engines.UNREADABLE_FILE.format(name='notes.txt'))
+        os.chmod(notes, 0o644)
+        real_tree, copied = shutil.copytree, []
+
+        def failing(source, target, *args, **kwargs):
+            if copied:
+                raise PermissionError(13, 'Permission denied', str(source))
+            copied.append(source)
+            return shutil.copy2(source, target, *args, **kwargs)
+
+        def tree(source, target, symlinks=False, ignore=None, copy_function=None,
+                 ignore_dangling_symlinks=False, dirs_exist_ok=False):
+            return real_tree(source, target, symlinks, ignore, failing,
+                             ignore_dangling_symlinks, dirs_exist_ok)
+        with mock.patch.object(shutil, 'copytree', tree):
+            failed = self.post('adopt', {'path': str(top)}, expect=409)
+        for answer in (said, failed):
+            text = json.dumps(answer)
+            self.assertNotIn(str(self.base), text)
+            for words in ('Errno', 'Permission denied', '.bringing-', 'shutil'):
+                self.assertNotIn(words, text)
+        self.assertIn('could not be copied', failed['error'])
+        self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
 
     def test_a_record_that_opens_on_the_desk_offers_the_preview(self):
         fixture = self.fixture('blueprint-gate')

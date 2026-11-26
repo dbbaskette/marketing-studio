@@ -303,6 +303,16 @@ ALREADY_IN = 'This training is already in the workspace.'
 NAME_TAKEN = ('The workspace already has a training in {where}. If that is the copy made of this '
               'one, work on it there; if it is another training, this one can be brought in once '
               'that one is deleted from the workspace.')
+# A file or folder of a conversation's training that cannot be read: Bring in would fail on it,
+# so it is refused first, naming it inside the training's folder (GitHub issue #547).
+UNREADABLE_FILE = ('This training cannot be brought into the workspace: {name} in its folder '
+                   'cannot be read on this computer.')
+UNREADABLE_FOLDER = ('This training cannot be brought into the workspace: the folder {name} in '
+                     'it cannot be read on this computer.')
+# Bring in that failed while it copied: nothing is kept of the copy, and the folder it came
+# from is as it was.
+COPY_FAILED = ('This training could not be brought into the workspace: {name} could not be '
+               'copied. Nothing was kept of the copy, and its own folder is as it was.')
 # A conversation's training that Bring in refuses: a read-only record where it is, saying why
 # (`Engine.bring_refusal`, GitHub issue #547).
 CONVERSATION_KEPT = ('This training was made in a conversation and cannot be brought into the '
@@ -311,6 +321,10 @@ CONVERSATION_KEPT = ('This training was made in a conversation and cannot be bro
 # is not offered there (GitHub issue #539).
 BRING_ON_COMPUTER = ('Bringing a training into the workspace is done on the computer that runs '
                      'Training Studio, not from a phone.')
+# One that Bring in would refuse, on a phone: its record says why, and that it is only read
+# there.
+KEPT_ON_COMPUTER = ('From a phone it is only read here; anything more is done on the computer '
+                    'that runs Training Studio.')
 # Where a desk training stood when its run had made what it could and it was not finished:
 # not every material was marked ready, or something else kept it from being used.
 UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
@@ -8826,16 +8840,26 @@ class Engine(Reviewing):
         gitstate.identity(space.repo)
         session, root = self._bringing(space, top)
         with self.files:
+            copied = False
             try:
                 team.copy_in(top, root)
+                copied = True
                 if session['settings']['approval'] != 'page':
                     workspace.checkpoint(root, approval='page', by='page')
                 self._store(root, self._brought(root, chosen, space))
                 home.remember(root, session['title'], session['levels'])
                 self._commit(root, 'bring the training in from a conversation')
-            except BaseException:  # a training is brought in whole or not at all
-                shutil.rmtree(root, ignore_errors=True)
-                gitstate.discard(space, root)
+            except BaseException as failure:  # a training is brought in whole or not at all
+                # Only the copy this made is removed: a folder of that name that appeared
+                # meanwhile is someone else's and is left alone.
+                if copied:
+                    shutil.rmtree(root, ignore_errors=True)
+                    try:
+                        gitstate.discard(space, root)
+                    except (OSError, WorkspaceError):
+                        pass
+                if isinstance(failure, OSError):
+                    raise self._copy_failed(space, top, root, failure, copied) from None
                 raise
             self._claimed(root, space)
         self.wake(root)
@@ -8865,11 +8889,65 @@ class Engine(Reviewing):
         root = space.training(workspace.slugify(session['title']))
         if root.exists():
             raise WorkspaceError(NAME_TAKEN.format(where=f'{space.folder}/{root.name}'))
+        # Everything the copy needs can be read: a file or folder that cannot be is said as
+        # that, before the copy could fail on it.
+        unread = self._unreadable(top)
+        if unread:
+            raise WorkspaceError(unread)
         why = team.unacceptable(top)
         if why:
             raise WorkspaceError('This training cannot be brought into the workspace. '
                                  + why)
         return session, root
+
+    @staticmethod
+    def _copy_failed(space, top: Path, root: Path, failure: OSError,
+                     copied: bool) -> WorkspaceError:
+        """What Bring in says when its copy failed: one plain sentence naming the file by its
+        name inside the training's folder, never a path of this computer or the operating
+        system's own words."""
+        if not copied and root.exists():
+            return WorkspaceError(NAME_TAKEN.format(where=f'{space.folder}/{root.name}'))
+        names = []
+        if isinstance(failure, shutil.Error) and failure.args and isinstance(failure.args[0], list):
+            names = [entry[0] for entry in failure.args[0] if entry]
+        names += [failure.filename, failure.filename2]
+        for name in names:
+            if not name:
+                continue
+            found = Path(str(name))
+            for base in (top, *root.parent.glob('.bringing-*'), root):
+                try:
+                    return WorkspaceError(COPY_FAILED.format(
+                        name=found.relative_to(base).as_posix()))
+                except ValueError:
+                    continue
+        return WorkspaceError(COPY_FAILED.format(name='a file in it'))
+
+    @staticmethod
+    def _unreadable(top: Path) -> str | None:
+        """The sentence for the first file or folder Bring in would copy that cannot be read
+        on this computer, named inside the training's folder, or None when every one can be.
+        Links are left to `team.unacceptable`, which refuses them without following them."""
+        pending = [top]
+        while pending:
+            folder = pending.pop()
+            try:
+                entries = sorted(folder.iterdir())
+            except OSError:
+                return UNREADABLE_FOLDER.format(name=folder.relative_to(top).as_posix() or '.')
+            for path in entries:
+                if team._left_out(top, path) or path.is_symlink():
+                    continue
+                if path.is_dir():
+                    pending.append(path)
+                elif path.is_file():
+                    try:
+                        with path.open('rb') as handle:
+                            handle.read(1)
+                    except OSError:
+                        return UNREADABLE_FILE.format(name=path.relative_to(top).as_posix())
+        return None
 
     def bring_refusal(self, path) -> str | None:
         """Why a training made in a conversation cannot be brought into the workspace: the
@@ -8883,8 +8961,8 @@ class Engine(Reviewing):
             self._bringing(space, Path(path))
         except WorkspaceError as refusal:
             return str(refusal)
-        except OSError as failure:  # a folder that cannot be looked at is not brought in
-            return str(workspace.unreadable('session', failure))
+        except OSError:  # a folder that cannot be looked at is not brought in
+            return UNREADABLE_FOLDER.format(name='.')
         return None
 
     def _brought(self, root: Path, chosen: settings.Settings,
@@ -8974,8 +9052,18 @@ class Engine(Reviewing):
             seen.add(root.absolute())
             try:
                 saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
+                conversation = not (root / RECORD).exists() \
+                    and (root / workspace.STATE_DIR / 'session.json').exists()
+                if conversation and not (root / RECORD).is_symlink():
+                    # What Bring in could not read is said as Bring in says it, before
+                    # anything else is read; links are then excluded as for any folder.
+                    unread = self._unreadable(root)
+                    if unread:
+                        found.setdefault('read-only-record', []).append(
+                            saved_work.needs(root, root.name, unread))
+                        continue
                 saved_work.checked_tree(root)
-                if not (root / RECORD).exists() and (root / workspace.STATE_DIR / 'session.json').exists():
+                if conversation:
                     try:
                         session = workspace.load(root)
                     except WorkspaceError:
