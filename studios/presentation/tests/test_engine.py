@@ -92,6 +92,67 @@ class SynthesisAtStartTests(StudioCase):
         self.assertNotIn('research_contract', decks.read_run(Path(made['path'])))
 
 
+class BringOverlapTests(StudioCase):
+    """GitHub issue #544: a folder that is the workspace, holds it or lies inside it is
+    refused by resolved paths, before anything is read or copied."""
+
+    def outside(self) -> Path:
+        import shutil
+        root = self.start(research=False)
+        outside = self.base / 'outside' / 'restarts'
+        shutil.copytree(root, outside, ignore=shutil.ignore_patterns('work', 'sources'))
+        return outside
+
+    def test_a_folder_holding_the_workspace_is_refused_and_nothing_is_copied(self):
+        from dataclasses import replace
+        from runner import engine as engines
+        outside = self.outside()
+        inner = outside / 'presentations'
+        inner.mkdir()
+        # A workspace whose decks folder lies inside the deck's folder, as setting up on a
+        # deck's folder made one (the workspace's root is its repository and its folder).
+        import os
+        held = replace(self.space, folder=os.path.relpath(inner, self.space.repo))
+        self.assertEqual(held.root.resolve(), inner.resolve())
+        before = sorted(path.relative_to(outside) for path in outside.rglob('*'))
+        with mock.patch.object(self.engine, 'space', return_value=held):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.bring(outside)
+        self.assertEqual(str(caught.exception), engines.HOLDS_WORKSPACE)
+        self.assertEqual(sorted(path.relative_to(outside) for path in outside.rglob('*')), before)
+        # The same folder, spelled through a link, is the same folder.
+        linked = self.base / 'linked'
+        linked.symlink_to(self.base / 'outside', target_is_directory=True)
+        with mock.patch.object(self.engine, 'space', return_value=held):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.bring(linked / 'restarts')
+        self.assertEqual(str(caught.exception), engines.HOLDS_WORKSPACE)
+
+    def test_the_workspace_and_a_deck_in_it_are_refused_by_resolved_paths(self):
+        root = self.start(research=False)
+        linked = self.base / 'linked-workspace'
+        linked.symlink_to(self.space.root, target_is_directory=True)
+        before = sorted(path.name for path in self.space.root.iterdir())
+        for given in (self.space.root, linked, linked / root.name, root / '..' / root.name):
+            with self.subTest(given=str(given)):
+                with self.assertRaisesRegex(WorkspaceError, 'already in the workspace'):
+                    self.engine.bring(given)
+        self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
+
+    def test_the_shared_copy_never_copies_a_folder_into_itself(self):
+        from runner import team
+        outside = self.outside()
+        for target in (outside, outside / 'copy', outside / 'a' / 'b'):
+            with self.subTest(target=str(target)):
+                with self.assertRaisesRegex(WorkspaceError, team.INTO_ITSELF):
+                    team.copy_in(outside, target)
+                self.assertFalse((outside / 'copy').exists())
+                self.assertFalse((outside / 'a').exists())
+        self.assertEqual((team.overlaps(outside, outside.parent), team.overlaps(
+            outside.parent, outside), team.overlaps(outside, self.space.root)),
+            ('inside', 'holds', None))
+
+
 class SavedWorkTests(StudioCase):
     """`studio saved-work`: which saved decks still need each older path, read from decks
     written as files, with nothing started and nothing changed."""

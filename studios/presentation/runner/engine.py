@@ -293,6 +293,8 @@ BROKEN = ('"{title}" was changed on this computer and on another at the same tim
           'set aside and kept.')
 UNREACHED = ('The shared repository could not be reached, so this deck cannot be taken now. '
              'Nothing was changed. Try again when it can be reached.')
+HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brought into it. '
+                   'Bring in a deck folder that is outside the workspace.')
 CHECKING = ('The runner has just started and is still looking at what your team shared while '
             'it was closed. Nothing was changed. Try again in a moment.')
 STALLED = ('Something went wrong while the runner picked its decks up ({failure}), so this '
@@ -4164,8 +4166,13 @@ class Engine(Jobs, Researching, DeskActions):
         read. Returns {'path', 'id'}; the run carries on from what its record says."""
         space, chosen, top = self.space(), settings.load(), Path(path)
         gitstate.identity(space.repo)
-        if top == space.root or space.root.resolve() in top.resolve().parents:
+        # By resolved paths, before anything is read: a folder holding the workspace would be
+        # copied into itself (GitHub issue #544).
+        where = team.overlaps(top, space.root)
+        if where == 'inside':
             raise WorkspaceError('This deck is already in the workspace.')
+        if where == 'holds':
+            raise WorkspaceError(HOLDS_WORKSPACE)
         try:
             record = decks.read_run(top)
             title, form = record['title'], record['form']
