@@ -891,9 +891,12 @@ class PhoneSettingsTests(PageCase):
         self.assertEqual(phone['brand']['repository'], caller.FOLDER_HERE)
         self.assertNotIn(str(self.base), json.dumps(phone))
         self.assertNotIn(str(self.base.resolve()), json.dumps(phone))
-        # Everything else is as this computer has it.
+        # Everything else is as this computer has it; the phone's set-up also says it is
+        # remote, so its Settings offer no set-up change it would be refused (#539).
+        self.assertIs(phone['remote'], True)
+        self.assertNotIn('remote', here)
         self.assertEqual({key: value for key, value in phone.items()
-                          if key not in ('workspace', 'brand', 'shared', 'upkeep')},
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep', 'remote')},
                          {key: value for key, value in here.items()
                           if key not in ('workspace', 'brand', 'shared', 'upkeep')})
         # The answers of the brand route and of the shared notice are shown the same way.
@@ -901,12 +904,21 @@ class PhoneSettingsTests(PageCase):
                 'repository': address, 'commit': '0' * 40}):
             status, made = self.send('brand', {'repository': 'https://example.invalid/b.git'},
                                      remote=True)
+            status_here, made_here = self.send(
+                'brand', {'repository': 'https://example.invalid/b.git'}, remote=False)
         self.assertEqual((status, made['brand']['repository']), (200, 'https://example.invalid/b.git'))
         self.assertIsNone(made['workspace']['path'])
+        self.assertIs(made['remote'], True)
         self.assertNotIn(str(self.base.resolve()), json.dumps(made))
+        self.assertEqual(status_here, 200, made_here)
+        self.assertNotIn('remote', made_here)
         status, seen = self.send('shared', {'seen': True}, remote=True)
         self.assertEqual(status, 200, seen)
+        self.assertIs(seen['remote'], True)
         self.assertNotIn(str(self.base.resolve()), json.dumps(seen))
+        status, seen = self.send('shared', {'seen': True}, remote=False)
+        self.assertEqual(status, 200, seen)
+        self.assertNotIn('remote', seen)
 
     def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
         # The planner's ruling on #539 (b): the same sentence whatever the folder holds.
@@ -969,7 +981,9 @@ class PhoneRouteWalkTests(PageCase):
         if isinstance(value, list):
             return [found for one in value for found in self.folders(one, inside)]
         here = (str(self.base), str(self.base.resolve()), str(Path.home()))
-        return [value] if inside and isinstance(value, str) and value.startswith(here) else []
+        # A folder as the whole value, or named inside a sentence.
+        return [value] if inside and isinstance(value, str) and any(
+            folder in value for folder in here) else []
 
     def keeping(self):
         base = self.base
@@ -1029,6 +1043,58 @@ class PhoneRouteWalkTests(PageCase):
             with self.subTest(target=target):
                 self.assertEqual(here[('POST', target)], {'upkeep': report})
         self.assertEqual(here[('GET', '/api/setup')]['upkeep'], report)
+
+    def broken_links(self) -> dict:
+        """The upkeep report's links for four skill links really broken on disk, each said
+        by the runner's upkeep, the shared check (`shared_runner.upkeep`): one pointing
+        at a copy that is gone, one replaced by a folder of someone's own, one whose
+        assistant's skill folder is gone, and one put back."""
+        from types import SimpleNamespace
+        from runner import upkeep as shared
+        home_dir = self.base / 'home'
+        copy = self.base / 'copy'
+        copy.mkdir()
+        (copy / 'SKILL.md').write_text('stand-in\n')
+        folders = {'claude': home_dir / '.claude' / 'skills', 'codex': home_dir / '.agents' / 'skills',
+                   'gemini': home_dir / '.gemini' / 'skills', 'cursor': home_dir / '.cursor' / 'skills'}
+        for harness in ('claude', 'codex', 'cursor'):
+            folders[harness].mkdir(parents=True)
+        links = {harness: folder / 'presentation-studio' for harness, folder in folders.items()}
+        gone = self.base / 'gone-copy'
+        links['claude'].symlink_to(gone)            # its copy is not there any more
+        links['codex'].mkdir()                      # a folder of someone's own
+        installing = SimpleNamespace(
+            NAME='presentation-studio',
+            HARNESS={'claude': 'Claude Code', 'codex': 'Codex', 'gemini': 'Gemini CLI',
+                     'cursor': 'Cursor'},
+            replace_link=lambda link, target: link.symlink_to(target))
+        state = {'links': {harness: {'path': str(link), 'target': str(
+            gone if harness == 'claude' else copy)} for harness, link in links.items()}}
+        found = [shared.Upkeep._link(SimpleNamespace(home=home_dir), installing, state, harness,
+                                     True) for harness in links]
+        self.assertEqual([link['state'] for link in found],
+                         ['missing', 'left alone', 'left alone', 'repaired'])
+        return {'links': found, 'repaired': [found[3]['says']], 'problem': None}
+
+    def test_a_really_broken_skill_link_is_said_to_a_phone_without_its_folder(self):
+        from studio_core.shared_runner import caller
+        found = self.broken_links()
+        self.assertTrue(all(str(self.base) in link['says'] for link in found['links']), found)
+        keeper = self.engine.upkeep = self.keeping()
+        keeper.report = lambda: found
+        phone = self.walk(remote=True)
+        for asked in (('GET', '/api/setup'), ('GET', '/api/status'),
+                      *(('POST', target) for target in ('/api/companions', '/api/upgrade',
+                                                        '/api/restart', '/api/versions',
+                                                        '/api/brand/install'))):
+            with self.subTest(asked=asked):
+                self.assertEqual(self.folders(phone[asked]), [])
+                self.assertEqual([link['says'] for link in phone[asked]['upkeep']['links']],
+                                 [caller.FOLDER_SAID] * 4)
+        # On this computer each sentence names its folder, as before.
+        here = self.walk(remote=False)
+        self.assertEqual(here[('GET', '/api/status')]['upkeep'], found)
+        self.assertEqual(here[('POST', '/api/companions')], {'upkeep': found})
 
 
 class BringTests(PageCase):

@@ -47,7 +47,9 @@ What a caller needs to know
     Presentation Studio can use; `shared_problem`, a sentence when it could not be read;
     `team_moved`, {"repository", "branch", "says"} when it names a team repository this
     computer's workspace is not a copy of; and `shared_notice`, a sentence about the values
-    the file already held when this computer's own moved there.
+    the file already held when this computer's own moved there. Through the network bridge
+    every set-up answer (`described`) names no folder here and also says `remote`, so the
+    page offers a phone no set-up change it would be refused (GitHub issue #539).
   - `/api/shared` {"seen": true}: the notice about the shared values has been read and is
     not shown again; answers the set-up.
   - `/api/decks` {"form", "uploads"?}: start a deck. `form` is what `decks.check_form`
@@ -266,6 +268,14 @@ def shaped(action, *args):
         raise server.Refusal(HTTPStatus.BAD_REQUEST, str(refusal))
 
 
+def described(found: dict) -> dict:
+    """The set-up as this caller is shown it (`caller.shown`). Through the network bridge it
+    also says `remote`, so the page offers no set-up change a phone would be refused
+    (GitHub issue #539); a caller on this computer gets the set-up exactly as before."""
+    shown = caller.shown(found)
+    return {**shown, 'remote': True} if caller.remote() else shown
+
+
 class RunnerPage(server.Page):
     """What the page may ask the runner."""
     reads = (*server.READS, *READS)
@@ -312,7 +322,7 @@ class RunnerPage(server.Page):
                                                   'install': gitstate.installed_copy()})
         if path == '/api/setup':
             # Through the network bridge, with no folder path (GitHub issue #539).
-            return server.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
+            return server.as_json(HTTPStatus.OK, described(setup.describe(self.engine)))
         if path == '/api/agents':
             return server.as_json(HTTPStatus.OK, {'agents': self.agents()})
         if path == '/api/models':
@@ -596,7 +606,7 @@ class RunnerPage(server.Page):
         if path == '/api/setup':
             shaped(setup.refuse_place, self.engine, sent)
             return server.as_json(HTTPStatus.OK,
-                                  setup.apply(self.engine, shaped(setup.read, sent)))
+                                  described(setup.apply(self.engine, shaped(setup.read, sent))))
         if path == DECKS:
             return server.as_json(HTTPStatus.OK, self.start(sent))
         if path == '/api/run':
@@ -663,7 +673,7 @@ class RunnerPage(server.Page):
         if path == '/api/brand':
             try:
                 return server.as_json(HTTPStatus.OK,
-                                      caller.shown(setup.save_brand(self.engine, sent)))
+                                      described(setup.save_brand(self.engine, sent)))
             except brand_source.Unreadable as refusal:
                 # Git's own reason can name hosts and ports: kept from a phone (#539).
                 raise server.Refusal(HTTPStatus.BAD_REQUEST,
@@ -675,7 +685,7 @@ class RunnerPage(server.Page):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '
                                      'notice about the shared values has been read.')
             setup.notice_read()
-            return server.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
+            return server.as_json(HTTPStatus.OK, described(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = server.text(sent, 'commit')
             return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
