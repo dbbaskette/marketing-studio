@@ -152,6 +152,10 @@ class Workspace:
     def blog(self, ident: str) -> Path:
         return self.root / ident
 
+    def item(self, ident: str) -> Path:
+        """The folder of one blog, by the word the shared team code uses."""
+        return self.root / ident
+
 
 # --- what this computer remembers --------------------------------------------------------
 
