@@ -826,6 +826,10 @@ DRAFTS_TO_READ = ('Nothing holds the training up. {drafts} to read and mark read
 WRITING = 'Being written. It opens here when it is ready.'
 QUEUED = 'Not written yet. Nothing is writing it while the training waits for you or is paused.'
 UPDATING = 'Being made again from what it is built from now.'
+# A Yoodli layout names the copy of its brief to upload, so it waits for that copy: it is
+# written once the brief is marked ready or sent to its copies (`pipeline.handoff_waits`).
+HANDOFF_WAITS = ('Not written yet. It names the copy of {brief} to upload to Yoodli, so it is '
+                 'written once you mark {brief} ready or send it to its copies.')
 DRAFT = 'A draft. Nothing is ready until you mark it.'
 # A deck whose review left something after its one pass of fixes: said, and never a stop.
 REVIEWED = ('A draft. The review fixed what it could and left {notes} on its slides. Nothing '
@@ -916,6 +920,12 @@ def _next_material(cards, found):
     return None
 
 
+def _handoff_says(name: str) -> str:
+    """What a Yoodli layout's card says while it waits for its brief's copy."""
+    return HANDOFF_WAITS.format(brief=workspace.label(
+        workspace.qualify('brief', workspace.split(name)[1])))
+
+
 def _cards(engine, root: Path, record: dict, found) -> list[dict]:
     """Each material of a desk training in ORDER, level by level, with how it stands:
     {'name', 'level', 'kind', 'label', 'state', 'says', 'seen', 'held', 'actions', 'needs'}.
@@ -960,7 +970,8 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                 elif name == failing and problem:
                     shown, says = 'needs', problem.get('what') or NEEDS
                 elif name in asked:
-                    shown, says = ('writing', UPDATING) if name in active else ('queued', queued_says)
+                    shown, says = ('writing', UPDATING) if name in active else (
+                        'queued', _handoff_says(name) if name in found.waits else queued_says)
                     card_actions = ['download'] if seen else []
                 elif name == deciding:
                     # Nothing is being written: the deck waits for the person's decision.
@@ -971,6 +982,8 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                     shown, says = (('needs', pipeline.deck_says(found))
                                    if kind == 'deck' and found.missing
                                    else ('writing', WRITING) if name in active
+                                   else ('queued', _handoff_says(name))
+                                   if name in found.waits
                                    else ('queued', queued_says))
                     card_actions = []
                 elif name in active:

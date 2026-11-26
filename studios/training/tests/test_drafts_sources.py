@@ -643,6 +643,7 @@ class UpdateChainTests(DeckCase):
 
         root = self.start(flow='desk', levels=['101'], yoodli=True)
         self.to_end(root)
+        self.briefs_ready(root)   # a Yoodli layout waits for the brief's copy
         record = self.record(root)
         record['drafted'].remove('scenario:main@101')
         self.engine._store(root, record)
