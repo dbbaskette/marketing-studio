@@ -112,10 +112,39 @@ def _learn(root, found, at):
                 runner.keep_local(ident, state)
                 if runner.current == ident:
                     runner.stop.set()
+                _stop_desk_job(root, ident, runner)
             kept = gitstate.set_aside(found, ident, at)
             state = team.kept('taken')
             state[str(folder)] = {**remote.get('driver', {}), 'at': studio.now(), 'kept': kept}
             team.keep('taken', state)
+
+
+def _stop_desk_job(root, ident, runner):
+    """A desk tool job working on a blog taken over elsewhere is stopped as Cancel stops it
+    (tool_jobs.control): it is marked cancelled, its inputs are kept and a result that comes
+    back is never landed. Queued jobs are refused when they come up (tool_jobs.once)."""
+    import tool_jobs
+
+    current = runner.current
+    if not isinstance(current, str) or not current.startswith('tool:'):
+        return
+    try:
+        job = tool_jobs.read(root, current[len('tool:') :])
+    except (ValueError, OSError):
+        return
+    if (job.get('metadata') or {}).get('article') != ident or job.get('status') not in (
+        'queued',
+        'working',
+    ):
+        return
+    job.update(
+        status='cancelled',
+        error='Another computer took this blog over, so this stopped. Your inputs are kept.',
+        finished_at=studio.now(),
+    )
+    tool_jobs.write(root, job)
+    if runner.current == current:
+        runner.stop.set()
 
 
 def keep_setup(root):
