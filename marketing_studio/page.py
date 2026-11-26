@@ -9,7 +9,7 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
-from studio_core import brand_catalog, brand_data, graphics, research_sites, runtime
+from studio_core import brand_catalog, brand_data, graphics, onboarding, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core import document_library
 from studio_core.document_library import adopt as library_adopt
@@ -27,6 +27,31 @@ BRAND_ROUTES = ('list', 'start', 'work', 'source', 'keep', 'extract', 'interpret
                 'rebrand-start', 'rebrand-stop', 'rebrand-clear')
 REMOTE_BRANDS = ('Brands are made on the computer Marketing Studio runs on, where the sources, '
                  'your assistant and Git are. Open Marketing Studio there.')
+REMOTE_PATHS = ('Studio installation folders are folders on the computer Marketing Studio runs on, '
+                'so they are set only on that computer. Put them back as they were to save your '
+                'other changes here.')
+# What a phone on the private link may do with each route (GitHub issue #539): it cannot set
+# or ask about a folder on this computer, and may give a repository web address. A route added
+# without a decision here fails tests/test_home_phone.py.
+PHONE = {
+    '/api/home': 'Allowed: the home snapshot, as it is (the private link itself left out).',
+    '/api/computer': 'Allowed: a look at this computer’s tools; it takes no folder.',
+    '/api/models': 'Allowed: an assistant’s models, read or looked up again; no folder.',
+    '/api/shared': 'Allowed, except a change to a setting holding a folder (onboarding.folders_refused).',
+    '/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.',
+    '/api/open': 'Allowed: opens a studio, and gives a phone its bridge link.',
+    '/api/connect': 'Allowed: joins a studio to the saved storage; it takes only a studio.',
+    '/api/paths': 'Refused when an installation folder changes; the saved folders sent again pass.',
+    '/api/graphics': 'Allowed: models listed; a key is refused (graphics.act).',
+    '/api/brands': 'Names and states only; a skill folder is refused unread (brand_catalog.listed).',
+    '/api/brands-repository': 'Allowed: the saved setting is got, answered without folders (brand_data.got).',
+    '/api/research-site': 'Allowed: a web address is checked; no folder.',
+    **{route: 'Allowed: the Document Library’s documents; no folder is named or set.'
+       for route in (*library_context.ROUTES, '/api/library-upload', '/api/library-download',
+                     '/api/library-existing', '/api/library-adopt', '/api/library-hide')},
+    **{f'/api/brand-{name}': 'Refused: Brands is used on the computer (REMOTE_BRANDS).'
+       for name in BRAND_ROUTES},
+}
 CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
                            'result was not kept. Review the settings shown now and save again.')
 
@@ -337,7 +362,9 @@ class Home(server.Page):
             if problem:
                 raise WorkspaceError(problem)
             try:
-                return server.as_json(200, brand_data.bring((values.get('brand') or {}).get('brands')))
+                # A phone is told what was got, without the folders on this computer.
+                return server.as_json(200, brand_data.got((values.get('brand') or {}).get('brands'),
+                                                          remote=getattr(self.caller, 'remote', False)))
             except ValueError as error:
                 raise WorkspaceError(str(error)) from error
         if path == '/api/brands':
@@ -418,6 +445,12 @@ class Home(server.Page):
         extra = {}   # what a save did beside the settings, for the page to say
         with finishing, self.changes:
             if path == '/api/shared':
+                # A phone cannot change a setting holding a folder on this computer; the
+                # others it sends, and a repository web address, save as from the computer.
+                refused = getattr(self.caller, 'remote', False) and onboarding.folders_refused(
+                    sent.get('changes'), sent.get('seen'))
+                if refused:
+                    raise WorkspaceError(refused)
                 before = shared.read()[0]
                 try:
                     shared_preferences.save(shared, sent.get('changes'), sent.get('seen'))
@@ -482,6 +515,13 @@ class Home(server.Page):
                 paths = sent.get('paths')
                 if not isinstance(paths, dict) or set(paths) - catalog.STUDIOS.keys():
                     raise WorkspaceError('Choose studio installation folders from this page.')
+                # A phone cannot set or look up an installation folder; the folders as they
+                # are saved pass, so the rest of the form is not refused with them.
+                held = state.read().get('paths', {})
+                if getattr(self.caller, 'remote', False) and any(
+                        (value.strip() if isinstance(value, str) else value) != (held.get(identifier) or '')
+                        for identifier, value in paths.items()):
+                    raise WorkspaceError(REMOTE_PATHS)
                 for identifier, value in paths.items():
                     if not isinstance(value, str) or len(value) > 4000:
                         raise WorkspaceError('Give a studio installation folder as text.')
