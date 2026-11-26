@@ -100,11 +100,12 @@ the studios read that mark:
   studios' Settings name no brand skill's folder to a phone. A skill folder a phone names
   is refused unread, except the one already saved, sent exactly as saved. Brands
   authoring stays on the computer.
-- **No failure sentence names a folder.** Where the reason would name one, a phone is told
-  "That could not be done here. See why on the computer the studios run on." The
-  studios' own refusals and advice reach a phone as they are. The deck studios' upkeep
-  report (each skill link, and where the brand skill is installed from) names no folder
-  of the computer.
+- **No failure sentence names a folder.** In Marketing Studio and each studio's setup
+  page, where the reason would name one, a phone is told "That could not be done here.
+  See why on the computer the studios run on." The studios' own refusals and advice
+  reach a phone as they are. In the deck studios' upkeep report a phone is given no skill
+  link's folder, and no folder the brand skill is installed from; the sentence that says
+  a skill link is broken can still name one (not done yet).
 - **Bring in and folder sources stay on the computer.** Presentation Studio and Training
   Studio refuse **Bring in** from a phone before any folder is read. A studio's source
   picker refuses a folder on the computer; a Google Drive folder link and uploads are
