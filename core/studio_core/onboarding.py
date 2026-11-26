@@ -3,11 +3,12 @@
 The host retains its token, loopback and origin protections. No content, provider
 jobs, installers or update actions are exposed by this page.
 """
+import json
 import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import graphics, preferences, brand_catalog, brand_data, research_sites, runtime
+from studio_core import graphics, preferences, brand_catalog, brand_data, repository_address, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -17,6 +18,171 @@ ASSETS = {'/onboarding/': ('index.html', 'text/html; charset=utf-8'),
           '/onboarding/app.js': ('app.js', 'text/javascript; charset=utf-8'),
           '/onboarding/home.css': ('home.css', 'text/css; charset=utf-8'),
           '/onboarding/style.css': ('style.css', 'text/css; charset=utf-8')}
+
+# A phone on Marketing Studio's private link (GitHub issue #539). The network bridge adds this
+# header, with the value `network`, to every request it carries, and a network caller can
+# neither send nor strip it. Read here, not through the deck studios' shared runner, because
+# every studio serves this page, Blog Studio and Infographic Studio included.
+VIA_HEADER = 'X-Marketing-Studio-Via'
+# The shared settings that hold a folder on this computer: the folders, always; the
+# repositories when not given as a web address of another computer (repository_address).
+FOLDERS = (('local', 'root'), ('brand', 'skill'))
+REPOSITORIES = (('brand', 'brands'), ('brand', 'repository'), ('team', 'repository'))
+# Said to a phone in place of a failure whose text may name a folder on this computer.
+REMOTE_FAILED = 'That could not be done here. See why on the computer the studios run on.'
+
+
+# What a phone may do with each route of this page, decided route by route; a route added
+# without a decision here fails tests/test_onboarding_phone.py.
+SAVED = ' It still shows the saved folders PHONE_SHOWS names.'
+PHONE = {
+    '/onboarding/api/home': 'Allowed: the saved settings, as the page shows them; nothing is looked up.' + SAVED,
+    '/onboarding/api/models': 'Allowed: an assistant’s models, read or looked up again; no folder.',
+    '/onboarding/api/shared': 'Allowed, except a change to a setting holding a folder (for_phone).' + SAVED,
+    '/onboarding/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.' + SAVED,
+    '/onboarding/api/graphics': 'Allowed: models listed; a key is refused (graphics.act).',
+    '/onboarding/api/brands': 'Names and states only; a skill folder is refused unread.',
+    '/onboarding/api/brands-repository': 'Allowed: the saved setting is got, answered without folders.',
+    '/onboarding/api/research-site': 'Allowed: a web address is checked; no folder.',
+}
+# The saved folder values on this computer each route still shows a phone, by where they are in
+# its answer: the shared settings the page is filled from. Showing them is the owner's separate
+# decision; tests/test_onboarding_phone.py walks every route and keeps this list true.
+PHONE_SHOWS = {route: ('shared.local.root', 'shared.brand.skill', 'shared.brand.brands',
+                       'shared.brand.repository', 'shared.team.repository')
+               for route in ('/onboarding/api/home', '/onboarding/api/shared', '/onboarding/api/setup')}
+
+
+def shown_at(path, patterns) -> bool:
+    """Whether an answer's field, written as in PHONE_SHOWS ('a.b[].c'), is one `patterns`
+    name; a `*` part stands for any one key, such as a studio's."""
+    parts = path.split('.')
+    return any(len(parts) == len(wanted) and all(want in ('*', part) for want, part in zip(wanted, parts))
+               for wanted in (pattern.split('.') for pattern in patterns))
+
+
+def said_to_phone(text) -> str:
+    """A problem or failure sentence as a phone is told it: as it is, unless it names a folder
+    on this computer, when it says only that the reason can be seen on the computer."""
+    return REMOTE_FAILED if brand_data.names_a_folder(text) else text
+
+
+# The fields an answer says a problem, failure or state in: `error`, `problem`, `said` and the
+# like, and any `..._problem` or `..._error`, at any depth. A document's own text is not one.
+SENTENCES = frozenset(('error', 'problem', 'said', 'reason', 'notice', 'note', 'warning', 'detail',
+                       'summary', 'message', 'failure'))
+
+
+def _sentence(key) -> bool:
+    key = key.removesuffix('[]').lower()
+    return key in SENTENCES or key.endswith(('_problem', '_error', '_notice', '_failure'))
+
+
+def phone_answer(value, shows=(), at=''):
+    """An answer as a phone is given it. Every problem or failure sentence in it, wherever it
+    is (`shared_problem`, `prepare_problem`, a `problem`, `error` or `detail` at any depth),
+    goes through said_to_phone, except the saved folder values the route still shows a phone
+    (`shows`, its PHONE_SHOWS), which are the owner's separate decision."""
+    if isinstance(value, dict):
+        return {key: phone_answer(part, shows, f'{at}.{key}' if at else key) for key, part in value.items()}
+    if isinstance(value, list):
+        return [phone_answer(part, shows, at + '[]') for part in value]
+    if isinstance(value, str) and _sentence(at.rpartition('.')[2]) and not shown_at(at, shows):
+        return said_to_phone(value)
+    return value
+
+
+def carried(headers) -> bool:
+    """Whether these request headers say the network bridge carried the request."""
+    try:
+        values = headers.get_all(VIA_HEADER) or []
+    except AttributeError:
+        values = [headers.get(VIA_HEADER)] if headers and headers.get(VIA_HEADER) else []
+    return any(str(value).strip().lower() == 'network' for value in values)
+
+
+def _leaf(values, group, key):
+    """A setting exactly as it is written: an absent one reads as null, as a save writes it."""
+    part = values.get(group) if isinstance(values, dict) else None
+    return part.get(key) if isinstance(part, dict) else None
+
+
+def _set(value) -> bool:
+    return value not in (None, '')
+
+
+def folders_refused(changes, held):
+    """For a caller that came over the network: the sentence refusing a shared settings save
+    that would change a setting holding a folder on this computer, or None. `held` is what the
+    settings file holds, read under its lock (for_phone). A setting passes when the save would
+    write exactly the value held, character for character, so the other settings of the same
+    form can be saved; the save's own check of an outdated form still decides the rest. A
+    folder setting cannot be changed at all, emptied included. A repository can be changed to
+    a web address of another computer (repository_address.web_repository), or emptied when it
+    held one; any other value, a folder or an address of this computer, is refused."""
+    if not isinstance(changes, dict):
+        return None
+    folders, addresses = [], []
+    for group, key in (*FOLDERS, *REPOSITORIES):
+        part = changes.get(group)
+        if not isinstance(part, dict) or key not in part:
+            continue
+        wanted, before = _leaf(changes, group, key), _leaf(held, group, key)
+        if wanted == before:
+            continue
+        named = f'“{preferences.label((group, key))}”'
+        if (group, key) in FOLDERS:
+            if _set(wanted) or _set(before):
+                folders.append(named)
+        elif _set(wanted) and not repository_address.web_repository(wanted):
+            addresses.append(named)        # a folder, or an address of this computer
+        elif not _set(wanted) and _set(before) and not repository_address.web_repository(before):
+            addresses.append(named)        # emptying one that holds such a value
+    if not folders and not addresses:
+        return None
+    said = []
+    if folders:
+        said.append(f'{_listed(folders)} {"names a folder" if len(folders) == 1 else "name folders"} on '
+                    'the computer the studios run on, so '
+                    f'{"it is" if len(folders) == 1 else "they are"} changed only on that computer.')
+    if addresses:
+        said.append(f'From the private network link, {_listed(addresses)} '
+                    f'{"takes" if len(addresses) == 1 else "take"} only an https or ssh address of '
+                    'another computer; a folder, or an address of the computer the studios run on, '
+                    'is set only on that computer.')
+    one = len(folders) + len(addresses) == 1
+    said.append(f'Put {"it" if one else "them"} back as {"it was" if one else "they were"} to save '
+                'your other changes here.')
+    return ' '.join(said)
+
+
+def _listed(names):
+    return names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
+
+
+class for_phone:
+    """The shared settings `config` as a caller over the network may save them: each save is
+    checked by folders_refused against what the file holds under its lock, after the save's
+    own check (so an outdated form is refused as from the computer) and before anything is
+    written, so nothing that changes a folder setting is written in between."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def read(self):
+        return self.config.read()
+
+    def update(self, changes, guard=None):
+        def checked(held):
+            # The save's own checks first, an outdated form's refusal with its fields
+            # included, exactly as from the computer; then the folder settings, still
+            # before anything is written.
+            if guard is not None:
+                guard(held)
+            refused = folders_refused(changes, held)
+            if refused:
+                raise preferences.WorkspaceError(refused)
+        return self.config.update(changes, guard=checked)
 
 
 def config(product):
@@ -46,6 +212,7 @@ class Controller:
                 return protocol.as_json(200, owner.snapshot())
 
             def write(self, path, sent):
+                remote = owner.remote()
                 if path.endswith('/research-site'):
                     # One site checked as a save would check it; nothing is saved.
                     return protocol.as_json(200, {'site': research_sites.site(sent.get('site'))})
@@ -54,28 +221,33 @@ class Controller:
                     values, problem = owner.store.read()
                     if problem:
                         raise ValueError(problem)
-                    return protocol.as_json(200, brand_data.bring((values.get('brand') or {}).get('brands')))
+                    return protocol.as_json(200, brand_data.got((values.get('brand') or {}).get('brands'),
+                                                                remote=remote))
                 if path.endswith('/brands'):
                     skill = sent.get('skill')
-                    if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
-                                             or not Path(skill).expanduser().is_absolute()):
+                    # A phone's skill folder is refused unread by the lookup below, whatever it says.
+                    if not remote and skill is not None and (not isinstance(skill, str) or len(skill) > 2000
+                                                             or not Path(skill).expanduser().is_absolute()):
                         raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
                     # A failure of either lookup leaves the other standing.
                     values, problem = owner.store.read()
-                    store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'))
-                    try:
-                        found = brand_catalog.choices(skill)
-                    except (ValueError, OSError) as failure:
-                        found = {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
-                    return protocol.as_json(200, {**found, 'store': store})
+                    brand = {} if problem else (values.get('brand') or {})
+                    store = brand_data.lookup(brand.get('brands'), remote=remote)
+                    # A phone may look up the saved installed skill folder, exactly as saved.
+                    return protocol.as_json(200, {**brand_catalog.listed(skill, remote=remote,
+                                                                         saved=brand.get('skill')),
+                                                  'store': store})
                 if path.endswith('/graphics'):
-                    return protocol.as_json(200, graphics.act(sent))
+                    # A key is taken only on the computer itself, as Marketing Studio's page does.
+                    return protocol.as_json(200, graphics.act(sent, remote=remote))
                 if path.endswith('/models'):
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:
                     if path.endswith('/shared'):
                         before = owner.store.read()[0]
-                        preferences.save(owner.store, sent.get('changes'), sent.get('seen'))
+                        # A phone's save is checked for folder settings under the file's lock.
+                        preferences.save(for_phone(owner.store) if remote else owner.store,
+                                         sent.get('changes'), sent.get('seen'))
                         after, problem = owner.store.read()
                         # A brands folder on this computer is read by Harness Brand from this save on.
                         done = None if problem else brand_data.saved(before, after)
@@ -91,6 +263,12 @@ class Controller:
         self.page = Page(port)
         self.page.token = token
         self.protocol = protocol
+        # Each request is answered on its own thread: whether this one came over the bridge.
+        self.caller = threading.local()
+
+    def remote(self) -> bool:
+        """True while this thread answers a request the network bridge carried."""
+        return bool(getattr(self.caller, 'remote', False))
 
     def snapshot(self):
         values, problem = self.store.read()
@@ -112,6 +290,7 @@ class Controller:
     def answer(self, target, headers, method='GET', body=None):
         if urlsplit(target).path in ('/', '/index.html'):
             target = '/onboarding/'
+        self.caller.remote = carried(headers)
         try:
             # A script or a style sheet comes back with its caching headers as a fourth part.
             reply = self.page.answer(target, headers, method, body)
@@ -123,13 +302,30 @@ class Controller:
                 for name in ('app.js', 'home.css', 'style.css'):
                     html = html.replace('"/' + name + '"', '"/onboarding/' + name + '"')
                 data = html.encode()
+            elif self.remote() and kind == self.protocol.JSON:
+                # A phone's answer: each sentence naming a folder here said plainly, the
+                # saved folders this route still shows left as they are.
+                path = urlsplit(target).path
+                status, kind, data = self.protocol.as_json(
+                    status, phone_answer(json.loads(data), PHONE_SHOWS.get(path, ())))
             return (status, kind, data, *reply[3:])
         except self.protocol.Refusal as failure:
             return self.protocol.as_json(failure.status, {'error': str(failure)})
         except preferences.Conflict as failure:
             return self.protocol.as_json(409, {'error': str(failure), 'conflict': {'fields': failure.fields}})
         except ValueError as failure:
-            return self.protocol.as_json(409, {'error': str(failure)})
+            said = str(failure)
+            if self.remote():
+                said = said_to_phone(said)   # a phone is never told a folder on this computer
+            return self.protocol.as_json(409, {'error': said})
+        except Exception:
+            # Any other failure, such as a folder that cannot be read or written, names what
+            # it failed on: a phone is told only that it failed and where to see why.
+            if not self.remote():
+                raise
+            return self.protocol.as_json(409, {'error': REMOTE_FAILED})
+        finally:
+            self.caller.remote = False
 
 
 def attach(desk, product, header, prepare, store, after=None):

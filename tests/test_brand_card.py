@@ -196,6 +196,48 @@ class BrandCardTests(unittest.TestCase):
                           responses={'brands': {**SKILLS, 'store': {'state': 'following', 'exists': True, 'read': True, 'count': 2}}})
         self.assertEqual(shots['phone']['read']['#brand-brands-status']['text'], 'Harness Brand reads 2 brands.')
 
+    def test_a_phone_chooses_brands_by_name_and_never_sets_a_skill_folder(self):
+        # GitHub issue #539: over the network the lookup names no skill folder.
+        unplaced = {'skills': [{'name': skill['name'], 'brands': skill['brands']} for skill in SKILLS['skills']],
+                    'problem': None, 'store': {'state': 'following', 'exists': True, 'read': True, 'count': 2}}
+        unplaced['skills'][0]['brands'] = [*unplaced['skills'][0]['brands'],
+                                           {'name': 'Other Co', 'brand': 'other', 'variants': ['night']}]
+        pick = lambda brand: {'run': f"form.elements['brand.brand'].value = '{brand}'; form.elements['brand.brand'].fire('change');" + PROBE}
+        shots = self.page([self.load(shown()), {'show': 'settings'}, {'wait': True},
+                           pick('other'), {'snapshot': 'both', 'read': READ, 'ids': ['brand-from-field']}],
+                          responses={'brands': unplaced})
+        both = shots['both']
+        # Two skills offer it, but a phone is not asked to choose between folders.
+        self.assertTrue(both['hidden']['brand-from-field'])
+        self.assertEqual(json.loads(both['read']['#probe']['text'])['skill'], '')
+        # A brand only the second skill offers keeps the skill blank, and the card says where it is chosen.
+        unplaced['skills'][0]['brands'] = unplaced['skills'][0]['brands'][:2]
+        other = self.page([self.load(shown()), {'show': 'settings'}, {'wait': True},
+                           pick('other'), {'snapshot': 'other', 'read': READ}],
+                          responses={'brands': unplaced})['other']['read']
+        probe = json.loads(other['#probe']['text'])
+        self.assertEqual((probe['brand'], probe['skill'], probe['changes']), ('other', '', {'brand': 'other'}))
+        self.assertEqual(other['#brand-catalog-status']['text'],
+                         '3 installed brands: Example Co, Plain Co, Other Co. Choose one below, then save. Other Co comes '
+                         'from another installed brand skill, which is chosen on the computer Marketing Studio runs on.')
+        # With the saved skill folder, a phone's lookup lists that skill's brands by name
+        # (review item 7), and choosing one keeps the saved folder as it is.
+        saved = self.page([self.load(shown(skill='/opt/second')), {'show': 'settings'}, {'wait': True},
+                           pick('other'), {'snapshot': 'saved', 'read': READ}],
+                          responses={'brands': {'skills': [{'name': 'Second brand skill', 'brands': [
+                              {'name': 'Other Co', 'brand': 'other', 'variants': ['night']}]}],
+                              'problem': None, 'store': None}})['saved']
+        self.assertEqual(saved['read']['#brand-catalog-status']['text'],
+                         'One installed brand: Other Co. Choose one below, then save.')
+        self.assertEqual(json.loads(saved['read']['#probe']['text'])['skill'], '/opt/second')
+        sent = [request for request in saved['requests'] if request['url'].endswith('/api/brands')]
+        self.assertEqual(sent[0]['sent'], {'skill': '/opt/second'})
+        # Any other skill folder a phone sent is refused with the lookup's own sentence.
+        refused = self.page([self.load(shown(skill='/opt/second')), {'show': 'settings'}, {'wait': True},
+                             {'snapshot': 'refused', 'read': READ}],
+                            responses={'brands': {'skills': [], 'problem': 'Read only on the computer.', 'store': None}})
+        self.assertEqual(refused['refused']['read']['#brand-catalog-status']['text'], 'Read only on the computer.')
+
     def test_the_brand_skill_always_agrees_with_the_brand_chosen(self):
         both = {'skills': [
             {'name': 'First skill', 'path': '/opt/first', 'brands': [

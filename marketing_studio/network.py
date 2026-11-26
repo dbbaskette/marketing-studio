@@ -27,13 +27,8 @@ UPSTREAM_TIMEOUT = 100
 # once and run in the background, so its actions take the ordinary bridge time limit.
 # Google previews may perform account/token lookup and several fixed API reads.
 INFOGRAPHIC_REMOTE_TIMEOUT = 240
-# Blog Studio's Google sends make several Google calls of up to a minute each, and a library
-# add with links fetches up to 25 pages of up to 15 seconds each in one request.
-BLOG_REMOTE_TIMEOUT = 600
-BLOG_REMOTE = frozenset(('/api/desk-google-send', '/api/editor-google-send', '/api/google-preview',
-                         '/api/google-start', '/api/library-add', '/api/library-add-preview',
-                         '/api/desk-google-plan', '/api/desk-google-compare',
-                         '/api/desk-google-take'))
+# Blog Studio's Google calls and library adds answer at once with a background job the page
+# follows (its import_jobs.ROUTES), so they take the ordinary bridge time limit.
 # The bridge says, in a header of its own, that a request reached Marketing Studio or a studio
 # over the network. A network caller cannot send it: only the headers named in forward() pass.
 VIA_HEADER = 'X-Marketing-Studio-Via'
@@ -92,8 +87,6 @@ def upstream_timeout(identifier, method, path):
     # one request, as research sources are read.
     if identifier == 'presentation' and method == 'POST' and path == '/api/document-intake':
         return INFOGRAPHIC_REMOTE_TIMEOUT
-    if identifier == 'blog' and method == 'POST' and path in BLOG_REMOTE:
-        return BLOG_REMOTE_TIMEOUT
     if identifier == 'infographic' and method == 'POST' and path == '/api/remote-preview':
         return INFOGRAPHIC_REMOTE_TIMEOUT
     return UPSTREAM_TIMEOUT

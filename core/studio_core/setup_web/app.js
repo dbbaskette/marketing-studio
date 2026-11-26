@@ -1228,6 +1228,8 @@ let brandLookupSkill = '';
 function installedBrands() {
   return (brandFound?.skills || []).flatMap(skill => (skill.brands || []).map(brand => ({skill, brand})));
 }
+// Whether the lookup named each skill's folder: on this computer it does; a phone is told none.
+const placed = () => (brandFound?.skills || []).every(skill => typeof skill.path === 'string');
 async function lookUpBrands() {
   const asked = ++brandLook;
   const skill = (snapshot?.shared?.brand?.skill || '').trim();
@@ -1259,8 +1261,13 @@ function renderBrandChoices() {
   if (!found.length) { status.textContent = brandFound.problem || 'No installed brands were found. You can still enter a brand ID.'; return; }
   const typed = form.elements['brand.brand'].value.trim();
   const missing = typed && !found.some(item => item.brand.brand === typed);
+  // A phone is told no skill folders, so a brand only another installed skill offers is
+  // chosen with that skill on the computer.
+  const offers = brandOffers(), elsewhere = !placed() && !brandLookupSkill && offers.length
+    && !offers.some(item => item.skill === brandFound.skills[0]);
   status.textContent = `${found.length === 1 ? 'One installed brand' : `${found.length} installed brands`}: ${found.map(item => item.brand.name).join(', ')}. Choose one below, then save.`
-    + (missing ? ` ${typed} is not among them, so the studios cannot use it until it is installed.` : '');
+    + (missing ? ` ${typed} is not among them, so the studios cannot use it until it is installed.` : '')
+    + (elsewhere ? ` ${offers[0].brand.name} comes from another installed brand skill, which is chosen on the computer Marketing Studio runs on.` : '');
 }
 // The installed skills that offer the brand typed, and the one the form names now.
 function brandOffers() {
@@ -1284,7 +1291,7 @@ function renderVariants() {
 // When more than one installed skill offers the brand, the person says which.
 function renderBrandFrom() {
   const offers = brandOffers(), field = $('#brand-from-field'), select = $('#brand-from');
-  field.hidden = offers.length < 2;
+  field.hidden = offers.length < 2 || !placed();
   if (field.hidden) return;
   select.replaceChildren(...offers.map(item => new Option(item.skill.name, item.skill.path)));
   select.value = brandMatch().skill.path;
@@ -1293,7 +1300,7 @@ function renderBrandFrom() {
 // themselves offers it, else that skill's folder. A lookup made through a saved folder lists
 // only that skill's brands, so the folder stays as it is.
 function useBrandSkill(match) {
-  if (!match || brandLookupSkill) return;
+  if (!match || brandLookupSkill || !placed()) return;
   const skill = form.elements['brand.skill'];
   const wanted = match.skill === brandFound.skills[0] ? '' : match.skill.path;
   if (skill.value.trim() !== wanted) { skill.value = wanted; if (wanted) $('#brand-more').open = true; }
