@@ -1837,13 +1837,25 @@ class Engine(Reviewing):
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
 
     def in_hand(self, path) -> bool:
-        """Whether this computer is in the middle of a step of a training: a run is busy
-        with it, or a step's marker is held, as it is while a paused training's step
-        finishes."""
-        root = Path(path)
-        with self._lock:
-            run = self._runs.get(str(root))
-        return bool((run is not None and run.busy) or str(root) in self._active_steps)
+        """Whether this computer is in the middle of a step of a training: its step's mark
+        is held, as it is while a paused training's step finishes. A run only queued for a
+        slot has no step in hand. Call it holding `files`, the lock the mark is set under."""
+        return str(Path(path)) in self._active_steps
+
+    def _step_released(self, root: Path) -> None:
+        """Clear this process's mark that a step of a training is in hand, however the step
+        ended: finished, failed, stopped or raised (GitHub issue #549). The step's file
+        marker is left as each ending leaves it: after a Stop it stays for the next start.
+        Sharing held back while the step was in hand goes now, as `mark_step` lets it."""
+        with self.files:
+            if str(root) not in self._active_steps:
+                return
+            self._active_steps.discard(str(root))
+            share = self._deferred_share and not self._active_steps
+            if share:
+                self._deferred_share = False
+        if share:
+            self.share_soon()
 
     def _step_marker(self, root: Path, step: str | None = None) -> None:
         with self.files:
@@ -1956,6 +1968,7 @@ class Engine(Reviewing):
             self._step_marker(root)
             self._trouble(root, failure)
         finally:
+            self._step_released(root)
             if held:    # given back before the run counts as ended
                 self._slots.give_back()
             run.queued = run.busy = False

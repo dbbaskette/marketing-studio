@@ -1796,6 +1796,43 @@ class RunTests(PageCase):
         self.assertEqual(self.post('setup', {'path': str(self.base / 'elsewhere')})
                          ['workspace']['path'], str(self.base / 'elsewhere'))
 
+    def ended(self, how) -> Path:
+        """A training whose research-plan step ended as `how` ends it."""
+        self.workers.then('research-plan', *how)
+        status, reply, _ = self.answer('POST', '/api/trainings', json.dumps(
+            {**FORM, 'flow': 'desk'}).encode(), origin=self.origin, kind='application/json')
+        self.assertIn(status, (200, 409), reply)
+        return self.engine.space().training('rolling-restarts')
+
+    def test_however_a_step_ends_its_mark_goes_and_the_workspace_may_move(self):
+        # Fix round of GitHub issue #549: a Stop left the step's mark in place, so every
+        # later move was refused as "finishing" and automatic sharing stayed held back.
+        from studio_core.shared_runner.write_markers import defer_share
+
+        def stopped(tools, job):
+            self.engine.act(self.engine.space().training('rolling-restarts'), 'stop')
+            raise engines.companion.Stopped('Stopped on the page.')
+
+        def raising(tools, job):
+            raise RuntimeError('Something no step expects.')
+        for name, how, state in (('stopped', (stopped,), 'stopped'),
+                                 ('failed', (fails(), fails(), fails()), 'failed'),
+                                 ('raised', (raising,), 'failed')):
+            with self.subTest(name):
+                root = self.ended(how)
+                self.assertEqual(self.view(root)['state'], state)
+                self.assertFalse(self.engine.in_hand(root))
+                self.assertFalse(defer_share(self.engine), 'sharing is not held back')
+                folder = self.base / f'moved-{name}'
+                self.assertEqual(self.post('setup', {'path': str(folder)})['workspace']['path'],
+                                 str(folder))
+
+    def test_a_run_queued_for_a_slot_has_no_step_in_hand(self):
+        root = Path(self.started())
+        run = self.engine._run(root)
+        run.busy = run.queued = True     # as a run waiting for its turn is
+        self.assertFalse(self.engine.in_hand(root))
+
     def test_a_question_and_a_problem_are_described_field_for_field(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
         asking = self.get('run', path=self.started())
