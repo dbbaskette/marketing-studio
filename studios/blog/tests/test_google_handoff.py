@@ -2,6 +2,7 @@
 
 import isolation  # noqa: F401
 from pathlib import Path
+import re
 from unittest.mock import patch
 
 from test_blog_runner import RunnerCase
@@ -280,6 +281,24 @@ class DeskHandoffTests(RunnerCase):
             with self.assertRaisesRegex(handoff.Conflict, '^' + handoff.NOT_SIGNED_IN + '$'):
                 self.open(expected=self.made['expected'], confirmed=True)
         self.assertEqual(self.drive.imports, [])
+
+    def test_a_desk_doc_refuses_a_draft_changed_outside_the_desk(self):
+        directory, _ = studio.item(self.root, 'articles', self.ident)
+        draft = directory / 'DRAFT.md'
+        draft.write_text(draft.read_text() + '\nAdded in another editor.\n')
+        with self.assertRaisesRegex(handoff.Conflict, '^' + re.escape(handoff.CHANGED_HERE) + '$'):
+            self.open(expected=self.made['expected'], confirmed=True)
+        self.assertEqual(self.drive.imports, [])
+        self.assertNotIn('google', studio.item(self.root, 'articles', self.ident)[1])
+
+    def test_a_desk_record_with_no_written_digest_is_not_refused_for_it(self):
+        directory, record = studio.item(self.root, 'articles', self.ident)
+        record['artifact_hashes'].pop('draft')
+        studio.persist(directory, 'articles', record)
+        import desk_jobs
+
+        result = self.open(expected=desk_jobs.expected(self.root, self.ident), confirmed=True)
+        self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
 
     def test_a_desk_doc_needs_a_draft(self):
         directory, _ = studio.item(self.root, 'articles', self.ident)
