@@ -8,6 +8,10 @@ What a caller needs to know
     caller.remote()                       # True while answering a request the bridge carried
     caller.folder_refused(sent)           # the sentence refusing a folder on this computer
                                           # to a remote caller in a source editor's folder add
+    caller.settings_refused(route, sent)  # the sentence refusing a remote caller set-up, or a
+                                          # brand repository that is not a web address; None
+                                          # for anything else (GitHub issue #539)
+    caller.web_repository(address)        # an https://, ssh:// or user@host:path address
 
 The bridge adds `X-Marketing-Studio-Via: network` to every request it carries to a studio,
 building its upstream headers from a fixed allow-list, so a network caller can neither send
@@ -17,12 +21,23 @@ nor strip it. A request is remote if and only if it carries that header with the
 A remote caller may still give a Google Drive folder link and upload files; only a folder
 path on this computer is refused (`source_intake.REMOTE`), so a phone on the local network
 cannot read this computer's folders. Nothing here reads a folder or uses the network.
+
+Set-up and the brand skill's repository (GitHub issue #539, the owner's ruling: refuse
+folders, allow addresses). For a remote caller, `settings_refused` refuses the two set-up
+routes whatever they were sent (SETUP_ROUTES: `/api/setup`, `/api/setup/check`), so a phone
+learns nothing about any folder here; and the brand skill's repository route (BRAND_ROUTE,
+`/api/brand`) unless `repository` is a web repository address: `https://` with a host,
+`ssh://` with a host, or the `user@host:path` form, which git reads as a remote. Anything
+git may read as a path on this computer (a folder, `file://`, `host:path` without a user,
+an empty address) is refused. A caller on this computer is never refused here: what it
+may do is as before. Every other route answers None.
 """
 from __future__ import annotations
 
 import re
 import threading
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 from studio_core import source_folders, source_intake
 
@@ -75,3 +90,47 @@ def folder_refused(sent) -> str | None:
     if not remote() or not isinstance(sent, dict) or sent.get('action') != 'folder':
         return None
     return source_intake.REMOTE if on_this_computer(sent.get('location')) else None
+
+
+SETUP_ROUTES = ('/api/setup', '/api/setup/check')
+BRAND_ROUTE = '/api/brand'
+SETUP_HERE = ('Set the workspace up on this computer itself: from a phone, set-up is not '
+              'offered, and nothing is said about the folders here.')
+BRAND_ADDRESS = ("From a phone, give the brand skill's repository as a web address "
+                 '(https://… or git@host:owner/repository.git). A folder on this computer, '
+                 'or clearing it, is done on this computer itself.')
+# The scp-like form git reads as a remote: a user, a host and a path, with no slash before
+# the colon and nothing that could be read as an option.
+_SCP = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.+-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s]+')
+
+
+def web_repository(address) -> bool:
+    """Whether a repository address is one git reads as a remote, never a path here: an
+    https:// or ssh:// address with a host, or user@host:path. Read from its shape alone."""
+    if not isinstance(address, str):
+        return False
+    value = address.strip()
+    if not value or any(character.isspace() or ord(character) < 32 for character in value):
+        return False
+    if _SCP.fullmatch(value):
+        return True
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+    except ValueError:
+        return False
+    return parts.scheme.lower() in ('https', 'ssh') and bool(host)
+
+
+def settings_refused(route, sent) -> str | None:
+    """For a remote caller, the sentence that refuses set-up (`SETUP_ROUTES`), or a brand
+    repository that is not a web address (`BRAND_ROUTE`); None for a caller on this
+    computer, and for every other route."""
+    if not remote():
+        return None
+    if route in SETUP_ROUTES:
+        return SETUP_HERE
+    if route == BRAND_ROUTE:
+        given = sent.get('repository') if isinstance(sent, dict) else None
+        return None if web_repository(given) else BRAND_ADDRESS
+    return None

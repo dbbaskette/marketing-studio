@@ -480,6 +480,12 @@ class RunnerPage(server.Page):
         next poll walks the workspace again instead of reusing the last walk, so the
         change shows at once in every open tab. A read sent as a POST changes nothing."""
         try:
+            # A phone through the network bridge sets nothing up here, and gives the brand
+            # skill's repository only as a web address (GitHub issue #539): it learns nothing
+            # of this computer's folders. A caller on this computer is answered as before.
+            refused = caller.settings_refused(path, sent)
+            if refused:
+                raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
             # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`),
             # always as 409, as Training Studio's saved-record guard answers; the page shows
             # a 409 and a 400 alike, as the sentence (GitHub issue #544).
