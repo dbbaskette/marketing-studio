@@ -139,6 +139,33 @@ class BringOverlapTests(StudioCase):
                     self.engine.bring(given)
         self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
 
+    def test_a_folder_named_in_another_letter_case_is_the_same_folder(self):
+        # A disk that ignores letter case (the default on macOS): the holding folder, typed
+        # in other case, is still the folder that holds the workspace.
+        from dataclasses import replace
+        import os
+        from runner import engine as engines, setup, team
+        outside = self.outside()
+        if not (outside.parent / outside.name.upper()).exists():
+            self.skipTest('this disk tells letter case apart')
+        inner = outside / 'presentations'
+        inner.mkdir()
+        other = outside.parent / outside.name.upper()
+        self.assertEqual(team.overlaps(other, inner), 'holds')
+        self.assertEqual(team.overlaps(inner.parent / 'PRESENTATIONS', inner), 'inside')
+        with self.assertRaisesRegex(WorkspaceError, team.INTO_ITSELF):
+            team.copy_in(other, inner / 'copy')
+        held = replace(self.space, folder=os.path.relpath(inner, self.space.repo))
+        with mock.patch.object(self.engine, 'space', return_value=held):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.bring(other)
+        self.assertEqual(str(caught.exception), engines.HOLDS_WORKSPACE)
+        self.assertFalse((inner / 'copy').exists())
+        # Set-up on a folder inside the workspace in use, in other case, is refused too.
+        root = str(self.space.root)
+        with self.assertRaisesRegex(WorkspaceError, setup.INSIDE_WORKSPACE):
+            setup.refuse_place(self.engine, {'path': root[:1] + root[1:].swapcase() + '/new'})
+
     def test_the_shared_copy_never_copies_a_folder_into_itself(self):
         from runner import team
         outside = self.outside()
