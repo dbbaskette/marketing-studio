@@ -387,8 +387,8 @@ def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
 # guard say so in these words.
 CONVERSATION_SAID = ('This training was made in a conversation, which no longer continues '
                      'it. Its files are kept as they are.')
-CONVERSATION_NEXT = ('Bring it in on the Training Studio page to open it on the desk, or start '
-                     'a new training.')
+CONVERSATION_NEXT = ('Its record on the Training Studio page says what can be done with it: '
+                     'brought in where it can be, else read, or a new training started.')
 
 
 def made_in_conversation(root: Path) -> bool:
