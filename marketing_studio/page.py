@@ -413,9 +413,11 @@ class Home(server.Page):
             # A failure of either lookup leaves the other standing. A phone, through the
             # network bridge, is told names, states and counts, not this computer's folders.
             values, problem = shared.read()
-            store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'),
-                                      remote=remote)
-            return server.as_json(200, {**brand_catalog.listed(skill, remote=remote), 'store': store})
+            brand = {} if problem else (values.get('brand') or {})
+            store = brand_data.lookup(brand.get('brands'), remote=remote)
+            # A phone may look up the saved installed skill folder, exactly as saved.
+            return server.as_json(200, {**brand_catalog.listed(skill, remote=remote, saved=brand.get('skill')),
+                                        'store': store})
         if path == '/api/graphics':
             try:
                 return server.as_json(200, graphics.act(

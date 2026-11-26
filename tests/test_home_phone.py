@@ -329,6 +329,22 @@ class HomePhoneTests(BrandFolders):
         for path, why in home_page.PHONE.items():
             self.assertEqual(home_page.SAVED in why, path in home_page.PHONE_SHOWS, path)
 
+    def test_a_phone_looks_up_the_saved_skill_folder_by_name_and_no_other(self):
+        # Review item 7: the saved installed skill folder, exactly as saved, is looked up.
+        saved = str(self.root / 'skill')
+        self.assertEqual(self.save({'brand': {'skill': saved}}, network=False)[0], 200)
+        with mock.patch.object(brand_catalog, 'choices', return_value=SKILLS) as choices:
+            status, answer = self.ask('/api/brands', {'skill': saved})
+            self.assertEqual((status, answer['skills'], answer['problem']),
+                             (200, [{'name': 'synthetic-brand', 'brands': SKILLS['skills'][0]['brands']}], None))
+            choices.assert_called_once_with(saved)
+            self.assertNotIn('/opt/', json.dumps(answer))
+            choices.reset_mock()
+            for other in (saved + ' ', saved + '/', str(self.root / 'other-skill'), '/opt/synthetic-brand-skill'):
+                with self.subTest(skill=other):
+                    self.assertEqual(self.ask('/api/brands', {'skill': other})[1]['problem'], brand_catalog.REMOTE_SKILL)
+            choices.assert_not_called()
+
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},
                                'brand': {'skill': str(self.root / 'skill')}}, network=False)

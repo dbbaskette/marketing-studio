@@ -220,7 +220,19 @@ class BrandCardTests(unittest.TestCase):
         self.assertEqual(other['#brand-catalog-status']['text'],
                          '3 installed brands: Example Co, Plain Co, Other Co. Choose one below, then save. Other Co comes '
                          'from another installed brand skill, which is chosen on the computer Marketing Studio runs on.')
-        # A saved skill folder a phone sent is refused with the lookup's own sentence.
+        # With the saved skill folder, a phone's lookup lists that skill's brands by name
+        # (review item 7), and choosing one keeps the saved folder as it is.
+        saved = self.page([self.load(shown(skill='/opt/second')), {'show': 'settings'}, {'wait': True},
+                           pick('other'), {'snapshot': 'saved', 'read': READ}],
+                          responses={'brands': {'skills': [{'name': 'Second brand skill', 'brands': [
+                              {'name': 'Other Co', 'brand': 'other', 'variants': ['night']}]}],
+                              'problem': None, 'store': None}})['saved']
+        self.assertEqual(saved['read']['#brand-catalog-status']['text'],
+                         'One installed brand: Other Co. Choose one below, then save.')
+        self.assertEqual(json.loads(saved['read']['#probe']['text'])['skill'], '/opt/second')
+        sent = [request for request in saved['requests'] if request['url'].endswith('/api/brands')]
+        self.assertEqual(sent[0]['sent'], {'skill': '/opt/second'})
+        # Any other skill folder a phone sent is refused with the lookup's own sentence.
         refused = self.page([self.load(shown(skill='/opt/second')), {'show': 'settings'}, {'wait': True},
                              {'snapshot': 'refused', 'read': READ}],
                             responses={'brands': {'skills': [], 'problem': 'Read only on the computer.', 'store': None}})
