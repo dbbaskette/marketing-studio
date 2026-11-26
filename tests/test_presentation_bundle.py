@@ -385,7 +385,8 @@ class PresentationBundleTests(unittest.TestCase):
 
     def test_offline_plan_does_not_build_or_fetch_tools(self):
         config = self.root / 'sources.json'
-        config.write_text('{"schema":1,"sources":{}}')
+        # A brand is named: the builder no longer guesses a folder beside the checkout.
+        config.write_text('{"schema":1,"sources":{"brand":{"path":"brand"}}}')
         with mock.patch.object(builder, 'build') as build, \
                 mock.patch.object(tool_payload, 'download') as fetch, \
                 mock.patch('sys.stdout', new_callable=io.StringIO) as output:
@@ -396,6 +397,33 @@ class PresentationBundleTests(unittest.TestCase):
         self.assertFalse((self.root / 'output').exists())
         build.assert_not_called()
         fetch.assert_not_called()
+
+    def test_a_build_with_no_brand_named_is_refused_without_guessing_a_folder(self):
+        # GitHub issue #544: no fallback to a brand folder beside this checkout.
+        config = self.root / 'sources.json'
+        config.write_text('{"schema":1,"sources":{}}')
+        for action in (['--plan'], []):
+            with self.subTest(action=action), \
+                    mock.patch.object(builder, 'build') as build, \
+                    mock.patch.object(tool_payload, 'download') as fetch, \
+                    mock.patch('sys.stdout', new_callable=io.StringIO) as output, \
+                    mock.patch('sys.stderr', new_callable=io.StringIO) as said:
+                self.assertEqual(builder.main([*action, '--config', str(config),
+                                               '--output', str(self.root / 'output')]), 1)
+            self.assertEqual(output.getvalue(), '')
+            self.assertIn(builder.NO_BRAND, said.getvalue())
+            build.assert_not_called()
+            fetch.assert_not_called()
+            self.assertFalse((self.root / 'output').exists())
+        # Named by --brand, a local checkout is what the plan reports.
+        brand = self.root / 'brand-checkout'
+        brand.mkdir()
+        with mock.patch('sys.stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(builder.main(['--plan', '--config', str(config), '--brand', str(brand),
+                                           '--output', str(self.root / 'output')]), 0)
+        self.assertEqual(json.loads(output.getvalue())['brand_source'], str(brand))
+        self.assertIn('brand has no fallback', ' '.join(
+            (ROOT / 'docs/local-presentation-bundle.md').read_text().split()))
 
     def test_linked_packaging_guide_is_in_each_studio_archive_inventory(self):
         for studio in ('blog', 'presentation', 'training'):

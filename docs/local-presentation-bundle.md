@@ -98,9 +98,10 @@ relative to that file. An explicitly requested missing or invalid config fails
 instead of falling back. `--plan` reports configured sources without fetching
 them; remote versions are resolved only during a build.
 
-Components omitted from the config retain the repository's companion pins and
-the sibling `../tanzu-brand` fallback. `--brand` overrides the configured brand
-with a local checkout. The brand repository must provide the Tanzu Brand release
+Components omitted from the config retain the repository's companion pins. The
+brand has no fallback: name it in the config, or give `--brand`, or the command
+stops and says so. `--brand` overrides the configured brand with a local
+checkout. The brand repository must provide the Tanzu Brand release
 packer and installer interfaces. Runtime and extra-tool pins remain separate.
 
 Override the brand or output location explicitly when needed:

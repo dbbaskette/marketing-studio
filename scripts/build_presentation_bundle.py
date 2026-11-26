@@ -27,6 +27,9 @@ from tool_payload import prepare_tools, require_arm64
 ARCHIVES = {'libreoffice', 'micromamba', 'google_cloud_cli'}
 DEFAULT_CONFIG = ROOT / 'presentation-studio-package.local.json'
 SHARED_CONFIG = ROOT / 'studio-package.local.json'
+NO_BRAND = ('No brand repository is named. Add "brand" to the source config '
+            '(presentation-studio-package --init-config writes one), or give --brand with a '
+            'local checkout.')
 PRODUCTS = {'marketing': ['blog', 'presentation', 'training'],
             'blog': ['blog'], 'presentation': ['presentation'], 'training': ['training']}
 
@@ -356,10 +359,14 @@ def main(argv=None, product='presentation', prog='presentation-studio-package'):
             sources.pop('harness-slides', None)
         if args.brand:
             sources['brand'] = bundle_sources.source_spec({'path': str(args.brand)}, Path.cwd())
-        brand = Path(sources.get('brand', {}).get('path', ROOT.parent / 'tanzu-brand'))
+        # The brand repository is named in the source config or by --brand: no folder beside
+        # this checkout is guessed (GitHub issue #544).
+        if not sources.get('brand'):
+            raise ValueError(NO_BRAND)
+        brand = Path(sources['brand']['path']) if 'path' in sources['brand'] else None
         if args.plan:
-            brand_spec = sources.get('brand', {'path': str(brand)})
-            package = brand / 'package.json'
+            brand_spec = sources['brand']
+            package = brand / 'package.json' if brand else None
             companions = json.loads((ROOT / 'pins/companions.json').read_text())['companions']
             if selected == ['blog']:
                 companions.pop('harness-slides', None)
@@ -370,7 +377,7 @@ def main(argv=None, product='presentation', prog='presentation-studio-package'):
                                         if package_path and package_path.is_file() else None}
             print(json.dumps({'product': product, 'studios': selected,
                               'platform': lock['platform'], 'mode': args.mode, 'brand_source': brand_spec.get('git', str(brand)),
-                              'brand_version': json.loads(package.read_text())['version'] if 'path' in brand_spec and package.is_file() else None,
+                              'brand_version': json.loads(package.read_text())['version'] if package and package.is_file() else None,
                               'sources': {**sources, 'brand': brand_spec},
                               'studio_version': (ROOT / 'VERSION').read_text().strip(),
                               'companions': companions,
