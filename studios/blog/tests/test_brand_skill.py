@@ -533,23 +533,12 @@ class BrandSkillTests(unittest.TestCase):
 
     def test_installation_blocks_new_writing_until_finished(self):
         _, found = self.checked()
-        run = blog_runner.create(
-            self.root,
-            {
-                'title': 'Waiting blog',
-                'goal': 'A fixture',
-                'audience': 'Authors',
-                'research': 'none',
-                'brand': '',
-            },
-            'page',
-        )
-        # Runner code the manuscript editor's own runs still use: this run is marked as the
-        # editor's, the only saved runs the runner goes on with.
-        directory, _, state = blog_runner.load(self.root, run['id'])
-        state['editor_check'] = 'revise'
-        studio.write_json(directory / blog_runner.STATE, state)
-        worker = unittest.mock.Mock(return_value={'content': '# Synthetic outline', 'notes': ''})
+        from test_blog_runner import editor_check, manuscript
+
+        # The manuscript editor's own runs are the only saved runs the runner goes on with.
+        ident = manuscript(self.root, 'A synthetic waiting draft.', 'Waiting blog')
+        run = editor_check(self.root, ident, 'revise')
+        worker = unittest.mock.Mock(return_value={'content': '# Synthetic draft', 'notes': ''})
         engine = blog_runner.Engine(self.root, worker)
         engine.control(run['id'], 'resume')
         entered, finish = threading.Event(), threading.Event()

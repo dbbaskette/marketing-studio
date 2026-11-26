@@ -68,7 +68,7 @@ class SharedSitesCase(RunnerCase):
             },
             'page' if page else 'conversation',
         )
-        return self.editors(found) if self.EDITOR else found
+        return found
 
 
 class StartFormTests(SharedSitesCase):
@@ -694,10 +694,6 @@ class WithoutHarnessResearchTests(SharedSitesCase):
     """Your sites never become the open web: without Harness Research, research from your
     sites alone is refused, and no worker is given web search for it."""
 
-    # Runner code the manuscript editor's own runs still use: its runs are marked as the
-    # editor's (RunnerCase.EDITOR), the only saved runs the runner goes on with.
-    EDITOR = 'revise'
-
     def setUp(self):
         super().setUp()
         self.helper.return_value = None
@@ -735,15 +731,17 @@ class WithoutHarnessResearchTests(SharedSitesCase):
         self.assertEqual(found['status'], 'ready')
 
     def research_job(self, change=None):
-        """The web search option the worker is given for a run's research stage."""
-        found = self.start(research_from={'documents': False, 'sites': SITES[:1], 'web': True})
+        """The web search option the worker is given for the research stage of the run the
+        manuscript editor's check makes with research from your documents and the web."""
+        found = self.editor_run('factual-support', research='web-allowed')
+        self.assertEqual(found['next'], 'research-plan')
         if change is not None:
             # A run saved this way, however it came to be: the worker must follow its choice.
             directory, record, _ = runner.load(self.root, found['id'])
             change(record)
             studio.persist(directory, 'articles', record)
             found = runner.survey(self.root, found['id'])
-        found = self.approve(self.submit(found, page=True), page=True)
+        found = self.submit(found)  # The check goes on past its research plan.
         self.assertEqual(found['next'], 'research')
         seen = []
 

@@ -390,23 +390,18 @@ class ToneWhileOffTests(EnforcementCase):
         )
 
     def test_an_old_run_still_writes_in_its_pinned_voice_while_off(self):
+        from test_blog_runner import editor_check, manuscript
+
         self.on()
-        found = blog_runner.create(
-            self.root,
-            {
-                'title': 'T',
-                'audience': 'A',
-                'goal': 'G',
-                'research': 'none',
-                'profile': self.profile['id'],
-            },
-            'page',
+        # A saved manuscript pinned to the voice, and the run the manuscript editor's
+        # revision makes for it: the only saved runs the runner goes on with.
+        ident = manuscript(self.root, 'A synthetic saved draft.', 'T')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'article', 'voice', '--id', ident]
+            + ['--profile', self.profile['id']]
         )
-        # Runner code the manuscript editor's own runs still use: this run is marked as the
-        # editor's, the only saved runs the runner goes on with.
-        directory, _, state = blog_runner.load(self.root, found['id'])
-        state['editor_check'] = 'revise'
-        studio.write_json(directory / blog_runner.STATE, state)
+        studio.article_command(self.root, args)
+        found = editor_check(self.root, ident, 'revise')
         blog_runner.settings(
             self.root, self.form(features={'voice': False}, features_before={'voice': True})
         )
@@ -414,7 +409,7 @@ class ToneWhileOffTests(EnforcementCase):
 
         def worker(*args, **kwargs):
             sent.append(args[1])
-            return {'content': '# Synthetic outline', 'notes': 'Fake worker only.'}
+            return {'content': '# Synthetic draft', 'notes': 'Fake worker only.'}
 
         engine = blog_runner.Engine(self.root, worker=worker)
         self.addCleanup(engine.close)

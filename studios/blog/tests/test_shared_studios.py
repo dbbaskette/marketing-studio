@@ -572,23 +572,17 @@ class TeamTests(unittest.TestCase):
 
     def create(self):
         """A step-by-step run that still goes on, for the tests of a run's team behaviour
-        (driver, takeover, publishing). Only the manuscript editor's own runs go on, so it is
-        marked as one; a run of the earlier flow is a saved record (test_saved_gate)."""
-        found = blog_runner.create(
-            self.root,
-            {
-                'title': 'Fictional launch',
-                'goal': 'Explain a fictional service',
-                'audience': 'Authors',
-                'research': 'none',
-                'stop': 'outline',
-            },
-        )
-        directory, _, run = blog_runner.load(self.root, found['id'])
-        run['editor_check'] = 'revise'
-        studio.write_json(directory / blog_runner.STATE, run)
-        teams.saved(self.root, found['id'])  # Committed, as the editor's check commits it.
-        return blog_runner.survey(self.root, found['id'])
+        (driver, takeover, publishing). Only the manuscript editor's own runs go on: this is
+        the run its revision makes for a saved manuscript; a run of the earlier flow is a saved
+        record (test_saved_gate)."""
+        from test_blog_runner import editor_check, manuscript
+
+        ident = manuscript(self.root, 'A fictional launch draft.', 'Fictional launch')
+        teams.saved(self.root, ident)
+        teams.action(self.root, ident, 'take')  # This computer edits it.
+        editor_check(self.root, ident, 'revise')
+        teams.saved(self.root, ident)  # Committed, as the editor's check commits it.
+        return blog_runner.survey(self.root, ident)
 
     def desk(self, **extra):
         """A blog started on the writing desk in the team workspace, as the page starts one:

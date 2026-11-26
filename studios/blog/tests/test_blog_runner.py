@@ -19,6 +19,37 @@ import blog_worker
 import management
 
 
+def manuscript(root, text, title='Gateway guide'):
+    """A saved manuscript with no run, registered as a draft brought in by chat is: what the
+    manuscript editor's check works on."""
+    args = studio.parser().parse_args(
+        ['--root', str(root), 'article', 'create', '--title', title, '--mode', 'first-draft']
+    )
+    article = studio.article_command(root, args)
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / 'draft.md'
+        path.write_text(text)
+        args = studio.parser().parse_args(
+            ['--root', str(root), 'article', 'save', '--id', article['id']]
+            + ['--kind', 'draft', '--file', str(path)]
+        )
+        studio.article_command(root, args)
+    return article['id']
+
+
+def editor_check(root, ident, check='revise', **values):
+    """The manuscript editor's check on a saved manuscript, as Edit manuscript starts it: the
+    run it makes (or, on a blog with one, makes again), before its worker runs."""
+    import manuscript_editor
+
+    shown = manuscript_editor.read(root, ident)
+    with patch.object(runner.Engine, 'control', return_value={}):
+        manuscript_editor.dispatch(
+            root, 'check', {'id': ident, 'expected': shown['expected'], 'check': check, **values}
+        )
+    return runner.survey(root, ident)
+
+
 class RunnerCase(Fixture):
     """A disposable workspace with the runner helpers every test uses."""
 
@@ -39,14 +70,8 @@ class RunnerCase(Fixture):
         studios_config.update({'review': {'level': 'step_by_step'}})
         self.addCleanup(lambda: runner.ENGINES.pop(str(self.root), None))
 
-    # The earlier flow continues no saved run but the manuscript editor's own. A class whose
-    # tests are of the runner code those runs still use (the worker, its stage jobs, failures,
-    # research) names the editor's check here, and each run it makes is marked with it, as
-    # the editor's own check marks a run it continues (`editors`).
-    EDITOR = None
-
     def create(self, page=False, **extra):
-        found = runner.create(
+        return runner.create(
             self.root,
             {
                 'title': 'Synthetic gateway guide',
@@ -57,17 +82,48 @@ class RunnerCase(Fixture):
             },
             'page' if page else 'conversation',
         )
-        return self.editors(found) if self.EDITOR else found
 
-    def editors(self, found, check=None):
-        """The run marked as the manuscript editor's (its `editor_check`), so the runner goes
-        on with it; nothing else about the run changes."""
-        directory, _, run = runner.load(self.root, found['id'])
-        run['editor_check'] = check or self.EDITOR or 'revise'
-        studio.write_json(directory / runner.STATE, run)
-        return runner.survey(self.root, found['id'])
+    # The earlier flow continues no saved run but the manuscript editor's own, so the runner
+    # code those runs use (the worker, its stage jobs, failures, research) is tested on the
+    # runs the editor's check really makes: Edit manuscript on a saved manuscript.
+    MANUSCRIPT = 'Clients send requests to a gateway. The gateway calls the service.'
 
-    def submit(self, found, content=None, page=False):
+    def editor_check(self, ident, check='revise', **values):
+        return editor_check(self.root, ident, check, **values)
+
+    def editor_run(self, check='revise', text=None, **values):
+        """A saved manuscript and the run the editor's `check` makes for it: revise has a
+        draft and its review; any other check its review alone; research comes first."""
+        return self.editor_check(self.article(text or self.MANUSCRIPT), check, **values)
+
+    def review_of(self, ident):
+        """A located editing review of the blog's saved manuscript, as the worker returns it."""
+        directory, _ = studio.item(self.root, 'articles', ident)
+        line = next(
+            part.strip()
+            for part in (directory / 'DRAFT.md').read_text().splitlines()
+            if part.strip().strip('#').strip()
+        )
+        return json.dumps(
+            {
+                'summary': 'Synthetic review; editorial assessment only.',
+                'findings': [
+                    {
+                        'id': 'first',
+                        'kind': 'comment',
+                        'before': line,
+                        'reason': 'Synthetic note.',
+                        'evidence': 'Editorial judgment',
+                        'verdict': 'editorial',
+                    }
+                ],
+            }
+        )
+
+    def submit(self, found, content=None, page=None):
+        page = found.get('approval') == 'page' if page is None else page
+        if content is None and found['next'] == 'review' and found.get('editor_check'):
+            content = self.review_of(found['id'])
         if content is None and found['next'] == 'claims-map':
             directory, record, run = runner.load(self.root, found['id'])
             source = runner.inputs(self.root, record, run)['sources'][0]
@@ -86,7 +142,8 @@ class RunnerCase(Fixture):
             page=page,
         )
 
-    def approve(self, found, page=False):
+    def approve(self, found, page=None):
+        page = found.get('approval') == 'page' if page is None else page
         return runner.decide(self.root, found['id'], found['expected'], 'approve', page=page)
 
     DESK_DRAFT = 'An opening paragraph.\n\n## First part\n\nFirst text.\n'
@@ -142,13 +199,10 @@ class RunnerCase(Fixture):
 
 class BlogRunnerTests(RunnerCase):
     def test_profiles_are_saved_and_background_worker_gets_the_saved_kind(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         from studio_core import studios_config
 
         self.profiles()
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         studios_config.update(
             {'models': {'profiles': {kind: {'model': 'later'} for kind in ('research', 'writing')}}}
         )
@@ -156,7 +210,7 @@ class BlogRunnerTests(RunnerCase):
 
         def worker(*args, **kwargs):
             calls.append(kwargs)
-            return {'content': '# Synthetic outline', 'notes': 'Fake worker only.'}
+            return {'content': '# Synthetic draft', 'notes': 'Fake worker only.'}
 
         engine = runner.Engine(self.root, worker=worker)
         self.addCleanup(engine.close)
@@ -167,7 +221,8 @@ class BlogRunnerTests(RunnerCase):
         self.assertIn(kind, ('research', 'writing'))
         self.assertEqual(calls[0]['model_selection']['model'], kind + '-model')
         self.assertIsNone(run['model_jobs'][0]['actual_model'])
-        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        # The revision's draft is saved and the check goes on to its review.
+        self.assertEqual(engine.describe(found['id'])['status'], 'queued')
 
     def test_review_return_to_draft_uses_fixing_without_routing_from_request_text(self):
         self.profiles()
@@ -221,7 +276,7 @@ class BlogRunnerTests(RunnerCase):
         found = self.create(page=True)
         found = self.submit(found, page=True)
         with self.assertRaisesRegex(ValueError, 'decided on the page'):
-            self.approve(found)
+            self.approve(found, page=False)
         with self.assertRaises(ValueError):
             blog_worker.validate({'content': 'A draft', 'notes': '', 'approve': True})
         found = self.approve(found, page=True)
@@ -334,14 +389,11 @@ class BlogRunnerTests(RunnerCase):
     def test_polling_reads_selected_context_once_per_run(self):
         source = self.source('A fictional gateway routes synthetic requests.')
         ids = []
+        # A list describes runs that still go on, the manuscript editor's (a saved run of the
+        # earlier flow lists from its small records).
         for _ in range(3):
-            found = self.approve(self.submit(self.create(sources=[source['id']])))
-            found = self.approve(self.submit(found))
-            ids.append(self.submit(found)['id'])
-        # A list describes only runs that still go on, the manuscript editor's: these runs are
-        # marked as the editor's (a saved run of the earlier flow lists from its small records).
-        for ident in ids:
-            self.editors({'id': ident}, 'shape')
+            found = self.editor_run('revise', sources=[source['id']])
+            ids.append(self.submit(self.submit(found))['id'])
         with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
             detail = runner.survey(self.root, ids[0])
         self.assertEqual(counted.call_count, 1)
@@ -356,10 +408,8 @@ class BlogRunnerTests(RunnerCase):
         self.assertIsNone(runner.survey(self.root, ids[0], listing=True)['expected'])
 
     def test_list_and_detail_views_agree_when_inputs_change(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.approve(self.submit(self.create()))
+        found = self.submit(self.editor_run('revise'))  # its draft, continued to the review
+        self.assertEqual(found['stages'][0]['status'], 'approved')
         directory, record = studio.item(self.root, 'articles', found['id'])
         record['title'] = 'A changed synthetic title'
         studio.persist(directory, 'articles', record)
@@ -491,100 +541,87 @@ class BlogRunnerTests(RunnerCase):
         self.assertIsNone(found['awaits'])
 
     def test_late_worker_result_cannot_overwrite_local_edit(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         directory, _ = studio.item(self.root, 'articles', found['id'])
 
         def worker(*args, **kwargs):
-            (directory / 'OUTLINE.md').write_text('My newer outline')
-            return {'content': 'Late model outline', 'notes': ''}
+            (directory / 'DRAFT.md').write_text('My newer draft')
+            return {'content': 'Late model draft', 'notes': ''}
 
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
         engine.once(found['id'])
-        self.assertEqual((directory / 'OUTLINE.md').read_text(), 'My newer outline')
+        self.assertEqual((directory / 'DRAFT.md').read_text(), 'My newer draft')
         self.assertEqual(engine.describe(found['id'])['status'], 'failed')
 
-    def test_worker_saves_one_stage_and_never_crosses_gate(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
+    def test_worker_saves_each_step_and_stops_at_the_review(self):
         calls = []
+        found = self.editor_run('revise')
 
-        def worker(*args, **kwargs):
+        def worker(engine_name, payload, guidance, **kwargs):
             calls.append(kwargs)
-            return {'content': '# Outline\nA fictional outline.', 'notes': 'Synthetic.'}
+            if payload.get('response_kind') == 'editing-review':
+                return {'content': self.review_of(found['id']), 'notes': 'Synthetic.'}
+            return {'content': '# Draft\nA fictional draft.', 'notes': 'Synthetic.'}
 
-        found = self.create(page=True, stop='draft')
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
-        engine.once(found['id'])
         engine.once(found['id'])
         self.assertEqual(len(calls), 1)
         self.assertFalse(calls[0]['web'])
-        found = engine.describe(found['id'])
-        self.assertEqual(found['status'], 'waiting-for-approval')
-        self.assertEqual(found['next'], 'outline')
-        found = self.approve(found, page=True)
-        # The editor's runs stop after each step; it starts the next one.
-        engine.control(found['id'], 'resume')
+        # The draft is saved and the check goes on by itself to its review.
         self.assertEqual(engine.describe(found['id'])['status'], 'queued')
         engine.once(found['id'])
-        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        engine.once(found['id'])
         self.assertEqual(len(calls), 2)
+        found = engine.describe(found['id'])
+        self.assertEqual((found['status'], found['next']), ('waiting-for-approval', 'review'))
+        self.assertFalse(found['enabled'])
 
     def test_background_runner_does_not_regenerate_a_manual_edit(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         calls = []
 
         def worker(*args, **kwargs):
             calls.append(True)
-            return {'content': 'Generated outline', 'notes': ''}
+            return {'content': 'Generated draft', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
         engine.once(found['id'])
         directory, _ = studio.item(self.root, 'articles', found['id'])
-        (directory / 'OUTLINE.md').write_text('My edited outline')
-        # The editor's runs stop after each step; resumed, the run meets the edit.
-        engine.control(found['id'], 'resume')
+        # Edited outside the runner between the check's steps: it meets the edit and stops.
+        (directory / 'DRAFT.md').write_text('My edited draft')
         engine.once(found['id'])
         self.assertEqual(len(calls), 1)
-        self.assertEqual((directory / 'OUTLINE.md').read_text(), 'My edited outline')
-        self.assertEqual(engine.describe(found['id'])['status'], 'needs-attention')
+        self.assertEqual((directory / 'DRAFT.md').read_text(), 'My edited draft')
+        shown = engine.describe(found['id'])
+        self.assertEqual((shown['status'], shown['error']), ('failed', runner.STALE_CHECK))
 
     def test_restart_only_resumes_explicitly_started_local_runs(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True)
+        found = self.editor_run('proofread')
         one = runner.Engine(self.root)
         self.assertFalse(one.local(found['id'])['enabled'])
         one.control(found['id'], 'resume')
         two = runner.Engine(
-            self.root, lambda *a, **kw: {'content': 'Recovered outline', 'notes': ''}
+            self.root,
+            lambda *a, **kw: {'content': self.review_of(found['id']), 'notes': ''},
         )
         two.once(found['id'])
         self.assertEqual(two.describe(found['id'])['status'], 'waiting-for-approval')
         self.assertEqual(one.local(found['id'])['status'], 'waiting-for-approval')
 
     def test_stop_cancels_worker_without_a_late_save(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         entered, release = threading.Event(), threading.Event()
 
         def worker(*args, **kwargs):
             entered.set()
             release.wait(3)
-            return {'content': 'A late outline', 'notes': ''}
+            return {'content': 'A late draft', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.editor_run('revise')
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        before = (directory / 'DRAFT.md').read_text()
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
         thread = threading.Thread(target=engine.once, args=(found['id'],))
@@ -597,8 +634,7 @@ class BlogRunnerTests(RunnerCase):
             thread.join(3)
             self.assertFalse(thread.is_alive())
             self.assertEqual(engine.describe(found['id'])['status'], 'stopped')
-            directory, _ = studio.item(self.root, 'articles', found['id'])
-            self.assertFalse((directory / 'OUTLINE.md').exists())
+            self.assertEqual((directory / 'DRAFT.md').read_text(), before)
         finally:
             release.set()
             thread.join(3)
@@ -699,26 +735,21 @@ class BlogRunnerTests(RunnerCase):
         self.assertTrue(found['complete'])
 
     def test_completed_page_revision_returns_to_a_resumable_stage(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True, stop='outline')
-        engine = runner.engine(self.root)
-        engine.control(found['id'], 'resume')
-        found = self.approve(self.submit(found, page=True), page=True)
-        engine.once(found['id'])
+        found = self.editor_run('proofread')
+        found = self.approve(self.submit(found))
+        self.assertTrue(found['complete'])
         found = runner.dispatch(
             self.root,
             'changes',
             {
                 'id': found['id'],
                 'expected': found['expected'],
-                'stage': 'outline',
+                'stage': 'review',
                 'request': 'Clarify the fictional argument',
             },
         )
         self.assertFalse(found['complete'])
-        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['next'], 'review')
         self.assertEqual(found['status'], 'paused')
         self.assertFalse(found['enabled'])
 
@@ -784,24 +815,25 @@ class BlogRunnerTests(RunnerCase):
         self.assertIsNone(runner.document(self.root, found['id'], 'outline')['previous'])
 
     def test_pause_keeps_current_stage_but_prevents_next_job(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root)
         engine.control(found['id'], 'resume')
+        calls = []
 
         def worker(*args, **kwargs):
+            calls.append(True)
             engine.control(found['id'], 'pause')
             return {'content': 'Finished current job', 'notes': ''}
 
         engine.worker = worker
         engine.once(found['id'])
+        engine.once(found['id'])
         found = engine.describe(found['id'])
-        self.assertEqual(found['status'], 'waiting-for-approval')
+        # The draft the step was making is kept; the review never starts.
+        self.assertEqual((found['status'], found['next']), ('paused', 'review'))
         self.assertFalse(found['enabled'])
-        found = self.approve(found, page=True)
-        self.assertFalse(engine.local(found['id'])['enabled'])
+        self.assertEqual(found['stages'][0]['status'], 'approved')
+        self.assertEqual(len(calls), 1)
 
     def test_imported_draft_can_be_revised_after_review(self):
         ident = self.article('My original synthetic draft')
@@ -1246,10 +1278,7 @@ class SharedPatternTests(RunnerCase):
         self.assertEqual(studios_config.read()[0], before)
 
     def test_the_worker_records_when_it_started_and_the_page_reads_it(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker=self.worker())
         self.addCleanup(engine.close)
         seen = []
@@ -2725,11 +2754,9 @@ class ClaimsMapTests(RunnerCase):
         self.submit(found, self.line(payload['sources'][0]))
 
     def test_a_worker_cannot_make_a_voice_sample_into_claims(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         fact, voice = self.role_source('reference'), self.role_source('voice-sample')
-        found = self.create(page=True, research='supplied-only', sources=[fact, voice])
+        found = self.editor_run('factual-support', research='supplied-only', sources=[fact, voice])
+        self.assertEqual(found['next'], 'claims-map')
         directory, record, run = runner.load(self.root, found['id'])
         sample = next(
             source
@@ -2755,9 +2782,13 @@ class ClaimsMapTests(RunnerCase):
             )
         )
 
-    def mapped(self, page=False, **extra):
+    def mapped(self, page=False, editor=False, **extra):
         source = self.source(self.PASSAGE)
-        found = self.create(page=page, research='supplied-only', sources=[source['id']], **extra)
+        if editor:
+            # The editor's check of the facts against supplied material maps their claims.
+            found = self.editor_run('factual-support', research='supplied-only', sources=[source['id']])
+        else:
+            found = self.create(page=page, research='supplied-only', sources=[source['id']], **extra)
         directory, record, run = runner.load(self.root, found['id'])
         offered = runner.inputs(self.root, record, run)['sources'][0]
         return found, {**offered, 'selected_id': source['id']}
@@ -2818,11 +2849,8 @@ class ClaimsMapTests(RunnerCase):
         )
 
     def test_a_claims_map_gets_one_correction(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         for corrected in (True, False):
-            found, source = self.mapped(page=True, title='Correction ' + str(corrected))
+            found, source = self.mapped(editor=True)
             calls = []
 
             def worker(
@@ -2851,7 +2879,8 @@ class ClaimsMapTests(RunnerCase):
             self.assertEqual(len(calls), 2)
             self.assertIn('validation_error', calls[1])
             if corrected:
-                self.assertEqual(shown['status'], 'waiting-for-approval')
+                # The corrected map is saved and the check goes on to its review.
+                self.assertEqual((shown['status'], shown['next']), ('queued', 'review'))
             else:
                 self.assertEqual(shown['status'], 'failed')
                 self.assertIn(
