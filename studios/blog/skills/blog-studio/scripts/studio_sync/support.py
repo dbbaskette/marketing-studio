@@ -303,4 +303,6 @@ def ahead(repo: Path, tracking: str) -> int:
 
 def name_from(url: str) -> str:
     stem = re.split(r'[/:]', url.rstrip('/'))[-1].removesuffix('.git')
-    return slugify(stem) if re.search(r'[a-z0-9]', stem.lower()) else 'workspace'
+    # The fallback names a clone's folder on disk, so it stays what it has always been: a
+    # different word would clone an already joined workspace again on a rejoin.
+    return slugify(stem) if re.search(r'[a-z0-9]', stem.lower()) else 'hub'

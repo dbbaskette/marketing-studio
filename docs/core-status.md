@@ -15,7 +15,8 @@
 | PDF, Word and HTML text | `core/studio_core/source_documents.py` | Each caller's limits and sentences, and its archive opening for Word |
 | The list of a project's parts | `StudioShell.parts` in `core/studio_core/deck_web/shell.js`, drawn by `ui-kit/style.css` | What each studio lists and the state of each part |
 | Desk parts | `core/studio_core/drafting/`, `text_checks.py`, `step_times.py`, `ui-kit/drafting.js` | Job queues, kinds and writing context; each desk's own screens |
-| Blog Studio's Git, sharing (`studio_sync/`), brand (`studio_brand/`), engine, research and job workflows; each deck studio's pipeline, engine and jobs | Native studio directories | Preserved. Moving Blog Studio's sharing and brand onto the shared runner needs a reconciliation of about 1,500 lines of Blog Studio-only logic, not done yet |
+| Blog Studio's Git, sharing and brand (`studio_sync/`, `studio_brand/`) | `core/studio_core/shared_runner/` (`gitstate`, `team`, `brand`, `companion`, `brand_source`) | Blog Studio's values, passed by its facades, and its host modules in `studio_sync/support.py` (its git primitives and settings, its lock, its data folder) |
+| Blog Studio's engine, research and job workflows; each deck studio's pipeline, engine and jobs | Native studio directories | Preserved |
 
 The compatibility module loader creates isolated product contexts from one source
 file, retaining native constants and exception identities. Companion bindings

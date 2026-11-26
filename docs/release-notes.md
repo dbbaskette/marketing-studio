@@ -2,6 +2,21 @@
 
 The newest release is first. The version being worked on is in [`VERSION`](../VERSION), and the companion skills' floors are in [`pins/companions.json`](../pins/companions.json). Each studio's own changelog has the detail.
 
+# Marketing Studio 4.23.0
+
+Every studio is at 4.23.0. These are the changes since 4.22.0. Nothing a person does or reads changes, apart from the two small things named below.
+
+- **Blog Studio's team sharing and brand handling run on the shared runner.** Blog Studio kept its own copies of the code that keeps a workspace, shares it with a team, replays and publishes, and asks the brand skill: about 2,400 lines that had drifted from what Presentation Studio and Training Studio share. Those five files are now short facades over the shared code ([#543](https://github.com/dbbaskette/marketing-studio/issues/543)). Everything Blog Studio does its own way is passed in as a value: its list of ignored files, how it reads its workspace (branch and address from `hub.json`), the join that remembers nothing until the shared settings are saved, the lock a sync holds, its publication tags, and a blog's brand export (`--medium blog`, a voice profile, no delivery).
+- **Held fixed by tests written first.** 52 tests were written against the old copies before anything moved, and pass unchanged on the facades: every shape of workspace opens with no file rewritten, the guarded join, a whole sync between two clones with a conflict, the publication tags and their numbering, and the exact command the brand skill is given. An independent run of the same scenarios against the code before and after found the same results, bytes and commits everywhere except the changes named here.
+- **Locks.** A Blog Studio process and a deck studio's process syncing the same repository exclude each other, as do two of either, in the same order as before: the shared settings lock, then Blog Studio's own. This was tested with real second processes. The shared code no longer names Blog Studio's lock file; each deck studio's facade names it.
+- **The shared runner takes a studio's own modules as values.** A studio whose own module by a shared name is something else (Blog Studio's `hub.py` is the Team Hub registry) passes its modules to the shared code; the deck studios pass nothing and get what they got before. Shared code names no product, and a test now holds that for Blog Studio's words too.
+- **Two small changes in Blog Studio.** A folder can no longer be copied into itself when brought into a workspace. When git is missing, Blog Studio says "A workspace needs git", not "A hub needs git".
+- **Decided.** The brand skill's readiness check and audit are for slides, and nothing in Blog Studio calls them; for Blog Studio they now refuse plainly, where they used to ask the brand skill with a presentation profile. No profile for a blog is assumed. Blog Studio gains nothing it did not have: no brand skill version floor, and no looks or fonts checks.
+- **Not done yet.**
+  - `studio_sync/support.py` stays Blog Studio's own: its git commands and their settings, its lock and its data folder. Each deck studio keeps the same things in its own `hub.py`, `home.py`, `workspace.py` and `sync_guidance.py`; no shared module holds them.
+  - In shared code, the sharing value of a workspace with no remote can no longer be given by position to `local()`, only by name. Nothing calls it by position.
+  - Nothing was tried against a real team repository or a real brand skill; the Team Hub walkthrough was run in its local mode only.
+
 # Marketing Studio 4.22.0
 
 Every studio is at 4.22.0. These are the changes since 4.21.0.

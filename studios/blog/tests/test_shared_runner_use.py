@@ -178,10 +178,11 @@ class DeliberateChangeTests(unittest.TestCase):
             with self.assertRaises(source.Unreadable):
                 source.head(str(Path(place) / 'missing'), Path(place))
 
-    def test_a_workspace_is_never_named_hub_and_git_missing_says_workspace(self):
+    def test_a_nameless_address_keeps_its_clone_folder_and_git_missing_says_workspace(self):
         from unittest import mock
 
-        self.assertEqual(support.name_from('https://example.invalid/---.git'), 'workspace')
+        # A clone's folder name on disk: unchanged, so a rejoin finds the clone it made.
+        self.assertEqual(support.name_from('https://example.invalid/---.git'), 'hub')
         with tempfile.TemporaryDirectory() as place:
             with (
                 mock.patch.object(support.subprocess, 'run', side_effect=OSError('no git')),

@@ -79,9 +79,11 @@ studio, or a shared external core installation.
   component, `StudioShell.parts`; see [the UI kit](design/ui-kit.md).
 - **Blog Studio** runs on the shared settings module and page server, and its
   `desk_finish.py` is a thin face over eight focused `desk_*.py` modules. Its team sharing
-  (`studio_sync/`) and brand handling (`studio_brand/`) stay Blog Studio's own: they are
-  not on the shared runner, because moving them needs a reconciliation of about 1,500
-  lines of Blog Studio-only team-sync and brand logic.
+  (`studio_sync/`) and brand handling (`studio_brand/`) run on the shared runner: each
+  module there is a short facade that gives the shared code Blog Studio's own values (its
+  ignored files, how it reads its workspace, the lock a sync holds, a blog's brand export)
+  and its own host modules (`studio_sync/support.py`), since its `hub.py` is the Team Hub
+  registry and not the module the shared code calls `hub`.
 - Large modules (`research_contract.py`, `research_session.py`, `marketing_studio`'s
   `brand_store.py`, `launcher.py` and `bridge.py`) are thin faces over focused sibling
   modules, so every name an importer or a test patches stays where it was.
