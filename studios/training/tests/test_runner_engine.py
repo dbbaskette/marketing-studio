@@ -1368,6 +1368,23 @@ class SharingTests(StudioCase):
         self.assertEqual(self.state(root), 'done')
         self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')
 
+    def test_a_desk_run_shares_once_at_its_end(self):
+        # Second fix round of GitHub issue #549: counted, as the earlier flow shared: once
+        # when the run comes to rest, then once for the decision and once for the index.
+        calls, real = [], self.engine.share
+
+        def share():
+            calls.append(1)
+            return real()
+        with mock.patch.object(self.engine, 'share', share):
+            root = self.start()
+            self.assertEqual(len(calls), 1, 'coming to rest shares once')
+            self.all_ready(root)
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(len(calls), 3, 'then the decision, and the index, each once')
+        self.assertEqual(self.shared()[0],
+                         'Rolling restarts: write the index; the training is finished')
+
     def unshared(self, root: Path) -> None:
         """Only the claim that starts the training reached the team, though more was made."""
         self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')
@@ -1449,6 +1466,42 @@ class SharingTests(StudioCase):
         found = self.engine.share()
         self.assertEqual(found['shared'], False)
         self.assertIn('no shared repository', found['notice'])
+
+
+class WaitingForATurnTests(StudioCase):
+    """A run waiting for a slot that set-up moves the workspace from (second fix round of
+    GitHub issue #549): it has written nothing while it waits, so the move is accepted, and
+    once its turn comes it finds its training is no longer in the workspace in use and stops,
+    leaving that training as it was."""
+
+    BACKGROUND = True
+
+    def test_a_run_waiting_behind_a_full_slot_lets_set_up_move_and_then_stops(self):
+        from runner import setup
+        slots = self.engine._slots
+        slots.read = lambda: 1
+        self.assertTrue(slots.take(lambda: False))      # the one slot is taken
+        root = self.start()
+        run = self.engine._run(root)
+        deadline = time.monotonic() + 30
+        while not run.queued and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(run.queued, 'the run waits for its turn')
+        with self.engine.files:
+            self.assertFalse(self.engine.in_hand(root))
+        moved = setup.apply(self.engine, setup.read({'path': str(self.base / 'elsewhere')}))
+        self.assertEqual(moved['workspace']['path'], str(self.base / 'elsewhere'))
+        before = self.git('rev-parse', 'HEAD')
+        with slots.changed:                              # the slot is given back
+            slots.used -= 1
+            slots.changed.notify_all()
+        while (run.busy or run.queued) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertFalse(run.busy or run.queued, 'its turn came, and it stopped')
+        self.assertEqual(self.workers.jobs, [], 'nothing was worked on')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+        self.assertEqual(self.git('status', '--porcelain', '--', str(root)), '')
+        self.assertFalse((self.base / 'elsewhere' / 'trainings' / root.name).exists())
 
 
 class LiveTests(StudioCase):

@@ -1126,11 +1126,11 @@ class PhoneSettingsTests(PageCase):
 
 
 class PhoneRouteWalkTests(PageCase):
-    """Fix round of GitHub issue #539: every answer that carries the set-up, the brand or
-    the upkeep report names no folder of this computer to a phone, upkeep included. The
-    page's routes are walked from its own lists, GET and POST, with the header set."""
-
-    DESCRIBED = ('workspace', 'brand', 'upkeep', 'skills')
+    """Fix rounds of GitHub issue #539: no answer to a phone names a folder of this computer,
+    whatever key it is under, upkeep included. Every route the page answers is walked from
+    its own lists, GET and POST, with the bridge header set: a GET with no query and with
+    the training's own folder, a POST with its body below or an empty one. A refusal is
+    checked as an answer is."""
 
     def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
         made = super().headers(token, host, origin, kind)
@@ -1138,23 +1138,19 @@ class PhoneRouteWalkTests(PageCase):
             made['X-Marketing-Studio-Via'] = 'network'
         return made
 
-    def send(self, endpoint: str, sent: dict, remote: bool) -> tuple[int, dict]:
-        status, reply, _ = self.answer('POST', f'/api/{endpoint}', json.dumps(sent).encode(),
-                                       origin=self.origin, kind='application/json',
-                                       remote=remote)
-        return status, reply
-
-    def folders(self, value, inside: bool = False) -> list:
-        """Every string naming a folder here under one of DESCRIBED, anywhere in `value`."""
+    def folders(self, value, allowed=()) -> list:
+        """Every string naming a folder here, anywhere in `value`, but those `allowed`."""
         if isinstance(value, dict):
-            return [found for key, one in value.items()
-                    for found in self.folders(one, inside or key in self.DESCRIBED)]
+            return [found for one in value.values() for found in self.folders(one, allowed)]
         if isinstance(value, list):
-            return [found for one in value for found in self.folders(one, inside)]
+            return [found for one in value for found in self.folders(one, allowed)]
         here = (str(self.base), str(self.base.resolve()), str(Path.home()))
-        return [value] if inside and isinstance(value, str) and value.startswith(here) else []
+        if isinstance(value, str) and value not in allowed and any(
+                place in value for place in here):
+            return [value]
+        return []
 
-    def test_no_answer_describing_set_up_the_brand_or_upkeep_names_a_folder_to_a_phone(self):
+    def test_no_answer_names_a_folder_of_this_computer_to_a_phone(self):
         from runner import brand_source
 
         class Keeping(Keeper):
@@ -1173,34 +1169,54 @@ class PhoneRouteWalkTests(PageCase):
             upgrade = restart = install_brand = lambda self, *given: self.report()
             dismiss = lambda self, key: self.report()
 
+        root = Path(self.started())
         self.engine.upkeep = Keeping(self.base)
         settings.save(replace(settings.load(), brand_repository=str(self.base / 'brand.git')))
+        # Shown to a phone on purpose: the training's own folder, which is how the page names
+        # a training in every request it sends back (as every list and run does). Nothing
+        # else that names a folder here is.
+        allowed = (str(root),)
         bodies = {'/api/brand': {'repository': 'https://example.invalid/brand.git'},
                   '/api/shared': {'seen': True}, '/api/versions': {'dismiss': 'brand'},
-                  '/api/upgrade': {'version': '1.0.0'}, '/api/brand/install': {'commit': 'a' * 40},
-                  '/api/companions': {}, '/api/restart': {}}
-        walked, answered = [], {}
+                  '/api/upgrade': {'version': '1.0.0'}, '/api/brand/install': {'commit': 'a' * 40}}
+        reads = sorted(target for target in self.page.reads if target.startswith('/api/'))
+        writes = sorted(target for target in self.page.writes if target.startswith('/api/'))
+        answered = {}
+        # A look at this computer (POST /api/computer) finds nothing installed, here as a
+        # stand-in: no command is run and nothing is reached.
         with mock.patch.object(brand_source, 'check', lambda address, place: {
-                'repository': address, 'commit': '0' * 40}):
-            for target in sorted(set(page.READS) | set(desk.READS)):
-                status, reply, _ = self.answer('GET', target, remote=True)
-                walked.append(('GET', target))
-                if status == 200:
-                    answered[('GET', target)] = reply
-            for target in sorted(set(page.WRITES)):
-                if target not in bodies:
-                    continue
-                status, reply = self.send(target[len('/api/'):], bodies[target], remote=True)
-                walked.append(('POST', target))
-                self.assertEqual(status, 200, (target, reply))
-                answered[('POST', target)] = reply
-        for asked in (('GET', '/api/setup'), ('GET', '/api/status'), ('POST', '/api/brand'),
-                      ('POST', '/api/companions'), ('POST', '/api/brand/install')):
+                'repository': address, 'commit': '0' * 40}), \
+                mock.patch.object(computer, 'run', lambda command: {
+                    'found': False, 'ok': False, 'output': ''}), \
+                mock.patch.object(computer, 'reach', lambda host: 'not reached in a test'):
+            for target in reads:
+                for query in ('', '?' + urlencode({'path': str(root)})):
+                    status, reply, _ = self.answer('GET', target + query, remote=True)
+                    answered[('GET', target + query, status)] = reply
+            for target in writes:
+                status, reply, _ = self.answer('POST', target,
+                                               json.dumps(bodies.get(target, {})).encode(),
+                                               origin=self.origin, kind='application/json',
+                                               remote=True)
+                answered[('POST', target, status)] = reply
+        self.assertEqual(len([one for one in answered if one[0] == 'POST']), len(writes))
+        for asked in (('GET', '/api/setup', 200), ('GET', '/api/status', 200),
+                      ('POST', '/api/brand', 200), ('POST', '/api/companions', 200),
+                      ('POST', '/api/brand/install', 200)):
             self.assertIn(asked, answered)
-        self.assertIn('upkeep', answered[('GET', '/api/status')])
+        self.assertIn('upkeep', answered[('GET', '/api/status', 200)])
         for asked, reply in answered.items():
             with self.subTest(asked=asked):
-                self.assertEqual(self.folders(reply), [])
+                self.assertEqual(self.folders(reply, allowed), [])
+        # A library that is not where it was saved is said without its folder too.
+        from studio_core.document_library import store as library_store
+        away = {'available': False, 'location': str(self.base / 'library'),
+                'problem': library_store.gone(str(self.base / 'library'))}
+        with mock.patch.object(page.library_context, 'answer', lambda *given: dict(away)):
+            status, reply, _ = self.answer('POST', '/api/library', b'{}', origin=self.origin,
+                                           kind='application/json', remote=True)
+        self.assertEqual((status, reply['problem'], self.folders(reply)),
+                         (200, page.LIBRARY_AWAY, []))
         # On this computer the same answers keep their folders.
         status, reply, _ = self.answer('GET', '/api/status', remote=False)
         self.assertEqual(reply['upkeep']['links'][0]['path'],
@@ -1880,13 +1896,20 @@ class RunTests(PageCase):
         self.assertEqual(self.post('setup', {'path': str(self.base / 'elsewhere')})
                          ['workspace']['path'], str(self.base / 'elsewhere'))
 
-    def ended(self, how) -> Path:
-        """A training whose research-plan step ended as `how` ends it."""
+    def ended(self, how, title: str) -> Path:
+        """A training of its own, titled `title`, started in the workspace in use now, whose
+        research-plan step ended as `how` ends it. It proves it is that training: started
+        here, in this workspace, with its own title."""
         self.workers.then('research-plan', *how)
+        space = self.engine.space()
         status, reply, _ = self.answer('POST', '/api/trainings', json.dumps(
-            {**FORM, 'flow': 'desk'}).encode(), origin=self.origin, kind='application/json')
-        self.assertIn(status, (200, 409), reply)
-        return self.engine.space().training('rolling-restarts')
+            {**FORM, 'flow': 'desk', 'title': title}).encode(), origin=self.origin,
+            kind='application/json')
+        self.assertEqual(status, 200, reply)
+        root = Path(reply['path'])
+        self.assertEqual(root.parent.resolve(), space.root.resolve(), 'in the workspace in use')
+        self.assertEqual(workspace.load(root)['title'], title)
+        return root
 
     def test_however_a_step_ends_its_mark_goes_and_the_workspace_may_move(self):
         # Fix round of GitHub issue #549: a Stop left the step's mark in place, so every
@@ -1894,7 +1917,7 @@ class RunTests(PageCase):
         from studio_core.shared_runner.write_markers import defer_share
 
         def stopped(tools, job):
-            self.engine.act(self.engine.space().training('rolling-restarts'), 'stop')
+            self.engine.act(self.engine.space().training('stopped-here'), 'stop')
             raise engines.companion.Stopped('Stopped on the page.')
 
         def raising(tools, job):
@@ -1903,7 +1926,7 @@ class RunTests(PageCase):
                                  ('failed', (fails(), fails(), fails()), 'failed'),
                                  ('raised', (raising,), 'failed')):
             with self.subTest(name):
-                root = self.ended(how)
+                root = self.ended(how, f'{name.capitalize()} here')
                 self.assertEqual(self.view(root)['state'], state)
                 self.assertFalse(self.engine.in_hand(root))
                 self.assertFalse(defer_share(self.engine), 'sharing is not held back')
@@ -1911,11 +1934,23 @@ class RunTests(PageCase):
                 self.assertEqual(self.post('setup', {'path': str(folder)})['workspace']['path'],
                                  str(folder))
 
-    def test_a_run_queued_for_a_slot_has_no_step_in_hand(self):
-        root = Path(self.started())
-        run = self.engine._run(root)
-        run.busy = run.queued = True     # as a run waiting for its turn is
-        self.assertFalse(self.engine.in_hand(root))
+    def test_a_paused_run_is_in_hand_until_its_resting_write(self):
+        # Between dropping a step's marker and the resting write to its activity log a paused
+        # training holds no mark but still writes in its folder (second fix round, #549).
+        activity_log = engines.activity_log
+        seen, real = [], activity_log.checkpoint
+
+        def checkpoint(path, kind, *given, **named):
+            if kind == 'stopped':
+                with self.engine.files:
+                    seen.append(self.engine.in_hand(Path(path).parent.parent))
+            return real(path, kind, *given, **named)
+        self.pause_after('research-plan')
+        with mock.patch.object(activity_log, 'checkpoint', checkpoint):
+            root = Path(self.started())
+        self.assertEqual(self.view(root)['state'], 'paused')
+        self.assertTrue(seen and all(seen), seen)
+        self.assertFalse(self.engine.in_hand(root), 'and once it is at rest, nothing is')
 
     def test_a_question_and_a_problem_are_described_field_for_field(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
