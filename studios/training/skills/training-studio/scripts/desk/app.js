@@ -5261,8 +5261,8 @@ function paintSavedRecord(run, fresh) {
     ['read-only', 'bring'].includes(saved.outcome) ? ['saved-why', [saved.why, saved.refusal],
       () => add(card('Why it cannot be continued'), make('p', '', saved.why),
         saved.refusal && saved.refusal !== saved.why ? make('p', 'quiet', saved.refusal) : null,
-        make('p', 'quiet', saved.outside ? 'Nothing here changes it. Its folder is outside '
-          + 'your workspace and stays as it is.' : 'Nothing here changes it. Restore its saved '
+        make('p', 'quiet', savedWhere(saved) !== 'in-workspace' ? 'Nothing here changes '
+          + 'it. Its folder stays as it is.' : 'Nothing here changes it. Restore its saved '
           + 'records from your workspace history to open it on the desk, or start new work '
           + 'from it.'))] : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
@@ -5414,9 +5414,21 @@ function savedFilesPart(run) {
     }, 'saved-read ' + name);
     add(bar, go);
   }
-  return add(node, make('p', 'quiet', run.saved_record.outside ? 'Each file stays in the '
-    + 'training’s own folder, outside your workspace.' : 'Each file stays in the training’s '
-    + 'folder in your workspace.'), bar, problem, holder);
+  return add(node, make('p', 'quiet', 'Each file stays in the training’s '
+    + (FOLDER_WHERE[savedWhere(run.saved_record)] || FOLDER_WHERE['in-workspace']) + '.'),
+  bar, problem, holder);
+}
+
+// Where a saved record's folder is, in the words its files card uses. A record that does
+// not say where keeps the older two: outside the workspace, or in it.
+const FOLDER_WHERE = {
+  outside: 'own folder, outside your workspace',
+  'in-workspace': 'folder in your workspace',
+  'in-repository': 'own folder, elsewhere in your workspace’s repository',
+  'holds-workspace': 'own folder, which holds your workspace',
+};
+function savedWhere(saved) {
+  return saved.where || (saved.outside ? 'outside' : 'in-workspace');
 }
 
 function paintRun(fresh) {

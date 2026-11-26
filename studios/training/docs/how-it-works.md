@@ -21,7 +21,7 @@ New trainings run without review stops. The desk shows materials as they arrive;
 | Yoodli, optional | Training Studio | A Yoodli scenario for each scenario file | 8 |
 | Package | Training Studio | The index and a readiness report | |
 
-In a conversation, at each gate you approve, ask for changes, have it rebuilt, or skip. A run the runner saved before the desk worked the same way and is no longer carried on: it opens on its saved record. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
+The gate numbers are those of the earlier ways of working, which stopped at each gate for you to approve, ask for changes, have it rebuilt, or skip. Neither carries a training on any more: a run the runner saved before the desk opens on its saved record, and a training made in a conversation with the helper `training.py` is a saved record to bring in on the Training Studio page. On the desk nothing stops at a gate. With levels, intake and research happen once, all the blueprints are written together, and the materials from the guide on are then made for one level at a time.
 
 The blueprint is the hub. The document and brief are written from it, and the deck is built from the blueprint and the document. A Yoodli scenario is built from your scenario file, the brief and the blueprint.
 
@@ -58,12 +58,11 @@ Changing a setting affects only what uses it. A new brand makes the deck out of 
 
 ## Where you approve
 
-Every decision at a gate is recorded with where it was made, and written into that file's review under `reviews/`.
+You approve a material by marking it ready on [the desk](the-desk.md); in a conversation, your assistant marks it ready with `studio desk ready` only after you said so about the version you were shown. Saving a draft, or the desk accepting one so the work goes on, is never your approval. Each mark is recorded in the material's History.
 
-- **In the conversation.** You tell your assistant, and it records your decision. This is the default.
-- **On the page.** You decide on [the page](page.md) in your browser. The helper then refuses `approve` and `skip` from the command line, so your assistant cannot record a decision you did not make. Asking for changes or a rebuild leaves a request your assistant acts on when you return to it; the request closes when the file is rebuilt or approved, and an open request keeps the training from being ready.
+The approvals and decisions a saved training recorded at its gates, in a conversation or on the helper's page, stay in its record, and the migration keeps them when it opens the training on the desk. Nothing records a new one at a gate: the helper's `approve` and `skip` and the page's gate screen are gone.
 
-Moving a training to the page raises the bar; it does not make forgery impossible. An assistant with a shell that set out to rewrite the session record could still do so. The guidance forbids it, but only [the runner](runner.md) prevents it: there, each agent works in an empty folder outside your trainings, with no shell, and has no way to approve.
+An assistant with a shell that set out to rewrite a training's records could still do so. The guidance forbids it, but only [the runner](runner.md) prevents it: there, each agent works in an empty folder outside your trainings, with no shell, and has no way to approve.
 
 ## Ready, or not
 

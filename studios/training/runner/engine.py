@@ -10,11 +10,9 @@ What a caller needs to know
     engine.act(path, 'pause')                # or 'resume', 'stop', 'retry', 'more-time'
     engine.answer(path, question_id, text)   # a person answers a worker's question
     engine.supply(path, 'add', name, data)   # a document of theirs; or 'remove', or 'done'
-    engine.whose(path, 'scenario:main')      # who wrote a scenario: 'runner' or 'you'
     engine.copies_again(path)                # make the copies that are not made, again
     engine.outline(path, level, 'approve')   # a person's decision about what a deck says
     engine.picture(path, number, artifact=)  # one slide's picture, as PNG bytes
-    engine.deck_gate(path, 'deck')           # what gate 6 adds for a deck the runner made
     engine.deck_decided(path, 'deck', 'approve', note, seen)   # sent to the slides tool first
     engine.redesign(path, level)             # draw an older deck again from a design
     engine.deck_needs()                      # what this computer has for making a deck
@@ -4258,11 +4256,6 @@ class Engine(Reviewing):
             raise FileNotFoundError(NO_PICTURE)
         return page.read_bytes()
 
-    def deck_gate(self, path, artifact: str) -> dict:
-        """What gate 6 adds for a deck: its slides whose pictures are here, what the
-        review still finds, the brand's audit and the coverage."""
-        root = Path(path)
-        return pipeline.deck_gate(root, workspace.load(root), artifact)
 
     # --- limits --------------------------------------------------------------------------
 
@@ -7325,14 +7318,6 @@ class Engine(Reviewing):
         self.wake(root)
         return self.view(root)
 
-    def whose(self, path, artifact: str) -> str | None:
-        """Who wrote a scenario's file: 'runner' for one the runner drafted, else 'you'.
-        None when no run is driving the training, which cannot tell."""
-        root = self.driven(path)
-        if root is None:
-            return None
-        return 'runner' if artifact in (self._load(root).get('drafted') or ()) else 'you'
-
     # --- sharing -------------------------------------------------------------------------
 
     def _step(self, space: gitstate.Workspace, push: bool) -> dict:
@@ -7907,6 +7892,24 @@ class Engine(Reviewing):
         import desk
         return desk.saved_files(root)
 
+    # Where a folder lies, as a saved record says it: outside the workspace, in it, elsewhere in
+    # its repository, or holding it (GitHub issue #547).
+    WHERE = ('outside', 'in-workspace', 'in-repository', 'holds-workspace')
+
+    def where(self, path) -> str:
+        """Where `path` lies, one of WHERE, compared as folders the way Bring in compares
+        them (`team.overlaps`). Only paths are compared: nothing in the folder is read. With
+        no workspace set up, every folder is outside it."""
+        space = self.workspace
+        if space is None:
+            return 'outside'
+        top = Path(path)
+        found = team.overlaps(top, space.root)
+        if found == 'inside':
+            return 'in-workspace'
+        found = found or team.overlaps(top, space.repo)
+        return {'inside': 'in-repository', 'holds': 'holds-workspace'}.get(found, 'outside')
+
     def conversation_unread(self, path) -> bool:
         """Whether `path` holds a training a conversation keeps outside the workspace whose
         session record this version cannot read: one no run drives, with a session record and
@@ -8300,11 +8303,6 @@ class Engine(Reviewing):
         looks = pipeline.research_of(record)
         return {**looks, 'summary': pipeline.research_words(record),
                 'outside': outside_words(record)}
-
-    def research_from(self, path) -> dict | None:
-        """`_research_view` for a training a run drives; None for any other."""
-        root = self.driven(path)
-        return None if root is None else self._research_view(self._load(root))
 
     @staticmethod
     def _yoodli(root, session):

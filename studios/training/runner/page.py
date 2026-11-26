@@ -926,9 +926,11 @@ class RunnerPage(desk.Page):
         record, said plainly, with its files to read in place and one way on, a new training
         (GitHub issue #547). Only its two small records and file names are looked at."""
         root = Path(item['path'])
+        where = self.engine.where(root)
         item.update(error=engines.CONVERSATION_UNREAD_BRIEF, sentence=engines.CONVERSATION_UNREAD,
                     saved_record={'outcome': 'read-only', 'why': engines.CONVERSATION_UNREAD_WHY,
-                                  'refusal': None, 'next': 'new', 'outside': True,
+                                  'refusal': None, 'next': 'new',
+                                  'outside': where == 'outside', 'where': where,
                                   'files': self.engine._saved_files(root), 'waits': [],
                                   'retained': [], 'targets': []})
         return item

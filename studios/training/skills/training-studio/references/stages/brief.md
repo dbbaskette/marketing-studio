@@ -39,7 +39,7 @@ Keep it to what someone can scan before a meeting. Detail that teaches belongs i
 
 ## Gate 5
 
-Save the first version with `training.py save brief --built`. Run `training.py check`, fix what fails,. Say where the brief is weakest.
+Save the first version with `training.py save brief --built`. Run `training.py check` and fix what fails. Say where the brief is weakest.
 
 On approval:
 

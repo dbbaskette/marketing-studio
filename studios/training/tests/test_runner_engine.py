@@ -99,6 +99,14 @@ class SynthesisAtStartTests(StudioCase):
         self.assertNotIn('research_contract', self.engine._load(Path(made['path'])))
 
 
+class RemovedTests(StudioCase):
+    def test_what_nothing_in_the_runner_called_is_gone(self):
+        """`deck_gate`, `whose` and `research_from` had no caller in the runner once the gate
+        screen went (GitHub issue #547); the desk reads `pipeline.deck_gate` itself."""
+        for name in ('deck_gate', 'whose', 'research_from'):
+            self.assertFalse(hasattr(self.engine, name), name)
+
+
 class SavedWorkTests(StudioCase):
     """`studio saved-work`: what saved trainings there are, and what becomes of each now that
     nothing continues saved work (GitHub issue #547)."""
@@ -197,8 +205,9 @@ class SavedWorkTests(StudioCase):
         said = self.engine.saved_work()
         self.assertEqual(self.needed(said, 'bring-in-first'),
                          {str(root): self.engine.SAVED_WHY['bring-in-first']})
-        self.assertEqual(next(entry['status'] for entry in said['paths']
-                              if entry['id'] == 'bring-in-first'), 'needed')
+        self.assertEqual(next((entry['status'], entry['asks']) for entry in said['paths']
+                              if entry['id'] == 'bring-in-first'),
+                         ('found', 'Bring it in on the Training Studio page.'))
         (root / '.training-studio' / 'session.json').write_text('{not json')
         self.assertEqual(self.needed(self.engine.saved_work(), 'read-only-record'),
                          {str(root): 'Its record cannot be read; it is kept to read.'})

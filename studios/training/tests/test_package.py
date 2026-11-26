@@ -8,6 +8,7 @@ from pathlib import Path
 import helpers
 import validate_package
 
+REFERENCES = Path(validate_package.__file__).resolve().parents[1] / 'references'
 GUIDANCE = [name for name in validate_package.REQUIRED
             if name.startswith(('references/', 'assets/examples/'))]
 
@@ -107,6 +108,22 @@ class SyntheticCase(unittest.TestCase):
 
 
 class RealPackageTests(unittest.TestCase):
+    def test_the_docs_say_how_approval_and_pins_work_now(self):
+        """GitHub issue #547: approval is Mark ready on the desk, and no helper command pins
+        a task; nothing says the page decides gates or that `training.py pin` records one."""
+        docs = Path(__file__).resolve().parents[1] / 'docs'
+        how = (docs / 'how-it-works.md').read_text(encoding='utf-8')
+        self.assertNotIn('The helper then refuses `approve` and `skip`', how)
+        self.assertNotIn('In a conversation, at each gate you approve', how)
+        self.assertIn('`studio desk ready`', how)
+        self.assertNotIn('training.py pin', (docs / 'development.md').read_text(encoding='utf-8'))
+
+    def test_no_sentence_ends_in_a_stray_comma(self):
+        for path in sorted(REFERENCES.rglob('*.md')):
+            with self.subTest(file=path.name):
+                self.assertNotIn(',.', path.read_text(encoding='utf-8'))
+
+
     def test_the_package_is_whole(self):
         self.assertEqual(validate_package.problems(helpers.SKILL), [])
 

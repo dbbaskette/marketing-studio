@@ -215,3 +215,30 @@ class HistoryTests(ConversationStateCase):
         self.gitstate.commit(self.space, 'without the unsaved guide', [root])
         shown = self.preview(root)
         self.assertEqual((shown['targets'], shown['notes']), (['blueprint'], []))
+
+
+class WhereTests(ConversationStateCase):
+    """Where a conversation's folder is, as its saved record says it: compared as folders,
+    as Bring in compares them."""
+
+    def test_where_a_folder_lies(self):
+        repo, root = self.space.repo, self.space.root
+        self.assertEqual(self.engine.where(self.base / 'conversation' / 'kept'), 'outside')
+        self.assertEqual(self.engine.where(root / 'kept'), 'in-workspace')
+        if repo != root:
+            self.assertEqual(self.engine.where(repo / 'notes' / 'kept'), 'in-repository')
+        self.assertEqual(self.engine.where(repo.parent), 'holds-workspace')
+
+    def test_an_unreadable_record_inside_the_repository_is_not_said_to_be_outside_it(self):
+        """A conversation's unreadable record kept in the workspace's repository: its saved
+        record says where it is, never that it is outside the workspace."""
+        import home
+        top = self.space.repo / 'notes' / 'kept-here'
+        saved_fixtures.place('conversation-unreadable-session', top)
+        home.remember(top, top.name, [])
+        record = page.RunnerPage(8765, self.engine).detail(str(top))['saved_record']
+        where = 'in-repository' if self.space.repo != self.space.root else 'in-workspace'
+        self.assertEqual((record['where'], record['outside']), (where, False))
+        outside = saved_fixtures.conversation(self, 'conversation-unreadable-session')
+        record = page.RunnerPage(8765, self.engine).detail(str(outside))['saved_record']
+        self.assertEqual((record['where'], record['outside']), ('outside', True))

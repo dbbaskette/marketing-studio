@@ -1344,14 +1344,11 @@ class DeckCase(StudioCase):
     def kinds(self, since: int = 0) -> list[str]:
         return [kind for kind, _, _ in self.workers.jobs[since:]]
 
-    def gate(self, root: Path, name: str = 'deck') -> dict:
-        return page.RunnerPage(8765, self.engine).gate(str(root), name)
-
     def deck_shown(self, root: Path, name: str = 'deck') -> dict:
         """What the desk reads of a drawn deck: its slides whose pictures are here, what its
-        review still finds, the brand's audit and the coverage (`Engine.deck_gate`, which the
-        desk's review notes read too). The gate screen's own read is `gate`."""
-        return self.engine.deck_gate(root, name)
+        review still finds, the brand's audit and the coverage (`pipeline.deck_gate`, which the
+        desk's review notes read too)."""
+        return pipeline.deck_gate(root, workspace.load(root), name)
 
     def built(self, root: Path, level: str | None = None) -> dict:
         return pipeline.read_built(root, level)
