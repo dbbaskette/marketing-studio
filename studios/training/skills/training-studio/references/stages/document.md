@@ -22,7 +22,7 @@ Follow the shape of the example document. A course is one document with a chapte
 
 Put `<!-- covers: O1 K1.1 K1.2 -->` under the heading of each section, naming the objectives and key points that section teaches. `training.py check` requires every objective and every supported or `[stated]` key point to be named somewhere, and fails the document if an `[unsupported]` key point is named. A `[stated]` point is the user's own claim: cite it as local policy, positioning or an exercise assumption. Teach applicable version and setup conditions.
 
-This is declared coverage. It proves a section claims to teach something, not that the prose does. Before the gate, read each section against its comment and say what you found.
+This is declared coverage. It proves a section claims to teach something, not that the prose does. Before submitting, read each section against its comment and say what you found.
 
 ## Writing
 
@@ -35,11 +35,8 @@ This is declared coverage. It proves a section claims to teach something, not th
 - Prefer short sections with descriptive headings over long ones.
 - Distinguish worked examples from fresh exercises. Label hypothetical details; invent no capabilities or results. Include a debrief and a next action for the learner.
 
-## Gate 4
+## On the desk
 
-Save the first version with `training.py save document --built`. Run `training.py check`, and fix what fails.
+Read `studio desk context --folder PATH --target document` (`document@<level>` with levels) and follow its requirements. Submit it as kind `text` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. Marking it ready makes no copies; the workspace reference says how copies are kept. It is Ready only when the person marks it so, as the completion reference describes.
 
-On approval:
-
-1. `training.py approve document`.
-2. Make the copies `training.py status` asks for, as the workspace reference describes, and tell the user what happened. Often there are none. `training.py google push document` if `google_docs` lists `document`; `training.py export document` if `exports` does.
+A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.

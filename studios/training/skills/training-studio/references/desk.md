@@ -2,7 +2,7 @@
 
 New work uses [checked desk commands](conversation.md) for scoped plans and edits. [Design answers](answers.md) must come from the person. Below is the saved-work path; `training.py desk` still serves it.
 
-A page in the user's browser: where every training on this computer stands. A training made in a conversation is a saved record there: it is not continued and has no gate. On the Training Studio page it is brought in, then opened on the desk or read.
+A page in the user's browser: where every training on this computer stands. A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.
 
 ## Open it
 

@@ -193,7 +193,7 @@ class ContractTests(TrainingCase):
                         ('research-import', '--case', str(self.root.parent))):
             with self.subTest(command=command[0]):
                 self.assertEqual(self.run_cli(*command, expect=2), {'error': training.ENDED})
-        self.assertEqual(set(training.ENDED_COMMANDS),
+        self.assertEqual({*training.ENDED_COMMANDS, *training.DESK_COMMANDS},
                          {'save', 'approve', 'skip', 'checkpoint', 'pin', 'export',
                           'research-import'})
         self.assertEqual(files(), before)

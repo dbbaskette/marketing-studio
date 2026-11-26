@@ -25,13 +25,9 @@ Goal types are Binary for something done or not done, and Rated for something do
 
 ## Counts
 
-Show the count and limit beside Context and each goal's Explanation, Achieved and Missed: "666 of 10,000 characters". Never count by eye:
+Show the count and limit beside Context and each goal's Explanation, Achieved and Missed: "666 of 10,000 characters". Never count by eye: write each count as `0`, and the desk puts the real count in when the file is submitted.
 
-1. Write the file with each count as `0`, and run `training.py save yoodli:<id> --built`.
-2. Run `training.py check --all` and take each number from `counts` in the `yoodli:<id>.limits` result.
-3. Put the numbers in and save with `--built` again.
-
-`check` fails a stated count that is not the real one, and a field over its limit. Shorten the wording and repeat; nothing is truncated for you.
+A field over its limit is refused. Shorten the wording and submit again; nothing is truncated for you.
 
 ## How the user builds it
 

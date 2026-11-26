@@ -1,6 +1,6 @@
 # Google Docs
 
-The `document` and the `brief` can go to a Google Doc for review and come back. Nothing else can; a deck belongs to `harness-slides`. With levels, name the level: `document@101`. The markdown file stays the source. The Doc is a copy people edit.
+The `document` and the `brief` of a desk training this computer runs can go to a Google Doc for review and come back; desk work in a conversation delivers nothing. A deck belongs to `harness-slides`. With levels, name the level: `document@101`. The markdown file stays the source.
 
 ## Ask first
 
@@ -34,7 +34,7 @@ Google Docs drops HTML comments. A push holds back each `<!-- covers: … -->` a
 
 ## What a pull does to approval
 
-A pull that brings in edits is a hand edit, as the workspace reference describes. It replaces the file and keeps the old version in history. The artifact becomes `draft` and what was built from it `stale`, even if both were approved; one already stale stays stale. Tell the user, run `training.py check`, and present the stage's gate again. After approval, make its copies again and rebuild what is stale, or ask whether to accept it.
+A pull that brings in edits is a hand edit, as the workspace reference describes. It replaces the file and keeps the old version in history. The artifact becomes `draft` and what was built from it `stale`, even if both were approved; one already stale stays stale. Tell the user and run `training.py check`. It is Ready again only when the person marks it so on the desk; then make its copies again, and update what is held or keep it as it is.
 
 Google rewrites markdown on export, so formatting can change where the words did not. Comments and suggestions left in the Doc are not read: ask the user to accept or reject suggestions before a pull.
 

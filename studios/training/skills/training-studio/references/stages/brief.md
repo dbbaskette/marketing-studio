@@ -37,11 +37,8 @@ In the visible text, cite with numbered references that resolve in Sources. Give
 
 Keep it to what someone can scan before a meeting. Detail that teaches belongs in the document.
 
-## Gate 5
+## On the desk
 
-Save the first version with `training.py save brief --built`. Run `training.py check` and fix what fails. Say where the brief is weakest.
+Read `studio desk context --folder PATH --target brief` (`brief@<level>` with levels) and follow its requirements. Submit it as kind `text` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. Say where the brief is weakest. Marking it ready makes no copies; the workspace reference says how copies are kept, and which one a Yoodli user uploads. It is Ready only when the person marks it so, as the completion reference describes.
 
-On approval:
-
-1. `training.py approve brief`.
-2. Make the copies `training.py status` asks for, as the workspace reference describes: `training.py google push brief` if `google_docs` lists `brief`; `training.py export brief` if `exports` does. With Yoodli on, that reference also says which copy the user uploads.
+A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.
