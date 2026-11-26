@@ -14,7 +14,9 @@ If `ready` is false, resolve what you can, tell the user what remains, and do no
 
 ## The index
 
-On the desk Training Studio writes the index, `README.md`, itself once every requested material is Ready; never write or save it by hand. It lists every material with its status and its copies, the coverage of each objective, the open gaps and limitations, how to use the scenarios, and the research.
+Training Studio writes the index, `README.md`, itself, and only when its runner runs the training and every requested material is Ready. Never write or save it by hand. Desk work in a conversation gets no index: it is handed to the runner (`studio desk handoff`, as the conversation reference describes) only with a runner research contract, which research submitted in the conversation does not give.
+
+Desk work in a conversation does not reach `ready` either: no checked operation records the deck's coverage review or makes the copies, so `blocking` keeps naming them. Say so; do not work around it.
 
 ## Report
 

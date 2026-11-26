@@ -164,6 +164,12 @@ class GuidanceWalkTests(DeckCase):
 
     def test_every_stage_reference_does_what_it_says_in_a_conversation(self):
         self.walked([])
+        # The package reference says what the walk found: no index and no readiness for desk
+        # work in a conversation, and why.
+        package = (SKILL / 'references/stages/package.md').read_text(encoding='utf-8')
+        self.assertIn('Desk work in a conversation gets no index', package)
+        self.assertIn('does not reach `ready` either', package)
+        self.assertNotIn('itself once every requested material is Ready', package)
 
     def test_nothing_is_marked_ready_that_ready_refuses(self):
         """Every material a reference tells the person to mark Ready can be, and what it
