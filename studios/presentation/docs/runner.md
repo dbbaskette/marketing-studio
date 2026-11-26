@@ -42,6 +42,8 @@ The first time, the page opens on set-up.
 
 Nothing is changed until you save, and anything can be changed later in Settings. The values every studio shares are kept in one file for all of them: see [shared values](#shared-values).
 
+**From a phone.** Opened from a phone through Marketing Studio's private link (a request the network bridge carried, `X-Marketing-Studio-Via: network`), set-up is done on this computer: it and its checks are refused with a sentence saying so, whatever they are sent. Settings still offers **Change the set-up**; pressing it from a phone gets that sentence. The brand skill's repository is taken only as an https or ssh address, or `user@host:path`, of another computer, and one that cannot be read is said without git's own reason. Settings, the brand and the skills' upkeep report name no folder of this computer to a phone, and **Bring in a deck** is refused before any folder is read. Each deck in a list is still named by its folder. On this computer nothing changes.
+
 ## Make a deck
 
 "New deck" opens the desk's start: one sheet in three numbered steps, **1. What you start from**, **2. Audience and goal** and **3. Research and settings**, then **What happens after Start**, with **Start** and **Cancel** together at its end. **Start a deck** on Home opens the same sheet with the kind of deck already chosen. Start checks every step and goes to the first answer still missing, in the order the sheet is filled; Cancel closes the sheet and keeps what you filled in for the session. A refusal from the runner is said under the steps, and every answer stays.

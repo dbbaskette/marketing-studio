@@ -299,6 +299,13 @@ headers before translating the origin to the fixed loopback destination; they
 never accept arbitrary proxy destinations. The listeners are owned by the umbrella
 process and close on shutdown. The default CLI mode remains loopback-only.
 Network mode is HTTP on a trusted LAN; see [the access boundary](local-network.md).
+The bridge adds `X-Marketing-Studio-Via: network` to every request it carries. Marketing
+Studio's page and the shared setup page (`studio_core.onboarding`) decide each route for
+such a caller (`PHONE`, walked by `tests/test_home_phone.py` and
+`tests/test_onboarding_phone.py`), and the deck studios ask
+`studio_core.shared_runner.caller`; a repository address from a phone is judged by one rule,
+`studio_core.repository_address.web_repository`. See
+[what a phone can change](local-network.md#what-a-phone-can-change).
 
 ## Shared research contract
 

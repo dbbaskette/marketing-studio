@@ -63,13 +63,62 @@ session. No session links are saved in shared settings or ordinary logs; redirec
 CLI JSON includes only an address. A private link is available in a personal terminal
 or through an authenticated home API.
 
-This is full access to the existing studio UI, including settings, files, and
-explicit assistant jobs. It is not a read-only sharing link or a multi-user login.
+The link gives full access to the studios' work: its pages, files, settings that
+name no folder, and explicit assistant jobs. Only the folders of the host computer
+are kept to that computer (see [What a phone can change](#what-a-phone-can-change)).
+It is not a read-only sharing link or a multi-user login.
 **HTTP is unencrypted. Use a trusted network and keep the links private.** Do not
 port-forward or expose these listeners to the internet. No TLS certificate,
 remote tunnel, account, or cloud service is provisioned. Stop Marketing Studio to
 close its bridges and owned processes; independent studio launchers remain local.
 Restarting generates new session links. Existing project files stay on the host.
+
+## What a phone can change
+
+Everything the studios do is done from a phone as on the computer, except what names
+a folder on the computer. The network bridge marks every request it carries
+(`X-Marketing-Studio-Via: network`), and Marketing Studio, each studio's setup page and
+the studios read that mark:
+
+- **Set-up and folder settings are done on the computer.** In Shared settings a phone
+  cannot change **Workspace folder** or **Installed skill folder**, nor a studio
+  installation folder. Presentation Studio and Training Studio refuse their own set-up
+  (moving or joining a workspace) from a phone with a sentence to do it on the computer.
+  Training Studio's Settings says so in place of **Change the set-up**; Presentation
+  Studio's Settings still offers the button, and pressing it from a phone is refused with
+  that sentence. A form whose other settings changed is still saved from a phone, as
+  long as each folder setting is sent back exactly as it is saved.
+- **A repository is given only as a web address of another computer.** From a phone,
+  **Brands folder or repository**, **Brand skill Git repository**, the team repository and
+  the deck studios' **Brand skill** repository take only an `https://` or `ssh://` address,
+  or the `user@host:path` form, on another computer. A folder, `file://`, `http://`, or an
+  address of the computer the studios run on (`localhost`, a loopback address or its own
+  name) is set only on that computer. In the deck studios, a brand skill repository that
+  cannot be read is said without Git's own reason, which can name hosts and ports.
+- **Installed brands are listed by name.** The Brand card and **Get brands** tell a phone
+  each brand skill and its brands by name, with their variants, never a folder; the deck
+  studios' Settings name no brand skill's folder to a phone. A skill folder a phone names
+  is refused unread, except the one already saved, sent exactly as saved. Brands
+  authoring stays on the computer.
+- **No failure sentence names a folder.** Where the reason would name one, a phone is told
+  "That could not be done here. See why on the computer the studios run on." The
+  studios' own refusals and advice reach a phone as they are. The deck studios' upkeep
+  report (each skill link, and where the brand skill is installed from) names no folder
+  of the computer.
+- **Bring in and folder sources stay on the computer.** Presentation Studio and Training
+  Studio refuse **Bring in** from a phone before any folder is read. A studio's source
+  picker refuses a folder on the computer; a Google Drive folder link and uploads are
+  still taken.
+- **A Gemini API key is given on the computer**, in Marketing Studio and in each studio's
+  setup page.
+
+A phone is still shown the folder values already saved on the computer: the shared
+settings' Workspace folder, brands folder, installed skill folder and any repository
+saved as a folder, each studio's installation and workspace folders on the home page,
+where Git and the other tools were found, the Document Library's folder, and each deck's
+or training's folder in the studios' lists. Showing them is the owner's separate decision;
+`marketing_studio/page.py` and `core/studio_core/onboarding.py` list them route by route
+(`PHONE_SHOWS`), and the walk tests keep those lists complete.
 
 ## If your phone cannot connect
 
@@ -84,13 +133,14 @@ Restarting generates new session links. Existing project files stay on the host.
 - If another studio is already running independently, use its existing local page
   or close it before launching through Marketing Studio. Existing workspaces are
   never moved to enable phone access.
-- Infographic Studio planning and page builds can take several minutes. The phone
-  bridge waits up to 20 minutes for these actions and four minutes for remote
-  source previews. Blog Studio's sends to Google, Google Doc intake and library
-  adds with links wait up to 10 minutes. Other requests keep their existing
-  100-second limit. If a connection times out, work may still finish on the
-  computer: reopen the saved work and check it before retrying. The bridge never
-  resubmits a request.
+- Long actions answer at once and carry on in the background, which the page
+  follows: Infographic Studio's planning and page builds, and Blog Studio's sends to
+  Google, Google Doc intake and library adds with links. The phone bridge waits up to
+  four minutes for reading research sources, Presentation Studio's folder or
+  spreadsheet for a new deck, and Infographic Studio's remote source previews. Other
+  requests keep the 100-second limit. If a connection times out, work may still
+  finish on the computer: reopen the saved work and check it before retrying. The
+  bridge never resubmits a request.
 - A file or picture refused as too large says how large a file the network link takes
   there. The bridge allows each studio address exactly what that studio's own server
   allows: for example a 12 MB request for a Training Studio or Presentation Studio
