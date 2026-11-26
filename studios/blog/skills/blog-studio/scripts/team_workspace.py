@@ -119,17 +119,28 @@ def _learn(root, found, at):
             team.keep('taken', state)
 
 
+TAKEN_STOP = 'Another computer took this blog over, so this stopped. Your inputs are kept.'
+
+
 def _stop_desk_job(root, ident, runner):
-    """A desk tool job working on a blog taken over elsewhere is stopped as Cancel stops it
-    (tool_jobs.control): it is marked cancelled, its inputs are kept and a result that comes
-    back is never landed. Queued jobs are refused when they come up (tool_jobs.once)."""
+    """A desk tool job working on a blog taken over elsewhere is stopped as the desk's Stop
+    stops it (desk_jobs.stop): marked cancelled with its inputs kept, a result that comes back
+    never landed, a check's chain ended and a start marked stopped. Queued jobs are refused
+    when they come up (tool_jobs.once).
+
+    This runs inside the sync, under the repository lock. Every studio-lock holder in a team
+    workspace takes that lock first (studio.locked), so nothing else changes the workspace
+    meanwhile, and desk Stop needs no studio lock of its own: it writes only this computer's
+    records under .blog-runs, nothing the replay that follows would see."""
+    import desk_jobs
     import tool_jobs
 
     current = runner.current
     if not isinstance(current, str) or not current.startswith('tool:'):
         return
+    job_id = current[len('tool:') :]
     try:
-        job = tool_jobs.read(root, current[len('tool:') :])
+        job = tool_jobs.read(root, job_id)
     except (ValueError, OSError):
         return
     if (job.get('metadata') or {}).get('article') != ident or job.get('status') not in (
@@ -137,11 +148,12 @@ def _stop_desk_job(root, ident, runner):
         'working',
     ):
         return
-    job.update(
-        status='cancelled',
-        error='Another computer took this blog over, so this stopped. Your inputs are kept.',
-        finished_at=studio.now(),
-    )
+    try:
+        desk_jobs.stop(root, ident, job_id)
+    except (ValueError, OSError):
+        pass  # Not a job the desk lists: cancelled below as Cancel would.
+    job = tool_jobs.read(root, job_id)
+    job.update(status='cancelled', error=TAKEN_STOP, finished_at=job.get('finished_at') or studio.now())
     tool_jobs.write(root, job)
     if runner.current == current:
         runner.stop.set()

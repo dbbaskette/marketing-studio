@@ -679,6 +679,46 @@ class DeskDriverTests(TeamCase):
         self.assertEqual(stopped['payload'], job['payload'])  # Its inputs are kept.
         self.assertFalse(self.desk(self.root)['driver']['here'])
 
+    def test_a_takeover_stops_a_desk_start_as_stop_does(self):
+        import desk_jobs
+
+        started = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'Started topic', 'way': 'topic', 'point': 'P.'},
+        )
+        (job,) = [found for found in desk_jobs.jobs(self.root, started['id']) if found['status'] == 'queued']
+        runner = blog_runner.engine(self.root)
+        other = self.other()
+        shown = management.view(other, 'desk', {'id': [started['id']]})
+        management.dispatch(
+            other,
+            'team-takeover',
+            {'id': started['id'], 'expected': shown['expected'], 'confirmed': True},
+        )
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'data')
+        checked, calls = gitstate.worker_in_progress, []
+
+        def check_then_start(*arguments, **options):
+            busy = checked(*arguments, **options)
+            calls.append(busy)
+            if not busy and len(calls) == 2:
+                tool_jobs.write(self.root, {**job, 'status': 'working', 'attempts': 1})
+                runner.current = 'tool:' + job['id']
+            return busy
+
+        with patch.object(gitstate, 'worker_in_progress', check_then_start):
+            teams.refresh(self.root)
+        self.assertTrue(runner.stop.is_set())
+        stopped = tool_jobs.read(self.root, job['id'])
+        self.assertEqual(stopped['status'], 'cancelled')
+        self.assertEqual(stopped['error'], teams.TAKEN_STOP)
+        # As the desk's Stop marks a start it stops: Retry starts the step again.
+        self.assertEqual(
+            desk_jobs.transient(self.root, started['id']).get('problem'), desk_jobs.STOPPED_START
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+
     def test_take_over_refuses_a_desk_view_that_changed(self):
         other = self.other()
         outdated = self.desk(other)['expected']
