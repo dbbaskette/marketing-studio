@@ -937,6 +937,16 @@ class RunnerPage(desk.Page):
                                   'retained': [], 'targets': []})
         return item
 
+    @staticmethod
+    def saved_artifacts(path) -> dict:
+        """Each artifact of a saved training and its status, read from its files; none when its
+        record cannot be read, which then says nothing was saved."""
+        root = Path(path)
+        try:
+            return workspace.statuses(root, workspace.load(root))
+        except (WorkspaceError, OSError, ValueError):
+            return {}
+
     def with_conversation(self, item: dict) -> dict:
         """A training a conversation made, as the runner says it (GitHub issue #547): its one
         action is Bring it in only where Bring in would take it, decided by the same checks
@@ -970,12 +980,11 @@ class RunnerPage(desk.Page):
             item.update(driver=found['driver'], mine=found['mine'], notice=None,
                         last_shared=None, state='saved', sentence=found['sentence'],
                         waiting=None)
-            # Nothing of it is waiting for the person or being worked on: its stages say
-            # only what is done.
-            item['stages'] = [{**stage, 'state': 'not-started',
-                               'words': desk.STAGE_STATES['not-started']}
-                              if stage.get('state') in ('current', 'review') else stage
-                              for stage in item.get('stages') or ()]
+            # Nothing of it is waiting for the person or being worked on: a stage it was at
+            # says what it saved, waiting for a review that no longer happens here, or that
+            # it was not started.
+            item['stages'] = desk.kept_stages(item.get('stages'),
+                                              self.saved_artifacts(item['path']))
             return item
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),

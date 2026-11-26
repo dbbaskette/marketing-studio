@@ -333,16 +333,24 @@ def as_conversation(item: dict, report: dict) -> dict:
     waiting for a review that no longer happens here, or, with nothing saved, not started."""
     item.update(state='saved', saved='conversation', sentence=CONVERSATION_BRIEF,
                 waiting=None)
+    item['stages'] = kept_stages(item.get('stages'), report['artifacts'])
+    return item
+
+
+def kept_stages(stages, artifacts: dict) -> list[dict]:
+    """A saved training's row of stages, which nothing continues: a stage it was in the
+    middle of, or waiting to be reviewed at, says what is true of it, work saved and waiting
+    for a review that no longer happens here (`kept`), or, with nothing saved, not started.
+    `artifacts` maps each artifact to its status."""
     saved = {workspace.split(name)[0].partition(':')[0]
-             for name, status in report['artifacts'].items() if status != 'not-started'}
+             for name, status in artifacts.items() if status != 'not-started'}
 
     def said(stage):
         if stage.get('state') not in ('current', 'review'):
             return stage
         now = 'kept' if stage.get('stage') in saved else 'not-started'
         return {**stage, 'state': now, 'words': STAGE_STATES[now]}
-    item['stages'] = [said(stage) for stage in item.get('stages') or ()]
-    return item
+    return [said(stage) for stage in stages or ()]
 
 
 def conversation_record(root: Path) -> dict:

@@ -13,6 +13,7 @@ import shutil
 import helpers
 import saved_fixtures
 from runner_support import StudioCase
+import desk
 import home
 import workspace
 from runner import desk_chat, desk_migration, engine as engines, gitstate, page
@@ -687,6 +688,23 @@ class CarriedOverTests(SavedStopTests):
             with self.subTest(root=root.name):
                 self.assertEqual(listing[str(root)]['run']['state'], 'failed')
                 self.assertIn(said, listing[str(root)]['sentence'])
+
+
+class SavedStageTests(SavedStopTests):
+    """GitHub issue #547: a saved record's row of stages says what is true of the work it
+    saved: a teaching plan saved and waiting for review is neither "not started" nor in
+    progress, but saved, waiting for a review that no longer happens here."""
+
+    def test_a_saved_stage_says_it_was_saved_and_is_not_reviewed_here(self):
+        root = saved_fixtures.load(self, 'blueprint-gate')
+        self.assertTrue((root / 'blueprint.md').is_file())
+        native = page.RunnerPage(8765, self.engine)
+        listed = {item['path']: item for item in native.trainings()}[str(root)]
+        for stages in (listed['stages'], native.detail(str(root))['stages']):
+            said = {stage['name']: (stage['state'], stage['words']) for stage in stages}
+            self.assertEqual(said['Blueprint'], ('kept', desk.STAGE_STATES['kept']))
+            self.assertEqual(said['Guide'], ('not-started', 'not started'))
+            self.assertFalse({'current', 'review'} & {state for state, _ in said.values()})
 
 
 from runner_support import TeamCase  # noqa: E402
