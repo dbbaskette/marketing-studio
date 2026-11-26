@@ -246,6 +246,13 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                 and all(key in session['settings']
                         for key in ('deck_target', 'brand', 'brief_kind', 'stages')))
 
+    def blog_record(folder):
+        # A desk migration record that says it is Blog Studio's, with no Presentation Studio
+        # receipt claiming the folder: blog_migration verifies it in full, and
+        # presentation_busy leaves it alone. Any other record is read as before.
+        value = small_record(folder / 'desk/migration.json')
+        return isinstance(value, dict) and value.get('product') == 'Blog Studio'
+
     def blog_migration(folder):
         desk = folder / 'desk'
         if present(desk / 'migration.pending.json'):
@@ -253,7 +260,14 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         marker = desk / 'migration.json'
         if present(marker):
             value = small_record(marker)
-            if present(folder / 'run.json') or present(desk / 'migration-origin.json') \
+            if blog_record(folder):
+                # A Blog Studio migration record is verified whatever sits beside it: in a
+                # Blog Studio team repository every blog also holds a run.json driver record.
+                if present(desk / 'migration-origin.json'):
+                    # A Presentation Studio receipt beside a Blog Studio record: neither can
+                    # be told from the other.
+                    unknown(ValueError('Two products\' migration records'), folder, BLOG_MIGRATION)
+            elif present(folder / 'run.json') or present(desk / 'migration-origin.json') \
                     or (isinstance(value, dict) and value.get('product') == 'Presentation Studio'):
                 return False
             draft = small_record(desk / 'draft.json')
@@ -354,7 +368,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         value = small_record(marker)
         if pending == recovering_presentation:
             return False  # explicit locked recovery validates the exact journal itself
-        if present(origin) or (present(marker) and (present(folder / 'run.json') or
+        if present(origin) or (present(marker) and not blog_record(folder) and (present(folder / 'run.json') or
                 isinstance(value, dict) and value.get('product') == 'Presentation Studio')):
             try:
                 value = small_record(marker)

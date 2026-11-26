@@ -823,17 +823,14 @@ class DeskPublishTests(TeamCase):
         management.dispatch(self.root, 'desk-migrate', {'id': ident, 'expected': shown['expected']})
         self.assertTrue(blog_runner.engine(self.root).describe(ident)['on_desk'])
         # Its run is kept with stages never approved, but the desk judges it: not by stages.
-        # (Judged directly: sharing a blog moved to the desk in a team repository is refused
-        # by the shared running-step check, which reads its team record and desk/migration.json
-        # as a Presentation Studio migration.)
         self.assertFalse(blog_runner.survey(self.root, ident)['complete'])
-        self.assertEqual(teams.publish_left(self.root, ident), teams.DESK_UNPUBLISHED)
-        import studio
-
-        directory, record = studio.item(self.root, 'articles', ident)
-        record['editorial'] = {**(record.get('editorial') or {}), 'stage': 'published'}
-        studio.persist(directory, 'articles', record)
-        self.assertIsNone(teams.publish_left(self.root, ident))
+        with self.assertRaisesRegex(ValueError, '^' + teams.DESK_UNPUBLISHED + '$'):
+            self.publish(ident)
+        self.assertEqual(self.tags(), '')
+        self.mark_published(ident)
+        self.publish(ident)
+        self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
+        self.assertEqual(gitstate.changed(self.found), [])
 
 
 class DeskTeamImageTests(TeamCase):
