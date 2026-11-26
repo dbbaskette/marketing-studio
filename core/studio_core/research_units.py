@@ -249,9 +249,9 @@ class Check:
                 except BaseException as error:
                     failures.append(error)
         if failures:
+            # As a single review that fails, the run stays at its check: the studios offer
+            # what a failed check offers (Training Studio: the draft, unverified).
             stopped = [error for error in failures if isinstance(error, InterruptedError)]
-            if not stopped:
-                self.run.report('needs-attention')
             raise (stopped or failures)[0]
 
     def one(self, unit):

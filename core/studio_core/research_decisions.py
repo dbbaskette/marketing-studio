@@ -43,7 +43,7 @@ def flags(value, *, legacy=False):
             'title': 'Independent check did not finish',
             'text': ('The saved draft has cited evidence, but no completed independent verdict. Including it marks every claim as unverified.' if legacy else 'The saved draft has cited evidence, but no completed independent verdict. You can include it, add a warning, or reject it.'),
             'note': 'Include acknowledges this limitation for the whole draft; exclude rejects this draft.',
-            'sources': [{'title': s['title'], 'origin': s['origin']} for s in value['sources']]}]
+            'sources': [{'title': s['title'], 'origin': rc.shown_origin(s['origin'])} for s in value['sources']]}]
     if not review or review.get('accepted'):
         return []
     result = []
@@ -54,7 +54,7 @@ def flags(value, *, legacy=False):
             result.append({'id': 'originals:' + row['source'], 'kind': 'source',
                 'title': source['title'], 'text': 'Claims using this source and their dependent passages.',
                 'note': row.get('access_error') or 'The independent checker did not read this source.',
-                'sources': [{'title': source['title'], 'origin': source['origin']}]})
+                'sources': [{'title': source['title'], 'origin': rc.shown_origin(source['origin'])}]})
     lookup = {'facts': {row['id']: row for row in value['facts']},
               'findings': {row['id']: row for row in value['findings']},
               'prose': dict(prose_items(value))}

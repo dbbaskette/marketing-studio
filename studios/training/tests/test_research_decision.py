@@ -7,7 +7,7 @@ from unittest import mock
 
 from runner_support import StudioCase, URL
 from runner import agents, research, research_decision, pipeline
-from studio_core import research_contract as rc, research_session, research_decisions
+from studio_core import research_contract as rc, research_session, research_decisions, research_units
 import test_parallel_research as native
 from synthesis_fixture import TEXT, review
 from workspace import WorkspaceError
@@ -17,6 +17,10 @@ from workspace import WorkspaceError
 class CreatorDecisionTests(StudioCase):
     def setUp(self):
         super().setUp()
+        # These trainings start as Harness Research before review units left them: their
+        # single review runs as it always did (#378). UnitDecisionTests checks in units.
+        held = mock.patch.object(research_units, 'entry', return_value=None)
+        held.start(); self.addCleanup(held.stop)
         self.engine.parallel_research = True
         self.research = research.Research(Path(os.environ['STUDIO_TEST_RESEARCH_RUNTIME']))
         self.web.page(URL, TEXT, 'text/plain')
@@ -192,3 +196,70 @@ class AutomaticDecisionTests(CreatorDecisionTests):
         self.assertNotIn('research_flags', self.engine._load(root))
         self.assertTrue(self.view(root)['problem']['creator_review'])
         self.assertFalse(self.workers.of('flag-decisions'))
+
+
+@unittest.skipUnless(os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+                     and research_units.capability(os.environ['STUDIO_TEST_RESEARCH_RUNTIME']),
+                     'Harness Research with review units required.')
+class UnitDecisionTests(StudioCase):
+    """A training whose check ran in review units (#378): the creator decides its flags as
+    after a single review, and a unit that cannot finish offers the draft unverified."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.parallel_research = True
+        self.research = research.Research(Path(os.environ['STUDIO_TEST_RESEARCH_RUNTIME']))
+        self.web.page(URL, TEXT, 'text/plain')
+        self.workers.then('research-result', *([self.worker] * 16))
+        self.barrier = None
+        self.phases, self.caps, self.units = [], [], []
+        self.fail_unit = False
+
+    def worker(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        if 'review_template' not in payload:
+            return native.ParallelNativeTests.worker(self, tools, job)
+        self.phases.append('review')
+        unit = payload['review_template']['unit']
+        self.units.append(unit)
+        if self.fail_unit and unit != research_units.FINAL:
+            self.fail_unit = False
+            return agents.Outcome(False, 'timeout', 'Synthetic unit check timed out before returning verdicts.', seconds=300)
+        value = review(payload['review_template'])
+        for item in value['prose'][:1]:
+            item.update(verdict='narrow', note='This source supports a narrower scope.')
+        accepted = tools.submit_artifact('research-result', json.dumps(value))
+        self.assertTrue(accepted[0], accepted)
+        return agents.Outcome(True, cost=0.01, seconds=1)
+
+    def start(self, **changes):
+        return super().start(**{'flags_review': True, **changes})
+
+    def test_a_check_in_units_offers_its_flags_and_deciding_runs_no_job(self):
+        root = self.start()
+        record = self.engine._load(root)
+        self.assertEqual(record['research_execution']['review'],
+                         research_units.entry(os.environ['STUDIO_TEST_RESEARCH_RUNTIME']))
+        self.assertGreater(len(self.units), 1)
+        self.assertEqual(self.units[-1], research_units.FINAL)
+        self.assertTrue(self.view(root)['problem']['creator_review'])
+        names = [name for name in record['steps'] if rc.job_round(name) == ('review', 1)]
+        self.assertIn('research:review-1-final', names)
+        self.assertEqual(len(names), len(self.units))
+        before = len(self.workers.jobs)
+        CreatorDecisionTests.decide(self, root)
+        self.assertEqual(len(self.workers.jobs), before)
+        facts, _ = rc.read_bundle(root / 'research')
+        self.assertFalse(facts['review']['accepted'])
+        self.assertEqual(len(facts['review']['reviewers']), len(self.units))
+        self.engine.act(root, 'resume')
+        self.assertIsNone(self.view(root)['problem'])
+        self.assertTrue(self.workers.of('blueprint'))
+
+    def test_a_unit_that_cannot_finish_offers_the_whole_draft_unverified(self):
+        self.fail_unit = True
+        root = self.start()
+        self.assertEqual(self.view(root)['research_progress']['phase'], 'review')
+        self.assertTrue(self.view(root)['problem']['creator_review'])
+        shown = research_decision.dispatch(self.engine, root, {'action': 'read'})
+        self.assertEqual([row['id'] for row in shown['items']], ['assessment:unreviewed'])

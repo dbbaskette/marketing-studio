@@ -136,7 +136,7 @@ class UnitCheckTests(unittest.TestCase):
         self.before = before
         with self.assertRaisesRegex(ValueError, 'Synthetic reviewer failure'):
             self.run_units()
-        self.assertEqual(self.states[-1]['phase'], 'needs-attention')
+        self.assertEqual(self.states[-1]['phase'], 'review', 'a failed unit leaves the run at its check, as a failed review does')
         first = list(self.reviews)
         self.assertEqual(len(first), 4, 'every content unit runs; the final waits')
         statuses = {row['id']: row['status'] for row in self.units_status()['units']}
