@@ -69,7 +69,10 @@ STAGE_NAMES = {'intake': 'Start', 'research-plan': 'Research plan', 'research': 
                'package': 'Index'}
 STAGE_STATES = {'done': 'done', 'current': 'in progress', 'review': 'yours to review',
                 'not-started': 'not started', 'left-out': 'left out',
-                'unavailable': 'could not be made'}
+                'unavailable': 'could not be made',
+                # A conversation's training (GitHub issue #547): work saved there that was
+                # never reviewed, and is not reviewed here.
+                'kept': 'saved, waiting for a review that no longer happens here'}
 def named(name: str) -> str:
     """An artifact in the page's words, ready to start a sentence."""
     return workspace.sentence(workspace.label(name))
@@ -324,14 +327,21 @@ def saved_files(root: Path) -> list[str]:
 made_in_conversation = workspace.made_in_conversation
 
 
-def as_conversation(item: dict) -> dict:
-    """A conversation's training as a list says it: saved, waiting for nobody, its stages
-    saying only what is done."""
+def as_conversation(item: dict, report: dict) -> dict:
+    """A conversation's training as a list says it: saved, waiting for nobody. A stage it was
+    in the middle of, or waiting to be reviewed at, says what is true of it: work saved and
+    waiting for a review that no longer happens here, or, with nothing saved, not started."""
     item.update(state='saved', saved='conversation', sentence=CONVERSATION_BRIEF,
                 waiting=None)
-    item['stages'] = [{**stage, 'state': 'not-started', 'words': STAGE_STATES['not-started']}
-                      if stage.get('state') in ('current', 'review') else stage
-                      for stage in item.get('stages') or ()]
+    saved = {workspace.split(name)[0].partition(':')[0]
+             for name, status in report['artifacts'].items() if status != 'not-started'}
+
+    def said(stage):
+        if stage.get('state') not in ('current', 'review'):
+            return stage
+        now = 'kept' if stage.get('stage') in saved else 'not-started'
+        return {**stage, 'state': now, 'words': STAGE_STATES[now]}
+    item['stages'] = [said(stage) for stage in item.get('stages') or ()]
     return item
 
 
@@ -379,7 +389,7 @@ def trainings() -> list[dict]:
                         blocking=len(result['blocking']), to_make=len(result['to_make']),
                         **summary(report, result))
             if made_in_conversation(root):
-                as_conversation(item)
+                as_conversation(item, report)
         except Exception as failure:  # one record that cannot be read must not hide the rest
             item['error'] = unread_said(failure)
         listed.append(item)
@@ -444,7 +454,7 @@ def detail(path: str) -> dict:
                           'limitations': [plainly(reason) for reason in result['limitations']],
                           'warnings': result['warnings']})
         if made_in_conversation(root):
-            as_conversation(item)
+            as_conversation(item, report)
             item.update(sentence=CONVERSATION, saved_record=conversation_record(root))
     except Exception as failure:  # shown on the page, like the same training in the list
         item['error'] = unread_said(failure)

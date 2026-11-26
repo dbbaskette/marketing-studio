@@ -103,7 +103,7 @@ const STATES = {
   'in-progress': ['current', 'In progress'],
   finished: ['done', 'Finished'],
 };
-const STAGE_BEADS = { 'not-started': 'none', 'left-out': 'out', unavailable: 'off' };
+const STAGE_BEADS = { 'not-started': 'none', 'left-out': 'out', unavailable: 'off', kept: 'current' };
 const FILE_BEADS = {
   approved: 'done', draft: 'current', stale: 'late', 'not-started': 'none',
   skipped: 'out', unavailable: 'off',
@@ -453,7 +453,7 @@ function state(kind, text) {
 // Where the shell kit is loaded they are its progress track: one line, the stage in hand
 // larger, the one waiting for the person in amber. In a list only that stage is named.
 const TRACK_STATES = { done: 'done', review: 'yours', late: 'yours', current: 'current',
-  'not-started': 'todo', 'left-out': 'skipped', unavailable: 'skipped' };
+  'not-started': 'todo', 'left-out': 'skipped', unavailable: 'skipped', kept: 'current' };
 // With `calm` (a training that is working and waits on nobody) a stage that can already be
 // read is shown as ready to read, not as the person's move.
 function beads(stages, small, calm = false) {
@@ -463,7 +463,7 @@ function beads(stages, small, calm = false) {
       return { label: stage.name,
         state: readable ? 'current' : TRACK_STATES[stage.state] || 'todo',
         note: readable ? 'ready to read'
-          : ['review', 'late', 'current'].includes(stage.state) ? stage.words : '' };
+          : ['review', 'late', 'current', 'kept'].includes(stage.state) ? stage.words : '' };
     }), 'Stages', small);
   }
   const row = make('ol', 'beads' + (small ? ' beads-small' : ''));
@@ -476,7 +476,7 @@ function beads(stages, small, calm = false) {
       make('span', small ? 'offscreen' : 'bead-name', stage.name),
       make('span', 'offscreen', ': ' + stage.words));
     row.append(item);
-    if (stage.state === 'review' || (stage.state === 'current' && !told)) told = stage;
+    if (stage.state === 'review' || (['current', 'kept'].includes(stage.state) && !told)) told = stage;
   }
   if (small || !told) return row;
   // Where there is no room for a name under every bead, the one that matters is said below.

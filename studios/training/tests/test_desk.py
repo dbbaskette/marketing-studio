@@ -26,6 +26,7 @@ from urllib.parse import urlencode, urlsplit
 import helpers
 import test_cli
 from stored_builders import builder
+import saved_fixtures
 import assess
 import cmd_desk
 import computer
@@ -797,6 +798,23 @@ class PlainWordsTests(PageCase):
         read = self.get('saved-file', path=str(self.root), name='blueprint.md')
         self.assertEqual(read['text'], test_cli.example('blueprint.md'))
         self.get('saved-file', 403, path=str(self.root), name='.training-studio/session.json')
+
+    def test_a_conversation_training_says_its_saved_work_waits_for_a_review_not_held_here(self):
+        """GitHub issue #547: a guide a conversation saved and left waiting for review is
+        neither in progress nor "not started": the list and the training both say it was
+        saved and waits for a review that no longer happens here. A stage with nothing saved
+        is not started."""
+        saved_fixtures.place('conversation-document-gate', self.root)
+        kept = desk.STAGE_STATES['kept']
+        self.assertEqual(kept, 'saved, waiting for a review that no longer happens here')
+        for stages in (self.shown()['stages'],
+                       self.get('training', path=str(self.root))['stages']):
+            said = {stage['name']: (stage['state'], stage['words']) for stage in stages}
+            self.assertEqual(said['Guide'], ('kept', kept))
+            self.assertEqual(said['Blueprint'][0], 'done')
+            self.assertEqual(said['Brief'], ('not-started', 'not started'))
+            self.assertNotIn('current', {state for state, _ in said.values()})
+            self.assertNotIn('review', {state for state, _ in said.values()})
 
     def test_a_training_is_in_progress_then_waiting_then_finished(self):
         helpers.saved_init(self.root, '--title', 'Rolling restarts')
