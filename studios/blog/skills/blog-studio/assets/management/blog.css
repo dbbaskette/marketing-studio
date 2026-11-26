@@ -113,7 +113,7 @@
 .desk-image>figcaption{font-size:.8rem;overflow-wrap:anywhere}
 .desk-thumb-missing{display:grid;place-items:center;width:10rem;height:6rem;box-sizing:border-box;padding:.5rem;border:1px dashed var(--hair);border-radius:8px;background:var(--paper);color:var(--late);font-size:.85rem;text-align:center}
 /* Desk starts: three angle cards side by side where they fit, the picked one marked as a
-   choice is; the Outline tab's cards. All opaque. The desk's own parts are ui-kit's. */
+   choice is; the Outline's cards. All opaque. The desk's own parts are ui-kit's. */
 .desk-angles{display:grid;gap:1.1rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))}
 .desk-angle{display:grid;gap:.6rem;align-content:start}
 .desk-angle-picked{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}

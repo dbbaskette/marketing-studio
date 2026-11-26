@@ -412,7 +412,9 @@ class DraftJobTests(WritingJobCase):
 
     def test_a_draft_needs_an_outline(self):
         made = self.start(way='topic', point='P.')
-        with self.assertRaisesRegex(ValueError, 'Make the outline first'):
+        with self.assertRaisesRegex(
+            ValueError, '^Make the outline first: add its sections under Outline in the parts list.$'
+        ):
             desk_jobs.draft_job(self.root, made['id'], 1)
 
     def test_a_draft_without_sections_is_refused_readably(self):

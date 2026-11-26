@@ -114,7 +114,7 @@ one review runs then. Posts made before the choice existed have it off.
   sections, and a draft with no headings is worked on as one part. Only Reshape may add
   headings, to divide such a draft into the kind of post's sections; restoring the
   opening's **Before the first pass** in History undoes that division as a whole, and the
-  sections it added can be brought back on the Outline tab. A **Note for the whole draft**
+  sections it added can be brought back under **Outline** in the parts list. A **Note for the whole draft**
   revises a draft with no headings as one part too. The silent **Proofread and tighten**
   first pass is no longer offered here; chat and older callers can still ask for it
   (`first_pass: "tighten"`).
@@ -331,7 +331,7 @@ deciding on each fix, with the full desk one click away.
   was read: the fixes you accepted and any edits you made, here or on the full desk.
   Nothing stays only here; see [what a send makes](#what-a-send-to-the-google-doc-makes).
   Rejected fixes are never sent. Other blogs offer **Copy** and **Download**.
-- **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
+- **Open the full desk** shows the notes, the parts list with its Outline and the whole Finishing panel;
   **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
   reload stays in it. **Back** returns to the view, section and scroll you came from
   (Read, when Review mode was opened from its address). Review mode's toolbar keeps the
@@ -366,7 +366,7 @@ is under way), with no word changed and the opening's History kept. A page left 
 its opening or outline is asked to reload; one on another part still saves. In a team
 workspace the division is shared with your next decision. Restoring an opening version
 from before the division, such as the whole draft before a first pass, brings its
-sections back with it; the sections there now can be brought back on the Outline tab. A
+sections back with it; the sections there now can be brought back under **Outline** in the parts list. A
 record that cannot be divided yet keeps its headings as text in the opening, as before.
 
 - **Edit in place.** Type in any card; it saves as you go. A job landing or a poll never

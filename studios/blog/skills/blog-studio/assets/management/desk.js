@@ -1205,8 +1205,8 @@ function sDeskReorder(held,before){
 }
 // A saved blog of the earlier flow whose outline was notes the desk could not read as sections
 // keeps them whole in its start: shown, to shape the outline from, until it has sections.
-function sDeskKeptNotes(view){return view.kept_notes?sCard('Your saved outline notes',sNode('p','quiet','Kept whole when this blog was opened on the desk from the earlier flow. Shape the outline from them on the Outline tab, then write the draft.'),sAdd(sNode('article','paper doc'),window.StudioMarkdown.render(view.kept_notes))):null;}
-function sDeskNoSections(view={}){const kept=sDeskKeptNotes(view);if(kept)return kept;return sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections on the Outline tab.'));}
+function sDeskKeptNotes(view){return view.kept_notes?sCard('Your saved outline notes',sNode('p','quiet','Kept whole when this blog was opened on the desk from the earlier flow. Shape the outline from them under Outline in the parts list, then write the draft.'),sAdd(sNode('article','paper doc'),window.StudioMarkdown.render(view.kept_notes))):null;}
+function sDeskNoSections(view={}){const kept=sDeskKeptNotes(view);if(kept)return kept;return sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections under Outline in the parts list.'));}
 // Drawn again once focus leaves a card brought up to date in place.
 function sDeskPartLeft(held,part,card){
   setTimeout(()=>{if(!card.deskStale||held.cards?.[part]!==card||sDeskTyping(card)||!sDeskCurrent(held)||held.mode==='review')return;const fresh=sDeskPart(held,part);card.replaceWith(fresh);held.cards[part]=fresh;sDeskImagesLoad(held);},0);
@@ -1288,7 +1288,7 @@ function sDeskBarContent(held){return DESK_KIT.barContent(held);}
 
 // History: each kept version with its words compared to the current text, and Restore.
 // A version from before a first pass divided the draft brings the draft back as it was.
-function deskVersionNote(version){const added=(version.divided||[]).length;return added?'Restoring this also takes out the '+added+(added===1?' section':' sections')+' the first pass added. They can be brought back on the Outline tab.':'';}
+function deskVersionNote(version){const added=(version.divided||[]).length;return added?'Restoring this also takes out the '+added+(added===1?' section':' sections')+' the first pass added. They can be brought back under Outline in the parts list.':'';}
 function sDeskHistory(held,part){return DESK_KIT.history(held,part);}
 
 // Make a Google Doc: a private Doc of the draft, made once and linked to this blog. The desk
@@ -1319,7 +1319,7 @@ function sRunOnDesk(found){
   sPage(sNode('p','lede','The saved run stays readable while you edit on the writing desk.'),sCard('This blog is on the writing desk',sNode('p','',found.unfinished_migration?'Its supported materials were opened on the desk as a Draft. Unfinished steps remain incomplete, and the original decisions and files are kept. No work was started.':'It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.'),stopped),disclosure('How it was written',steps));
 }
 
-// The Outline tab: each section's heading and brief, in order, saved as they are edited with
+// The Outline, chosen in the parts list: each section's heading and brief, in order, saved as they are edited with
 // the stale check; reordering keeps each section's id, so its text and History go with it.
 function sDeskOutlineRows(held){return held.outline||(held.outline=(held.view.sections||[]).map(section=>({id:section.id,heading:section.heading,brief:section.brief||''})));}
 function sDeskOutline(held){
@@ -1626,7 +1626,7 @@ function sDeskSectionProposal(held,set,item,key){
   if(!item.insert)card.append(sNode('p','quiet','This post already has this section, so this proposes its new form rather than a second one.'));
   if(item.flag)card.append(sNode('p','decision-notice',item.flag));
   if(item.note)card.append(sNode('p','quiet',item.note));
-  if(item.state!=='open'){card.append(sNode('p','quiet',item.state==='applied'?(item.insert?'Added as a new section. To take it out, remove it on the Outline tab.':'Applied. The earlier text is in History.'):'Skipped.'));return card;}
+  if(item.state!=='open'){card.append(sNode('p','quiet',item.state==='applied'?(item.insert?'Added as a new section. To take it out, remove it under Outline in the parts list.':'Applied. The earlier text is in History.'):'Skipped.'));return card;}
   const skip=sButton('Skip',button=>sDeskSkip(held,set,[item.id],button));skip.disabled=!sDeskCan(held);
   if(!item.present){card.append(sNode('p','quiet',item.insert?'The post changed since this was suggested, so it no longer fits. Run it again for the latest.':'The text changed since this was suggested, so it no longer fits.'),sAdd(sNode('div','bar'),skip));return card;}
   // The person's ticks, edits and place, kept for this proposal across redraws.
@@ -1673,7 +1673,7 @@ async function sDeskSectionAdd(held,set,item,key,mark,chosen,button){
       const before=held.view,entry={id:item.id,after:deskSectionText(key,chosen),...(item.insert?{at:held.finish.places[mark]}:{})};
       held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:set.job,items:[entry]});
       delete held.finish.rows[mark];
-      sToast(item.insert?'Added “'+item.heading+'” as a new section. To take it out, remove it on the Outline tab.':'Updated “'+deskHeading((before.sections.find(section=>section.id===item.part)||{}).heading||'')+'”. The earlier text is in History.');
+      sToast(item.insert?'Added “'+item.heading+'” as a new section. To take it out, remove it under Outline in the parts list.':'Updated “'+deskHeading((before.sections.find(section=>section.id===item.part)||{}).heading||'')+'”. The earlier text is in History.');
       sDeskRefresh(held,before);sDeskPanelShow(held);DESK_KIT.refocus(held);
     }catch(error){if(/changed since you opened/.test(error.message)){held.stale=true;DESK_KIT.stale(held);}else notice(error.message,true);}
   });

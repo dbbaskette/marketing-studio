@@ -1508,7 +1508,7 @@ class HeadingMigrationTests(DeskCase):
             [(s['heading'], s['text'], s.get('level')) for s in restored['sections']],
             [('**Old one**', 'Old text.', 3), ('**Old two**', 'More.', 3)],
         )
-        # The sections it replaces can be brought back from the Outline tab.
+        # The sections it replaces can be brought back from the Outline.
         self.assertEqual(
             [r['heading'] for r in desk.removed(self.root, self.ident)], EXPORTED_HEADINGS
         )

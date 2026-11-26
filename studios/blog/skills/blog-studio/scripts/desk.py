@@ -1073,7 +1073,7 @@ WHOLE_DRAFT = ('desk-outline', 'desk-draft', 'desk-research', 'desk-first-pass',
 
 
 def outline_save(root, ident, seen, rows):
-    """Rename, reorder, add and remove sections and edit their briefs, from the Outline tab.
+    """Rename, reorder, add and remove sections and edit their briefs, from the Outline in the parts list.
     Ids are kept; a section without one is new. A form older than a section it changes, or
     than the outline's order, is refused."""
     import desk_jobs
@@ -1149,7 +1149,7 @@ def reimport(root, ident, markdown, source, record=None):
     history (`chat`), or Google's accepted text (`google`). Each part it changes keeps its
     text first as a version from that source; sections go with the desk section of the same
     heading, then with the one in their place, so ids and History follow the text; a section
-    the new text leaves out can be brought back from the Outline tab. DRAFT.md and the
+    the new text leaves out can be brought back from the Outline in the parts list. DRAFT.md and the
     record are written by `_write`, so a desk page open meanwhile is refused for what changed
     rather than writing over it. `record`, the caller's copy, is brought up to date."""
     _require_lock()
@@ -1258,7 +1258,7 @@ def _removed_path(root, ident):
 
 
 def removed(root, ident):
-    """Sections taken out on the Outline tab, newest first, each with its text and brief."""
+    """Sections taken out on the Outline, newest first, each with its text and brief."""
     return _drafting(root).removed(ident)
 
 
@@ -1378,7 +1378,7 @@ def counts(root, ident):
 def restore(root, ident, seen, part, index):
     """Bring back a kept version; the text it replaces is kept as a version too. A version
     from before a first pass divided the draft undoes the division as a whole: the sections
-    that pass added go to the Outline tab's removed list, to bring back if wanted."""
+    that pass added go to the Outline's removed list, to bring back if wanted."""
     found = _kept(root, ident, part)
     if type(index) is not int or not 0 <= index < len(found):
         raise ValueError('Choose a saved version.')
@@ -1426,8 +1426,8 @@ def restore(root, ident, seen, part, index):
 def _restore_divided(root, ident, seen, draft, entry):
     """Bring back an opening kept before its headings started sections, such as the whole
     draft before a first pass on a record the desk later divided: its headings start the
-    sections again, as `split` reads them, and the sections there now go to the Outline
-    tab's removed list, to bring back if wanted. The opening there now is kept first."""
+    sections again, as `split` reads them, and the sections there now go to the Outline's
+    removed list, to bring back if wanted. The opening there now is kept first."""
     import desk_jobs
 
     had = draft.get('images') or {}

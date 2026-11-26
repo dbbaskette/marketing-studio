@@ -442,7 +442,7 @@ class SettleTests(DeskJobCase):
         restored = desk.restore(self.root, ident, draft['revision'], 'opening', 0)
         self.assertEqual((restored['opening'], restored['sections']), ('Just prose. Teh end.', []))
         self.assertEqual(desk.join(restored).count('Just prose.'), 1, 'the content is there once')
-        # The sections it took out can be brought back from the Outline tab, with their text.
+        # The sections it took out can be brought back from the Outline, with their text.
         gone = desk.removed(self.root, ident)
         self.assertEqual(sorted(s['heading'] for s in gone), ['Before you start', 'Steps'])
         self.assertEqual(sorted(s['text'] for s in gone), ['Prose.', 'The end.'])

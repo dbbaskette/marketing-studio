@@ -834,7 +834,7 @@ def draft_job(root, ident, seen, start=False):
     """Write the whole draft from the outline: the opening and every section."""
     draft = desk.read(root, ident)
     if not draft['sections']:
-        raise ValueError('Make the outline first: add its sections on the Outline tab.')
+        raise ValueError('Make the outline first: add its sections under Outline in the parts list.')
     extra, shared = _context(root, draft, length=True)
     research, said = _research_extra(root, ident)
     payload = {
@@ -2307,7 +2307,7 @@ def view(root, ident):
         'document_library': shared_library.kept(ident, _kept_text(directory, record, draft)),
         'style_name': style_name,
         'source_names': names,
-        # Sections taken out on the Outline tab, to bring back.
+        # Sections taken out on the Outline (in the parts list), to bring back.
         'removed': [
             {
                 'heading': item.get('heading') or '',
