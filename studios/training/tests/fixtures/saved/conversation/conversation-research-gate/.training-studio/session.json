@@ -1,0 +1,123 @@
+{
+  "artifacts": {
+    "intake": {
+      "approved": {
+        "at": "2026-11-26T08:50:56Z",
+        "by": "chat",
+        "inputs": {},
+        "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    "research": {
+      "built_from": {
+        "research-plan": "280e957634b78b71b0c4414b2c0d6a11d6f209a87c15f93ff2482354643a9f1f"
+      },
+      "file": ".harness-research/research-report.md",
+      "sha256": "3540b531b76ba76caca2a45b663260b555719b7905b729988b1468e2348b2b9c"
+    },
+    "research-plan": {
+      "approved": {
+        "at": "2026-11-26T08:50:56Z",
+        "by": "chat",
+        "inputs": {
+          "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+        },
+        "sha256": "280e957634b78b71b0c4414b2c0d6a11d6f209a87c15f93ff2482354643a9f1f"
+      },
+      "built_from": {
+        "intake": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+      },
+      "file": ".training-studio/research-plan.json",
+      "sha256": "280e957634b78b71b0c4414b2c0d6a11d6f209a87c15f93ff2482354643a9f1f"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-26T08:50:56Z",
+      "event": "init"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-26T08:50:56Z",
+      "event": "save",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-26T08:50:56Z",
+      "by": "chat",
+      "event": "approve",
+      "sha256": "7794e02389a6302b84337519676757af879a323efe010e825c86f10c25bf3eec"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-26T08:50:56Z",
+      "event": "save",
+      "sha256": "280e957634b78b71b0c4414b2c0d6a11d6f209a87c15f93ff2482354643a9f1f"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-26T08:50:56Z",
+      "by": "chat",
+      "event": "approve",
+      "sha256": "280e957634b78b71b0c4414b2c0d6a11d6f209a87c15f93ff2482354643a9f1f"
+    },
+    {
+      "at": "2026-11-26T08:50:56Z",
+      "event": "pin",
+      "skill": "harness-research",
+      "task": "task-research-1"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-26T08:50:56Z",
+      "event": "save",
+      "sha256": "3540b531b76ba76caca2a45b663260b555719b7905b729988b1468e2348b2b9c"
+    },
+    {
+      "at": "2026-11-26T08:50:56Z",
+      "event": "checkpoint",
+      "stage": "research"
+    }
+  ],
+  "exports": {},
+  "findings": null,
+  "gate": "research",
+  "id": "research-in-conversation",
+  "level": null,
+  "levels": [],
+  "next_step": "Waiting for your review of the research report",
+  "pending_question": null,
+  "pins": {
+    "harness-research": {
+      "run": "run-1",
+      "task": "task-research-1"
+    }
+  },
+  "requests": [],
+  "research": null,
+  "schema": 1,
+  "settings": {
+    "approval": "chat",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "live",
+    "stages": [
+      "document",
+      "brief",
+      "deck",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {},
+  "stage": "research",
+  "title": "Research in conversation",
+  "unavailable": {}
+}

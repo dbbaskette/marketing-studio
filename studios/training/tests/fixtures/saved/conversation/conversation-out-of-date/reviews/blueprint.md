@@ -1,0 +1,5 @@
+# Reviews of blueprint
+
+## Decision: approved in the conversation, 2026-11-26T08:50:57Z
+
+## Decision: approved in the conversation, 2026-11-26T08:50:57Z
