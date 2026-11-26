@@ -351,6 +351,20 @@ class CannotBeBroughtInTests(ConversationStateCase):
         # On this computer it is still brought in.
         self.assertEqual(native.detail(str(top))['saved_record']['next'], 'bring')
 
+    def test_on_a_phone_a_training_bring_in_would_refuse_says_why(self):
+        """A phone is told the true thing for each case: one Bring in would refuse says why,
+        never that bringing it in is done on the computer, and offers nothing."""
+        from studio_core.shared_runner import caller
+        top = self.space.repo / 'notes' / 'kept-here'
+        saved_fixtures.place('conversation-blueprint-gate', top)
+        said = engines.IN_REPOSITORY if self.space.repo != self.space.root else engines.ALREADY_IN
+        native = page.RunnerPage(8765, self.engine)
+        with caller.answering({caller.VIA_HEADER: caller.NETWORK}):
+            record = native.detail(str(top))['saved_record']
+        self.assertEqual((record['outcome'], record['why'], record['next'], record['elsewhere']),
+                         ('read-only', said, None, engines.KEPT_ON_COMPUTER))
+        self.assertNotIn('Bringing a training', record['elsewhere'])
+
 
 for (_state, _where), _said in WHERE_OUTCOMES.items():
     def _kept(self, state=_state, where=_where, said=_said):

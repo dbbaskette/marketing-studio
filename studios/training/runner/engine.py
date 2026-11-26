@@ -321,6 +321,10 @@ CONVERSATION_KEPT = ('This training was made in a conversation and cannot be bro
 # is not offered there (GitHub issue #539).
 BRING_ON_COMPUTER = ('Bringing a training into the workspace is done on the computer that runs '
                      'Training Studio, not from a phone.')
+# One that Bring in would refuse, on a phone: its record says why, and that it is only read
+# there.
+KEPT_ON_COMPUTER = ('From a phone it is only read here; anything more is done on the computer '
+                    'that runs Training Studio.')
 # Where a desk training stood when its run had made what it could and it was not finished:
 # not every material was marked ready, or something else kept it from being used.
 UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'

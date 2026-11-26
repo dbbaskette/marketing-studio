@@ -954,8 +954,6 @@ class RunnerPage(desk.Page):
         folders does not, so the helper's own reading of it failed: Bring in would fail on
         that file, so it is said as Bring in says it (`Engine.bring_refusal`), a read-only
         record with a new training as its way on. Any other failure stays as it was said."""
-        if caller.remote():
-            return item
         refusal = self.engine.bring_refusal(item['path'])
         if not refusal:
             return item
@@ -968,6 +966,8 @@ class RunnerPage(desk.Page):
                                     'outcome': 'read-only', 'why': refusal, 'next': 'new',
                                     'elsewhere': None, 'where': where,
                                     'outside': where == 'outside'}
+            if caller.remote():
+                item['saved_record'].update(next=None, elsewhere=engines.KEPT_ON_COMPUTER)
         return item
 
     def with_conversation(self, item: dict) -> dict:
@@ -980,15 +980,18 @@ class RunnerPage(desk.Page):
         record = item.get('saved_record')
         if record is None:   # a list's row: its sentence and stages are the helper's own
             return item
-        if caller.remote():
-            record.update(next=None, elsewhere=engines.BRING_ON_COMPUTER)
-            return item
         where = self.engine.where(item['path'])
         record.update(where=where, outside=where == 'outside')
         refusal = self.engine.bring_refusal(item['path'])
         if refusal:
             item['sentence'] = engines.CONVERSATION_KEPT
             record.update(outcome='read-only', why=refusal, next='new', elsewhere=None)
+        # On a phone nothing is offered that is done on the computer: one Bring in would
+        # take says that bringing it in is done there; one it would not says why, and that
+        # anything more is done there too.
+        if caller.remote():
+            record.update(next=None, elsewhere=engines.KEPT_ON_COMPUTER if refusal
+                          else engines.BRING_ON_COMPUTER)
         return item
 
     def with_run(self, item: dict) -> dict:
