@@ -243,6 +243,55 @@ class OnePassBrandCardTests(BrandFolders):
         self.assertNotIn(str(self.root), json.dumps(looked))
         self.assertEqual(here['store']['folder'], str(folder))
 
+    def brands_request(self, sent, network):
+        """POST /api/brands through the page's own answer, as the bridge or this computer sends it."""
+        from email.message import Message
+        from marketing_studio.network import VIA_HEADER
+        headers = Message()
+        for key, value in {'Host': '127.0.0.1:8000', 'Origin': 'http://127.0.0.1:8000',
+                           'Content-Type': 'application/json', 'X-Marketing-Studio-Token': self.page.token,
+                           **({VIA_HEADER: 'network'} if network else {})}.items():
+            headers[key] = value
+        reply = self.page.answer('/api/brands', headers, 'POST', json.dumps(sent).encode())
+        return reply[0], json.loads(reply[2])
+
+    def test_a_phone_is_told_installed_brands_by_name_and_never_a_skill_folder(self):
+        # GitHub issue #539: the installed brand skills, as well as the brands folder.
+        from studio_core import brand_catalog
+        skills = {'skills': [{'name': 'synthetic-brand', 'path': str(self.root / 'skills' / 'synthetic-brand'),
+                              'brands': [{'brand': 'example', 'name': 'Example Co', 'variants': ['light']}]}],
+                  'problem': f'other-skill: [Errno 13] Permission denied: {self.root / "skills" / "other"}'}
+        with mock.patch.object(brand_catalog, 'choices', return_value=skills) as choices:
+            status, phone = self.brands_request({}, network=True)
+            self.assertEqual(status, 200)
+            self.assertEqual(phone['skills'], [{'name': 'synthetic-brand', 'brands': skills['skills'][0]['brands']}])
+            self.assertEqual(phone['problem'], brand_catalog.REMOTE_UNASKED)
+            self.assertNotIn(str(self.root), json.dumps(phone))
+            # A skill folder from a phone is refused unread, whatever its shape.
+            for skill in (str(self.root / 'skills' / 'synthetic-brand'), 'relative', 5):
+                choices.reset_mock()
+                status, refused = self.brands_request({'skill': skill}, network=True)
+                self.assertEqual((status, refused['skills'], refused['problem']),
+                                 (200, [], brand_catalog.REMOTE_SKILL))
+                self.assertIn('on the computer Marketing Studio runs on', refused['problem'])
+                choices.assert_not_called()
+            # This computer is answered as before: the folders, the problem as it was, and a
+            # skill folder that is not absolute refused.
+            status, here = self.brands_request({'skill': str(self.root / 'skills' / 'synthetic-brand')}, network=False)
+            self.assertEqual((status, here['skills'], here['problem']), (200, skills['skills'], skills['problem']))
+            choices.assert_called_with(str(self.root / 'skills' / 'synthetic-brand'))
+            with self.assertRaisesRegex(ValueError, 'absolute installed brand skill folder'):
+                self.brands_request({'skill': 'relative'}, network=False)
+        # A listing that fails is said without its error text to a phone, and with it here.
+        with mock.patch.object(brand_catalog, 'choices', side_effect=OSError(f'no folder {self.root}')):
+            phone = self.brands_request({}, network=True)[1]
+            here = self.brands_request({}, network=False)[1]
+        self.assertEqual(phone['problem'], brand_catalog.REMOTE_UNLISTED)
+        self.assertEqual(here['problem'], f'The installed brands could not be listed: no folder {self.root}')
+        # The sentences that name nothing on this computer reach a phone as they are.
+        for said in (brand_catalog.NO_NODE, brand_catalog.NONE_FOUND, None):
+            self.assertEqual(brand_catalog.unplaced({'skills': [], 'problem': said})['problem'], said)
+
     def test_a_folder_that_cannot_be_looked_at_is_said_and_the_lookup_answers(self):
         with mock.patch.object(brand_data, 'status', side_effect=OSError('the disk went away')):
             store = brand_data.lookup('/somewhere')
