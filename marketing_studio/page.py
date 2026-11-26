@@ -513,12 +513,12 @@ class Home(server.Page):
                 paths = sent.get('paths')
                 if not isinstance(paths, dict) or set(paths) - catalog.STUDIOS.keys():
                     raise WorkspaceError('Choose studio installation folders from this page.')
-                # A phone cannot set or look up an installation folder; the folders as they
-                # are saved pass, so the rest of the form is not refused with them.
+                # A phone cannot set or look up an installation folder; the folders exactly as
+                # they are saved pass (one never saved is empty, as the page shows it), so
+                # the rest of the form is not refused with them.
                 held = state.read().get('paths', {})
                 if getattr(self.caller, 'remote', False) and any(
-                        (value.strip() if isinstance(value, str) else value) != (held.get(identifier) or '')
-                        for identifier, value in paths.items()):
+                        value != held.get(identifier, '') for identifier, value in paths.items()):
                     raise WorkspaceError(REMOTE_PATHS)
                 for identifier, value in paths.items():
                     if not isinstance(value, str) or len(value) > 4000:

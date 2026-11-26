@@ -188,6 +188,22 @@ class HomePhoneTests(BrandFolders):
         self.assertEqual(self.save({'local': {'root': work + ' '}, 'person': {'name': 'Bo'}})[0], 200)
         self.assertEqual((shared.read()[0]['local']['root'], shared.read()[0]['person']['name']), (work + ' ', 'Bo'))
 
+    def test_an_installation_folder_is_unchanged_only_when_it_is_exactly_what_is_saved(self):
+        install = str(self.root / 'blog-install')
+        with mock.patch.object(catalog, 'locate', return_value=Path(install)) as located:
+            self.assertEqual(self.ask('/api/paths', {'paths': {'blog': install}}, network=False)[0], 200)
+            located.reset_mock()
+            for sent in (install + ' ', ' ' + install, install + '/'):
+                with self.subTest(sent=sent):
+                    self.assertEqual(self.ask('/api/paths', {'paths': {'blog': sent}}),
+                                     (409, {'error': home_page.REMOTE_PATHS}))
+            located.assert_not_called()
+            self.assertEqual(state.read()['paths'], {'blog': install})
+            # One saved with a space at its end, sent back exactly, is no change.
+            self.assertEqual(self.ask('/api/paths', {'paths': {'blog': install + ' '}}, network=False)[0], 200)
+            self.assertEqual(self.ask('/api/paths', {'paths': {'blog': install + ' ', 'training': ''}})[0], 200)
+        self.assertEqual(state.read()['paths'], {'blog': install + ' ', 'training': ''})
+
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},
                                'brand': {'skill': str(self.root / 'skill')}}, network=False)
