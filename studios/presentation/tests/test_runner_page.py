@@ -846,7 +846,11 @@ class PhoneSettingsTests(PageCase):
                       'ssh://git@[::1]/brand.git', 'git@127.1:brand.git',
                       'https://2130706433/brand.git', 'https://0.0.0.0/brand.git',
                       'https://[::ffff:127.0.0.1]/brand.git', 'git@shop.localhost:brand.git',
-                      f'git@{own}:brand.git', f"ssh://git@{own.split('.')[0]}.local/brand.git"):
+                      f'git@{own}:brand.git', f"ssh://git@{own.split('.')[0]}.local/brand.git",
+                      # A user or host that ssh would read as an option (review item 6).
+                      'ssh://-oProxyCommand=x/r', 'ssh://-oProxyCommand=x@example.invalid/r',
+                      'https://-example.invalid/brand.git', '-git@example.invalid:brand.git',
+                      'git@-example.invalid:brand.git', 'ssh://git@exa=mple.invalid/r'):
             with self.subTest(given=given):
                 self.assertEqual(self.send('brand', {'repository': given}, remote=True),
                                  (403, {'error': caller.BRAND_ADDRESS}))

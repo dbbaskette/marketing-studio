@@ -112,6 +112,7 @@ BRAND_ADDRESS = ("From a phone, give the brand skill's repository as a web addre
                  'or clearing it, is done on this computer itself.')
 # The scp-like form git reads as a remote: a user, a host and a path, with no slash before
 # the colon and nothing that could be read as an option.
+_HOST = re.compile(r'[a-z0-9_][a-z0-9_.:-]*(%[a-z0-9_.-]+)?')
 _SCP = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.+-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s]+')
 
 
@@ -174,7 +175,12 @@ def web_repository(address) -> bool:
         host = parts.hostname
     except ValueError:
         return False
-    return parts.scheme.lower() in ('https', 'ssh') and bool(host) and not this_computer(host)
+    # A user or host that starts with a dash would reach ssh as an option
+    # (ssh://-oProxyCommand=...), and a host is letters, digits, dots, dashes and colons.
+    user = parts.netloc.rpartition('@')[0]
+    if not host or user.startswith('-') or not _HOST.fullmatch(host):
+        return False
+    return parts.scheme.lower() in ('https', 'ssh') and not this_computer(host)
 
 
 def unread_said(said: str) -> str:
