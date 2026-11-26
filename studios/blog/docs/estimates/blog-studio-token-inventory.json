@@ -4,9 +4,9 @@
   "excluded": "host context, conversation, author data, outputs, scripts, licenses, metadata, locks, preview",
   "files": {
     "SKILL.md": {
-      "characters": 5255,
-      "estimated_tokens": 1314,
-      "sha256": "9bfa4d0ce2f4177cd5d5ee7bf3bb4a0d16d0dd47d39bc418fe740fa773369fbd"
+      "characters": 5349,
+      "estimated_tokens": 1338,
+      "sha256": "99ab74574bc04a0473be0298a51719817210f73268ed4c56d86b926bec7f665d"
     },
     "assets/management/training-studio-LICENSE.txt": {
       "characters": 1069,
@@ -94,9 +94,9 @@
       "sha256": "0d3814cfa31a8836931a4ccf8bf35db4c72cc4dce80a31f5cf4a73c9397cc7b8"
     },
     "references/brand-handoff.md": {
-      "characters": 1930,
-      "estimated_tokens": 483,
-      "sha256": "cef3f4edfc2f4fd5c3c8040632cbb2f4b39cdb8ab494b7ba44e356097ff9f308"
+      "characters": 1972,
+      "estimated_tokens": 493,
+      "sha256": "27c815abe9b7d2a824d2ba2fb40124c04c0cd3d30090369aca8ad0bfab61ee73"
     },
     "references/composition.md": {
       "characters": 1255,
@@ -104,14 +104,14 @@
       "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
     },
     "references/conversation-desk.md": {
-      "characters": 8069,
-      "estimated_tokens": 2018,
-      "sha256": "b38cd4b72c09d3d25c82e2501fb159b4376a19f0ca50773dff7dc9cf16065dea"
+      "characters": 8390,
+      "estimated_tokens": 2098,
+      "sha256": "617ffca48523873a29a4dfe53c651d38244d0962d401d20ac59aa56872e03c27"
     },
     "references/desk-migration.md": {
-      "characters": 3683,
-      "estimated_tokens": 921,
-      "sha256": "1fcdfa855eab35be1f159a6c26a198ede464713ab2e6c7e45d8c8d606314fe65"
+      "characters": 3843,
+      "estimated_tokens": 961,
+      "sha256": "420025adbfe65ef79c5452155ef625a832ee21869307cfd36c70c82968d3340a"
     },
     "references/editorial/board.md": {
       "characters": 1598,
@@ -164,9 +164,9 @@
       "sha256": "add44b30e0d5714a157b173f15f557163f8a96f9c22883f4af09881a26d74d6b"
     },
     "references/getting-started.md": {
-      "characters": 2158,
-      "estimated_tokens": 540,
-      "sha256": "73c9d354d0fa280fb4e71fa956464e89dc6917497f723a231a7351f7d90e98d7"
+      "characters": 2218,
+      "estimated_tokens": 555,
+      "sha256": "56a199d49d15234ea45dc049954cd4e020f9baf133257017e2738990f69cf81f"
     },
     "references/google/adapter.md": {
       "characters": 5707,
@@ -209,9 +209,9 @@
       "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
     },
     "references/guided-runs.md": {
-      "characters": 8218,
-      "estimated_tokens": 2055,
-      "sha256": "7002104bce4247df966c47a40ccb5a56b127aae789e00511c1be8e93d4a586e7"
+      "characters": 3477,
+      "estimated_tokens": 870,
+      "sha256": "3a78bef6bbeea7065fda68ba7144ed1ed7c0b404c89f8061209f1c9bf52ffb6e"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -249,9 +249,9 @@
       "sha256": "30c782eaac5442cad6e73fd9ad98834f1b1c8d09831a43f7138af78aa304a2ac"
     },
     "references/library-notes.md": {
-      "characters": 4257,
-      "estimated_tokens": 1065,
-      "sha256": "4098039bff4889d2d2b75451c8aef50f2a1945cc796048918f2faced67a15820"
+      "characters": 4244,
+      "estimated_tokens": 1061,
+      "sha256": "9e64a61ac5d3e6ed15a6da55795f49b5fda279d67f7e107450d9140c247e4411"
     },
     "references/minimal-edits.md": {
       "characters": 1242,
@@ -299,9 +299,9 @@
       "sha256": "b5fa07d8e7abb24d174b9ad74b15aaff09219a3ea5e04873e74907fd0a516e29"
     },
     "references/modules/blog-google-return.md": {
-      "characters": 4152,
-      "estimated_tokens": 1038,
-      "sha256": "7634b882fc64f190e3ac240b2256f5429f77b72c7fd89ef21835557923035f79"
+      "characters": 4422,
+      "estimated_tokens": 1106,
+      "sha256": "4e26800f8bef52ab5103ce1885be2d436a3b0aeb0d342bfad4034ab5540962ce"
     },
     "references/modules/blog-google-review.md": {
       "characters": 3357,
@@ -383,15 +383,20 @@
       "estimated_tokens": 399,
       "sha256": "deb96f002e933ee43665aa6b2d7fc7f3f5c0be78acba0ce16acb45e2821906d6"
     },
+    "references/modules/solution-brief.md": {
+      "characters": 4489,
+      "estimated_tokens": 1123,
+      "sha256": "c4d8ecc515588de12bef128960fe9f1dbee4429b5a4225fd6fdd5e58ec3cac81"
+    },
     "references/package-notes.md": {
       "characters": 3118,
       "estimated_tokens": 780,
       "sha256": "f3bb6d6da0b03de1e6d767bfd92f2845014dd74ad4c6910241adbcbe42dd9a25"
     },
     "references/page-tools.md": {
-      "characters": 7535,
-      "estimated_tokens": 1884,
-      "sha256": "ee60e960e7a95dc9941c2f77591f1cdfcbe41dba48416c78fe03db2852fc9310"
+      "characters": 7059,
+      "estimated_tokens": 1765,
+      "sha256": "3bc11b01f8ea94ba1d738c076f4845e0336d7e726826119f6e2e8c89f3d2f966"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -759,9 +764,9 @@
       "sha256": "da412b356dc3e5ac18ae7894ab119e388f68af61f69a015c732e3f8d9b0e7252"
     },
     "references/workspace/pins.md": {
-      "characters": 1462,
-      "estimated_tokens": 366,
-      "sha256": "567d9ff1977c0a8c6fac4ebfa993b614468f4ad38ec1e957ecf792bcd83a2cf4"
+      "characters": 1503,
+      "estimated_tokens": 376,
+      "sha256": "7a8c59051d60ee123cf92c562041a447ab1c16fdfe2c7e321e39f8198728bc29"
     },
     "references/workspace/profiles.md": {
       "characters": 1385,
@@ -774,9 +779,9 @@
       "sha256": "f05ae4c50931244e73fed839fa39c93568a8f62471d69853f5e9ac1951d6a411"
     },
     "references/workspace/resume.md": {
-      "characters": 2274,
-      "estimated_tokens": 569,
-      "sha256": "72717aea3e4203dcfa4d4174c940693747c7dc275489d0d530416317253c2b04"
+      "characters": 2352,
+      "estimated_tokens": 588,
+      "sha256": "93e465462c743f59a12a015fb081692796eaae2bcfba9ff14bd56a9797546f7f"
     },
     "references/workspace/reviews.md": {
       "characters": 1263,
@@ -799,9 +804,9 @@
       "sha256": "cbd4561d5ed0d507618b48afc0b9e5fc679bfff8f3f072530e6445c55fd315f1"
     },
     "references/workspace/team-workspace.md": {
-      "characters": 2164,
-      "estimated_tokens": 541,
-      "sha256": "d1caaf77400def72e02f8d2e6e785a009d9883a6abef66534f3c350b2774cad6"
+      "characters": 2301,
+      "estimated_tokens": 576,
+      "sha256": "55e074292ad26a9f3aaf4fc5d5f1fa143ef61591c564a6ad70e61b6e7c74c0d7"
     },
     "references/workspace.md": {
       "characters": 952,
@@ -809,7 +814,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 229353,
+  "library_tokens": 229469,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -825,7 +830,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 6934
+      "estimated_tokens": 7038
     },
     "first_draft_with_sources": {
       "files": [
@@ -842,7 +847,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 8772
+      "estimated_tokens": 8876
     },
     "quick_edit": {
       "files": [
@@ -859,7 +864,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 7987
+      "estimated_tokens": 8110
     },
     "voice_setup": {
       "files": [
@@ -874,7 +879,7 @@
         "references/workspace/profiles.md"
       ],
       "scenario": "New standalone profile from selected readable authored samples; no article creation.",
-      "estimated_tokens": 5543
+      "estimated_tokens": 5567
     },
     "comprehensive_review": {
       "files": [
@@ -894,7 +899,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 9328
+      "estimated_tokens": 9451
     },
     "quick_polish": {
       "files": [
@@ -907,7 +912,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 6771
+      "estimated_tokens": 6894
     }
   },
   "team_hub_routes": {
@@ -945,7 +950,7 @@
       "SKILL.md",
       "references/entry-flows.md"
     ],
-    "estimated_tokens": 1998,
+    "estimated_tokens": 2022,
     "target_tokens": [
       800,
       1200
@@ -958,7 +963,7 @@
         "references/workspace.md",
         "references/workspace/resume.md"
       ],
-      "estimated_tokens": 807
+      "estimated_tokens": 826
     },
     "sources": {
       "files": [
@@ -1000,7 +1005,7 @@
         "references/workspace.md",
         "references/workspace/pins.md"
       ],
-      "estimated_tokens": 604
+      "estimated_tokens": 614
     },
     "mechanical_checks": {
       "files": [
@@ -1013,7 +1018,7 @@
       "files": [
         "references/getting-started.md"
       ],
-      "estimated_tokens": 540
+      "estimated_tokens": 555
     },
     "context": {
       "files": [
@@ -1062,14 +1067,14 @@
         "references/workspace.md",
         "references/conversation-desk.md"
       ],
-      "estimated_tokens": 2256
+      "estimated_tokens": 2336
     },
     "unfinished_desk_migration": {
       "files": [
         "SKILL.md",
         "references/desk-migration.md"
       ],
-      "estimated_tokens": 2235,
+      "estimated_tokens": 2299,
       "note": "Conditional: only after an explicit request to open eligible unfinished saved work on the desk."
     }
   },
@@ -1164,7 +1169,7 @@
         "references/google/workflow.md",
         "references/modules/blog-google-return.md"
       ],
-      "estimated_tokens": 1432
+      "estimated_tokens": 1500
     },
     "review": {
       "files": [
