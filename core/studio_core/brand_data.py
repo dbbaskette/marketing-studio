@@ -179,6 +179,26 @@ def bring(address) -> dict:
         return _bring(address)
 
 
+REMOTE_UNGOT = ('The brands could not be got. See why on the computer Marketing Studio runs on, '
+                'where the brands folder is.')
+# An absolute or home folder written in a sentence: at its start, or after a space or a quote.
+_A_FOLDER = re.compile(r'''(?:^|[\s'"(`])(?:/|~/)[^\s'"`)]*''')
+
+
+def got(address, remote=False) -> dict:
+    """Get brands, as Shared settings' Brand card asks for it: `bring(address)`. A caller that
+    came over the network bridge (a phone on the private link) is told what was got without
+    the folders on this computer, and a refusal that names one is said without it."""
+    if not remote:
+        return bring(address)
+    try:
+        done = bring(address)
+    except ValueError as failure:
+        said = str(failure)
+        raise preferences.WorkspaceError(REMOTE_UNGOT if _A_FOLDER.search(said) else said) from None
+    return {key: value for key, value in done.items() if key not in ('folder', 'replaced')}
+
+
 def _following() -> dict:
     """With no repository set: the brands Harness Brand already reads, used as they are."""
     folder = chosen(None)

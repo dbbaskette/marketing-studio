@@ -1,0 +1,168 @@
+"""A phone on Marketing Studio's private link, on a studio's own shared setup page (GitHub
+issue #539): it cannot set or ask about a folder on the computer the studios run on, and is
+not shown installed brand folder paths; it can still give a brand repository web address.
+
+Every route of the page is walked with the network bridge's header, so a route added without
+a decision in studio_core.onboarding.PHONE fails here. Disposable settings only."""
+import json
+import os
+from email.message import Message
+from unittest import mock
+
+from test_brand_data import BrandFolders
+from marketing_studio import shared
+from studio_core import brand_catalog, brand_data, graphics, onboarding
+
+SKILLS = {'skills': [{'name': 'synthetic-brand', 'path': '/opt/synthetic-brand-skill',
+                      'brands': [{'brand': 'example', 'name': 'Example Co', 'variants': ['light']}]}],
+          'problem': None}
+
+
+class OnboardingPhoneTests(BrandFolders):
+    def setUp(self):
+        super().setUp()
+        for patch in (mock.patch.dict(os.environ, {'HARNESS_BRAND_DATA': ''}),
+                      mock.patch.object(brand_data.Path, 'home', return_value=self.root / 'nobody')):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.prepared = []
+        self.page = onboarding.Controller(8000, 'a' * 40, 'Training Studio', 'X-Test-Token',
+                                          self.prepared.append, shared)
+
+    def ask(self, path, sent=None, network=True):
+        headers = Message()
+        for key, value in {'Host': '127.0.0.1:8000', 'Origin': 'http://127.0.0.1:8000',
+                           'Content-Type': 'application/json', 'X-Test-Token': 'a' * 40,
+                           # The header the network bridge adds (marketing_studio.network.VIA_HEADER).
+                           **({'X-Marketing-Studio-Via': 'network'} if network else {})}.items():
+            headers[key] = value
+        method = 'GET' if sent is None else 'POST'
+        reply = self.page.answer(path, headers, method, None if sent is None else json.dumps(sent).encode())
+        return reply[0], json.loads(reply[2])
+
+    def save(self, changes, network=True):
+        return self.ask('/onboarding/api/shared', {'changes': changes, 'seen': shared.read()[0]}, network)
+
+    def test_every_route_has_a_phone_decision(self):
+        routes = {*self.page.page.reads, *self.page.page.writes}
+        self.assertEqual(routes, set(onboarding.PHONE))
+        self.assertTrue(all(isinstance(why, str) and why for why in onboarding.PHONE.values()))
+
+    def test_each_route_from_a_phone(self):
+        folder = self.brands_folder(self.root / 'brands', 'acme', 'other')
+        seen = set()
+
+        def route(path):
+            seen.add(path)
+            return path
+
+        # Reads: the saved settings and an assistant's models, nothing about a folder asked.
+        self.assertEqual(self.ask(route('/onboarding/api/home'))[0], 200)
+        with mock.patch.object(self.page.models, 'get', return_value={'models': []}):
+            self.assertEqual(self.ask(route('/onboarding/api/models') + '?agent=claude')[0], 200)
+            self.assertEqual(self.ask('/onboarding/api/models', {'agent': 'claude'})[0], 200)
+
+        # Shared settings: other settings and a web address save; a folder does not.
+        self.assertEqual(self.save({'person': {'name': 'Ana'}})[0], 200)
+        address = 'https://example.com/org/brands.git'
+        self.assertEqual(self.save({'brand': {'brands': address}})[0], 200)
+        self.assertEqual(shared.read()[0]['brand']['brands'], address)
+        for changes, named in (({'local': {'root': str(self.root / 'work')}}, '“Workspace folder”'),
+                               ({'brand': {'skill': str(self.root / 'skill')}}, '“Installed skill folder”'),
+                               ({'brand': {'brands': str(folder)}}, '“Brands repository”'),
+                               ({'brand': {'repository': str(self.root / 'skill-repo')}}, '“Brand Git repository”'),
+                               ({'team': {'repository': str(self.root / 'team-repo')}}, '“Repository address”')):
+            with self.subTest(changes=changes):
+                status, answer = self.save({**changes, 'person': {'name': 'Bo'}})
+                self.assertEqual(status, 409)
+                self.assertIn(named, answer['error'])
+                self.assertIn('only on that computer', answer['error'])
+                self.assertEqual(shared.read()[0]['person']['name'], 'Ana', 'nothing of the save is kept')
+        route('/onboarding/api/shared')
+        # A folder the computer saved can be sent as it was shown, and the rest saves.
+        self.assertEqual(self.save({'local': {'root': str(self.root / 'work')}}, network=False)[0], 200)
+        held = shared.read()[0]
+        status, _ = self.ask('/onboarding/api/shared', {'changes': {'local': {'root': str(self.root / 'work')},
+                                                                     'person': {'name': 'Cy'}}, 'seen': held})
+        self.assertEqual((status, shared.read()[0]['person']['name']), (200, 'Cy'))
+        # Emptying a folder setting changes it too.
+        status, answer = self.save({'local': {'root': None}})
+        self.assertEqual(status, 409)
+        self.assertIn('“Workspace folder”', answer['error'])
+        # An outdated form is still refused as before: a value someone else changed meanwhile.
+        status, answer = self.ask('/onboarding/api/shared', {'changes': {'person': {'name': 'Di'}},
+                                                             'seen': {**held, 'person': {'name': 'Old'}}})
+        self.assertEqual(status, 409)
+        self.assertEqual(answer['conflict'], {'fields': ['person.name']})
+
+        # Finishing setup takes no folder: it uses what the settings already hold.
+        self.assertEqual(self.ask(route('/onboarding/api/setup'), {'done': True})[0], 200)
+        self.assertEqual(len(self.prepared), 1)
+
+        # Document graphics: the models are listed, a key is never taken over the link.
+        status, answer = self.ask(route('/onboarding/api/graphics'), {'key': 'synthetic-not-a-key'})
+        self.assertEqual(status, 409)
+        self.assertIn('not taken over the phone link', answer['error'])
+        with mock.patch.object(graphics, 'listed', return_value={'provider': 'gemini', 'models': []}):
+            self.assertEqual(self.ask('/onboarding/api/graphics', {'models': 'gemini'})[0], 200)
+
+        # Installed brands by name; a skill folder refused unread.
+        with mock.patch.object(brand_catalog, 'choices', return_value=SKILLS) as choices:
+            status, answer = self.ask(route('/onboarding/api/brands'), {})
+            self.assertEqual((status, answer['skills']),
+                             (200, [{'name': 'synthetic-brand', 'brands': SKILLS['skills'][0]['brands']}]))
+            status, answer = self.ask('/onboarding/api/brands', {'skill': '/opt/synthetic-brand-skill'})
+            self.assertEqual((status, answer['problem']), (200, brand_catalog.REMOTE_SKILL))
+            self.assertEqual(choices.call_count, 1)
+            # The computer is answered as before.
+            self.assertEqual(self.ask('/onboarding/api/brands', {}, network=False)[1]['skills'], SKILLS['skills'])
+
+        # Get brands: what was got, without the folder; a refusal names no folder.
+        self.assertEqual(self.save({'brand': {'brands': str(folder)}}, network=False)[0], 200)
+        status, answer = self.ask(route('/onboarding/api/brands-repository'), {})
+        self.assertEqual(status, 200)
+        self.assertEqual((answer['brands'], answer['action']), (['acme', 'other'], 'used'))
+        self.assertNotIn('folder', answer)
+        self.assertNotIn(str(self.root), json.dumps(answer))
+        self.assertEqual(self.ask('/onboarding/api/brands-repository', {}, network=False)[1]['folder'], str(folder))
+        gone = self.root / 'gone-brands'
+        self.assertEqual(self.save({'brand': {'brands': str(gone)}}, network=False)[0], 200)
+        status, answer = self.ask('/onboarding/api/brands-repository', {})
+        self.assertEqual((status, answer['error']), (409, brand_data.REMOTE_UNGOT))
+        self.assertIn(str(gone), self.ask('/onboarding/api/brands-repository', {}, network=False)[1]['error'])
+
+        # A research site is a web address.
+        status, answer = self.ask(route('/onboarding/api/research-site'), {'site': 'https://example.com/docs'})
+        self.assertEqual(status, 200)
+
+        self.assertEqual(seen, {*self.page.page.reads, *self.page.page.writes}, 'every route was asked from a phone')
+
+    def test_a_computer_still_changes_folder_settings(self):
+        status, _ = self.save({'local': {'root': str(self.root / 'work')}, 'brand': {'skill': str(self.root / 'skill')}},
+                              network=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(shared.read()[0]['brand']['skill'], str(self.root / 'skill'))
+
+    def test_the_refusal_names_every_folder_setting_it_refuses(self):
+        said = onboarding.folders_refused({'local': {'root': '/a'}, 'brand': {'skill': '~/b', 'brands': 'git@example.com:o/b.git'}}, {})
+        self.assertEqual(said, '“Workspace folder” and “Installed skill folder” name folders on the computer the '
+                               'studios run on, so they are changed only on that computer. Put them back as they '
+                               'were to save your other changes here.')
+        # A folder replaced by a web address is allowed; the same value, or none, is no change.
+        self.assertIsNone(onboarding.folders_refused({'brand': {'brands': 'https://example.com/b.git'}},
+                                                     {'brand': {'brands': '/a'}}))
+        self.assertIsNone(onboarding.folders_refused({'local': {'root': ' /a '}}, {'local': {'root': '/a'}}))
+        self.assertIsNone(onboarding.folders_refused({'brand': {'skill': ''}}, {}))
+        # The header is read as the bridge sends it, and only so.
+        from marketing_studio import network
+        self.assertEqual(onboarding.VIA_HEADER, network.VIA_HEADER)
+        for value, remote in (('network', True), (' Network ', True), ('local', False)):
+            headers = Message()
+            headers[onboarding.VIA_HEADER] = value
+            self.assertEqual(onboarding.carried(headers), remote)
+        self.assertFalse(onboarding.carried(Message()))
+
+
+if __name__ == '__main__':
+    import unittest
+    unittest.main()

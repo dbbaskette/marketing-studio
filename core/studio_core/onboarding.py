@@ -3,6 +3,7 @@
 The host retains its token, loopback and origin protections. No content, provider
 jobs, installers or update actions are exposed by this page.
 """
+import re
 import threading
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -17,6 +18,76 @@ ASSETS = {'/onboarding/': ('index.html', 'text/html; charset=utf-8'),
           '/onboarding/app.js': ('app.js', 'text/javascript; charset=utf-8'),
           '/onboarding/home.css': ('home.css', 'text/css; charset=utf-8'),
           '/onboarding/style.css': ('style.css', 'text/css; charset=utf-8')}
+
+# A phone on Marketing Studio's private link (GitHub issue #539). The network bridge adds this
+# header, with the value `network`, to every request it carries, and a network caller can
+# neither send nor strip it. Read here, not through the deck studios' shared runner, because
+# every studio serves this page, Blog Studio and Infographic Studio included.
+VIA_HEADER = 'X-Marketing-Studio-Via'
+# The shared settings that hold a folder on this computer: always, or when given as a path
+# rather than a repository address.
+FOLDERS = (('local', 'root'), ('brand', 'skill'), ('brand', 'brands'), ('brand', 'repository'),
+           ('team', 'repository'))
+_ADDRESS = re.compile(r'^(?:https?://|ssh://|[\w.-]+@[\w.-]+:)', re.I)
+
+
+# What a phone may do with each route of this page, decided route by route; a route added
+# without a decision here fails tests/test_onboarding_phone.py.
+PHONE = {
+    '/onboarding/api/home': 'Allowed: the saved settings, as the page shows them; nothing is looked up.',
+    '/onboarding/api/models': 'Allowed: an assistant’s models, read or looked up again; no folder.',
+    '/onboarding/api/shared': 'Allowed, except a change to a setting holding a folder (folders_refused).',
+    '/onboarding/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.',
+    '/onboarding/api/graphics': 'Allowed: models listed; a key is refused (graphics.act).',
+    '/onboarding/api/brands': 'Names and states only; a skill folder is refused unread.',
+    '/onboarding/api/brands-repository': 'Allowed: the saved setting is got, answered without folders.',
+    '/onboarding/api/research-site': 'Allowed: a web address is checked; no folder.',
+}
+
+
+def carried(headers) -> bool:
+    """Whether these request headers say the network bridge carried the request."""
+    try:
+        values = headers.get_all(VIA_HEADER) or []
+    except AttributeError:
+        values = [headers.get(VIA_HEADER)] if headers and headers.get(VIA_HEADER) else []
+    return any(str(value).strip().lower() == 'network' for value in values)
+
+
+def _leaf(values, group, key):
+    part = values.get(group) if isinstance(values, dict) else None
+    value = part.get(key) if isinstance(part, dict) else None
+    return (value.strip() or None) if isinstance(value, str) else value
+
+
+def _folder(value) -> bool:
+    return isinstance(value, str) and bool(value) and not _ADDRESS.match(value)
+
+
+def folders_refused(changes, seen):
+    """For a caller that came over the network: the sentence refusing a shared settings save
+    that would change a setting holding a folder on this computer, or None. A setting sent as
+    the form was shown passes, so the other settings of the same form can be saved, and the
+    save's own check of an outdated form still decides the rest. A repository given as a web
+    address may replace a folder; emptying a folder setting changes it, and is refused."""
+    if not isinstance(changes, dict):
+        return None
+    found = []
+    for group, key in FOLDERS:
+        part = changes.get(group)
+        if not isinstance(part, dict) or key not in part:
+            continue
+        wanted, before = _leaf(changes, group, key), _leaf(seen, group, key)
+        if wanted != before and (_folder(wanted) or (_folder(before) and wanted is None)):
+            found.append(f'“{preferences.label((group, key))}”')
+    if not found:
+        return None
+    if len(found) == 1:
+        return (f'{found[0]} names a folder on the computer the studios run on, so it is changed '
+                'only on that computer. Put it back as it was to save your other changes here.')
+    named = ', '.join(found[:-1]) + ' and ' + found[-1]
+    return (f'{named} name folders on the computer the studios run on, so they are changed only '
+            'on that computer. Put them back as they were to save your other changes here.')
 
 
 def config(product):
@@ -46,6 +117,7 @@ class Controller:
                 return protocol.as_json(200, owner.snapshot())
 
             def write(self, path, sent):
+                remote = owner.remote()
                 if path.endswith('/research-site'):
                     # One site checked as a save would check it; nothing is saved.
                     return protocol.as_json(200, {'site': research_sites.site(sent.get('site'))})
@@ -54,26 +126,29 @@ class Controller:
                     values, problem = owner.store.read()
                     if problem:
                         raise ValueError(problem)
-                    return protocol.as_json(200, brand_data.bring((values.get('brand') or {}).get('brands')))
+                    return protocol.as_json(200, brand_data.got((values.get('brand') or {}).get('brands'),
+                                                                remote=remote))
                 if path.endswith('/brands'):
                     skill = sent.get('skill')
-                    if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
-                                             or not Path(skill).expanduser().is_absolute()):
+                    # A phone's skill folder is refused unread by the lookup below, whatever it says.
+                    if not remote and skill is not None and (not isinstance(skill, str) or len(skill) > 2000
+                                                             or not Path(skill).expanduser().is_absolute()):
                         raise ValueError('Choose an absolute installed brand skill folder, or leave it blank.')
                     # A failure of either lookup leaves the other standing.
                     values, problem = owner.store.read()
-                    store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'))
-                    try:
-                        found = brand_catalog.choices(skill)
-                    except (ValueError, OSError) as failure:
-                        found = {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
-                    return protocol.as_json(200, {**found, 'store': store})
+                    store = brand_data.lookup(None if problem else (values.get('brand') or {}).get('brands'),
+                                              remote=remote)
+                    return protocol.as_json(200, {**brand_catalog.listed(skill, remote=remote), 'store': store})
                 if path.endswith('/graphics'):
-                    return protocol.as_json(200, graphics.act(sent))
+                    # A key is taken only on the computer itself, as Marketing Studio's page does.
+                    return protocol.as_json(200, graphics.act(sent, remote=remote))
                 if path.endswith('/models'):
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:
                     if path.endswith('/shared'):
+                        refused = remote and folders_refused(sent.get('changes'), sent.get('seen'))
+                        if refused:
+                            raise ValueError(refused)
                         before = owner.store.read()[0]
                         preferences.save(owner.store, sent.get('changes'), sent.get('seen'))
                         after, problem = owner.store.read()
@@ -91,6 +166,12 @@ class Controller:
         self.page = Page(port)
         self.page.token = token
         self.protocol = protocol
+        # Each request is answered on its own thread: whether this one came over the bridge.
+        self.caller = threading.local()
+
+    def remote(self) -> bool:
+        """True while this thread answers a request the network bridge carried."""
+        return bool(getattr(self.caller, 'remote', False))
 
     def snapshot(self):
         values, problem = self.store.read()
@@ -112,6 +193,7 @@ class Controller:
     def answer(self, target, headers, method='GET', body=None):
         if urlsplit(target).path in ('/', '/index.html'):
             target = '/onboarding/'
+        self.caller.remote = carried(headers)
         try:
             # A script or a style sheet comes back with its caching headers as a fourth part.
             reply = self.page.answer(target, headers, method, body)
@@ -130,6 +212,8 @@ class Controller:
             return self.protocol.as_json(409, {'error': str(failure), 'conflict': {'fields': failure.fields}})
         except ValueError as failure:
             return self.protocol.as_json(409, {'error': str(failure)})
+        finally:
+            self.caller.remote = False
 
 
 def attach(desk, product, header, prepare, store, after=None):
