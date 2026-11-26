@@ -568,61 +568,88 @@ class DefectTests(WalkCase):
         )
         self.assertEqual(said, saved_gate.SAVED_FLOW)
 
+    def ready_task(self, ident, kind='repurpose', job='c' * 32):
+        """A ready tool task of this blog, as a finished tool job saves it."""
+        import tool_jobs
+
+        request = {
+            'kind': kind,
+            'payload': {},
+            'basis': 'synthetic',
+            'metadata': {'article': ident},
+        }
+        tool_jobs.write(
+            self.root,
+            {
+                'id': job,
+                **request,
+                'fingerprint': studio.digest(json.dumps(request, sort_keys=True).encode()),
+                'guidance': '',
+                'status': 'ready',
+                'created_at': studio.now(),
+                'finished_at': studio.now(),
+                'attempts': 1,
+                'engine': 'codex',
+                'seconds': 60,
+                'result': {'content': 'Synthetic channel copy.', 'notes': ''},
+                'error': '',
+            },
+        )
+        return self.root / '.blog-runs/tools' / (job + '.json')
+
     def test_a_ready_task_of_an_unfinished_saved_blog_can_be_discarded(self):
         import tool_jobs
 
+        ident = self.load_all()['opens-on-desk']
+        self.ready_task(ident)
+        # It waits on its task, which can be neither applied nor cancelled.
+        said = desk_migration.saved_record(self.root, ident)['saved_record']
+        self.assertEqual((said['outcome'], said['clear']), ('wait', 'job'))
+        self.assertEqual(said['job']['status'], 'ready')
+        before, blog = self.outside_runner(), self.blog(ident)
+        with Offline():
+            found = management.dispatch(
+                self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
+            )
+        self.assertEqual((found['status'], found['result']), ('cancelled', None))
+        self.assertTrue(found['discarded_at'])
+        # Only the task's own record changed; the saved blog is as it was, and opens on the desk.
+        self.assertEqual(self.outside_runner(), before)
+        self.assertEqual(self.blog(ident), blog)
+        self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], 'migrates')
+        # A discarded result is gone for good: not tried again, not discarded again (the blog
+        # no longer waits on it, so the guard refuses).
+        with self.assertRaisesRegex(ValueError, 'cannot be retried'):
+            tool_jobs.control(self.root, 'c' * 32, 'retry', runner.engine(self.root))
+        with self.assertRaises(saved_gate.Refused):
+            management.dispatch(
+                self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
+            )
+
+    def test_a_ready_task_of_any_other_saved_blog_is_not_discarded(self):
         shown = self.load_all()
-        for name, outcome in (('opens-on-desk', 'migrates'), ('nothing-made', 'read-only')):
+        for name in ('nothing-made', 'finished', 'unreadable'):
             with self.subTest(state=name):
-                ident = shown[name]
-                # A ready repurpose task of this blog, as a finished tool job saves it.
-                request = {
-                    'kind': 'repurpose',
-                    'payload': {},
-                    'basis': 'synthetic',
-                    'metadata': {'article': ident},
-                }
-                tool_jobs.write(
-                    self.root,
-                    {
-                        'id': 'c' * 32,
-                        **request,
-                        'fingerprint': studio.digest(json.dumps(request, sort_keys=True).encode()),
-                        'guidance': '',
-                        'status': 'ready',
-                        'created_at': studio.now(),
-                        'finished_at': studio.now(),
-                        'attempts': 1,
-                        'engine': 'codex',
-                        'seconds': 60,
-                        'result': {'content': 'Synthetic channel copy.', 'notes': ''},
-                        'error': '',
-                    },
+                task = self.ready_task(shown[name])
+                kept = task.read_bytes()
+                said = self.unchanged(
+                    lambda: management.dispatch(
+                        self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
+                    )
                 )
-                if name == 'opens-on-desk':
-                    # It waits on its task, which can be neither applied nor cancelled.
-                    said = desk_migration.saved_record(self.root, ident)['saved_record']
-                    self.assertEqual((said['outcome'], said['clear']), ('wait', 'job'))
-                    self.assertEqual(said['job']['status'], 'ready')
-                before, blog = self.outside_runner(), self.blog(ident)
-                with Offline():
-                    found = management.dispatch(
-                        self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
-                    )
-                self.assertEqual((found['status'], found['result']), ('cancelled', None))
-                self.assertTrue(found['discarded_at'])
-                # Only the task's own record changed; the saved blog is as it was.
-                self.assertEqual(self.outside_runner(), before)
-                self.assertEqual(self.blog(ident), blog)
-                self.assertEqual(desk_migration.classify(self.root, ident)['outcome'], outcome)
-                # A discarded result is gone for good: not tried again, not discarded again.
-                with self.assertRaisesRegex(ValueError, 'cannot be retried'):
-                    tool_jobs.control(self.root, 'c' * 32, 'retry', runner.engine(self.root))
-                with self.assertRaisesRegex(ValueError, tool_jobs.NOT_DISCARDED):
-                    management.dispatch(
-                        self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
-                    )
-                (self.root / '.blog-runs/tools' / ('c' * 32 + '.json')).unlink()
+                self.assertEqual(said, saved_gate.SAVED_FLOW)
+                self.assertEqual(task.read_bytes(), kept)
+                task.unlink()
+        # The one allowance is for the blog that waits on that very task.
+        self.assertTrue(saved_gate.waits_on_ready_task(self.root, shown['opens-on-desk']) is False)
+        self.ready_task(shown['opens-on-desk'])
+        self.assertTrue(saved_gate.waits_on_ready_task(self.root, shown['opens-on-desk']))
+        self.assertEqual(
+            saved_gate.refusal(
+                self.root, saved_gate.WAITING, shown['opens-on-desk'], 'unfinished'
+            ),
+            None,
+        )
 
     def test_start_up_settles_a_step_of_a_blog_unreadable_or_gone(self):
         from studio_core import sync_guard
