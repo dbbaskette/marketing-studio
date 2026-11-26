@@ -1144,6 +1144,30 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         sent = next(r for r in result['requests'] if r['address'].startswith('/api/download?'))
         self.assertIn('artifact=document', sent['address'])
 
+    def test_a_download_carries_the_key_and_takes_the_name_the_runner_gives(self):
+        """Moved from PageScriptTests.test_every_deliverable_can_be_downloaded and
+        test_a_download_takes_the_name_the_runner_gives, which went with the gate screen: a
+        material is asked for with the page's key, saved under the name the runner sends in
+        Content-Disposition, and, where the runner sends none, under the file's own name."""
+        import desk
+        fixture = self.fixture('finished')
+        named = {'status': 200, 'picture': 'IyBHdWlkZQo=', 'type': 'text/markdown',
+                 'headers': {'Content-Disposition':
+                             'attachment; filename="finished-saved-guide.md"'}}
+        plain = {'status': 200, 'picture': 'IyBHdWlkZQo=', 'type': 'text/markdown'}
+        result = self.run_page({**self.answers(fixture), 'GET /api/download': [named, plain]}, [
+            {'click': 'Download the learner guide'}, {'snapshot': 'named'},
+            {'click': 'Download the learner guide'}, {'snapshot': 'plain'}],
+            state={'screen': 'run', 'path': fixture['path']})
+        shots = result['snapshots']
+        self.assertIn('Downloaded finished-saved-guide.md.', shots['named']['toasts'])
+        self.assertIn('Downloaded document.md.', shots['plain']['toasts'])
+        sent = [r for r in result['requests'] if r['address'].startswith('/api/download?')]
+        self.assertEqual(len(sent), 2)
+        for request in sent:
+            self.assertEqual(request['headers'], {desk.TOKEN_HEADER: 'the-test-key'})
+            self.assertIn('artifact=document', request['address'])
+
     def test_a_teammates_finished_saved_record_is_read_and_taken_over_to_open_it(self):
         """Moved from TeamScreenTests.test_open_a_finished_saved_training_after_taking_it and
         test_a_finished_training_nobody_runs_is_published_and_is_taken_to_change_it: a
