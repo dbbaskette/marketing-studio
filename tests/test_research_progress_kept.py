@@ -285,6 +285,8 @@ class WordsTests(unittest.TestCase):
                 self.assertNotIn('more time', said)
         self.assertTrue(transport.ended_words('review-unit', 'paused', label='Costs', kept=1).startswith(
             'Research paused during the independent check of “Costs”.'))
+        self.assertTrue(transport.ended_words('review-unit', 'stopped', label='Is it so?', kept=1).startswith(
+            'Research stopped during the independent check of “Is it so?” The checks'), 'one mark ends a question')
 
 
 if __name__ == '__main__':

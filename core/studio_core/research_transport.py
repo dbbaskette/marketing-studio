@@ -63,7 +63,8 @@ def ended_words(part, how, *, label=None, parts=1, kept=0, total=0, detail='', s
     said = subject(part, label, parts)
     detail = ' '.join(str(detail or '').split())
     if how in ('stopped', 'paused'):
-        said = f'Research {how} during ' + said[0].lower() + said[1:] + '.'
+        said = f'Research {how} during ' + said[0].lower() + said[1:]
+        said += '' if said.endswith(('?”', '!”', '.”')) else '.'   # a question's own mark ends it
     else:
         said += (' ran out of time' if how == 'timed-out' else ' could not finish') + (': ' + detail if detail else '.')
         if detail and not said.endswith(('.', '!', '?')):

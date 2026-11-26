@@ -529,7 +529,8 @@ const StudioResearch = (() => {
   // The list of what works now says, in visible words, which stage it belongs to.
   function nowList(stageName, key, lines) {
     if (!lines.length) return null;
-    const title = make('p', 'field-label', stageName + ': working now or needing a retry'); title.id = key + '-now-title'; title.dataset.key = key + '-now-title';
+    const working = lines.some(line => line.dataset.state === 'working');
+    const title = make('p', 'field-label', stageName + (working ? ': working now or needing a retry' : ': to be done again')); title.id = key + '-now-title'; title.dataset.key = key + '-now-title';
     const list = make('ul'); list.dataset.key = key + '-now'; list.setAttribute('aria-labelledby', title.id);
     for (const line of lines) list.append(line);
     return add(make('div'), title, list);

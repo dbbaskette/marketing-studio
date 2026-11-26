@@ -340,6 +340,7 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   assert.ok(failed.some(n=>n.textContent===said));assert.ok(failed.some(n=>n.textContent==='Research needs attention'));
   assert.ok(!failed.some(n=>n.dataset.key==='research-units-combine'),'no running counts once it ended');
   assert.ok(failed.some(n=>n.className==='research-stage-state'&&n.textContent==='Incomplete'));
+  assert.ok(failed.some(n=>n.dataset.key==='research-combining-now-title'&&n.textContent==='Combine findings: to be done again'),'nothing works now: the list says what is done again');
   assert.ok(!failed.some(n=>n.textContent==='Working now'));
   // A stopped run says what it kept in the run's one sentence; the page counts nothing itself.
   const stopSaid='Research stopped. Kept: 1 of 1 research area and 2 of 2 section drafts.';
