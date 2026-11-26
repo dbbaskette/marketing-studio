@@ -480,7 +480,9 @@ class RunnerPage(server.Page):
         next poll walks the workspace again instead of reusing the last walk, so the
         change shows at once in every open tab. A read sent as a POST changes nothing."""
         try:
-            # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`).
+            # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`),
+            # always as 409, as Training Studio's saved-record guard answers; the page shows
+            # a 409 and a 400 alike, as the sentence (GitHub issue #544).
             decision = SAVED_ROUTES.get(path, saved_gate.NEVER)
             if decision != saved_gate.WORKSPACE:
                 try:

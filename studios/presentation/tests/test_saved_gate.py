@@ -190,6 +190,24 @@ class CommandWalkTests(SavedDecks):
 
 
 class SavedDeckDefectTests(SavedDecks):
+    def test_every_refusal_of_the_gate_answers_409_with_the_gates_own_sentence(self):
+        # GitHub issue #544: the gate answers 409 for every refusal, as Training Studio's
+        # saved-record guard does; the page shows a 409 and a 400 alike, as the sentence.
+        found = self.decks()
+        for name, root in found.items():
+            state = RouteWalkTests.STATES[name]
+            for path in (*pages.DESK, '/api/run', '/api/decide', '/api/answer'):
+                sent = {**body(path), 'path': str(root)}
+                decision = pages.SAVED_ROUTES[path]
+                if decision == saved_gate.WORKSPACE or saved_gate.allowed(decision, state, sent):
+                    continue
+                with self.subTest(deck=name, route=path):
+                    status, said = self.call(path, sent)
+                    self.assertEqual(status, 409, said)
+                    # An unreadable record says the runner's own reason first.
+                    self.assertTrue(said.endswith(saved_gate.UNREAD_NEXT) if state == 'unreadable'
+                                    else said == saved_gate.SAID[state], said)
+
     def test_a_saved_deck_not_delivered_is_not_published(self):
         found = self.decks()
         for name in ('opens', 'read-only'):
