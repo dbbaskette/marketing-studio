@@ -3,6 +3,7 @@ Library screen (browsing, preview, download, upload, Add existing work to librar
 Remove from library or Restore; it selects nothing for a project)."""
 import base64
 import binascii
+import json
 import threading
 import shutil
 from contextlib import contextmanager, nullcontext
@@ -224,14 +225,20 @@ class Home(server.Page):
         studio's bridge link, and the home snapshot without the private link."""
         self.caller.remote = headers.get(VIA_HEADER) == 'network'
         try:
-            return super().answer(target, headers, method, body)
+            reply = super().answer(target, headers, method, body)
+            if self.caller.remote and len(reply) == 3 and reply[1] == server.JSON:
+                # A phone's answer: each problem or failure sentence naming a folder here said
+                # plainly, the saved folders this route still shows left as they are.
+                return server.as_json(reply[0], onboarding.phone_answer(
+                    json.loads(reply[2]), PHONE_SHOWS.get(target.partition('?')[0], ())))
+            return reply
         except server.Refusal:
             raise
         except Exception as failure:
             # A phone is never told a folder on this computer, which a failure's text can
             # name: a refusal that names none is said as it is, anything else plainly.
             if not self.caller.remote or (isinstance(failure, ValueError)
-                                          and not brand_data.names_a_folder(str(failure))):
+                                          and onboarding.said_to_phone(str(failure)) == str(failure)):
                 raise
             raise WorkspaceError(onboarding.REMOTE_FAILED) from None
         finally:

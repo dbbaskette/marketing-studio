@@ -3,6 +3,7 @@
 The host retains its token, loopback and origin protections. No content, provider
 jobs, installers or update actions are exposed by this page.
 """
+import json
 import threading
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -50,6 +51,45 @@ PHONE = {
 PHONE_SHOWS = {route: ('shared.local.root', 'shared.brand.skill', 'shared.brand.brands',
                        'shared.brand.repository', 'shared.team.repository')
                for route in ('/onboarding/api/home', '/onboarding/api/shared', '/onboarding/api/setup')}
+
+
+def shown_at(path, patterns) -> bool:
+    """Whether an answer's field, written as in PHONE_SHOWS ('a.b[].c'), is one `patterns`
+    name; a `*` part stands for any one key, such as a studio's."""
+    parts = path.split('.')
+    return any(len(parts) == len(wanted) and all(want in ('*', part) for want, part in zip(wanted, parts))
+               for wanted in (pattern.split('.') for pattern in patterns))
+
+
+def said_to_phone(text) -> str:
+    """A problem or failure sentence as a phone is told it: as it is, unless it names a folder
+    on this computer, when it says only that the reason can be seen on the computer."""
+    return REMOTE_FAILED if brand_data.names_a_folder(text) else text
+
+
+# The fields an answer says a problem, failure or state in: `error`, `problem`, `said` and the
+# like, and any `..._problem` or `..._error`, at any depth. A document's own text is not one.
+SENTENCES = frozenset(('error', 'problem', 'said', 'reason', 'notice', 'note', 'warning', 'detail',
+                       'summary', 'message', 'failure'))
+
+
+def _sentence(key) -> bool:
+    key = key.removesuffix('[]').lower()
+    return key in SENTENCES or key.endswith(('_problem', '_error', '_notice', '_failure'))
+
+
+def phone_answer(value, shows=(), at=''):
+    """An answer as a phone is given it. Every problem or failure sentence in it, wherever it
+    is (`shared_problem`, `prepare_problem`, a `problem`, `error` or `detail` at any depth),
+    goes through said_to_phone, except the saved folder values the route still shows a phone
+    (`shows`, its PHONE_SHOWS), which are the owner's separate decision."""
+    if isinstance(value, dict):
+        return {key: phone_answer(part, shows, f'{at}.{key}' if at else key) for key, part in value.items()}
+    if isinstance(value, list):
+        return [phone_answer(part, shows, at + '[]') for part in value]
+    if isinstance(value, str) and _sentence(at.rpartition('.')[2]) and not shown_at(at, shows):
+        return said_to_phone(value)
+    return value
 
 
 def carried(headers) -> bool:
@@ -262,6 +302,12 @@ class Controller:
                 for name in ('app.js', 'home.css', 'style.css'):
                     html = html.replace('"/' + name + '"', '"/onboarding/' + name + '"')
                 data = html.encode()
+            elif self.remote() and kind == self.protocol.JSON:
+                # A phone's answer: each sentence naming a folder here said plainly, the
+                # saved folders this route still shows left as they are.
+                path = urlsplit(target).path
+                status, kind, data = self.protocol.as_json(
+                    status, phone_answer(json.loads(data), PHONE_SHOWS.get(path, ())))
             return (status, kind, data, *reply[3:])
         except self.protocol.Refusal as failure:
             return self.protocol.as_json(failure.status, {'error': str(failure)})
@@ -269,8 +315,8 @@ class Controller:
             return self.protocol.as_json(409, {'error': str(failure), 'conflict': {'fields': failure.fields}})
         except ValueError as failure:
             said = str(failure)
-            if self.remote() and brand_data.names_a_folder(said):
-                said = REMOTE_FAILED   # a phone is never told a folder on this computer
+            if self.remote():
+                said = said_to_phone(said)   # a phone is never told a folder on this computer
             return self.protocol.as_json(409, {'error': said})
         except Exception:
             # Any other failure, such as a folder that cannot be read or written, names what

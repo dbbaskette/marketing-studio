@@ -6,6 +6,7 @@ Every route of the page is walked with the network bridge's header, so a route a
 a decision in studio_core.onboarding.PHONE fails here. Disposable settings only."""
 import json
 import os
+from pathlib import Path
 from email.message import Message
 from unittest import mock
 
@@ -261,6 +262,29 @@ class OnboardingPhoneTests(BrandFolders):
                     self.assertEqual(self.ask('/onboarding/api/brands', {'skill': other})[1]['problem'],
                                      brand_catalog.REMOTE_SKILL)
             choices.assert_not_called()
+
+    def test_a_failure_sentence_in_any_answer_names_no_folder_to_a_phone(self):
+        # Second review, items 2 and 3: an unreadable settings file and a failed prepare.
+        # (This page has no connect.)
+        secret = str(self.root / 'private-folder')
+        settings = Path(os.environ['STUDIOS_CONFIG'])
+        settings.write_text('{not json')
+        for path in ('/onboarding/api/home', '/onboarding/api/shared'):
+            with self.subTest(path=path):
+                sent = None if path.endswith('home') else {'changes': {'person': {'name': 'Ana'}}, 'seen': {}}
+                status, phone = self.ask(path, sent)
+                self.assertNotIn(str(settings), json.dumps(phone))
+        self.assertEqual(self.ask('/onboarding/api/home')[1]['shared_problem'], onboarding.REMOTE_FAILED)
+        self.assertIn(str(settings), self.ask('/onboarding/api/home', network=False)[1]['shared_problem'])
+        settings.unlink()
+        self.assertEqual(self.save({'local': {'root': str(self.root / 'work')}}, network=False)[0], 200)
+
+        def prepare(values):
+            raise ValueError(f'{secret}/training could not be made.')
+        with mock.patch.object(self.page, 'prepare', prepare):
+            self.assertEqual(self.ask('/onboarding/api/setup', {'done': True}),
+                             (409, {'error': onboarding.REMOTE_FAILED}))
+            self.assertIn(secret, self.ask('/onboarding/api/setup', {'done': True}, network=False)[1]['error'])
 
     def test_the_products_own_advice_reaches_a_phone_as_it_is(self):
         # Second review, item 6: a fixed sentence that says "~/" names no folder here.

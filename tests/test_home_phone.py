@@ -6,7 +6,6 @@ keeps today's behaviour.
 Every route the page answers is walked with the network bridge's header, and each has its
 decision in marketing_studio.page.PHONE, so a route added without one fails here. Disposable
 settings, stand-in launches and lookups only."""
-import fnmatch
 import json
 import os
 from email.message import Message
@@ -17,7 +16,7 @@ from test_brand_data import BrandFolders
 from marketing_studio import bridge_protocol, catalog, computer, page as home_page, shared, state, workspaces
 from marketing_studio.errors import WorkspaceError
 from marketing_studio.page import BRAND_ROUTES, REMOTE_BRANDS
-from studio_core import brand_catalog, brand_data, graphics
+from studio_core import brand_catalog, brand_data, graphics, onboarding
 from studio_core.document_library import context as library_context
 
 SKILLS = {'skills': [{'name': 'synthetic-brand', 'path': '/opt/synthetic-brand-skill',
@@ -391,11 +390,11 @@ class HomePhoneTests(BrandFolders):
         declared = home_page.PHONE_SHOWS
         for path, found in shown.items():
             for field in found:
-                self.assertTrue(any(fnmatch.fnmatchcase(field, pattern) for pattern in declared.get(path, ())),
+                self.assertTrue(onboarding.shown_at(field, declared.get(path, ())),
                                 f'{path}: {field} is not in PHONE_SHOWS')
         for path, patterns in declared.items():
             for pattern in patterns:
-                self.assertTrue(any(fnmatch.fnmatchcase(field, pattern) for field in shown.get(path, ())),
+                self.assertTrue(any(onboarding.shown_at(field, (pattern,)) for field in shown.get(path, ())),
                                 f'{path}: {pattern} was never shown')
         # Each route's written decision says whether it shows saved folders, and only then.
         for path, why in home_page.PHONE.items():
@@ -416,6 +415,43 @@ class HomePhoneTests(BrandFolders):
                 with self.subTest(skill=other):
                     self.assertEqual(self.ask('/api/brands', {'skill': other})[1]['problem'], brand_catalog.REMOTE_SKILL)
             choices.assert_not_called()
+
+    def test_a_failure_sentence_in_any_answer_names_no_folder_to_a_phone(self):
+        # Second review, items 2 and 3: an unreadable settings file, a failed prepare and a
+        # failed connect, whether said in a 200 answer's field or as a refusal.
+        secret = str(self.root / 'private-folder')
+        settings = Path(os.environ['STUDIOS_CONFIG'])
+        settings.write_text('{not json')
+        status, phone = self.ask('/api/home')
+        self.assertEqual((status, phone['shared_problem']), (200, onboarding.REMOTE_FAILED))
+        self.assertNotIn(str(settings), json.dumps(phone))
+        self.assertIn(str(settings), self.ask('/api/home', network=False)[1]['shared_problem'])
+        settings.unlink()
+        self.assertEqual(self.save({'local': {'root': str(self.root / 'work')}}, network=False)[0], 200)
+        with mock.patch.object(self.launcher, 'prepare', return_value={}):
+            self.assertEqual(self.ask('/api/setup', {'done': True}, network=False)[0], 200)
+
+        def bridge(identifier, root, values, flag, timeout, slow):
+            if flag == bridge_protocol.PREPARE:
+                return {'error': f'{secret}/{identifier} could not be made.'}
+            return {'connected': False, 'error': f'The work in {secret} was not carried.'}
+        with mock.patch.object(self.launcher, 'bridge', side_effect=bridge), \
+                mock.patch.object(self.launcher, 'process', return_value=None), \
+                mock.patch.object(catalog, 'locate', return_value=self.root / 'install'):
+            # A storage change a phone may make: the prepare's failure is a field of a 200 answer.
+            status, phone = self.save({'team': {'repository': 'https://example.com/team.git'}})
+            self.assertEqual((status, phone['prepare_problem']), (200, onboarding.REMOTE_FAILED))
+            self.assertNotIn(secret, json.dumps(phone))
+            here = self.save({'team': {'repository': 'https://example.com/other.git'}}, network=False)[1]
+            self.assertIn(secret, here['prepare_problem'])
+            # Setup that prepares, and a connect: refusals.
+            for path, sent in (('/api/setup', {'done': True, 'prepare': True}), ('/api/connect', {'studio': 'blog'})):
+                with self.subTest(path=path):
+                    self.assertEqual(self.ask(path, sent), (409, {'error': onboarding.REMOTE_FAILED}))
+                    self.assertIn(secret, self.ask(path, sent, network=False)[1]['error'])
+        # A sentence in a field that names no folder is said as it is.
+        self.assertEqual(onboarding.phone_answer({'problem': 'Git was not found.', 'text': f'See {secret}.'}),
+                         {'problem': 'Git was not found.', 'text': f'See {secret}.'})
 
     def test_the_products_own_advice_reaches_a_phone_as_it_is(self):
         # Second review, item 6: a fixed sentence that says "~/" names no folder here.
