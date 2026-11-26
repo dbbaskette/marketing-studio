@@ -1831,6 +1831,67 @@ class LookTests(DeckCase):
         self.assertEqual((chosen['id'], chosen['by']), ('example-contrast', 'desk'))
         self.assertIn('section', self.kinds())
 
+    # Restored from the tests GitHub issue #542 removed with the saved flow (#547): each now
+    # reaches the kept look code through the desk's Try another look (`look_samples`, then
+    # `look_apply`) instead of the saved flow's look gate.
+
+    def sampled(self, **brand):
+        """A desk deck drawn to its end, then its looks drawn again on the desk. Answers the
+        training, the samples and the deck's saved version, as the desk sends it."""
+        root = self.begin()
+        self.to_end(root)
+        for name, value in brand.items():
+            setattr(self.brand, name, value)
+        samples = self.engine.look_samples(root, None)
+        return root, samples, self.record(root)['deck']['']['saved']['sha256']
+
+    def test_the_brand_refuses_a_pick_for_samples_of_an_older_outline(self):
+        root, samples, _ = self.sampled()
+        self.assertTrue(samples['looks'])
+        outline = root / pipeline.OUTLINE
+        made = json.loads(outline.read_text())
+        made['title'] = 'Changed after the samples'
+        outline.write_text(json.dumps(made))
+        with self.engine.files:
+            self.assertFalse(self.engine._choose_look(root, None, 'example-calm', 'Calm.', 'page'))
+        self.assertIsNone(self.built(root).get('look'), 'drawn again from what it says now')
+
+    def test_what_a_deck_says_changed_since_the_pick_is_shown_new_looks(self):
+        root, _, seen = self.sampled()
+        self.engine.look_apply(root, None, 'example-calm', seen, 'Calm.')
+        kept = self.record(root)['deck']['']
+        chosen = pipeline.looked(kept, workspace.sha256_file(root / pipeline.OUTLINE))
+        self.assertEqual((chosen['id'], chosen['words'], chosen['by']),
+                         ('example-calm', 'Calm.', 'page'))
+        self.assertIsNone(pipeline.looked(kept, 'another outline'))
+
+    def test_failed_samples_say_so_and_nothing_else_about_rendering(self):
+        root, samples, _ = self.sampled(cannot_render=True)
+        self.assertTrue(samples['failed'])
+        found = self.engine._survey(root, self.record(root))
+        notes = pipeline.look_view(root, found, None)['notes']
+        self.assertEqual(len(notes), 1)
+        self.assertIn('could not be rendered here', notes[0])
+        self.assertIn('Google Slides could not be reached', notes[0])
+        self.assertNotIn('Rendered through', notes[0])
+
+    def test_a_pick_without_words_says_so_and_a_look_without_a_titled_closing_falls_back(self):
+        """On the desk a pick sent without words is recorded, with the brand and in the run
+        record, as chosen on the desk. (The saved flow's "Picked … on the page, with no
+        comment." is said only of a pick its direction review kept, which nothing writes
+        now.)"""
+        root, _, seen = self.sampled()
+        self.engine.look_apply(root, None, 'example-calm', seen)
+        self.assertEqual(self.brand.chosen[-1], ('example-calm', 'Chosen on the desk.'))
+        self.assertEqual(self.record(root)['deck']['']['look']['chosen']['words'],
+                         'Chosen on the desk.')
+        self.to_end(root)
+        start = root / pipeline.WORK / self.built(root)['start']['folder']
+        given = json.loads((start / 'given' / 'outline.json').read_text())
+        self.assertEqual(given['direction']['focal'], 'accentAqua')
+        self.assertNotEqual(given['layouts']['closing'], 'Closing words',
+                            'a closing that shows no title cannot hold its words')
+
     def test_an_older_brand_offers_no_looks_and_the_deck_carries_on(self):
         self.brand.offers_looks = False
         root = self.begin()
@@ -1859,6 +1920,35 @@ class RepairTests(DeckCase):
         self.assertTrue(any(c['profile'] == 'checking' for c in audit))
 
     BLOCKER = {'code': 'OFF_PALETTE', 'slide': 2, 'says': 'A color outside the palette.'}
+
+    def test_a_brand_blocker_sends_its_section_back(self):
+        """Restored from the tests GitHub issue #542 removed with the saved flow (#547), on a
+        deck the desk draws."""
+        self.workers.found = [[]]
+        self.brand.blockers = [[self.BLOCKER]]
+        told = []
+
+        def composer(tools, job):
+            told.append(tools.read_input('what the review found'))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', *[self.workers.section] * 2, composer)
+        root = self.begin()
+        rounds = self.built(root)['rounds']
+        first = rounds[0]
+        self.assertEqual(first['audit_findings'], [{
+            'slide': 'what-it-does', 'number': 2, 'severity': 'critical', 'about': 'drawing',
+            'question': None, 'note': "The brand's check: A color outside the palette.",
+            'fix': None, 'source': 'brand'}])
+        # On the desk every round is reviewed (the saved flow's screen-only round, `by:
+        # screen`, is gone with it): the blocker goes back with the first review, its section
+        # is drawn again told what the brand's check found, and the new round is reviewed.
+        self.assertNotIn('by', first['review'])
+        self.assertEqual(len(rounds), 2, 'the section was drawn again, then reviewed')
+        self.assertEqual(self.kinds()[-5:], ['section', 'review', 'section', 'review',
+                                             'scenario'])
+        self.assertEqual(told, [(True, "what-it-does: The brand's check: A color outside "
+                                       'the palette.')])
 
     def test_brand_warnings_reach_the_reviewer(self):
         self.workers.found = [[]]
