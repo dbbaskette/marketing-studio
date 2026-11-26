@@ -155,6 +155,39 @@ class OnboardingPhoneTests(BrandFolders):
         self.assertEqual(self.save({'local': {'root': work + ' '}, 'person': {'name': 'Bo'}})[0], 200)
         self.assertEqual((shared.read()[0]['local']['root'], shared.read()[0]['person']['name']), (work + ' ', 'Bo'))
 
+    def test_a_failure_that_names_a_folder_is_said_to_a_phone_without_it(self):
+        # Review item 3: each lookup raising an OSError (or a refusal) that names a folder.
+        folder = self.brands_folder(self.root / 'brands', 'acme')
+        self.assertEqual(self.save({'brand': {'brands': str(folder)}, 'local': {'root': str(self.root / 'work')}},
+                                   network=False)[0], 200)
+        secret = str(self.root / 'private-folder')
+        denied = PermissionError(13, 'Permission denied', secret)
+
+        def prepare_fails(values):
+            raise denied
+        cases = (
+            ('/onboarding/api/brands-repository', {}, mock.patch.object(brand_data, 'record', side_effect=denied)),
+            ('/onboarding/api/brands-repository', {}, mock.patch.object(
+                brand_data, 'bring', side_effect=ValueError(f'{secret} holds no brands'))),
+            ('/onboarding/api/brands', {}, mock.patch.object(brand_catalog, 'choices', side_effect=denied)),
+            ('/onboarding/api/brands', {}, mock.patch.object(brand_data, 'status', side_effect=denied)),
+            ('/onboarding/api/setup', {'done': True}, mock.patch.object(self.page, 'prepare', prepare_fails)),
+            ('/onboarding/api/shared', {'changes': {'person': {'name': 'Ana'}}, 'seen': {}},
+             mock.patch.object(shared, 'update', side_effect=denied)),
+        )
+        for path, sent, patch in cases:
+            with self.subTest(path=path, patch=patch.attribute):
+                with patch:
+                    status, answer = self.ask(path, sent)
+                self.assertNotIn(secret, json.dumps(answer))
+                self.assertNotIn('Errno', json.dumps(answer))
+                if status != 200:
+                    self.assertEqual(status, 409)
+        # The computer is told as before: the error itself.
+        with mock.patch.object(brand_data, 'record', side_effect=denied):
+            with self.assertRaises(PermissionError):
+                self.ask('/onboarding/api/brands-repository', {}, network=False)
+
     def test_a_computer_still_changes_folder_settings(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')}, 'brand': {'skill': str(self.root / 'skill')}},
                               network=False)

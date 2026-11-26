@@ -28,6 +28,8 @@ VIA_HEADER = 'X-Marketing-Studio-Via'
 # rather than a repository address.
 FOLDERS = (('local', 'root'), ('brand', 'skill'), ('brand', 'brands'), ('brand', 'repository'),
            ('team', 'repository'))
+# Said to a phone in place of a failure whose text may name a folder on this computer.
+REMOTE_FAILED = 'That could not be done here. See why on the computer the studios run on.'
 _ADDRESS = re.compile(r'^(?:https?://|ssh://|[\w.-]+@[\w.-]+:)', re.I)
 
 
@@ -233,7 +235,16 @@ class Controller:
         except preferences.Conflict as failure:
             return self.protocol.as_json(409, {'error': str(failure), 'conflict': {'fields': failure.fields}})
         except ValueError as failure:
-            return self.protocol.as_json(409, {'error': str(failure)})
+            said = str(failure)
+            if self.remote() and brand_data.names_a_folder(said):
+                said = REMOTE_FAILED   # a phone is never told a folder on this computer
+            return self.protocol.as_json(409, {'error': said})
+        except Exception:
+            # Any other failure, such as a folder that cannot be read or written, names what
+            # it failed on: a phone is told only that it failed and where to see why.
+            if not self.remote():
+                raise
+            return self.protocol.as_json(409, {'error': REMOTE_FAILED})
         finally:
             self.caller.remote = False
 

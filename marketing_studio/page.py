@@ -188,6 +188,15 @@ class Home(server.Page):
         self.caller.remote = headers.get(VIA_HEADER) == 'network'
         try:
             return super().answer(target, headers, method, body)
+        except server.Refusal:
+            raise
+        except Exception as failure:
+            # A phone is never told a folder on this computer, which a failure's text can
+            # name: a refusal that names none is said as it is, anything else plainly.
+            if not self.caller.remote or (isinstance(failure, ValueError)
+                                          and not brand_data.names_a_folder(str(failure))):
+                raise
+            raise WorkspaceError(onboarding.REMOTE_FAILED) from None
         finally:
             self.caller.remote = False
 

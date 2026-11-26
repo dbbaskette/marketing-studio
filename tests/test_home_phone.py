@@ -204,6 +204,38 @@ class HomePhoneTests(BrandFolders):
             self.assertEqual(self.ask('/api/paths', {'paths': {'blog': install + ' ', 'training': ''}})[0], 200)
         self.assertEqual(state.read()['paths'], {'blog': install + ' ', 'training': ''})
 
+    def test_a_failure_that_names_a_folder_is_said_to_a_phone_without_it(self):
+        # Review item 3: each lookup raising an OSError (or a refusal) that names a folder.
+        folder = self.brands_folder(self.root / 'brands', 'acme')
+        self.assertEqual(self.save({'brand': {'brands': str(folder)}}, network=False)[0], 200)
+        secret = str(self.root / 'private-folder')
+        denied = PermissionError(13, 'Permission denied', secret)
+        cases = (
+            ('/api/brands-repository', {}, mock.patch.object(brand_data, 'record', side_effect=denied)),
+            ('/api/brands-repository', {}, mock.patch.object(brand_data, 'bring',
+                                                             side_effect=ValueError(f'{secret} holds no brands'))),
+            ('/api/brands', {}, mock.patch.object(brand_catalog, 'choices', side_effect=denied)),
+            ('/api/brands', {}, mock.patch.object(brand_data, 'status', side_effect=denied)),
+            ('/api/computer', {}, mock.patch.object(computer, 'check', side_effect=denied)),
+            ('/api/connect', {'studio': 'blog'}, mock.patch.object(self.launcher, 'connect', side_effect=denied)),
+            ('/api/open', {'studio': 'blog'}, mock.patch.object(self.launcher, 'open',
+                                                                side_effect=WorkspaceError(f'Nothing at {secret}.'))),
+            ('/api/library-upload', {'name': 'a.md', 'content': 'YQ=='},
+             mock.patch('studio_core.document_library.opened', side_effect=denied)),
+        )
+        self.assertEqual(self.save({'local': {'root': str(self.root / 'work')}}, network=False)[0], 200)
+        self.assertEqual(self.ask('/api/setup', {'done': True}, network=False)[0], 200)
+        for path, sent, patch in cases:
+            with self.subTest(path=path, patch=patch.attribute):
+                with patch:
+                    status, answer = self.ask(path, sent)
+                self.assertNotIn(secret, json.dumps(answer))
+                self.assertNotIn('Errno', json.dumps(answer))
+        # The computer is told as before: the error itself, which its server describes.
+        with mock.patch.object(brand_data, 'record', side_effect=denied):
+            with self.assertRaises(PermissionError):
+                self.ask('/api/brands-repository', {}, network=False)
+
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},
                                'brand': {'skill': str(self.root / 'skill')}}, network=False)
