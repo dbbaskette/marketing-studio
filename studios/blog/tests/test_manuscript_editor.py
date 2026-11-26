@@ -790,3 +790,200 @@ class ResearchMetadataTests(Fixture):
             )
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0]['sources'][0]['permission'], 'selected')
+
+
+class CheckRunsToItsReviewTests(Fixture):
+    """The manuscript editor's check goes on through its stages (research plan, research,
+    draft, review, as it has them) to the review the editor screen reads, whatever the saved
+    review level; before that it stops only for Stop, a failure or a Pause. The worker is
+    faked: nothing reaches an assistant."""
+
+    REVIEW = {
+        'summary': 'Opening checked; editorial assessment only.',
+        'findings': [
+            {
+                'id': 'opening',
+                'kind': 'edit',
+                'before': 'Clients send',
+                'after': 'Clients route',
+                'reason': 'Precise verb.',
+                'evidence': 'Editorial judgment',
+                'verdict': 'editorial',
+            }
+        ],
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.ident = self.article()
+        self.addCleanup(lambda: runner.ENGINES.pop(str(self.root), None))
+        self.calls = []
+
+    @staticmethod
+    def stage_of(guidance, payload):
+        if payload.get('response_kind') == 'editing-review':
+            return 'review'
+        if 'Plan focused research questions' in guidance:
+            return 'research-plan'
+        if 'Research the approved questions' in guidance:
+            return 'research'
+        return 'draft'
+
+    def worker(self, engine, payload, guidance, **options):
+        stage = self.stage_of(guidance, payload)
+        self.calls.append(stage)
+        if stage == 'review':
+            return {'content': json.dumps(self.REVIEW), 'notes': ''}
+        if stage == 'research-plan':
+            return {'content': '- **reach**: Which clients reach the gateway?', 'notes': ''}
+        if stage == 'research':
+            return {'content': '# Findings\nClients send requests to a gateway.', 'notes': ''}
+        return {
+            'content': 'Clients send requests to a gateway. The gateway then calls the service.',
+            'notes': '',
+        }
+
+    def start(self, check, level='step_by_step', **values):
+        from studio_core import studios_config
+
+        studios_config.update({'review': {'level': level}})
+        current = editor.read(self.root, self.ident)
+        engine = runner.Engine(self.root, self.worker)
+        runner.ENGINES[str(self.root)] = engine
+        editor.dispatch(
+            self.root,
+            'check',
+            {'id': self.ident, 'expected': current['expected'], 'check': check, **values},
+        )
+        return engine
+
+    def test_a_check_with_research_runs_through_its_stages_to_the_review(self):
+        for level in ('step_by_step', 'balanced', 'automatic'):
+            with self.subTest(level=level):
+                self.calls.clear()
+                engine = self.start('factual-support', level, research='web-allowed')
+                _, _, run = runner.load(self.root, self.ident)
+                self.assertEqual(run['pipeline'], ['research-plan', 'research', 'review'])
+                for stage in ('research-plan', 'research'):
+                    engine.once(self.ident)
+                    self.assertEqual(self.calls[-1], stage)
+                    local = engine.local(self.ident)
+                    self.assertEqual((local['status'], local['enabled']), ('queued', True))
+                    # The editor screen shows the pass as still under way.
+                    self.assertTrue(editor.read(self.root, self.ident)['working'])
+                engine.once(self.ident)
+                self.assertEqual(self.calls, ['research-plan', 'research', 'review'])
+                shown = editor.read(self.root, self.ident)
+                self.assertEqual(
+                    (
+                        shown['operation']['next'],
+                        shown['operation']['status'],
+                        shown['operation']['enabled'],
+                    ),
+                    ('review', 'waiting-for-approval', False),
+                )
+                self.assertEqual(shown['findings'][0]['id'], 'opening')
+                rows = {row['stage']: row for row in runner.survey(self.root, self.ident)['stages']}
+                for stage in ('research-plan', 'research'):
+                    # Continued by the check, never recorded as a person's approval.
+                    self.assertEqual(rows[stage]['accepted_by'], runner.EDITOR_CHECK)
+                    self.assertTrue(rows[stage]['auto_accepted'])
+                self.assertEqual(rows['review']['status'], 'draft')
+                engine.once(self.ident)  # Nothing more runs at the review.
+                self.assertEqual(len(self.calls), 3)
+
+    def test_a_revision_writes_its_draft_and_then_reviews_it(self):
+        engine = self.start('revise')
+        engine.once(self.ident)
+        self.assertEqual(self.calls, ['draft'])
+        self.assertEqual(engine.local(self.ident)['status'], 'queued')
+        engine.once(self.ident)
+        self.assertEqual(self.calls, ['draft', 'review'])
+        shown = editor.read(self.root, self.ident)
+        self.assertIn('then calls the service', shown['content'])
+        self.assertEqual(
+            (shown['operation']['next'], shown['operation']['status']),
+            ('review', 'waiting-for-approval'),
+        )
+
+    def test_stop_between_steps_ends_the_check_where_it_is(self):
+        engine = self.start('factual-support', research='web-allowed')
+        engine.once(self.ident)
+        with studio.locked(self.root):
+            engine.control(self.ident, 'stop')
+        engine.once(self.ident)
+        self.assertEqual(self.calls, ['research-plan'])
+        shown = editor.read(self.root, self.ident)
+        self.assertEqual((shown['operation']['status'], shown['working']), ('stopped', False))
+        # The editor screen says it stopped before its review.
+        self.assertTrue(shown['operation']['stopped'])
+        self.assertEqual(shown['operation']['next'], 'research')
+
+    def test_a_pause_made_during_a_step_keeps_the_check_after_it(self):
+        engine = self.start('factual-support', research='web-allowed')
+        worker = engine.worker
+
+        def pausing(*args, **kwargs):
+            engine.control(self.ident, 'pause')
+            return worker(*args, **kwargs)
+
+        engine.worker = pausing
+        engine.once(self.ident)
+        engine.once(self.ident)
+        self.assertEqual(self.calls, ['research-plan'])
+        local = engine.local(self.ident)
+        self.assertEqual((local['status'], local['enabled']), ('paused', False))
+        self.assertTrue(editor.read(self.root, self.ident)['operation']['stopped'])
+
+    def test_a_review_read_as_stale_after_applied_feedback_is_not_a_stop(self):
+        engine = self.start('polish')
+        engine.once(self.ident)
+        finding = editor.read(self.root, self.ident)['findings'][0]
+        current = editor.read(self.root, self.ident)
+        editor.dispatch(
+            self.root,
+            'proposals',
+            {
+                'id': self.ident,
+                'expected': current['expected'],
+                'proposals': [
+                    {k: v for k, v in finding.items() if k not in ('evidence', 'verdict')}
+                ],
+            },
+        )
+        current = editor.read(self.root, self.ident)
+        editor.dispatch(
+            self.root,
+            'apply-selected',
+            {'id': self.ident, 'expected': current['expected'], 'proposals': ['opening']},
+        )
+        self.assertFalse(editor.read(self.root, self.ident)['operation']['stopped'])
+
+    def test_a_failed_step_ends_the_check_and_says_why(self):
+        engine = self.start('factual-support', research='web-allowed')
+        worker = engine.worker
+
+        def failing(engine_name, payload, guidance, **options):
+            if self.stage_of(guidance, payload) == 'research':
+                raise ValueError('Synthetic research failure.')
+            return worker(engine_name, payload, guidance, **options)
+
+        engine.worker = failing
+        for _ in range(3):
+            engine.once(self.ident)
+        shown = editor.read(self.root, self.ident)['operation']
+        self.assertEqual(
+            (shown['status'], shown['next'], shown['error']),
+            ('failed', 'research', 'Synthetic research failure.'),
+        )
+
+    def test_a_step_that_changed_under_the_check_stops_it_as_a_failure(self):
+        engine = self.start('factual-support', research='web-allowed')
+        engine.once(self.ident)
+        directory, record = studio.item(self.root, 'articles', self.ident)
+        record['title'] = 'A renamed gateway guide'
+        studio.persist(directory, 'articles', record)
+        engine.once(self.ident)
+        self.assertEqual(self.calls, ['research-plan'])
+        shown = editor.read(self.root, self.ident)['operation']
+        self.assertEqual((shown['status'], shown['error']), ('failed', runner.STALE_CHECK))

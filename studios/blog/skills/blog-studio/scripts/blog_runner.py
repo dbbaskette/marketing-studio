@@ -130,6 +130,11 @@ SAVED_FLOW = (
     'The earlier step-by-step flow no longer continues this blog: open it on the desk, or '
     'start new work from it.'
 )
+# A step the manuscript editor's check already went past changed before its next step ran.
+STALE_CHECK = (
+    'The blog or what this check reads changed while the check ran, so it stopped. Your '
+    'manuscript is unchanged; start the check again.'
+)
 
 
 def continues(found):
@@ -996,9 +1001,9 @@ def survey(root, ident, listing=False):
                 'path': STAGES[name][1],
                 'notes': saved.get('notes', ''),
                 'accepted_by': saved.get('accepted_by'),
-                # Accepted by the saved review level, not the person; it needs no approval.
-                'auto_accepted': status == 'approved'
-                and saved.get('accepted_by') == 'review-policy',
+                # Continued by the editor's check or the saved review level, not the person;
+                # it needs no approval.
+                'auto_accepted': status == 'approved' and saved.get('accepted_by') in CONTINUED,
                 'request': saved.get('request', ''),
             }
         )
@@ -1667,7 +1672,13 @@ def submit(root, ident, stage, result, expected, page=False):
         'model_purpose': previous.get('model_purpose', stage),
         **({'preservation': preservation} if preservation is not None else {}),
     }
-    if stage != 'angles' and review_policy.automatic(
+    continued = bool(run.get('editor_check')) and stage != run['pipeline'][-1]
+    if continued:
+        # The manuscript editor's check goes on through its stages to its review by itself:
+        # nobody approves a step before the review, so the step is recorded as continued by
+        # the check, never as approved by a person.
+        _accept(directory, run, stage, EDITOR_CHECK)
+    elif stage != 'angles' and review_policy.automatic(
         run,
         'blog',
         stage,
@@ -1679,7 +1690,7 @@ def submit(root, ident, stage, result, expected, page=False):
     if stage == 'research':
         # Saved research, from the page, chat or a handover, replaces any kept draft.
         shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
-    save(root, directory, record, run, 'Submitted ' + stage)
+    save(root, directory, record, run, 'Submitted ' + stage + (' · continued' if continued else ''))
     return survey(root, ident)
 
 
@@ -1718,6 +1729,12 @@ def gaps(directory, stage):
     if stage == 'package':
         found += [gap for gap in stage_notes(directory, 'draft')['gaps'] if gap not in found]
     return found
+
+
+# Who accepted a step that no person approved: the manuscript editor's check going on to its
+# review (EDITOR_CHECK), or, in runs the earlier flow saved, the saved review level.
+EDITOR_CHECK = 'editor-check'
+CONTINUED = (EDITOR_CHECK, 'review-policy')
 
 
 def _accept(directory, run, stage, by):
@@ -2457,10 +2474,14 @@ class Engine:
                 row['stage'] == found['next'] and row['status'] == 'stale'
                 for row in found['stages']
             ):
+                # A step the editor's check already went past changed under it (the blog's
+                # writing or what it reads): the check stops, said as a failure on the editor
+                # screen, and starting it again begins from its first step.
                 local.update(
                     enabled=False,
-                    status='needs-attention',
-                    error='Saved writing or its inputs changed. Review the saved version or ask for changes before running it again.',
+                    status='failed',
+                    error=STALE_CHECK,
+                    reason=None,
                 )
                 self.keep_local(ident, local)
                 return
@@ -2631,15 +2652,26 @@ class Engine:
                     import shared_library
 
                     shared_library.keep_research(self.root, directory, ident)
-                submit(self.root, ident, found['next'], result, found['expected'], page=True)
+                after = submit(self.root, ident, found['next'], result, found['expected'], page=True)
                 state = self.local(ident)
-                state.update(status='waiting-for-approval', error='')
                 if pending:
                     # submit() let any kept draft go: the accepted research replaces it.
                     state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
-                # Every run that goes on is the manuscript editor's: it stops after each step
-                # for the editor (only the earlier flow went on to the next step by itself).
-                state['enabled'] = False
+                # Every run that goes on is the manuscript editor's check. It goes on through its
+                # stages by itself and stops at its review, which the editor screen reads; a
+                # Pause or Stop made while this step ran keeps it where it is.
+                goes_on = after['next'] is not None and any(
+                    row['stage'] == found['next'] and row['auto_accepted']
+                    for row in after['stages']
+                )
+                if goes_on and state.get('enabled'):
+                    state.update(status='queued', error='')
+                    self.wake.set()
+                elif goes_on:
+                    held = state.get('status')
+                    state.update(status=held if held in ('paused', 'stopped') else 'paused', error='')
+                else:
+                    state.update(status='waiting-for-approval', error='', enabled=False)
                 self.keep_local(ident, state)
                 self.activity.checkpoint(blog_activity.blog(ident), 'output-saved', found['next'])
                 self.activity.checkpoint(blog_activity.blog(ident), 'ready', found['next'])

@@ -327,6 +327,17 @@ async function commentCompletionAndFailure(){
   state.operation.editor_check='factual-support';f.run('studio.editorChoices={}');await f.run("sRoute('editor','comments','prepare')");
   assert.equal(nodes().find(e=>e.id==='editor-check').value,'factual-support','reopening a failed pass retains its action instead of switching to polish');
   assert.ok(nodes().some(e=>e.textContent==='Try again'));
+  // A check of several steps says which one is under way, and one stopped before its review
+  // says so and how to go on, even with earlier feedback saved.
+  state.operation={status:'working',error:'',enabled:true,editor_check:'factual-support',next:'research',steps:['research-plan','research','review'],stopped:false};state.working=true;state.expected='v3';
+  await f.run("sRoute('editor','comments')");
+  assert.ok(nodes().some(e=>e.textContent==='Researching · step 2 of 3. The review follows on its own.'),nodes().map(e=>e.textContent).join('|'));
+  state.operation={...state.operation,status:'stopped',enabled:false,stopped:true};state.working=false;state.expected='v4';
+  await f.run("sRoute('editor','comments')");
+  assert.ok(nodes().some(e=>e.textContent==='This pass was stopped'));
+  assert.ok(nodes().some(e=>/stopped before its review, at the research findings\. Nothing more runs/.test(e.textContent||'')));
+  assert.ok(nodes().some(e=>e.textContent==='Start again'));
+  assert.equal(nodes().some(e=>e.textContent==='This review couldn’t finish'),false,'a stop is not said as a failure');
 }
 
 async function pendingEditorSaves(){

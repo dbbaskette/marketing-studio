@@ -55,6 +55,15 @@ def read(root, ident):
                 'desk_open',
             )
         }
+        # A check stopped (or paused) before its review was written: its next step never ran.
+        # A review already written and since read as stale (feedback applied) is not one.
+        # The check's steps in order (research plan, research, draft, review, as it has them),
+        # so the editor screen can say which one is under way.
+        operation['steps'] = [row['stage'] for row in shown.get('stages') or ()]
+        operation['stopped'] = shown.get('status') in ('stopped', 'paused') and any(
+            row['stage'] == shown.get('next') and row['status'] == 'pending'
+            for row in shown.get('stages') or ()
+        )
     checks = studio.freshness(root, directory, record)
     checked = operation.get('editor_check') if operation else None
     if checked in ('revise', 'copyedit'):
