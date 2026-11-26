@@ -380,7 +380,7 @@ function sShown(){return document.hidden?new Promise(resolve=>{const back=()=>{i
 // and the first answer (or the page being shown again) resets the wait.
 const S_POLL=3000,S_POLL_MOST=60000;
 async function sPoll(){
-  if(!S_SCRIPTS.ran)return;  // Nothing is drawn again before the page's scripts have all run.
+  if(typeof S_SCRIPTS!=='undefined'&&!S_SCRIPTS.ran)return;  // Nothing is drawn again before the page's scripts have all run.
   if(document.hidden||studio.polling||studio.busy||studio.sheet||['settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;
   if(Date.now()<(studio.pollAfter||0))return;
   studio.polling=true;const turn=studio.turn;let failed=false;
