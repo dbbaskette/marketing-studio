@@ -35,9 +35,12 @@ from pathlib import Path
 
 
 from studio_core import research_contract
-from workspace import WorkspaceError
+from studio_core.modules import host_module
 
-from runner import companion
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
+
+companion = host_module(globals(), 'companion', fellow=True)
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins.

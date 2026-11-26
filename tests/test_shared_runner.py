@@ -13,6 +13,7 @@ import textwrap
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'core'))
@@ -20,8 +21,10 @@ sys.path.insert(0, str(ROOT / 'core'))
 from studio_core import modules  # noqa: E402
 
 SHARED = ROOT / 'core' / 'studio_core' / 'shared_runner'
-PRODUCT_WORDS = ('Presentation Studio', 'Training Studio', 'PRESENTATION_STUDIO',
-                 'TRAINING_STUDIO', 'presentation-studio', 'training-studio')
+PRODUCT_WORDS = ('Presentation Studio', 'Training Studio', 'Blog Studio', 'PRESENTATION_STUDIO',
+                 'TRAINING_STUDIO', 'BLOG_STUDIO', 'presentation-studio', 'training-studio',
+                 'blog-studio')
+HOSTS = ('home', 'hub', 'workspace', 'sync_guidance')   # a studio's host modules
 
 
 def source_module(text, name='shared_parts_example'):
@@ -391,6 +394,174 @@ class SharedRunnerFileTests(unittest.TestCase):
             text = _without_for_product_docstrings(path.read_text(encoding='utf-8'))
             self.assertNotIn('shared_runner import', text, path.name)
             self.assertNotIn('from studio_core.shared_runner.', text, path.name)
+
+    def test_shared_modules_reach_their_fellows_through_runner_or_the_value_passed(self):
+        from studio_core import shared_runner
+        fellows = set(shared_runner.WHOLE + shared_runner.PARTS)
+        for path in self.files():
+            whole = path.stem in shared_runner.WHOLE
+            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        top = alias.name.split('.')[0]
+                        # a whole module takes its host modules through host_module, so a
+                        # module its studio passed is the one it uses
+                        self.assertFalse(whole and top in HOSTS, f'{path.name}: import {top}')
+                        self.assertNotIn(top, fellows, f'{path.name}: import {top}')
+                elif isinstance(node, ast.ImportFrom):
+                    top = (node.module or '').split('.')[0]
+                    self.assertFalse(whole and top in HOSTS, f'{path.name}: from {top}')
+                    self.assertNotIn(top, fellows, f'{path.name}: from {top}')
+                elif isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'host_module':
+                    first, named = node.args[0], node.args[1].value
+                    fellow = any(keyword.arg == 'fellow' and keyword.value.value is True
+                                 for keyword in node.keywords)
+                    self.assertIn(named, fellows if fellow else HOSTS, f'{path.name}: {named}')
+                    self.assertEqual(getattr(first, 'func', None) and first.func.id, 'globals',
+                                     path.name)
+
+
+def _fake(name, **values):
+    module = types.ModuleType(name)
+    module.__dict__.update(values)
+    return module
+
+
+class HostModuleTests(unittest.TestCase):
+    """A shared module's host and fellow modules: the ones its studio passed, else imported
+    by name as before."""
+
+    def setUp(self):
+        made = tempfile.TemporaryDirectory()
+        self.addCleanup(made.cleanup)
+        folder = Path(made.name)
+        (folder / 'runner').mkdir()
+        (folder / 'runner' / '__init__.py').write_text('')
+        (folder / 'runner' / 'fellow_example.py').write_text("WHO = 'fellow'\n")
+        (folder / 'host_example.py').write_text("WHO = 'host'\n")
+        isolated = mock.patch.dict(sys.modules)
+        isolated.start()
+        self.addCleanup(isolated.stop)
+        for name in [name for name in sys.modules if name.split('.')[0] == 'runner']:
+            del sys.modules[name]
+        sys.path.insert(0, str(folder))
+        self.addCleanup(sys.path.remove, str(folder))
+
+    def test_a_module_not_passed_is_imported_by_name(self):
+        self.assertEqual(modules.host_module({}, 'host_example').WHO, 'host')
+        found = modules.host_module({'MODULES': {}}, 'fellow_example', fellow=True)
+        self.assertEqual(found.WHO, 'fellow')
+        self.assertIs(found, sys.modules['runner.fellow_example'])
+        self.assertIs(found, sys.modules['runner'].fellow_example)
+
+    def test_a_fellow_is_found_as_from_runner_import_finds_it(self):
+        import runner
+        replaced = _fake('runner.fellow_example')
+        runner.fellow_example = replaced
+        self.assertIs(modules.host_module({}, 'fellow_example', fellow=True), replaced)
+
+    def test_a_module_passed_is_the_one_used(self):
+        own_hub, own_fellow = _fake('own_hub'), _fake('own_fellow')
+        namespace = {'MODULES': {'host_example': own_hub, 'fellow_example': own_fellow}}
+        self.assertIs(modules.host_module(namespace, 'host_example'), own_hub)
+        self.assertIs(modules.host_module(namespace, 'fellow_example', fellow=True), own_fellow)
+        self.assertNotIn('host_example', sys.modules)
+        self.assertNotIn('runner', sys.modules)
+
+
+class WholeModuleTests(unittest.TestCase):
+    """A studio that passes its host modules makes a whole module without a plain import."""
+
+    def setUp(self):
+        made = tempfile.TemporaryDirectory()
+        self.addCleanup(made.cleanup)
+        self.folder = Path(made.name).resolve()
+        self.name = 'whole_module_example'
+        self.addCleanup(sys.modules.pop, self.name, None)
+
+        class Refused(ValueError):
+            pass
+
+        self.workspace = _fake('own_workspace', WorkspaceError=Refused, STATE_DIR='.example')
+        self.home = _fake('own_home', data_root=lambda: self.folder / 'data')
+
+    def loaded(self):
+        return {name for name in (*HOSTS, 'runner') if name in sys.modules}
+
+    def test_only_a_whole_module_is_made(self):
+        from studio_core import shared_runner
+        with self.assertRaises(ValueError):
+            shared_runner.whole_module('page', self.name, 'Example')
+        self.assertNotIn(self.name, sys.modules)
+
+    def test_the_modules_passed_are_used_and_nothing_is_imported_by_name(self):
+        from studio_core import shared_runner
+        before = self.loaded()
+        made = shared_runner.whole_module('companion', self.name, 'Example',
+                                          MODULES={'workspace': self.workspace})
+        self.assertIs(sys.modules[self.name], made)
+        self.assertEqual(made.PRODUCT, 'Example')
+        self.assertIs(made.WorkspaceError, self.workspace.WorkspaceError)
+        self.assertEqual(Path(made.__file__).resolve(), (SHARED / 'companion.py').resolve())
+        self.assertEqual(self.loaded(), before)
+
+    def gitstate(self, **values):
+        from studio_core import shared_runner
+        hosts = {'home': self.home, 'hub': _fake('own_hub'), 'workspace': self.workspace,
+                 'sync_guidance': _fake('own_guidance')}
+        return shared_runner.whole_module('gitstate', self.name, 'Example', ITEM='piece',
+                                          MODULES=hosts, **values)
+
+    def test_a_sync_holds_the_lock_files_the_studio_names_in_order(self):
+        from studio_core.process_lock import ProcessRLock
+        made = self.gitstate(SYNC_LOCKS=('first.lock', 'second.lock'))
+        repo = self.folder / 'repository'
+        (repo / '.git').mkdir(parents=True)
+        others = made._also_held(repo)
+        self.assertEqual([lock._path() for lock in others],
+                         [repo / '.git' / 'first.lock', repo / '.git' / 'second.lock'])
+        self.assertTrue(all(isinstance(lock, ProcessRLock) for lock in others))
+        order, taken = [], ProcessRLock.acquire
+
+        def acquire(lock, *args, **kwargs):
+            order.append(Path(lock._path()).name)
+            return taken(lock, *args, **kwargs)
+
+        space = types.SimpleNamespace(repo=repo)
+        held = ProcessRLock(lambda: made.workspace_lock_path(repo, self.folder / 'data'))
+        with mock.patch.object(ProcessRLock, 'acquire', acquire):
+            with made._sync_locks(space, held, others):
+                self.assertTrue(all(lock._is_owned() for lock in others))
+        self.assertEqual(order, ['studios-write.lock', 'first.lock', 'second.lock'])
+        elsewhere = self.folder / 'linked'
+        elsewhere.mkdir()
+        (elsewhere / '.git').write_text('gitdir: elsewhere\n')
+        self.assertEqual(made._also_held(elsewhere), [])
+
+    def test_a_studio_naming_no_lock_file_holds_none_and_its_item_word_names_a_folder(self):
+        made = self.gitstate()
+        repo = self.folder / 'repository'
+        (repo / '.git').mkdir(parents=True)
+        self.assertEqual(made._also_held(repo), [])
+        space = made.Workspace('Example', repo, 'pieces', 'main')
+        self.assertEqual(space.piece('one'), repo / 'pieces' / 'one')
+        self.assertEqual(space.item('one'), repo / 'pieces' / 'one')
+        self.assertIs(made.WorkspaceError, self.workspace.WorkspaceError)
+
+
+class DeckSyncLockTests(unittest.TestCase):
+    def test_each_deck_studio_s_sync_also_holds_blog_studio_s_lock(self):
+        # A deck studio's sync in a shared repository never runs while Blog Studio writes
+        # there: its facade names Blog Studio's lock file, which the shared code does not.
+        for studio in ('presentation', 'training'):
+            facade = ROOT / 'studios' / studio / 'runner' / 'gitstate.py'
+            calls = [node for node in ast.walk(ast.parse(facade.read_text(encoding='utf-8')))
+                     if isinstance(node, ast.Call)
+                     and getattr(node.func, 'id', None) == 'for_product']
+            self.assertEqual(len(calls), 1, studio)
+            passed = {keyword.arg: keyword.value for keyword in calls[0].keywords}
+            self.assertEqual(ast.literal_eval(passed['SYNC_LOCKS']), ('blog-studio.lock',),
+                             studio)
 
 
 class CompareRunnerTests(unittest.TestCase):

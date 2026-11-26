@@ -87,9 +87,12 @@ import shutil
 from pathlib import Path
 
 
-from workspace import WorkspaceError
+from studio_core.modules import host_module
 
-from runner import companion as companions
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
+
+companions = host_module(globals(), 'companion', fellow=True)
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins.
@@ -138,7 +141,7 @@ FLOOR = floor()
 def too_old(version: str | None) -> str | None:
     """The Status sentence for a brand skill older than FLOOR, else None. A skill that says
     no version is not judged by one."""
-    from runner import brand_source   # its order of releases; it needs no brand skill
+    brand_source = host_module(globals(), 'brand_source', fellow=True)  # needs no brand skill
     if not version or not NUMBER.match(str(version)):
         return None
     if brand_source.order(version) >= brand_source.order(FLOOR):
@@ -184,7 +187,8 @@ def told() -> dict:
     runner uses named the way harness-slides tells a brand adapter to find them, unless
     they are named already. A companion not found is not named. HARNESS_BRAND_DATA names
     the brands folder of the `brand.brands` shared setting, when it is there."""
-    from runner import research, slides   # the companions; neither needs a brand skill
+    research = host_module(globals(), 'research', fellow=True)   # the companions; neither
+    slides = host_module(globals(), 'slides', fellow=True)       # needs a brand skill
     from studio_core import brand_skills   # bound parts import their own
     # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
     env = brand_skills.environment()

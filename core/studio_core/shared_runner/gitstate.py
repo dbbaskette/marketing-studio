@@ -74,21 +74,26 @@ import re
 import secrets
 import shutil
 import threading
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-import home
-import hub
-import sync_guidance
-import workspace
-from workspace import WorkspaceError
+from studio_core.modules import host_module
 from studio_core.process_lock import ProcessRLock, workspace_lock_path
 from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+home = host_module(globals(), 'home')
+hub = host_module(globals(), 'hub')
+sync_guidance = host_module(globals(), 'sync_guidance')
+workspace = host_module(globals(), 'workspace')
+WorkspaceError = workspace.WorkspaceError
+
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins. `studios_config` is the studio's own module for the file
-# every studio shares.
+# every studio shares. SYNC_LOCKS names the other lock files, in the repository's own git
+# folder, that a sync in a shared repository holds after the shared settings lock, in order:
+# each studio that writes there from a process of its own names its file.
 PRODUCT = globals().get('PRODUCT', 'the studio')
 TOOL = globals().get('TOOL', 'studio')
 FOLDER = globals().get('FOLDER', 'work')
@@ -97,6 +102,7 @@ ITEMS = globals().get('ITEMS', 'items')
 README = globals().get('README', '')
 studios_config = globals().get('studios_config')
 REQUIRE_WORKSPACE_MARKER = globals().get('REQUIRE_WORKSPACE_MARKER', False)
+SYNC_LOCKS = tuple(globals().get('SYNC_LOCKS', ()))
 
 SCHEMA = 1
 MARKER = 'hub.json'
@@ -141,6 +147,10 @@ class Workspace:
     def item(self, ident: str) -> Path:
         """The folder of one item in the workspace."""
         return self.root / ident
+
+
+# The folder of one item is also `Workspace.<ITEM>`, as the studio has always called it.
+setattr(Workspace, ITEM, Workspace.item)
 
 
 # --- what this computer remembers --------------------------------------------------------
@@ -735,12 +745,26 @@ def workspace_locked(workspace, held, *, configured=False):
         yield
 
 
+def _also_held(repo: Path) -> list:
+    """The other locks a sync holds in this repository after the shared settings lock, in
+    SYNC_LOCKS order. Each matches its writer's literal lock path, so none is taken in a
+    repository whose `.git` is a file (a worktree), where no such writer starts; copied
+    worker records are still checked there."""
+    if not (repo / '.git').is_dir():
+        return []
+    return [ProcessRLock(lambda name=name: repo / '.git' / name, refusal=WorkspaceError)
+            for name in SYNC_LOCKS]
+
+
 @contextmanager
-def _sync_locks(workspace, held, blog):
-    # Every Studio now takes the shared repository lock first. Blog Studio
-    # retains its repository-before-workspace order within that boundary.
+def _sync_locks(workspace, held, others):
+    # Every studio takes the shared repository lock first, then each of the others in
+    # order, so a studio that keeps its repository lock before its workspace keeps that
+    # order within this boundary.
     with workspace_locked(workspace, held):
-        with blog:
+        with ExitStack() as stack:
+            for lock in others:
+                stack.enter_context(lock)
             yield
 
 
@@ -767,17 +791,14 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
     held = held or ProcessRLock(lambda: workspace_lock_path(workspace.repo, home.data_root()),
                                 refusal=WorkspaceError)
     repo, branch = workspace.repo, workspace.branch
-    # Match the writing driver's literal lock path exactly. It cannot start
-    # writers in a .git-file worktree; copied worker records are still checked.
-    blog = ProcessRLock(lambda: repo / '.git' / 'blog-studio.lock', refusal=WorkspaceError) \
-        if (repo / '.git').is_dir() else nullcontext()
+    others = _also_held(repo)
     report = {'shared': False, 'reached': True, 'received': 0, 'unshared': 0, 'conflict': [],
               'notice': None}
     if workspace.address is None:
         return {**report, 'reached': None, 'notice': (
             'This workspace has no shared repository, so there is nowhere to share it. Your '
             'work is kept on this computer.')}
-    with _sync_locks(workspace, held, blog):
+    with _sync_locks(workspace, held, others):
         if worker_in_progress(repo, WorkspaceError):
             return {**report, 'reached': None, 'notice': SYNC_WAIT}
         if on_branch(repo) != branch:
@@ -792,7 +813,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
         if fetched.returncode != 0:
             report['reached'] = False
             break
-        with _sync_locks(workspace, held, blog):
+        with _sync_locks(workspace, held, others):
             if worker_in_progress(repo, WorkspaceError):
                 return {**report, 'notice': SYNC_WAIT}
             # Another fetch may move the ref at any moment, so the commit it names now is
@@ -820,7 +841,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
             waiting = 0
             break
     if waiting is None:
-        with _sync_locks(workspace, held, blog):
+        with _sync_locks(workspace, held, others):
             waiting = hub.ahead(repo, track)
     report['unshared'] = waiting
     report['shared'] = bool(report['reached']) and not stuck and not report['unshared']
@@ -878,6 +899,4 @@ def for_product(name, product, **values):
     """This module for one studio, as `sys.modules[name]`. See shared_runner. The workspace's
     folder of one item is also `Workspace.<ITEM>`, as the studio has always called it."""
     from studio_core.modules import fresh_module
-    module = fresh_module(__file__, name, {'PRODUCT': product, **values})
-    setattr(module.Workspace, module.ITEM, module.Workspace.item)
-    return module
+    return fresh_module(__file__, name, {'PRODUCT': product, **values})
