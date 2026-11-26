@@ -130,7 +130,6 @@ async function check(){
   await toolsAreNamed();
   await voiceSwitch();
   await voiceGuides();
-  await finishEveryLevel();
   await failureRecovery();
   await deskJourneys();
   await deskOpenFinished();
@@ -1266,7 +1265,9 @@ async function authorClarify(){
 // view, and each mode's unused description.
 function noUnusedPageParts(){
   const f=fixture();f.loadRunner();
-  for(const name of ['sBrandNotice','renderRun','renderRuns'])assert.equal(f.run('typeof '+name),'undefined',name+' is gone');
+  for(const name of ['sBrandNotice','renderRun','renderRuns','sConfirm','sFinished'])assert.equal(f.run('typeof '+name),'undefined',name+' is gone');
+  // Only a finished editor's run reaches the gate: no stage of the earlier flow is decided there.
+  for(const gone of ['anglesGate','Save ideas for later','Use this outline','Use this draft','Finish this review','Download ideas','Handoff notes'])assert.equal(f.run('String(sGate)').includes(gone),false,gone+' is gone from the gate');
   assert.equal(f.run('views.runs'),undefined,'no Writing runs view');
   assert.ok(f.run('BLOG_MODES.every(entry=>entry.length===2)'),'each mode is its id and label');
 }
@@ -1295,22 +1296,9 @@ async function guidedRuns(){
   assert.ok(descendants(content).some(e=>/^h[1-6]$/.test(e.tagName)&&descendants(e).some(n=>n.textContent==='Outline')));
   assert.ok(descendants(content).some(e=>e.textContent==='Checked for you'));
   assert.ok(descendants(content).some(e=>e.textContent==='Worth a look'));
-  const approve=f.get('actions').children.find(e=>e.textContent==='Use this outline');await approve.listeners.click();
-  assert.equal(requests.length,0,'opening the confirmation must not approve');
-  assert.equal(f.get('sheet').hidden,false);assert.equal(f.get('main').inert,true);
-  const confirm=descendants(f.get('sheet')).find(e=>e.textContent==='Approve');await confirm.listeners.click();
-  assert.equal(requests[0].url,'/api/run-approve');
-  assert.deepEqual(JSON.parse(requests[0].options.body),{id:'synthetic',expected:'version-1'});
-  assert.equal(f.get('sheet').hidden,true);assert.equal(f.get('main').inert,false);
-  for(const mode of ['balanced','automatic']){
-    const calls=[];const direct=fixture((url,options)=>{calls.push({url,options});return url==='/api/run-approve'||url.startsWith('/api/run?')?updated:{items:[],total:0};});
-    direct.loadRunner();direct.set('found',{...found,review_level:mode});direct.set('shown',{...shown,bundle:[{stage:'research',label:'Research findings',content:'# Synthetic evidence'}]});
-    direct.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
-    assert.ok(descendants(direct.get('studio-page')).some(e=>e.textContent==='Research findings'));
-    await direct.get('actions').children.find(e=>e.textContent==='Use this outline').listeners.click();
-    assert.equal(calls[0].url,'/api/run-approve','grouped reviews approve the displayed revision directly');
-    assert.deepEqual(JSON.parse(calls[0].options.body),{id:'synthetic',expected:'version-1'});
-  }
+  // The gate only reads a finished editor's run: Ask for changes, and nothing that approves.
+  assert.deepEqual(f.get('actions').children.map(e=>e.textContent),['Ask for changes']);
+  assert.equal(requests.length,0);
   f.set('found',found);f.run('studio.listing=[found];sHome()');
   assert.equal(f.get('title').textContent,'Home');assert.equal(f.get('needs-count').textContent,'1');
   assert.ok(descendants(content).some(e=>e.textContent==='Needs you'));
@@ -1379,12 +1367,12 @@ async function guidedRuns(){
   assert.equal(descendants(content).filter(e=>e.tagName==='a').length,1);
   f.run('sChanges(found, "outline")');const note=descendants(f.get('sheet')).find(e=>e.tagName==='textarea');note.value='Keep my request';
   await f.run('sPoll()');assert.equal(note.value,'Keep my request');
-  // A newer server version cannot silently replace the document being read or be approved.
+  // A newer server version cannot silently replace the document being read: it is said instead.
   f.run("sCloseSheet();studio.screen='gate';studio.id=found.id;studio.found=found;sGate(found,shown)");
   const visibleDocument=f.get('studio-page').children.at(-1);
   await f.run('sPoll()');
   assert.equal(f.get('studio-page').children.at(-1),visibleDocument);
-  assert.equal(f.get('actions').children.find(e=>e.textContent==='Use this outline').disabled,true);
+  assert.equal(f.get('newer-version').hidden,false,'the newer version is said');
   f.set('found',{...updated,complete:true,next:null,stages:updated.stages.map(e=>({...e,status:'approved'}))});
   f.run('sGate(found,{...shown,status:"approved"})');
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Ask for changes'));
@@ -1489,9 +1477,10 @@ async function honestBlogCopy(){
   const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},stages};
   const shown={id:'synthetic',title:'Synthetic blog',name:'DRAFT.md',stage:'draft',label:'Draft',expected:'v1',status:'draft',content:'# Draft',notes:'',checks:[],previous:null,diff:[]};
   f.set('found',found);f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
-  assert.ok(all().includes('Read the draft. Use it to go on, or ask for changes.'),all());
+  assert.ok(all().includes('Read the draft, or ask for changes.'),all());
   f.set('shown',{...shown,stage:'review',name:'blog-review.md',label:'Review'});f.set('found',{...found,next:'review',stages:stages.map(row=>row.stage==='draft'?{...row,status:'approved'}:row.stage==='review'?{...row,status:'draft'}:row)});f.run("sGate(found,shown)");
-  assert.ok(all().includes('Read the review. Its findings go to the handoff; to act on one, ask for changes to the draft.'),all());
+  assert.ok(all().includes('Read the review. To act on one of its findings, ask for changes to the draft.'),all());
+  for(const gone of ['Use it to go on','handoff'])assert.equal(all().includes(gone),false,gone+' names nothing a finished check has');
   for(const old of ['polish the wording','return to the manuscript'])assert.equal(all().includes(old),false,old);
   // Ask for changes says what it does, and the toast where the change comes back.
   f.set('found',found);f.run("sChanges(found,'draft')");
@@ -1563,8 +1552,8 @@ async function sharedPattern(){
 
 
 // Your files on the desk start: every file goes up at once with its role and says what each
-// has, a role changes until Start, a Doc is one more file; and an older from-files run's
-// angles gate offers picks or none of these.
+// has, a role changes until Start, a Doc is one more file; and a finished revision's gate shows
+// its checks, gaps and excerpts.
 async function filesJourney(){
   const requests=[];let refuseRole=false;
   const defaults={engine:'codex',seconds:600,research:'supplied-only',tone:'Clear',author:''};
@@ -1683,9 +1672,9 @@ async function filesJourney(){
   assert.ok(text().some(t=>/^Messaging Doc$/.test(t)),'the Doc is listed by its title: '+text().join('|'));
   assert.ok(text().some(t=>/Google Doc · 4,200 characters · All 3 tabs were read: “Overview”, “Messaging”, “FAQ”\. Link one tab/.test(t)),'with how much text it has and which tabs were read: '+text().join('|'));
   assert.equal(docAdd().disabled,false,'and another Doc can be added');
-  // An older from-files run's angles gate, read: its checks, gaps and excerpts.
-  const waiting={...found,status:'waiting-for-approval',expected:'a2',stages:[{...found.stages[0],status:'draft'}],excerpted:['notes']};
-  const shown={id:'files',title:'From my files',name:'blog-angles.md',stage:'angles',label:'Angles',expected:'a2',status:'draft',content:'# Angles\n\n## Retries are a budget\n\nPlatform engineers · Retries cost · Leans on notes.md\n\n## The gateway is a contract\n\nAPI authors · The contract · Leans on notes.md\n\n## Fewer hops\n\nTeam leads · Hops · Leans on notes.md',notes:'',checks:[],previous:null,diff:[],bundle:[]};
+  // A finished revision's draft, read on its gate: its checks, gaps and excerpts.
+  const waiting={...found,status:'complete',complete:true,next:null,mode:'revise',editor_check:'revise',existing:true,expected:'a2',stages:[{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'approved'}],excerpted:['notes']};
+  const shown={id:'files',title:'From my files',name:'DRAFT.md',stage:'draft',label:'Draft',expected:'a2',status:'approved',content:'# Draft\n\nRetries are a budget.',notes:'',checks:[],previous:null,diff:[],bundle:[]};
   f.set('waiting',waiting);f.set('shown',shown);
   f.run("studio.screen='gate';studio.found=waiting;sGate(waiting,shown)");
   const actions=()=>f.get('actions').children.map(e=>e.textContent);
@@ -1703,12 +1692,12 @@ async function filesJourney(){
   assert.ok(needs,'the gaps have their own heading: '+text().join('|'));
   assert.deepEqual(nodes().find(e=>e.className==='gap-items')?.children.map(e=>e.textContent),['The confirmed release date.','A launch link.']);
   f.run("sGate(waiting,shown)");
-  assert.ok(!actions().some(t=>/Save ideas|Use this|Finish/.test(t)),actions().join('|'));
+  assert.deepEqual(actions(),['Ask for changes'],'a finished run is read; nothing approves');
   assert.ok(text().some(t=>/notes was excerpted|excerpted/.test(t)),'the gate says which files were excerpted: '+text().join('|'));
 }
-// A real finish: the final stop shows the draft open with Finish, a finished run has a Done
+// A real finish: a finished run has a Done
 // card, Delete asks for the typed title and says what is running stops, Blogs lists what was
-// recently deleted with Restore, and the ideas gate offers the headings as picks.
+// recently deleted with Restore.
 async function finishAndDelete(){
   const requests=[];
   const complete={id:'synthetic',title:'Synthetic blog',status:'complete',complete:true,next:null,approval:'page',expected:'version-3',enabled:false,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},publication:null,stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'approved'}]};
@@ -1730,20 +1719,6 @@ async function finishAndDelete(){
   // The Done card says whether Finish kept the blog in the team library, or why not.
   for(const [library,words] of [[{id:'kept',revision:1},'Kept in the team library, where the next blog can pick it as an example.'],[{reason:'it could not be saved here.'},'Not kept in the team library: it could not be saved here.']]){f.set('card',{...complete,library});f.run("studio.page=sPage(sDoneCard(card))");assert.ok(text().includes(words),words+': '+text().join('|'));}
   f.set('card',complete);f.run("sPage(sDoneCard(card))");assert.equal(text().some(t=>/team library/.test(t)),false,'nothing said without an outcome');
-  // The final stop: the draft is the open document, the package is the handoff, the decision is Finish.
-  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Handoff',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
-  const atPackage={...complete,complete:false,next:'package',status:'waiting-for-approval',expected:'version-2',stages:[complete.stages[0],complete.stages[1],{...complete.stages[2],status:'draft'}]};
-  f.set('shown',shown);f.set('atPackage',atPackage);
-  f.run("studio.screen='gate';studio.found=atPackage;sGate(atPackage,shown)");
-  const finish=f.get('actions').children.find(e=>e.textContent==='Finish');
-  assert.ok(finish,'the final stop says Finish: '+f.get('actions').children.map(e=>e.textContent).join('|'));
-  const papers=descendants(f.get('studio-page')).filter(e=>e.tagName==='article');
-  assert.equal(papers[0].attributes['aria-label'],'Draft','the draft is the open document at the final stop');
-  assert.ok(text().some(t=>t==='Handoff notes'),text().join('|'));
-  assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Download draft'),'the download at the final stop is the draft');
-  await finish.listeners.click();
-  assert.ok(sheet().some(e=>e.textContent==='Finish this blog?'),sheet().map(e=>e.textContent).join('|'));
-  f.run('sCloseSheet()');
   // The Done card on a finished run.
   f.run("studio.screen='run';studio.id=found.id;sRun(found)");
   const done=descendants(f.get('studio-page')).find(e=>e.tagName==='section'&&e.children[0]&&e.children[0].textContent==='Done');
@@ -2695,43 +2670,6 @@ async function toolsAreNamed(){
   assert.equal(page.includes('Create a voice'),false,'the toolbar holds the primary action, not the cards');
 }
 
-// A new blog stopped at its research offers Continue without research: a confirmation that says
-// what it does, one request, and the run's stops line without the research. Only a blog with a
-// manuscript is told to open Edit manuscript.
-// Finish asks first at every review level, names what it does with the team library, and the
-// toast says whether the draft was kept there or why not. Earlier grouped stops still approve
-// the displayed version directly.
-async function finishEveryLevel(){
-  const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'draft'}];
-  const atPackage={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',complete:false,next:'package',approval:'page',expected:'version-2',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},stages};
-  const shown={id:'synthetic',title:'Synthetic blog',name:'blog-package.md',stage:'package',label:'Handoff',expected:'version-2',status:'draft',content:'# Handoff',notes:'',checks:[],previous:null,diff:[],bundle:[{stage:'draft',label:'Draft',content:'# The draft text'}]};
-  for(const [level,library,toast] of [['step_by_step',{id:'kept',revision:1},'Finished. Kept in the team library.'],['balanced',{id:'kept',revision:2},'Finished. Kept in the team library.'],['automatic',{reason:'it could not be saved here.'},'Finished. Not kept in the team library: it could not be saved here.']]){
-    const requests=[];const done={...atPackage,review_level:level,status:'complete',complete:true,next:null,expected:'version-3',stages:stages.map(row=>({...row,status:'approved'})),library};
-    const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});if(url==='/api/run-approve'||url.startsWith('/api/run?'))return done;if(url.startsWith('/api/run-file'))return {content:'# The draft',name:'DRAFT.md'};return {items:[],total:0};});f.loadRunner();
-    f.set('found',{...atPackage,review_level:level});f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
-    const finish=f.get('actions').children.find(e=>e.textContent==='Finish');assert.ok(finish,level+': '+f.get('actions').children.map(e=>e.textContent).join('|'));
-    await finish.listeners.click();
-    assert.equal(requests.length,0,level+': Finish opens its sheet before anything is approved');
-    const sheet=descendants(f.get('sheet'));
-    assert.ok(sheet.some(e=>e.textContent==='Finish this blog?'),level);
-    assert.ok(sheet.some(e=>/kept in the team library as a reference and an example of its kind of post/.test(e.textContent)),level+': the sheet names the library: '+sheet.map(e=>e.textContent).join('|'));
-    await sheet.find(e=>e.tagName==='button'&&e.textContent==='Finish').listeners.click();
-    assert.deepEqual(requests[0],{url:'/api/run-approve',data:{id:'synthetic',expected:'version-2'}},level);
-    assert.ok(descendants(f.get('toasts')).some(e=>e.textContent===toast),level+': '+descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
-    assert.equal(descendants(f.get('toasts')).some(e=>/The next stage can begin/.test(e.textContent)),false,level+': Finish has no next stage');
-  }
-  // A run without a draft says why nothing is kept in the team library.
-  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
-  f.set('found',{...atPackage,existing:false,review_level:'balanced',stages:[{stage:'review',label:'Review',path:'derived/blog-review.md',status:'draft'}],next:'review'});f.set('shown',{...shown,stage:'review',label:'Review',bundle:[]});
-  f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
-  await f.get('actions').children.find(e=>e.textContent==='Finish').listeners.click();
-  assert.ok(descendants(f.get('sheet')).some(e=>/Nothing is kept in the team library: this blog has no saved draft\./.test(e.textContent)),descendants(f.get('sheet')).map(e=>e.textContent).join('|'));
-  assert.equal(descendants(f.get('sheet')).some(e=>/as a reference and an example/.test(e.textContent)),false);
-  f.run('sCloseSheet()');f.set('found',{...atPackage,review_level:'balanced',keeps_draft:false});f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate(found,shown)");
-  await f.get('actions').children.find(e=>e.textContent==='Finish').listeners.click();
-  assert.ok(descendants(f.get('sheet')).some(e=>/Nothing is kept in the team library/.test(e.textContent)),'the server says there is no draft to keep');
-}
-
 // First-run setup opens Writing preferences and marks an assistant that is not installed.
 async function failureRecovery(){
   const requests=[];
@@ -2811,19 +2749,19 @@ async function phase3ResearchAccount(){
   const texts=()=>descendants(f.get('studio-page')).map(e=>e.textContent).join(' ');
   for(const words of ['Prioritized handoff','Independent check accepted.','Honest coverage.','Unknown range.','Pages 1 to 4 only.','3 sources: 2 of yours, 1 public.','Your questions','Minimum?','Capacity condition'])assert.ok(texts().includes(words),words+': '+texts());
   assert.equal(texts().includes('No assistant note was submitted'),false);
-  assert.ok(texts().includes('Read the research brief, its limits and the independent check.'));
-  assert.equal(texts().includes('to act on one, ask for changes to the draft'),false);
+  assert.ok(texts().includes('Read the research brief, its limits and the independent check, or ask for changes.'));
+  assert.equal(texts().includes('ask for changes to the draft'),false);
   f.run("sChanges(found,'research')");
   assert.ok(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words));
   const select=descendants(f.get('sheet')).find(e=>e.id==='change-stage');select.value='outline';select.listeners.change();
   assert.equal(descendants(f.get('sheet')).some(e=>e.textContent===found.research_price.words),false);
   f.run('sCloseSheet()');
-  for(const [stage,words]of [['research-plan','Read the questions this research will answer.'],['claims-map','Read the claims mapped to your supplied material.']]){
+  for(const [stage,words]of [['research-plan','Read the questions this research answered, or ask for changes.'],['claims-map','Read the claims mapped to your supplied material, or ask for changes.']]){
     f.set('found',{...found,next:stage,stages:[{stage,label:stage,status:'draft'},{stage:'outline',label:'Outline',status:'pending'}]});
     f.set('shown',{...shown,stage,label:stage,research:null});
     f.run('sGate(found,shown)');
-    assert.ok(texts().includes(words),stage+' explains its own decision');
-    assert.equal(texts().includes('to act on one, ask for changes to the draft'),false);
+    assert.ok(texts().includes(words),stage+' says what can be done with it');
+    assert.equal(texts().includes('ask for changes to the draft'),false);
   }
 }
 
