@@ -1,6 +1,6 @@
 # Deck
 
-On the desk a deck is made in two checked steps: what it says (its outline), then its drawing. Training Studio draws it with `harness-slides`; if this computer lacks what a deck needs, the page says what, and the other materials go on.
+On the desk a deck is made in two checked steps: what it says (its outline), then its drawing, the section compositions you submit, which Training Studio compiles, previews and audits against the brand. A refusal says what is missing.
 
 ## What the deck must do
 
@@ -23,7 +23,7 @@ Read the context for `deck` (`deck@<level>`) and submit kind `drawing` with exac
 
 ## Review coverage
 
-Rehearse slides and notes in order. Resolve each demo prop or supply a labeled simulation. Time the attempt and debrief. In self-paced exports hide notes. Check titles, alt text and reading order preserve the attempt and later visible feedback. Map, per objective, the slides that teach it and the actual attempts that assess it, and tell the person. This is your review judgment, so present it as reviewed, not as checked. Review again if the deck or blueprint changes.
+Rehearse slides and notes in order. Resolve each demo prop or supply a labeled simulation. Time the attempt and debrief. In self-paced exports hide notes. Check titles, alt text and reading order preserve the attempt and later visible feedback. Map, per objective, the slides that teach it and the actual attempts that assess it, and tell the person. This is your review judgment, so present it as reviewed, not as checked. No checked operation in a conversation records it, so `check` still says the deck's coverage could not run. Review again if the deck or blueprint changes.
 
 The deck is Ready only when the person marks it so. Changing the deck target or the brand holds the deck. Edits made to a Google Slides deck after it is ready are not detected.
 

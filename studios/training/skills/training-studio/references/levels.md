@@ -23,7 +23,7 @@ Levels are independent: editing one never makes another stale. A scenario file a
 2. Draft the blueprint for every level before any is approved, and present them together. Overlap and gaps between levels show only here.
 3. Then finish one level at a time, lowest first: document, brief, deck, scenarios.
 
-The desk keeps this order itself: once every blueprint is ready it moves to the lowest level's document, after a level's last material to the next level, and after the last level to the index.
+Keep this order when you submit: every blueprint first, then one level's materials at a time, lowest level first.
 
 One `README.md` covers the whole training, at the top. `deck-handoff.md` sits in the level's folder, and each level's deck is its own `harness-slides` task, as the deck-handoff reference describes.
 

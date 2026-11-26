@@ -37,6 +37,6 @@ This is declared coverage. It proves a section claims to teach something, not th
 
 ## On the desk
 
-Read `studio desk context --folder PATH --target document` (`document@<level>` with levels) and follow its requirements. Submit it as kind `text` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. Marking it ready makes no copies; the workspace reference says how copies are kept. It is Ready only when the person marks it so, as the completion reference describes.
+Read `studio desk context --folder PATH --target document` (`document@<level>` with levels) and follow its requirements. Submit it as kind `text` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. Marking it ready makes no copies, and no checked operation in a conversation makes them; the workspace reference says how a training the runner runs keeps them. It is Ready only when the person marks it so, as the completion reference describes.
 
 A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.

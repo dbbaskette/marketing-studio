@@ -19,10 +19,11 @@ unless the public web is chosen too, and then use it only for gaps.
    with `{case}`: the absolute path of the complete, independently reviewed case, as
    the conversation reference describes. The desk records its checked bundle in the
    training and indexes its finding IDs for citation checks.
-4. Show the person the research with its source limitations and gaps. Independent
-   review is not their approval: it is Ready only when they mark it so, as the
-   completion reference describes. Read `research/brief.md` and its evidence for the
-   blueprint; retain conditions, counterfacts and unknowns.
+4. Show the person the research with its source limitations and gaps. Submitting
+   it accepts it on the desk so the work goes on: research, like its plan, is not
+   marked Ready, and independent review is not the person's approval of anything
+   built from it. Read `research/brief.md` and its evidence for the blueprint;
+   retain conditions, counterfacts and unknowns.
 
 Changed bundle bytes invalidate research and downstream inputs. Hash checks prove
 saved integrity, not truth or live website currency. Refresh through the original
