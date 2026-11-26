@@ -8,6 +8,10 @@ runtime configuration.
 methods both studios share are rebuilt inside it, with its globals, so they read the
 studio module's names and every patch on it. `unresolved` lists the names a bound
 function would fail to find, which otherwise shows only when it is called.
+
+`host_module` is how a whole shared module reaches a module of its studio's (a host
+module such as `home` or `hub`) or another shared module (a fellow): the one the studio
+passed in `MODULES`, else the one imported by name, as the host contract has it.
 """
 import builtins
 import dis
@@ -41,6 +45,29 @@ def fresh_module(source, name, values):
         raise
     sys.modules[name] = module
     return module
+
+
+def host_module(namespace, name, fellow=False):
+    """The module a shared runner module calls `name`, from that module's `namespace`.
+
+    A studio may pass its own modules to `for_product` as `MODULES`, a dict from the name
+    the shared module uses to the module object. One passed is the one used. One not passed
+    is imported by name, as `import name` (a host module in the studio's scripts folder) or,
+    for a `fellow` shared module, as `from runner import name` would find it: so a studio
+    that passes nothing gets exactly the modules it got before.
+    """
+    given = namespace.get('MODULES') or {}
+    if name in given:
+        return given[name]
+    if not fellow:
+        return importlib.import_module(name)
+    package = importlib.import_module('runner')     # as `from runner import name` finds it
+    if not hasattr(package, name):
+        importlib.import_module(f'runner.{name}')
+    try:
+        return getattr(package, name)
+    except AttributeError:                          # a module still being imported
+        return sys.modules[f'runner.{name}']
 
 
 def _reads_class(code):

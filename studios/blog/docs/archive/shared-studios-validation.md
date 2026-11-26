@@ -1,5 +1,9 @@
 # Shared studios integration validation
 
+Since #543, `studio_sync` and `studio_brand` hold no copies: their modules are facades
+over Marketing Studio's shared runner (`core/studio_core/shared_runner`), and the
+`vendor.json` files this record names are gone.
+
 The implementation for #93 and #94 vendors Training Studio's workspace sync and
 team primitives at revision `87981a0737bc9eb187c48b29f5ff8903620f2e89`.
 `skills/blog-studio/scripts/studio_sync/vendor.json` records source paths and

@@ -87,14 +87,32 @@ import shutil
 from pathlib import Path
 
 
-from workspace import WorkspaceError
+from studio_core.modules import host_module
 
-from runner import companion as companions
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
+
+companions = host_module(globals(), 'companion', fellow=True)
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
-# `for_product`, has stand-ins.
+# `for_product`, has stand-ins. A studio that makes no slides passes, in place of the deck
+# studios' ways:
+#   PINS            its installer's pins; with none there is no version floor (FLOOR None)
+#   ROOTS           the companions the skill's command is told of; {} for none
+#   UNABLE          what cannot be done without a brand skill, said when none is found
+#   QUICK_ASKS      False: every question is the plain command, asked each time (`run_command`)
+#   MEDIUM          the medium a contract is exported for
+#   TELLS_DELIVERY  False: the export is not told the delivery
+#   DOCTOR_PROFILE  the profile of the readiness check and audit; None: neither is run
 PRODUCT = globals().get('PRODUCT', 'the studio')
-PINS = globals().get('PINS', Path('companions.json'))
+PINS = globals().get('PINS')
+ROOTS = dict(globals().get('ROOTS', {'HARNESS_SLIDES_ROOT': 'slides',
+                                     'HARNESS_RESEARCH_ROOT': 'research'}))
+UNABLE = globals().get('UNABLE', 'a deck cannot be made')
+QUICK_ASKS = globals().get('QUICK_ASKS', True)
+MEDIUM = globals().get('MEDIUM', 'slides')
+TELLS_DELIVERY = globals().get('TELLS_DELIVERY', True)
+DOCTOR_PROFILE = globals().get('DOCTOR_PROFILE', 'presentation')
 
 VARIABLE = 'BRAND_SKILL_RUNTIME'
 TIMEOUT = 120
@@ -110,6 +128,8 @@ NOT_WHOLE = ('The brand skill answered with something other than the JSON it sho
              'Check that it is installed whole.')
 NO_NODE = ('A brand skill needs Node.js 20 or newer, which was not found on this computer. '
            'Install it, then try again.')
+NO_PROFILE = (f'{PRODUCT} runs no brand readiness check or audit, so the brand skill was not '
+              'asked.')
 
 
 class Refused(WorkspaceError):
@@ -120,10 +140,12 @@ class Refused(WorkspaceError):
         self.problems = problems
 
 
-def floor() -> str:
+def floor() -> str | None:
     """The oldest brand skill a deck takes: `brand_skill.requirement` in the pins this
-    studio was installed with, else TESTED. Installers never read it: the brand skill is the
-    person's own, and nothing installs it."""
+    studio was installed with, else TESTED; None for a studio that passed no pins. Installers
+    never read it: the brand skill is the person's own, and nothing installs it."""
+    if PINS is None:
+        return None
     try:
         kept = json.loads(PINS.read_text(encoding='utf-8'))
         found = re.fullmatch(r'>=(\d+\.\d+\.\d+)', kept['brand_skill']['requirement'])
@@ -137,8 +159,10 @@ FLOOR = floor()
 
 def too_old(version: str | None) -> str | None:
     """The Status sentence for a brand skill older than FLOOR, else None. A skill that says
-    no version is not judged by one."""
-    from runner import brand_source   # its order of releases; it needs no brand skill
+    no version is not judged by one, and none is by a studio with no FLOOR."""
+    if FLOOR is None:
+        return None
+    brand_source = host_module(globals(), 'brand_source', fellow=True)  # needs no brand skill
     if not version or not NUMBER.match(str(version)):
         return None
     if brand_source.order(version) >= brand_source.order(FLOOR):
@@ -176,15 +200,15 @@ def companion(folder: Path, *names: str) -> Path | None:
     return None
 
 
-ROOTS = {'HARNESS_SLIDES_ROOT': 'slides', 'HARNESS_RESEARCH_ROOT': 'research'}
-
-
 def told() -> dict:
     """This process's environment, with the harness-slides and harness-research this
     runner uses named the way harness-slides tells a brand adapter to find them, unless
     they are named already. A companion not found is not named. HARNESS_BRAND_DATA names
-    the brands folder of the `brand.brands` shared setting, when it is there."""
-    from runner import research, slides   # the companions; neither needs a brand skill
+    the brands folder of the `brand.brands` shared setting, when it is there. A studio
+    whose ROOTS are empty tells it of no companion, and finds none."""
+    if ROOTS:
+        research = host_module(globals(), 'research', fellow=True)   # the companions; neither
+        slides = host_module(globals(), 'slides', fellow=True)       # needs a brand skill
     from studio_core import brand_skills   # bound parts import their own
     # The brands the shared settings name (`brand.brands`), not a folder recorded earlier.
     env = brand_skills.environment()
@@ -298,9 +322,10 @@ def _installed(run=None, home: Path | None = None):
         script = None if runtime in seen else companion(runtime, *hints)
         seen.add(runtime)
         # Two quick questions of each: one process each, with no watcher.
-        brands = _asked(run or ask_command, node, script) if script else None
+        asking = run or (ask_command if QUICK_ASKS else run_command)
+        brands = _asked(asking, node, script) if script else None
         if brands:
-            yield runtime, script, _named(run or ask_command, node, script, hints[0]), brands
+            yield runtime, script, _named(asking, node, script, hints[0]), brands
 
 
 def found(run=None, home: Path | None = None) -> list[dict]:
@@ -326,7 +351,7 @@ class Brand:
         self.run = run or run_command
         # A quick question (its brands, its version, its usage) is one process with no
         # watcher; a `run` given in place of the command line is asked those too.
-        self.ask = None if run else ask_command
+        self.ask = None if run or not QUICK_ASKS else ask_command
         self.node = 'node' if run else shutil.which('node')
         self._kept: dict = {}        # what was asked of this copy: {question: (stamp, answer)}
         self._listed = None          # the brands the scan that found it listed, used once
@@ -340,8 +365,8 @@ class Brand:
                 self._none_found()
             runtime = Path(listed[0]['runtime'])
         if runtime is None:
-            self.runtime, self.script, called, self._listed = next(_installed(run),
-                                                                   [None] * 4)
+            self.runtime, self.script, called, listed = next(_installed(run), [None] * 4)
+            self._listed = listed if QUICK_ASKS else None   # else asked when wanted
             self.name, self.version = called or (None, None)
             if self.runtime is None:
                 self._none_found()
@@ -374,15 +399,21 @@ class Brand:
                                          hints[0])
 
     @staticmethod
+    def _profile() -> str:
+        """The readiness check's and the audit's profile; refused for a studio with none."""
+        if DOCTOR_PROFILE is None:
+            raise WorkspaceError(NO_PROFILE)
+        return DOCTOR_PROFILE
+
+    @staticmethod
     def _none_found():
         """Refuse, in a sentence, when no brand skill was found."""
         if os.environ.get(VARIABLE):
             raise WorkspaceError(f'{VARIABLE} names {os.environ[VARIABLE]}, which does '
                                  'not hold a brand skill. Point it at an installed '
                                  'one, or unset it.')
-        raise WorkspaceError('No brand skill was found on this computer, so a deck '
-                             'cannot be made. Install one, or name its folder in '
-                             f'{VARIABLE}, then try again.')
+        raise WorkspaceError(f'No brand skill was found on this computer, so {UNABLE}. '
+                             f'Install one, or name its folder in {VARIABLE}, then try again.')
 
     def _quick(self, *args: str) -> tuple[int, str, str]:
         """A quick question to the skill, as `ask_command` asks it."""
@@ -392,7 +423,7 @@ class Brand:
         """What the skill prints for `question` alone, its usage, as one text. Kept for this
         copy of the skill (_stamp), so it is asked once; a skill whose command is not on
         disk is asked each time."""
-        stamp = _stamp(self.runtime, self.script)
+        stamp = _stamp(self.runtime, self.script) if QUICK_ASKS else None
         kept = self._kept.get(question)
         if stamp is not None and kept is not None and kept[0] == stamp:
             return kept[1]
@@ -431,8 +462,11 @@ class Brand:
         return listed
 
     def export(self, folder: Path, brand_id: str, variant: str | None,
-               delivery: str = 'reading') -> dict:
-        """Export one brand's contract for slides into a new folder."""
+               delivery: str = 'reading', voice_profile: Path | None = None) -> dict:
+        """Export one brand's contract for the studio's MEDIUM into a new folder, told the
+        delivery where TELLS_DELIVERY. With `voice_profile`, a JSON file of an author's voice
+        ({id, revision, guide, status}), the brand writes that voice beside its own naming
+        rules."""
         if delivery not in DELIVERIES:
             raise WorkspaceError(f'A brand is exported for {DELIVERIES[0]} or '
                                  f'{DELIVERIES[1]} delivery, not {delivery}.')
@@ -441,9 +475,11 @@ class Brand:
         made = {'contract': folder / 'brand-contract.json', 'design': folder / 'DESIGN.md',
                 'voice': folder / 'VOICE.md'}
         try:
-            self._answer('contract', 'export', '--medium', 'slides', '--brand', brand_id,
-                         *_variant(variant), '--delivery', delivery, '--output',
-                         str(folder))
+            self._answer('contract', 'export', '--medium', MEDIUM, '--brand', brand_id,
+                         *_variant(variant),
+                         *(['--delivery', delivery] if TELLS_DELIVERY else []),
+                         '--output', str(folder),
+                         *(['--voice-profile', str(voice_profile)] if voice_profile else []))
             if not all(path.is_file() for path in made.values()):
                 raise WorkspaceError('The brand skill exported a brand without the three '
                                      'files it should write. Check that it is installed '
@@ -483,7 +519,7 @@ class Brand:
 
     def audit(self, deck: Path, brand_id: str, variant: str | None) -> dict:
         """Run the brand's own audit over a finished deck."""
-        report = self._answer('presentation', '--brand', brand_id, *_variant(variant),
+        report = self._answer(self._profile(), '--brand', brand_id, *_variant(variant),
                               '--file', str(deck), '--json', report=True)
 
         def said(kept: str) -> list[dict]:
@@ -548,14 +584,14 @@ class Brand:
     def ready(self) -> dict:
         """What the skill's own readiness check finds on this computer. It asks Google
         nothing."""
-        return self._answer('doctor', '--profile', 'presentation', '--json', report=True)
+        return self._answer('doctor', '--profile', self._profile(), '--json', report=True)
 
     def fonts(self) -> str | None:
         """NO_ARIAL when the skill's own readiness check, resolving fonts on this computer
         as a PowerPoint deck is drawn here, finds no Arial; None when it finds it, or when
         the check cannot be run or says nothing of it."""
         try:
-            found = self._answer('doctor', '--profile', 'presentation', '--format', 'pptx',
+            found = self._answer('doctor', '--profile', self._profile(), '--format', 'pptx',
                                  '--json', report=True)
         except WorkspaceError:
             return None

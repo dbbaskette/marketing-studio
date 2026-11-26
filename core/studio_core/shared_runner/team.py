@@ -63,12 +63,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import home
-import hub
-import workspace
-from workspace import WorkspaceError
+from studio_core.modules import host_module
 
-from runner import gitstate
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+home = host_module(globals(), 'home')
+hub = host_module(globals(), 'hub')
+workspace = host_module(globals(), 'workspace')
+WorkspaceError = workspace.WorkspaceError
+
+gitstate = host_module(globals(), 'gitstate', fellow=True)
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins.

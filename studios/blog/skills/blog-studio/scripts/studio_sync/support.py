@@ -1,4 +1,22 @@
-"""Blog adapters and the pinned Training Studio non-interactive Git primitives."""
+"""Blog Studio's host modules for the shared runner (core/studio_core/shared_runner).
+
+The shared team-sync and brand code names a studio's `home`, `workspace`, `hub` and
+`sync_guidance` modules. Blog Studio passes this one module for all four, because its own
+`hub` is the Team Hub registry and it has no `runner` package:
+
+    home            data_root, read_json, write_json, now
+    workspace       WorkspaceError, SKILL_DIR, STATE_DIR
+    hub             the non-interactive Git primitives: run, git, passes, names, apart,
+                    ahead, reason, GitError, ATTEMPTS, COPY_AS_IS, ADDRESS_WITH_SECRET,
+                    name_from
+    sync_guidance   runtime_version, RUNTIME, as_tuple, SyncError
+
+Its Git settings are Blog Studio's own: hooks are off and `protocol.ext.allow=never` for
+every git command, git is given TIMEOUT seconds, and an address carrying any sign-in part
+is refused. It also holds what Blog Studio passes to the shared workspace code in place
+of the shared ways (`place`, `keep_share`, `sync_lock`), and Blog Studio's lock helpers
+(`locked`, `Held`).
+"""
 
 from __future__ import annotations
 import os
@@ -20,6 +38,7 @@ class SyncError(ValueError):
 
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
+RUNTIME = SKILL_DIR  # the skill folder this copy runs from
 STATE_DIR = '.blog-studio'
 INHERITED = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR')
 COPY_AS_IS = (
@@ -142,6 +161,35 @@ class Held:
         return self.local.stack.pop().__exit__(*args)
 
 
+def sync_lock(workspace):
+    """The lock a sync holds by default: Blog Studio's own repository lock, which takes the
+    shared settings lock first. A caller that already holds it in this thread is let in."""
+    return Held(workspace.repo / '.git/blog-studio.lock')
+
+
+def place(kept, marker):
+    """How Blog Studio reads its remembered workspace: the branch and the repository from
+    the folder's hub.json, after the older local settings are moved into the shared ones,
+    and when to share from the shared settings. None when the folder has no hub.json."""
+    import studios_config
+
+    root = Path(kept['repo']) / kept['folder']
+    studios_config.migrate(root)
+    described = marker(root.parent, root.name)
+    if not described:
+        return None
+    shared, _ = studios_config.read()
+    share = shared.get('share') if shared.get('share') in ('decision', 'asked') else 'decision'
+    return described['branch'], described.get('repository'), share
+
+
+def keep_share(when):
+    """How Blog Studio writes when to share: into the shared settings, every time asked."""
+    import studios_config
+
+    studios_config.update({'share': when})
+
+
 class GitError(WorkspaceError):
     """git failed; the message is the line of its output that says why."""
 
@@ -190,7 +238,7 @@ def run(
     except OSError as failure:
         if shutil.which('git') is None:
             raise WorkspaceError(
-                'A hub needs git, which is not installed. Install it and try again.'
+                'A workspace needs git, which is not installed. Install it and try again.'
             ) from failure
         problem = str(failure)
     return subprocess.CompletedProcess(args, 124, '', f'fatal: {problem}')
@@ -255,4 +303,4 @@ def ahead(repo: Path, tracking: str) -> int:
 
 def name_from(url: str) -> str:
     stem = re.split(r'[/:]', url.rstrip('/'))[-1].removesuffix('.git')
-    return slugify(stem) if re.search(r'[a-z0-9]', stem.lower()) else 'hub'
+    return slugify(stem) if re.search(r'[a-z0-9]', stem.lower()) else 'workspace'
