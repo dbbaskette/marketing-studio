@@ -1086,6 +1086,18 @@ class BringTests(Team):
         self.assertEqual([one.name for one in self.alex.space.root.iterdir() if one.is_dir()
                           and not one.name.startswith('.')], [root.name], 'nothing was copied')
 
+    def test_a_folder_elsewhere_in_the_workspace_repository_is_never_brought_into_it(self):
+        # Fix round of GitHub issue #544: compared with the repository, not only its folder
+        # for trainings.
+        notes = self.alex.space.repo / 'notes' / 'kept-here'
+        notes.mkdir(parents=True)
+        workspace.init(notes, 'Kept here')
+        with self.be(self.alex):
+            home.remember(notes, 'Kept here', [])
+        self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(notes)}, 409)['error'],
+                         engines.IN_REPOSITORY)
+        self.assertFalse(self.alex.space.training('kept-here').exists())
+
     def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
         from studio_core.shared_runner import caller
         chat = self.chat()

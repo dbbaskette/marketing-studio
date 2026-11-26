@@ -298,6 +298,8 @@ SET_ASIDE = (' What this computer had made and not yet shared is kept on this co
 THEIRS = '{name} is running this training from another computer.'
 HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brought into it. '
                    'Bring in a training folder that is outside the workspace.')
+IN_REPOSITORY = ("That folder is inside the workspace's repository, so it cannot be brought "
+                 'into it. Bring in a training folder that is outside the workspace.')
 # Where a desk training stood when its run had made what it could and it was not finished:
 # not every material was marked ready, or something else kept it from being used.
 UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
@@ -8758,6 +8760,11 @@ class Engine(Reviewing):
         where = team.overlaps(top, space.root)
         if where == 'inside':
             raise WorkspaceError('This training is already in the workspace.')
+        # The workspace's repository as a whole, too: a folder elsewhere in it, or one that
+        # holds it, is never copied into it.
+        where = where or team.overlaps(top, space.repo)
+        if where == 'inside':
+            raise WorkspaceError(IN_REPOSITORY)
         if where == 'holds':
             raise WorkspaceError(HOLDS_WORKSPACE)
         try:
