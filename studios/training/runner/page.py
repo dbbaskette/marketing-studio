@@ -901,15 +901,17 @@ class RunnerPage(desk.Page):
         return [self.listed(item) for item in super().trainings()]
 
     def detail(self, path: str) -> dict:
-        return self.listed(super().detail(path))
+        return self.listed(super().detail(path), opened=True)
 
-    def listed(self, item: dict) -> dict:
+    def listed(self, item: dict, opened: bool = False) -> dict:
         """`with_run`, for one training of a list: no single training, whatever its records
         hold, takes the list down. One that cannot be read is listed as its own row, with
         the runner's refusal as its sentence."""
         try:
             if 'error' in item and self.engine.conversation_unread(item['path']):
                 return self.with_unread(item)
+            if 'error' in item and workspace.made_in_conversation(Path(item['path'])):
+                return self.with_unread_file(item, opened)
             if item.get('saved') == 'conversation' and 'error' not in item:
                 return self.with_conversation(self.with_run(item))
             return self.with_run(item)
@@ -946,6 +948,27 @@ class RunnerPage(desk.Page):
             return workspace.statuses(root, workspace.load(root))
         except (WorkspaceError, OSError, ValueError):
             return {}
+
+    def with_unread_file(self, item: dict, opened: bool) -> dict:
+        """A training a conversation made whose session record reads but one of its files or
+        folders does not, so the helper's own reading of it failed: Bring in would fail on
+        that file, so it is said as Bring in says it (`Engine.bring_refusal`), a read-only
+        record with a new training as its way on. Any other failure stays as it was said."""
+        if caller.remote():
+            return item
+        refusal = self.engine.bring_refusal(item['path'])
+        if not refusal:
+            return item
+        item.pop('error', None)
+        item.update(state='saved', saved='conversation', waiting=None,
+                    sentence=engines.CONVERSATION_KEPT if opened else desk.CONVERSATION_BRIEF)
+        if opened:
+            where = self.engine.where(item['path'])
+            item['saved_record'] = {**desk.conversation_record(Path(item['path'])),
+                                    'outcome': 'read-only', 'why': refusal, 'next': 'new',
+                                    'elsewhere': None, 'where': where,
+                                    'outside': where == 'outside'}
+        return item
 
     def with_conversation(self, item: dict) -> dict:
         """A training a conversation made, as the runner says it (GitHub issue #547): its one

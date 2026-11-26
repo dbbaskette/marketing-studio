@@ -17,6 +17,7 @@ saved, and each state has one outcome, under the owner's rulings:
   what it is, why, its files to read in place, and one next action that can be taken.
 """
 import json
+from pathlib import Path
 
 import saved_fixtures
 from test_saved_states import SavedStopTests  # puts the helper and the runner on the path
@@ -357,3 +358,118 @@ for (_state, _where), _said in WHERE_OUTCOMES.items():
     _kept.__doc__ = f'{_state}, {_where}: read-only where it is'
     setattr(CannotBeBroughtInTests, 'test_' + (_state + ' ' + _where).replace('-', '_')
             .replace(' ', '_'), _kept)
+
+
+class UnreadableBringTests(ConversationStateCase):
+    """GitHub issue #547: Bring in never fails raw. What it would copy and cannot read refuses
+    it before anything is copied, said as that, and its record says the same; a copy that
+    fails half-way leaves nothing behind. The workspace is as it was, the conversation's
+    folder is untouched, and no answer carries a path of this computer or the operating
+    system's words."""
+
+    OS_WORDS = ('Errno', 'Permission denied', 'Operation not permitted', '.bringing-',
+                'PermissionError', 'shutil')
+
+    def setUp(self):
+        super().setUp()
+        self.locked = []
+        self.addCleanup(self.unlock)
+
+    def unlock(self):
+        import os
+        for path, mode in reversed(self.locked):
+            os.chmod(path, mode)
+
+    def lock(self, path):
+        import os
+        self.locked.append((path, path.stat().st_mode))
+        os.chmod(path, 0)
+
+    def plain(self, said):
+        self.assertNotIn(str(self.base), said)
+        for words in self.OS_WORDS:
+            self.assertNotIn(words, said)
+
+    def workspace_now(self):
+        return (sorted(path.name for path in self.space.root.iterdir()),
+                self.git('rev-parse', 'HEAD'), self.git('status', '--porcelain'))
+
+    def proves_unreadable(self, top, said):
+        before, place = self.snapshot(top), self.workspace_now()
+        lock = getattr(self, 'to_lock')
+        self.lock(lock)
+        self.assertEqual(self.engine.bring_refusal(top), said)
+        item = page.RunnerPage(8765, self.engine).detail(str(top))
+        self.assertNotIn('error', item)
+        record = item['saved_record']
+        self.assertEqual((record['outcome'], record['why'], record['next']),
+                         ('read-only', said, 'new'))
+        with self.assertRaises(workspace.WorkspaceError) as refused:
+            self.engine.bring(top)
+        self.assertEqual(str(refused.exception), said)
+        found = self.engine.saved_work()
+        listed = {entry['path']: entry['why'] for entry in next(
+            paths for paths in found['paths'] if paths['id'] == 'read-only-record')['needed_by']}
+        self.assertEqual(listed.get(str(top)), said)
+        self.assertFalse(any(entry['path'] == str(top) for entry in found['issues']))
+        for text in (said, item['sentence'], record['why']):
+            self.plain(text)
+        for words in self.OS_WORDS:
+            self.assertNotIn(words, json.dumps(found))
+        self.assertEqual(self.workspace_now(), place)
+        self.unlock()
+        self.locked = []
+        self.assertEqual(self.snapshot(top), before)
+
+    def test_an_unreadable_extra_file_is_said_by_its_name(self):
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        (top / 'notes.txt').write_text('Synthetic notes.\n')
+        self.to_lock = top / 'notes.txt'
+        self.proves_unreadable(top, engines.UNREADABLE_FILE.format(name='notes.txt'))
+
+    def test_an_unreadable_material_is_said_by_its_name(self):
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.to_lock = top / 'blueprint.md'
+        self.proves_unreadable(top, engines.UNREADABLE_FILE.format(name='blueprint.md'))
+
+    def test_an_unreadable_folder_is_said_as_a_folder(self):
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        (top / 'notes').mkdir()
+        (top / 'notes' / 'one.md').write_text('Synthetic.\n')
+        self.to_lock = top / 'notes'
+        self.proves_unreadable(top, engines.UNREADABLE_FOLDER.format(name='notes'))
+
+    def test_a_copy_that_fails_half_way_leaves_nothing_behind(self):
+        import shutil
+        from unittest import mock
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        before, place = self.snapshot(top), self.workspace_now()
+        self.assertIsNone(self.engine.bring_refusal(top))
+        real_tree, copied = shutil.copytree, []
+
+        def failing(source, target, *args, **kwargs):
+            if copied:
+                raise PermissionError(13, 'Permission denied', str(source))
+            copied.append(source)
+            return shutil.copy2(source, target, *args, **kwargs)
+
+        def tree(source, target, symlinks=False, ignore=None, copy_function=None,
+                 ignore_dangling_symlinks=False, dirs_exist_ok=False):
+            return real_tree(source, target, symlinks, ignore, failing,
+                             ignore_dangling_symlinks, dirs_exist_ok)
+        with mock.patch.object(shutil, 'copytree', tree), \
+                self.assertRaises(workspace.WorkspaceError) as refused:
+            self.engine.bring(top)
+        said = str(refused.exception)
+        self.assertTrue(said.startswith('This training could not be brought into the '
+                                        'workspace: '), said)
+        self.assertIn('Nothing was kept of the copy, and its own folder is as it was.', said)
+        # It names the file that failed, inside the training's folder.
+        name = said.split(': ', 1)[1].split(' could not be copied')[0]
+        self.assertTrue((top / name).is_file(), said)
+        self.plain(said)
+        self.assertEqual(self.workspace_now(), place)
+        self.assertFalse(list(self.space.root.glob('.bringing-*')))
+        self.assertEqual(self.snapshot(top), before)
+        # Nothing went wrong with the folder itself: it is still brought in afterwards.
+        self.assertEqual(Path(self.engine.bring(top)['path']).parent, self.space.root)

@@ -1088,6 +1088,45 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         self.assertIn(engines.BRING_ON_COMPUTER, shot['text'])
         self.assert_no_continuing(shot, result)
 
+    def test_bring_in_over_the_page_never_fails_raw(self):
+        """GitHub issue #547: `/api/adopt` of a conversation's training with a file it cannot
+        read, and of one whose copy fails half-way, answers one plain sentence, with no path
+        of this computer and no operating-system words, and leaves the workspace as it was."""
+        import os
+        import shutil
+        from unittest import mock
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.root = top
+        notes = top / 'notes.txt'
+        notes.write_text('Synthetic notes.\n')
+        os.chmod(notes, 0)
+        self.addCleanup(os.chmod, notes, 0o644)
+        before = sorted(path.name for path in self.space.root.iterdir())
+        said = self.post('adopt', {'path': str(top)}, expect=409)
+        self.assertEqual(said['error'], engines.UNREADABLE_FILE.format(name='notes.txt'))
+        os.chmod(notes, 0o644)
+        real_tree, copied = shutil.copytree, []
+
+        def failing(source, target, *args, **kwargs):
+            if copied:
+                raise PermissionError(13, 'Permission denied', str(source))
+            copied.append(source)
+            return shutil.copy2(source, target, *args, **kwargs)
+
+        def tree(source, target, symlinks=False, ignore=None, copy_function=None,
+                 ignore_dangling_symlinks=False, dirs_exist_ok=False):
+            return real_tree(source, target, symlinks, ignore, failing,
+                             ignore_dangling_symlinks, dirs_exist_ok)
+        with mock.patch.object(shutil, 'copytree', tree):
+            failed = self.post('adopt', {'path': str(top)}, expect=409)
+        for answer in (said, failed):
+            text = json.dumps(answer)
+            self.assertNotIn(str(self.base), text)
+            for words in ('Errno', 'Permission denied', '.bringing-', 'shutil'):
+                self.assertNotIn(words, text)
+        self.assertIn('could not be copied', failed['error'])
+        self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
+
     def test_a_record_that_opens_on_the_desk_offers_the_preview(self):
         fixture = self.fixture('blueprint-gate')
         self.assertEqual(self.listed(fixture)['run']['saved'], 'saved')
