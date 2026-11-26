@@ -48,8 +48,10 @@ WRONG_READING = 'Only a document is read as a script for the slides or as materi
 
 
 def on_desk(run: dict) -> bool:
-    """Whether a deck is on the desk: started from the desk's start (or opened there once it
-    was delivered). Every other deck keeps the gated flow and its screens."""
+    """Whether a deck is on the desk: started from the desk's start, or opened there. Every
+    other deck is a saved record of the earlier step-by-step flow (GitHub issue #542):
+    nothing continues it (`saved_gate`); it opens on the desk through its explicit, previewed
+    migration, or it is read-only."""
     return isinstance(run, dict) and run.get('flow') == 'desk'
 
 
