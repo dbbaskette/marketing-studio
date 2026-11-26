@@ -209,6 +209,9 @@ class DeskActions:
                 'content_pending': deck_content.enabled(record)
                     and 'gate:outline' in {step.name for step in stages.steps(record)}
                     and gate_state(record, 'gate:outline') != 'approved',
+                # Whether its slide text is drafted and approved before it is designed: the
+                # part the page calls the Slide text, else the Outline.
+                'content_first': deck_content.enabled(record),
                 'arrived': desk.arrived(record), 'seen': desk.revision(record),
                 'progress': None if desk.arrived(record) else {
                     'minutes_left': desk.estimate(record), 'started_at': record.get('created')},

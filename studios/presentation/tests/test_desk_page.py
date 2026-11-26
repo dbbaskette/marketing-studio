@@ -784,6 +784,67 @@ class ProgressTests(DeskPageCase):
                       '4 minutes.', shot['text'])
         self.assertNotIn(NO_RECORD, shot['text'])
 
+    def test_before_the_desk_the_parts_list_says_what_is_made_and_what_is_to_come(self):
+        # GitHub issue #544: the slide story, the slide text and the look have the desk's list
+        # of parts down the left, from the deck's own steps.
+        self.engine.content_first = True
+        path = self.started(flow='desk', look='pick')
+        text = self.run_of(path)
+        self.assertEqual(text['gate']['name'], 'gate:outline')
+        self.assertFalse(text['desk']['arrived'])
+        result = self.open_deck(path, text, [
+            {'snapshot': 'text'}, {'click': 'Look'}, {'snapshot': 'look'}, {'back': True},
+            {'snapshot': 'back'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['text']['partsList'], [['Deck', [
+            '> Slide text, Needs you', 'Look, Queued', 'Slides, Queued']]])
+        self.assertLayout(shots['text'])
+        # A part still to be made says so above the work, which stays where it was.
+        self.assertIn('> Look, Queued', shots['look']['partsList'][0][1])
+        lines = shots['look']['text'].split('\n')
+        at = lines.index('Not made yet. It is made after the slide text.')
+        self.assertEqual(lines[at - 1], 'Look')
+        self.assertIn('Review slide text', lines)
+        self.assertEqual(shots['look']['state']['deskPart'], 'look')
+        self.assertEqual(shots['look']['filled'], shots['text']['filled'])
+        self.assertIn('> Slide text, Needs you', shots['back']['partsList'][0][1])
+        self.assertNotIn('Not made yet. It is made after the slide text.', shots['back']['text'])
+        # Approved, the slide text is made, and the look waits on the person.
+        self.decided(path, 'gate:outline', expected=text['gate']['expected'])
+        look = self.run_of(path)
+        self.assertEqual(look['gate']['name'], 'gate:look')
+        result = self.open_deck(path, look, [{'snapshot': 'look'}, {'click': 'Slide text'},
+                                             {'snapshot': 'made'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['look']['partsList'], [['Deck', [
+            'Slide text, Done', '> Look, Needs you', 'Slides, Queued']]])
+        self.assertIn('Approved. On the desk it is the Outline, where its words can still be '
+                      'changed.', shots['made']['text'])
+        # While it is drawn, the part being made is the one shown, and the work is in the middle.
+        drawing = copy.deepcopy(look)
+        drawing.update(state='working', gate=None, sentence='Building the slides.')
+        for row in drawing['timeline']:
+            row['state'] = 'upcoming' if row['stage'] == 'build' else 'done'
+        next(row for row in drawing['timeline'] if row['stage'] == 'build')['state'] = 'current'
+        shot = self.open_deck(path, drawing, [{'snapshot': 'drawing'}])['snapshots']['drawing']
+        self.assertEqual(shot['partsList'], [['Deck', ['Slide text, Done', 'Look, Done',
+                                                       '> Slides, Writing']]])
+        self.assertIn(NOTHING_NEEDED, shot['text'])
+        self.assertLayout(shot)
+        # A researched deck lists its slide story and its research first, each in its turn.
+        scanning = copy.deepcopy(drawing)
+        scanning['timeline'] = [
+            {'name': 'intake-source', 'stage': 'intake', 'label': 'Get', 'state': 'done'},
+            {'name': 'scan', 'stage': 'story', 'label': 'Scan', 'state': 'current'},
+            {'name': 'gate:story', 'stage': 'story', 'label': 'Story', 'state': 'upcoming'},
+            {'name': 'research', 'stage': 'research', 'label': 'Do', 'state': 'upcoming'},
+            *[{**row, 'state': 'upcoming'} for row in drawing['timeline']
+              if row['stage'] in ('outline', 'look', 'build')]]
+        shot = self.open_deck(path, scanning, [{'snapshot': 'scan'}])['snapshots']['scan']
+        self.assertEqual(shot['partsList'], [['Deck', [
+            '> Slide story, Writing', 'Research, Queued', 'Slide text, Queued', 'Look, Queued',
+            'Slides, Queued']]])
+
     def test_the_look_pause_leads_the_screen(self):
         path = self.started(flow='desk', look='pick')
         view = self.run_of(path)
