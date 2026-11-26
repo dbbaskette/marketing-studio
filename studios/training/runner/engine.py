@@ -467,6 +467,15 @@ SAVED_WAITING = ('This training was saved by the earlier step-by-step flow, whic
                  'continues. It opens on the desk once what it waits for clears.')
 SAVED_BRIEF = 'Saved by the earlier step-by-step flow. Open it to see what can be done with it.'
 UNREAD_BRIEF = 'Its run record cannot be read. Open it to read its saved files.'
+# A training a conversation keeps outside the workspace, whose record cannot be read: it can
+# be neither brought in nor opened on the desk (GitHub issue #547).
+CONVERSATION_UNREAD = ('This training was made in a conversation, and its record cannot be '
+                       'read, so it can be neither brought into the workspace nor opened on '
+                       'the desk. Its files are kept as they are.')
+CONVERSATION_UNREAD_WHY = ('Its record cannot be read, so what it holds and how far it got '
+                           'cannot be told.')
+CONVERSATION_UNREAD_BRIEF = ('Made in a conversation, and its record cannot be read. Open it '
+                             'to read its files.')
 # Said by every route that continued a saved-flow training: what is left to do with it.
 SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which no longer '
               'continues. Open it on the desk, or start new work from it.')
@@ -7918,6 +7927,25 @@ class Engine(Reviewing):
                     found.append(level + name)
         return found
 
+    def conversation_unread(self, path) -> bool:
+        """Whether `path` holds a training a conversation keeps outside the workspace whose
+        session record this version cannot read: one no run drives, with a session record and
+        no run record. Reads that record only."""
+        folder = Path(path)
+        if self.driven(folder) is not None:
+            return False
+        session = folder / workspace.STATE_DIR / 'session.json'
+        try:
+            if session.is_symlink() or not session.is_file() \
+                    or (folder / RECORD).exists() or (folder / RECORD).is_symlink():
+                return False
+            workspace.load(folder)
+        except WorkspaceError:
+            return True
+        except (OSError, ValueError):
+            return True
+        return False
+
     def saved_kind(self, root: Path) -> str | None:
         """'saved' for a training the earlier gated flow saved and nobody opened on the desk,
         'unread' for one whose run record is not even a JSON object (which flow made it cannot
@@ -8009,14 +8037,16 @@ class Engine(Reviewing):
         if found['outcome'] == 'finished':
             # A finished training keeps what it could do before: published as it stands,
             # read by a teammate, its files read and downloaded in place.
+            # Only what the runner's own survey calls finished is classed so
+            # (`desk_migration.outcome` asks `unfinished`): anything else with a plan opens on
+            # the desk through the explicit migration, so no saved record is ever told to wait
+            # for a finish that nothing will make (GitHub issue #547).
             finished = self._finished_shown(root)
             if not mine:
                 shown.update(outcome='waiting', waits=[self._waits('owner')])
                 sentence = SAVED_WAITING
-            elif self._finished_here(root):
-                sentence, can_open = SAVED_FINISHED, True
             else:
-                shown.update(outcome='read-only', why=drafts.NOT_FINISHED)
+                sentence, can_open = SAVED_FINISHED, True
         elif found['outcome'] == 'migrates':
             preview = desk_migration.migration_preview(self, root)
             if preview.get('outcome', {}).get('outcome') not in (None, 'migrates'):
@@ -8100,6 +8130,21 @@ class Engine(Reviewing):
             except OSError:
                 pass
         return 'copy' if desk_migration._start_form(small) else 'new'
+
+    def unfinished(self, root: Path) -> list[str] | None:
+        """For a saved training whose session says it is finished: None where the runner's
+        own survey agrees (`_finished_here`), else the limitations its checks accepted it
+        with, in the page's words, which History keeps once it opens on the desk (GitHub
+        issue #547). Only reads."""
+        if self._finished_here(root):
+            return None
+        import assess
+        import desk
+        try:
+            said = assess.run_checks(root)['limitations']
+        except (WorkspaceError, OSError, ValueError, KeyError, TypeError):
+            said = []
+        return [desk.plainly(reason) for reason in said]
 
     def _finished_here(self, root: Path) -> bool:
         """Whether a finished saved training opens on the desk as `open_on_desk` asks: its

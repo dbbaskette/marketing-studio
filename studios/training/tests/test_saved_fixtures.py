@@ -70,3 +70,56 @@ class StoredTreeTests(StudioCase):
                     with self.subTest(state=state, file=name):
                         self.assertEqual(hashlib.sha256(data).hexdigest(), found.group(1))
         self.assertTrue(seen)
+
+
+class ConversationTreeTests(StudioCase):
+    """The stored conversation-guided trainings (GitHub issue #547), captured with
+    `capture_conversation.py`, agree with themselves and with this computer's helper."""
+
+    PROFILE = 'skills/training-studio/assets/profiles/yoodli.json'
+
+    def test_content_addressed_files_are_named_by_their_bytes(self):
+        named = re.compile(r'(?:^|/)history/.+/([0-9a-f]{64})\.[a-z]+$')
+        seen = 0
+        for state in saved_fixtures.conversation_names():
+            for name, data in saved_fixtures.conversation_tree(state).items():
+                found = named.search(name)
+                if found:
+                    seen += 1
+                    with self.subTest(state=state, file=name):
+                        self.assertEqual(hashlib.sha256(data).hexdigest(), found.group(1))
+        self.assertTrue(seen)
+
+    def test_no_stored_byte_names_a_place_on_a_computer(self):
+        for state in saved_fixtures.conversation_names():
+            for name, data in saved_fixtures.conversation_tree(state).items():
+                for mark in (b'/Users/', b'/home/', b'/var/folders/', b'/private/', b'/tmp/'):
+                    with self.subTest(state=state, file=name, mark=mark):
+                        self.assertNotIn(mark, data)
+
+    def test_a_yoodli_scenario_was_built_from_the_installed_profile(self):
+        """A stored Yoodli scenario records the digest of the profile it was built from. When
+        the installed profile changes, the stored scenario reads as out of date, and the
+        trees that hold one are captured again."""
+        import helpers
+        profile = hashlib.sha256((helpers.REPO / self.PROFILE).read_bytes()).hexdigest()
+        checked = 0
+        for state in saved_fixtures.conversation_names():
+            files = saved_fixtures.conversation_tree(state)
+            try:
+                session = json.loads(files[saved_fixtures.SESSION])
+            except ValueError:
+                continue
+            for name, entry in session['artifacts'].items():
+                for digests in (entry['built_from'],
+                                (entry.get('approved') or {}).get('inputs') or {}):
+                    if 'profile' not in digests:
+                        continue
+                    checked += 1
+                    self.assertEqual(digests['profile'], profile, (
+                        f'{self.PROFILE} changed since {state} was captured, so its {name} '
+                        'reads as out of date. Capture the trees that hold a Yoodli scenario '
+                        'again: STUDIO_TEST_RESEARCH_RUNTIME=<a Harness Research test '
+                        'runtime> python3 studios/training/tests/capture_conversation.py '
+                        'scenario_gate finished'))
+        self.assertTrue(checked)

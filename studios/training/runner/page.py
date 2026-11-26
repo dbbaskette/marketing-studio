@@ -902,8 +902,10 @@ class RunnerPage(desk.Page):
         record lists, only inside the training's folder, and only as text. Writes nothing."""
         desk.registered(path)
         root = self.engine.driven(path)
+        if root is None and self.engine.conversation_unread(path):
+            root = Path(path)   # a conversation's training whose record cannot be read (#547)
         # Asked of the two small records and the one file only, never the whole folder.
-        if root is None or self.engine.saved_kind(root) is None:
+        elif root is None or self.engine.saved_kind(root) is None:
             raise desk.Refusal(HTTPStatus.NOT_FOUND, 'This training is not a saved record.')
         if name not in self.engine._saved_files(root):
             raise desk.Refusal(HTTPStatus.FORBIDDEN, 'That is not one of its saved files.')
@@ -938,6 +940,8 @@ class RunnerPage(desk.Page):
         hold, takes the list down. One that cannot be read is listed as its own row, with
         the runner's refusal as its sentence."""
         try:
+            if 'error' in item and self.engine.conversation_unread(item['path']):
+                return self.with_unread(item)
             return self.with_run(item)
         except desk.Refusal:
             raise
@@ -947,6 +951,19 @@ class RunnerPage(desk.Page):
             item.update(run={'state': 'failed', 'sentence': said}, state='needs-you',
                         sentence=said, waiting=None)
             return item
+
+    def with_unread(self, item: dict) -> dict:
+        """A training a conversation made, outside the workspace, whose record cannot be
+        read: it can be neither brought in nor opened on the desk, so it is a read-only
+        record, said plainly, with its files to read in place and one way on, a new training
+        (GitHub issue #547). Only its two small records and file names are looked at."""
+        root = Path(item['path'])
+        item.update(error=engines.CONVERSATION_UNREAD_BRIEF, sentence=engines.CONVERSATION_UNREAD,
+                    saved_record={'outcome': 'read-only', 'why': engines.CONVERSATION_UNREAD_WHY,
+                                  'refusal': None, 'next': 'new', 'outside': True,
+                                  'files': self.engine._saved_files(root), 'waits': [],
+                                  'retained': [], 'targets': []})
+        return item
 
     def with_run(self, item: dict) -> dict:
         """Add a training's run to what the desk says about it. A run with a question or

@@ -3290,6 +3290,12 @@ function paintTraining(fresh) {
   const training = view.training;
   const above = levelsText(training.levels) ? [make('span', '', levelsText(training.levels))]
     : [];
+  // A conversation's training outside the workspace whose record cannot be read is a
+  // read-only record like any saved one: its files to read in place and one way on (#547).
+  if (training.saved_record) {
+    return paintSavedRecord({ path: training.path, title: training.title,
+      sentence: training.sentence, saved_record: training.saved_record, mine: false }, fresh);
+  }
   if (training.error) {
     place({ title: training.title || 'Untitled', above, back: true },
       [add(card('Its record cannot be read'), make('p', 'problem', training.error),
@@ -6015,8 +6021,10 @@ function paintSavedRecord(run, fresh) {
     saved.outcome === 'read-only' ? ['saved-why', [saved.why, saved.refusal],
       () => add(card('Why it cannot be continued'), make('p', '', saved.why),
         saved.refusal && saved.refusal !== saved.why ? make('p', 'quiet', saved.refusal) : null,
-        make('p', 'quiet', 'Nothing here changes it. Restore its saved records from your '
-          + 'workspace history to open it on the desk, or start new work from it.'))] : null,
+        make('p', 'quiet', saved.outside ? 'Nothing here changes it. Its folder is outside '
+          + 'your workspace and stays as it is.' : 'Nothing here changes it. Restore its saved '
+          + 'records from your workspace history to open it on the desk, or start new work '
+          + 'from it.'))] : null,
     ['saved-files', [saved.files], () => savedFilesPart(run)],
     // A finished training keeps its files to download and Publish, for anyone to read.
     run.finished ? ['saved-made', [view.training && view.training.view
@@ -6158,8 +6166,9 @@ function savedFilesPart(run) {
     }, 'saved-read ' + name);
     add(bar, go);
   }
-  return add(node, make('p', 'quiet', 'Each file stays in the training’s folder in your '
-    + 'workspace.'), bar, problem, holder);
+  return add(node, make('p', 'quiet', run.saved_record.outside ? 'Each file stays in the '
+    + 'training’s own folder, outside your workspace.' : 'Each file stays in the training’s '
+    + 'folder in your workspace.'), bar, problem, holder);
 }
 
 function paintRun(fresh) {

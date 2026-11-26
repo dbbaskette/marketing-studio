@@ -920,16 +920,41 @@ class DeckStopTests(DeckCase):
                 self.assertEqual((found['outcome'], found['why']),
                                  ('read-only', desk_migration.MISSING + ' ' + str(failure)))
 
-    def test_unreadable_deck_outline_is_a_read_only_record(self):
+    def test_unreadable_deck_outline_opens_on_the_desk_without_it(self):
+        """A saved deck outline that cannot be read, beside an intact plan, guide and brief
+        (GitHub issue #547): the training opens on the desk with those, the outline's bytes
+        are kept as they are, the deck is not made yet on the desk, and History says the
+        saved outline could not be read. Nothing is invented."""
         root = self.saved('deck-outline-waiting')
         outline = json.loads((root / pipeline.OUTLINE).read_text())
         outline['slides'][0]['title'] = 7
         (root / pipeline.OUTLINE).write_text(json.dumps(outline))
-        said = 'The shared saved deck outline cannot be read losslessly.'
-        shown = self.assert_refused(root, said)
-        self.assertEqual(shown['outcome'], {'outcome': 'read-only', 'next': 'copy',
-                                            'reason': desk_migration.MISSING + ' ' + said})
-        SavedStopTests.assert_read_only(self, root, desk_migration.MISSING + ' ' + said, 'copy')
+        gitstate.commit(self.space, 'an outline that cannot be read', [root])
+        kept = (root / pipeline.OUTLINE).read_bytes()
+        said = desk_migration.OUTLINE_UNREAD.format(level='')
+        before = self.record(root)
+        self.assertIn(said, self.record_of(root)['saved_record']['retained'])
+        shown = self.assert_migrates(root, self.MADE)
+        self.assertNotIn(pipeline.OUTLINE, shown['required'])
+        self.assertIn(said, shown['retained'])
+        self.assertEqual(shown['notes'], [said])
+        self.migrated_deck_record(root, before)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), kept)
+        from runner import drafts
+        desk = drafts.view(self.engine, root)
+        self.assertEqual(desk['saved_status'], {'notes': [said]})
+        cards = {card['name']: card['state'] for card in desk['cards']}
+        self.assertNotIn(cards['deck'], ('ready', 'draft'))
+        self.assertNotIn('deck', workspace.load(root)['artifacts'])
+
+    def test_an_outline_that_reads_but_breaks_the_rules_is_still_refused(self):
+        root = self.saved('deck-outline-waiting')
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        outline['delivery'] = 'live'
+        (root / pipeline.OUTLINE).write_text(json.dumps(outline))
+        shown = self.preview(root)
+        self.assertTrue(any(said.startswith('The saved deck outline needs attention')
+                            for said in shown['blockers']))
 
 
 import unittest  # noqa: E402

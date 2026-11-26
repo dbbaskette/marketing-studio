@@ -76,6 +76,8 @@ DESK_ACCEPTED = ('desk', 'review-policy')
 # The kinds of material the person marks ready on the desk.
 PERSON_MARKED = ('blueprint', 'document', 'brief', 'deck', 'scenario', 'yoodli')
 NOT_ON_DESK = 'This training is not on the desk.'
+# Saved work opened on the desk: each material file written and never saved, by its hash.
+UNSAVED = 'migration_unsaved'
 KEPT = 'Kept on the desk.'
 UP_TO_DATE = 'This is up to date.'
 DECISIONS = ('approve', 'accept', 'revise', 'rebuild', 'skip', 'restore')
@@ -826,6 +828,10 @@ def _status(root: Path, session: dict, name: str, known: dict[str, str]) -> str:
         return 'not-started'
     entry = session['artifacts'].get(name)
     if entry is None:
+        # Written in a conversation and never saved, then opened on the desk: that file is
+        # kept as it is and is not this material until the desk makes it (GitHub issue #547).
+        if (session.get(UNSAVED) or {}).get(name) == current:
+            return 'not-started'
         return 'draft'
     if any(known[upstream] == 'stale' for upstream in spec['upstream']):
         return 'stale'
