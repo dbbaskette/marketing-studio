@@ -160,7 +160,7 @@ def settings_refused(route, sent) -> str | None:
 
 
 FOLDER_HERE = 'a folder on this computer'
-BRING_HERE = ('Bring a deck in from a folder on this computer itself: from a phone, folders '
+BRING_HERE = ('Bring work in from a folder on this computer itself: from a phone, folders '
               'here are not read.')
 
 

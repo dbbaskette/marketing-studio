@@ -1096,6 +1096,8 @@ class BringTests(Team):
                 self.assertEqual(self.from_phone({'path': given}),
                                  (403, {'error': caller.BRING_HERE}))
         self.assertEqual(sorted(one.name for one in self.alex.space.root.iterdir()), before)
+        # The shared sentence names no studio's work: never a deck in Training Studio.
+        self.assertNotIn('deck', caller.BRING_HERE.lower())
         # On this computer it is brought in as before.
         self.ask(self.alex, 'adopt', {'path': str(chat)})
         self.assertTrue(self.alex.space.training('started-in-a-chat').is_dir())
