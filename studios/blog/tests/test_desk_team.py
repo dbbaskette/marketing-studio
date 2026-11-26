@@ -745,6 +745,97 @@ class DeskDriverTests(TeamCase):
         self.assertEqual(retried['start']['problem'], '')
 
 
+class DeskPublishTests(TeamCase):
+    """Publishing a desk blog to the team as a numbered revision: once the desk counts it
+    finished (marked as published, with no desk job under way), as the blog list does."""
+
+    def act(self, ident, action, **data):
+        return management.dispatch(
+            self.root,
+            action,
+            {
+                'id': ident,
+                'expected': management.detail(self.root, ident)['expected'],
+                **data,
+            },
+        )
+
+    def publish(self, ident):
+        return self.act(ident, 'team-publish', confirmed=True)
+
+    def mark_published(self, ident):
+        self.act(
+            ident,
+            'schedule',
+            stage='published',
+            confirm_stage=True,
+            publication_url='https://example.invalid/fictional-post',
+        )
+
+    def tags(self):
+        return support.git(self.found.repo, 'tag')
+
+    def test_a_desk_blog_is_published_once_the_desk_counts_it_finished(self):
+        ident = self.made['id']
+        with self.assertRaisesRegex(ValueError, '^' + teams.DESK_UNPUBLISHED + '$'):
+            self.publish(ident)
+        self.assertEqual(self.tags(), '')
+        self.mark_published(ident)
+        queued = management.dispatch(
+            self.root, 'desk-note', {'id': ident, 'seen': 1, 'part': self.part, 'note': 'More.'}
+        )['working']
+        with self.assertRaisesRegex(ValueError, '^' + teams.DESK_WORKING + '$'):
+            self.publish(ident)
+        self.assertEqual(self.tags(), '')
+        management.dispatch(self.root, 'desk-stop', {'id': ident, 'job': queued['id']})
+        published = self.publish(ident)
+        self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
+        self.assertTrue(published)
+
+    def test_a_blog_moved_to_the_desk_is_judged_as_desk_work(self):
+        import desk_chat
+        import saved_fixtures
+
+        tree = saved_fixtures.FIXTURES / 'draft-gate'
+        (ident,) = [path.name for path in (tree / 'articles').iterdir()]
+        for path in sorted(tree.rglob('*')):
+            if path.is_file():
+                relative = path.relative_to(tree)
+                if relative.parts[0] == 'articles':
+                    relative = Path(*relative.parts[1:])
+                target = self.root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(path.read_bytes())
+        support.git(self.found.repo, 'add', '-A')
+        support.git(self.found.repo, 'commit', '-qm', 'A saved blog of the earlier flow')
+        support.git(self.found.repo, 'push', '-q', 'origin', 'HEAD:main')
+        # Taken, as a saved blog is taken in a team repository to open it on the desk.
+        management.dispatch(
+            self.root,
+            'team-take',
+            {
+                'id': ident,
+                'expected': blog_runner.survey(self.root, ident)['expected'],
+                'confirmed': True,
+            },
+        )
+        shown = desk_chat.migration_preview(self.root, ident)
+        management.dispatch(self.root, 'desk-migrate', {'id': ident, 'expected': shown['expected']})
+        self.assertTrue(blog_runner.engine(self.root).describe(ident)['on_desk'])
+        # Its run is kept with stages never approved, but the desk judges it: not by stages.
+        # (Judged directly: sharing a blog moved to the desk in a team repository is refused
+        # by the shared running-step check, which reads its team record and desk/migration.json
+        # as a Presentation Studio migration.)
+        self.assertFalse(blog_runner.survey(self.root, ident)['complete'])
+        self.assertEqual(teams.publish_left(self.root, ident), teams.DESK_UNPUBLISHED)
+        import studio
+
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['editorial'] = {**(record.get('editorial') or {}), 'stage': 'published'}
+        studio.persist(directory, 'articles', record)
+        self.assertIsNone(teams.publish_left(self.root, ident))
+
+
 class DeskTeamImageTests(TeamCase):
     def folder(self, ident):
         import studio

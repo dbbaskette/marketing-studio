@@ -166,10 +166,21 @@ def active(root):
             ident = studio.identifier(target.stem)
         except ValueError:
             continue
-        count = sum(1 for job in _read_jobs(root, ident, _indexed(root, ident)[-3:]) if busy(job))
+        count = under_way(root, ident)
         if count:
             found[ident] = count
     return found
+
+
+def under_way(root, ident):
+    """How many of one blog's newest desk jobs are under way."""
+    return sum(1 for job in _read_jobs(root, ident, _indexed(root, ident)[-3:]) if busy(job))
+
+
+def published(info, working):
+    """The desk's finished state, as the blog list shows it: marked as published, with no
+    desk job under way. `info` is the blog's record, `working` its jobs under way."""
+    return (info.get('editorial') or {}).get('stage') == 'published' and not working
 
 
 def _guard(root, ident):
