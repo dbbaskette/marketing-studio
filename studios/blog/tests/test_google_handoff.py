@@ -54,16 +54,10 @@ class HandoffTests(RunnerCase):
         self.addCleanup(signed_in.stop)
 
     def finished(self, spelling=None):
-        found = self.create(page=True)
-        for stage in ('outline', 'draft', 'review', 'package'):
-            found = self.submit(
-                found,
-                (spelling or accepted_markdown(self.drive.doc).decode('utf-8'))
-                if stage == 'draft'
-                else None,
-                page=True,
-            )
-            found = self.approve(found, page=True)
+        # A run the manuscript editor's revision made, its review approved.
+        found = self.editor_run('revise')
+        found = self.submit(found, spelling or accepted_markdown(self.drive.doc).decode('utf-8'))
+        found = self.approve(self.submit(found))
         self.assertTrue(found['complete'])
         return found['id']
 
@@ -149,9 +143,14 @@ class HandoffTests(RunnerCase):
             with self.subTest(state=state):
                 ident, draft = self.taken_to_the_desk(state, move)
                 result = self.open(ident)
-                self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
+                self.assertEqual(
+                    result['url'], 'https://docs.google.com/document/d/fixture-doc/edit'
+                )
                 self.assertEqual(self.drive.imports[-1], (draft.read_bytes(), None))
-        for state, move in (('draft-gate-chat', self.migrated), ('finished-page-warm', self.opened)):
+        for state, move in (
+            ('draft-gate-chat', self.migrated),
+            ('finished-page-warm', self.opened),
+        ):
             with self.subTest(state=state, edited='after'):
                 ident, draft = self.taken_to_the_desk(state, move)
                 draft.write_text(draft.read_text() + '\nChanged by hand after.\n')

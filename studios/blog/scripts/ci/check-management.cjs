@@ -130,8 +130,6 @@ async function check(){
   await toolsAreNamed();
   await voiceSwitch();
   await voiceGuides();
-  await researchRefusal();
-  await researchRounds();
   await finishEveryLevel();
   await failureRecovery();
   await deskJourneys();
@@ -1313,9 +1311,6 @@ async function guidedRuns(){
     assert.equal(calls[0].url,'/api/run-approve','grouped reviews approve the displayed revision directly');
     assert.deepEqual(JSON.parse(calls[0].options.body),{id:'synthetic',expected:'version-1'});
   }
-  f.set('found',{...found,status:'failed',error:'Synthetic failure',enabled:false});f.run("studio.screen='run';sRun(found)");
-  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
-  assert.ok(descendants(content).some(e=>e.textContent==='Synthetic failure'));
   f.set('found',found);f.run('studio.listing=[found];sHome()');
   assert.equal(f.get('title').textContent,'Home');assert.equal(f.get('needs-count').textContent,'1');
   assert.ok(descendants(content).some(e=>e.textContent==='Needs you'));
@@ -1467,7 +1462,6 @@ async function oneVocabulary(){
   const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'approved'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
   const working={id:'synthetic',title:'Synthetic blog',status:'working',next:'package',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},started_at:new Date().toISOString(),stages};
   f.set('found',working);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.ok(text().some(t=>/^Writing the handoff · /.test(t)),'the now line names the handoff: '+text().join('|'));
   assert.ok(nodes().some(e=>e.className==='bead-name'&&e.textContent==='Handoff'));
   // A finished team blog this computer drives records it in the team repository.
   f.set('found',{...working,status:'complete',complete:true,next:null,started_at:null,team:true,driver:{here:true},stages:stages.map(row=>({...row,status:'approved'}))});f.run('sRun(found)');
@@ -1542,25 +1536,7 @@ async function sharedPattern(){
   // Settings no longer ask where to stop: the review level governs that.
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{}};studio.team={};studio.brand=null;sSettings()");
   assert.equal(descendants(f.get('studio-page')).some(e=>e.id==='settings-stop'),false);
-  // The run: a "now" line under the title, with the step and how long it has taken.
-  f.set('found',found);f.run('studio.screen=\'run\';studio.id=found.id;sRun(found)');
-  const now=descendants(f.get('studio-page')).find(e=>e.className==='now-line');
-  assert.equal(now.textContent,'Drafting · 3 min of up to 10');
-  f.run('studio.signature=JSON.stringify(found);const realNow=Date.now;Date.now=()=>realNow()+4*60000');await f.run('sPoll()');
-  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='now-line').textContent,'Drafting · 7 min of up to 10','the now line ticks while nothing else changes');
-  assert.equal(text().some(t=>/cost is not tracked/.test(t)),false,'the run says what it spent instead');
-  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far 3 minutes; the assistant reported no cost','one line under the beads: steps left, the next stop and what it has spent');
-  // A cost reported as nothing is never "$0.00": the research line says no cost was reported.
-  assert.equal(f.run("sTook({jobs:2,rounds:1,seconds:90,tokens:null,dollars:0,reported:true})").includes('$0.00'),false);
-  // A team blog's jobs are kept on each computer that ran them: the line says so.
-  f.set('found',{...found,team:true});f.run('sRun(found)');
-  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft · So far on this computer 3 minutes; the assistant reported no cost');
-  // A saved run from before jobs were kept says nothing of what it spent.
-  f.set('found',{...found,ahead:{...found.ahead,jobs:0,seconds:0,dollars:null,spent:null}});f.run('sRun(found)');
-  assert.equal(descendants(f.get('studio-page')).find(e=>e.className==='quiet ahead-line')?.textContent,'2 steps left · Next stop: the draft');
-  f.set('found',{...found,ahead:undefined});f.run('sRun(found)');
-  assert.equal(descendants(f.get('studio-page')).some(e=>e.className==='quiet ahead-line'),false,'a view without ahead draws without it');
-  f.set('found',found);f.run('sRun(found)');
+  f.set('found',found);
   // Ask for changes says what it draws again, and what that took, before it is sent.
   f.set('found',{...found,status:'waiting-for-approval',stages:[found.stages[0],{...found.stages[1],status:'draft'},found.stages[2]],redo:{outline:{stages:['outline','draft','review'],says:'Drawn again: the outline and every step after it, 3 steps. Last time they took 12 minutes and about $1.40.'},draft:{stages:['draft','review'],says:'Drawn again: the draft and every step after it, 2 steps; this computer has no record of what they cost.'}}});
   f.run("sChanges(found,'draft')");
@@ -1574,13 +1550,14 @@ async function sharedPattern(){
   f.set('shown',shown);f.run("studio.screen='gate';studio.found=found;sGate({...found,status:'waiting-for-approval'},shown)");
   assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Copy Markdown'));
   // A phone keeps one decision in the toolbar and folds the rest into the menu.
-  f.run("window.matchMedia=query=>({matches:/max-width/.test(query)});studio.screen='run';sRun({...found,status:'waiting-for-approval',enabled:true,error:'',stages:[found.stages[0],{...found.stages[1],status:'draft'}]})");
+  // The run screen shows a finished editor's run only, with nothing under way to pause.
+  f.run("window.matchMedia=query=>({matches:/max-width/.test(query)});studio.screen='run';sRun({...found,status:'complete',complete:true,next:null,enabled:false,error:'',editor_check:'revise',existing:true,team:true,driver:{here:true},stages:found.stages.map(row=>({...row,status:'approved'}))})");
   const actions=f.get('actions').children;
-  assert.ok(descendants(f.get('studio-page')).some(e=>e.className==='quiet ahead-line'),'the ahead line is drawn on a phone too');
   assert.equal(actions.filter(e=>e.tagName==='button').length,1,'one action stays in the toolbar on a phone');
-  assert.equal(actions[0].textContent,'Review Draft');assert.equal(actions[0].className,'button button-filled');
+  assert.equal(actions[0].textContent,'Edit manuscript');
   const menu=actions.find(e=>e.tagName==='details');assert.equal(menu.className,'menu');
-  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Edit manuscript','Pause','Tools']);
+  assert.deepEqual(descendants(menu).filter(e=>e.className==='menu-item').map(e=>e.textContent),['Tools','Hand over','Record in team repository']);
+  assert.equal(text().some(t=>/^(Pause|Resume|Try again|Stop)$/.test(t)),false,'no control of a step under way');
   f.run('delete window.matchMedia');
 }
 
@@ -2718,66 +2695,6 @@ async function toolsAreNamed(){
   assert.equal(page.includes('Create a voice'),false,'the toolbar holds the primary action, not the cards');
 }
 
-// A research case the independent check refused: the run says how many objections in how many
-// groups, lists each group by what it checked and its verdict with its first note, and says the
-// draft is kept on this computer. Nothing is listed for a run the check did not refuse.
-async function researchRefusal(){
-  const refused={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
-    error:'The research check still objected after 3 rounds of writing and checking: 4 objections in 3 groups. The draft report and the check’s notes are kept on this computer; Try again continues from them.',
-    research:{kept:true,rounds:3,refusal:{rounds:3,count:4,cause:null,groups:[{kind:'facts',verdict:'narrow',count:2,note:'Only the fictional example says this.',ids:['fact-a','fact-b']},{kind:'findings',verdict:'unsupported',count:1,note:'No saved fact supports it.',ids:['instance-min']},{kind:'assessment',verdict:'needs-revision',count:1,note:'The brief leaves out the strongest objection.',ids:[],asked:['coverage']}]}},
-    stages:[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]};
-  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
-  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
-  f.set('found',refused);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.ok(text().includes(refused.error),'the stop sentence is shown as it is: '+text().join('|'));
-  const box=nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to');
-  assert.ok(box,'the objections sit under their own disclosure: '+text().join('|'));
-  const inside=descendants(box).map(e=>e.textContent);
-  for(const words of ['2 facts marked narrow','Only the fictional example says this.','1 finding marked unsupported','No saved fact supports it.','Coverage needs revision','The brief leaves out the strongest objection.'])assert.ok(inside.includes(words),words+' in '+inside.join('|'));
-  assert.ok(inside.some(t=>/4 objections in its last review, after 3 rounds of writing and checking/.test(t)),inside.join('|'));
-  assert.ok(inside.some(t=>/kept on this computer, in this blog’s \.studio-research-draft folder, and are not shared/.test(t)),inside.join('|'));
-  // A cause the contract names leads the list; a run nothing refused lists nothing.
-  f.set('found',{...refused,research:{...refused.research,refusal:{...refused.research.refusal,cause:'The check could not read the original of “Synthetic”.'}}});f.run('sRun(found)');
-  assert.ok(text().includes('The check could not read the original of “Synthetic”.'));
-  f.set('found',{...refused,error:'Research ran out of the time a step may take (10 minutes).',research:{kept:true,rounds:3,refusal:null}});f.run('sRun(found)');
-  assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the research check objected to'),false,'only a refusal has objections');
-}
-
-// Research says its round while it works, and a stopped research says what Try again does: it
-// continues from the kept draft for up to three more rounds, and the last attempt's jobs, time,
-// tokens and cost as the assistant reported them. No "from the start" for anything.
-async function researchRounds(){
-  const base={id:'synthetic',title:'Synthetic blog',next:'research',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'claude',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
-    stages:[{stage:'research-plan',label:'Research questions',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'pending'},{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'pending'}]};
-  const f=fixture(()=>({items:[],total:0}));f.loadRunner();
-  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),now=()=>nodes().find(e=>e.className==='now-line')?.textContent;
-  const working={...base,status:'working',enabled:true,error:'',started_at:new Date(Date.now()-4*60000).toISOString(),research:{kept:false,rounds:3,round:2,phase:'review',refusal:null,last:null}};
-  f.set('found',working);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.equal(now(),'Researching · Round 2 of 3, the independent check · 4 min of up to 10');
-  f.set('found',{...working,research:{...working.research,round:1,phase:'author'}});f.run('sRun(found)');
-  assert.equal(now(),'Researching · Round 1 of 3, writing the report · 4 min of up to 10');
-  f.set('found',{...working,research:{...working.research,round:0,phase:'discovery'}});f.run('sRun(found)');
-  assert.equal(now(),'Researching · Finding public sources · 4 min of up to 10');
-  f.set('found',{...working,next:'outline',research:null});f.run('sRun(found)');
-  assert.equal(now(),'Outlining · 4 min of up to 10','other steps say no round');
-  // Stopped with a kept draft: Try again continues from it, and says what the last attempt took.
-  const stopped={...base,status:'failed',enabled:false,started_at:null,error:'The research check still objected after 3 rounds of writing and checking: 4 objections in 3 groups. The draft report and the check’s notes are kept on this computer; Try again continues from them.',research:{contract:true,kept:true,from:'kept',rounds:3,round:null,phase:null,refusal:null,last:{jobs:6,rounds:3,seconds:552.4,tokens:410250,dollars:1.234,reported:6}}};
-  f.set('found',stopped);f.run('sRun(found)');
-  assert.ok(text().includes('Try again continues from the kept draft: up to 3 more rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 6 jobs in 3 rounds: 9 min 12 s, 410,250 tokens and about $1.23, as the assistant reported.'),text().join('|'));
-  assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
-  assert.equal(text().some(t=>/from the start/.test(t)),false,'Try again never claims to start over');
-  // Nothing kept, and an assistant that reports no usage.
-  f.set('found',{...stopped,engine:'codex',error:'Research could not produce valid evidence and report data after one correction attempt.',research:{...stopped.research,kept:false,from:null,last:{jobs:2,rounds:1,seconds:120,tokens:null,dollars:null,reported:0}}});f.run('sRun(found)');
-  assert.ok(text().includes('Try again starts the research again: up to 3 rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 2 jobs in 1 round: 2 min; the assistant reported no tokens or cost.'),text().join('|'));
-  // From the accepted research, when some jobs reported usage and some did not.
-  f.set('found',{...stopped,research:{...stopped.research,kept:false,from:'accepted',last:{jobs:2,rounds:1,seconds:90,tokens:null,dollars:null,reported:1}}});f.run('sRun(found)');
-  assert.ok(text().includes('Try again starts from the accepted research: up to 3 rounds of writing and checking, within this blog’s 10-minute limit for the whole research step. The last attempt took 2 jobs in 1 round: 1 min 30 s; the assistant reported no tokens or cost for every job.'),text().join('|'));
-  // Research from before the shared contract is one plain job: no rounds, no check.
-  f.set('found',{...stopped,error:'The selected CLI failed.',research:{contract:false,kept:false,from:null,rounds:3,refusal:null,last:null}});f.run('sRun(found)');
-  assert.ok(text().includes('Try again makes the research findings again in a new job, with the same 10-minute limit; saved work is kept.'),text().join('|'));
-  assert.equal(text().some(t=>/rounds of writing and checking/.test(t)),false);
-}
-
 // A new blog stopped at its research offers Continue without research: a confirmation that says
 // what it does, one request, and the run's stops line without the research. Only a blog with a
 // manuscript is told to open Edit manuscript.
@@ -2815,29 +2732,11 @@ async function finishEveryLevel(){
   assert.ok(descendants(f.get('sheet')).some(e=>/Nothing is kept in the team library/.test(e.textContent)),'the server says there is no draft to keep');
 }
 
-// Failures that say what to do: a CLI failure points at Status and shows the last lines the
-// assistant printed; a step out of time says where its limit lives beside Try again with more
-// time; first-run setup opens Writing preferences and marks an assistant that is not installed.
+// First-run setup opens Writing preferences and marks an assistant that is not installed.
 async function failureRecovery(){
   const requests=[];
-  const failed={id:'synthetic',title:'Synthetic blog',status:'failed',enabled:false,next:'draft',approval:'page',expected:'version-1',directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',existing:false,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},notes:{},
-    error:'The selected CLI failed. Check its sign-in and usage under Status → Check this computer, then try again.',reason:'cli',said:['Synthetic: not signed in.','Synthetic: run the login command.'],research:null,
-    stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
   const f=fixture((url,options)=>{requests.push(url);if(url==='/api/computer')return {checks:[{label:'Codex',status:'action',detail:'Sign-in needed',next_step:'Run codex login'}]};if(url==='/api/run-settings')return {defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};return {items:[],total:0};});f.loadRunner();
-  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
-  f.set('found',failed);f.run("studio.screen='run';studio.id=found.id;sRun(found)");
-  assert.ok(text().includes(failed.error),'the error names Status → Check this computer');
-  const said=nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said');
-  assert.ok(said,'what the assistant said sits under its own disclosure: '+text().join('|'));
-  assert.ok(descendants(said).some(e=>e.textContent==='Synthetic: not signed in.\nSynthetic: run the login command.'));
-  assert.ok(descendants(said).some(e=>/kept on this computer only/.test(e.textContent)));
-  const status=nodes().find(e=>e.tagName==='button'&&e.textContent==='Open Status');assert.ok(status,'a CLI failure offers Status');
-  await status.listeners.click();
-  assert.equal(f.get('title').textContent,'Status');assert.ok(requests.includes('/api/computer'));
-  // Without lines there is nothing to disclose, and Status is still offered.
-  f.set('found',{...failed,said:null});f.run("studio.screen='run';sRun(found)");
-  assert.equal(nodes().some(e=>e.tagName==='details'&&e.children[0]?.textContent==='What the assistant said'),false);
-  assert.ok(nodes().some(e=>e.textContent==='Open Status'));
+  const nodes=()=>descendants(f.get('studio-page'));
   // First-run setup: Writing preferences open, and an assistant that is not installed marked.
   f.run("studio.options={agents:{codex:false,claude:true}};studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic',shared_before:{}};studio.team={};studio.brand=null;sSettings(true)");
   const preferences=()=>nodes().find(e=>e.tagName==='details'&&e.children[0]?.textContent==='Writing preferences');
@@ -2880,8 +2779,6 @@ async function researchFromJourney(){
   f.set('shown',{stage:'research',label:'Research findings',content:'# Research',checks:[],bundle:[],notes:'',expected:'r1',research:{brief:'# Brief',check:{said:'Checked.',note:''},gaps:['A synthetic gap.'],sources:{partial:[]},read:'',findings:[],questions:[],report:'',evidence:''}});
   f.run("studio.found=found;studio.shown=shown;sGate(found,shown)");
   assert.ok(text().includes('2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved.'),text().join('|'));
-  f.set('found',{...gate,status:'failed',error:'Research could not produce valid evidence.',research:{...gate.research,refusal:{rounds:3,count:1,cause:null,groups:[]}}});f.run('sRun(found)');
-  assert.ok(text().includes('2 pages were outside your sites (blogs.vmware.com/tanzu) and were not saved.'),'the refusal names the sites: '+text().join('|'));
 }
 
 async function phase5BringResearchUpToDate(){

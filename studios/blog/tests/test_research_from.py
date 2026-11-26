@@ -57,19 +57,6 @@ class SharedSitesCase(RunnerCase):
     def shared(self):
         return self.config.read_bytes()
 
-    def start(self, page=True, **extra):
-        found = runner.create(
-            self.root,
-            {
-                'title': 'Synthetic gateway guide',
-                'audience': 'New authors',
-                'goal': 'Explain a fictional gateway',
-                **extra,
-            },
-            'page' if page else 'conversation',
-        )
-        return found
-
 
 class StartFormTests(SharedSitesCase):
     def test_settings_send_the_shared_sites_and_the_sentences_the_form_uses(self):
@@ -88,150 +75,6 @@ class StartFormTests(SharedSitesCase):
         )
         self.assertEqual(runner.options(self.root)['settings']['research_sites'], SITES)
 
-    def test_the_three_choices_and_the_pinned_site_list_round_trip(self):
-        source = self.source('The gateway retries a failed call once.')
-        before = self.shared()
-        found = self.start(
-            sources=[source['id']],
-            research_from={
-                'documents': True,
-                # One shared site, and one added for this blog only, as the form sends them.
-                'sites': ['https://blogs.vmware.com/tanzu', 'extra.example.org/guide/'],
-                'web': False,
-            },
-        )
-        _, record, run = runner.load(self.root, found['id'])
-        pinned = ['https://blogs.vmware.com/tanzu', 'https://extra.example.org/guide']
-        self.assertEqual(
-            record['research_from'], {'documents': True, 'sites': pinned, 'web': False}
-        )
-        self.assertEqual(record['research_policy'], 'web-allowed')
-        self.assertEqual(run['pipeline'][:2], ['research-plan', 'research'])
-        self.assertEqual(self.shared(), before, 'a site added for one blog stays off the list')
-        self.assertEqual(runner.settings(self.root)['research_sites'], SITES)
-        # The run pins the list it used: a later change to the shared list changes nothing.
-        held = json.loads(self.config.read_text())
-        held['research'] = {'sites': ['https://other.example.net']}
-        self.config.write_text(json.dumps(held))
-        _, record, _ = runner.load(self.root, found['id'])
-        self.assertEqual(record['research_from']['sites'], pinned)
-        shown = runner.survey(self.root, found['id'])
-        self.assertEqual(shown['research_from'], record['research_from'])
-        self.assertEqual(
-            shown['research_says'],
-            'Research from your documents and 2 of your sites '
-            '(blogs.vmware.com/tanzu, extra.example.org/guide).',
-        )
-        _, payload, _ = runner.job(self.root, found['id'])
-        self.assertEqual(payload['research_from'], record['research_from'])
-
-    def test_each_choice_maps_to_its_research_stages(self):
-        source = self.source('The gateway retries a failed call once.')
-        cases = [
-            ({'documents': True, 'sites': [], 'web': False}, ['claims-map'], 'supplied-only'),
-            ({'documents': True, 'sites': [], 'web': True}, ['research-plan'], 'web-allowed'),
-            (
-                {'documents': False, 'sites': SITES[:1], 'web': False},
-                ['research-plan'],
-                'web-allowed',
-            ),
-            ({'documents': False, 'sites': [], 'web': True}, ['research-plan'], 'web-allowed'),
-        ]
-        for chosen, first, policy in cases:
-            with self.subTest(chosen=chosen):
-                found = self.start(sources=[source['id']], research_from=chosen)
-                _, record, run = runner.load(self.root, found['id'])
-                self.assertEqual(run['pipeline'][: len(first)], first)
-                self.assertEqual(record['research_policy'], policy)
-                self.assertEqual(record['research_from'], chosen)
-
-    def test_documents_count_only_when_documents_were_given(self):
-        found = self.start(research_from={'documents': True, 'sites': SITES, 'web': False})
-        _, record, _ = runner.load(self.root, found['id'])
-        self.assertEqual(
-            record['research_from'], {'documents': False, 'sites': SITES, 'web': False}
-        )
-        # Only your documents, and none given: no research, as Blog Studio has always done.
-        found = self.start(research_from={'documents': True, 'sites': [], 'web': False})
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertIsNone(record['research_from'])
-        self.assertEqual(run['pipeline'][0], 'outline')
-        self.assertEqual(runner.survey(self.root, found['id'])['research_says'], 'No research.')
-
-    def test_a_choice_with_nothing_or_a_bad_site_is_refused_with_its_sentence(self):
-        cases = [
-            ({'documents': False, 'sites': [], 'web': False}, research_sites.EMPTY),
-            ({'sites': ['http://blogs.vmware.com/tanzu']}, 'https only'),
-            ({'sites': ['https://localhost/docs']}, 'not a public site'),
-            ({'sites': ['https://blogs.vmware.com/tanzu?page=2']}, 'leave out the part after'),
-            ({'web': 'yes'}, research_sites.EMPTY),
-            ({'somewhere': True}, research_sites.EMPTY),
-            ('web-allowed', research_sites.EMPTY),
-        ]
-        for chosen, said in cases:
-            with self.subTest(chosen=chosen):
-                with self.assertRaises(ValueError) as caught:
-                    self.start(research_from=chosen)
-                self.assertIn(said, str(caught.exception))
-        with self.assertRaisesRegex(ValueError, 'not both'):
-            self.start(research='none', research_from={'web': True})
-        self.assertEqual(list((self.root / 'articles').iterdir()), [], 'nothing was started')
-
-    def test_from_files_research_reads_the_files_and_your_sites(self):
-        files = self.material(('notes.md', 'Retries cost money. ' * 40))
-        found = self.start(
-            mode='from-files',
-            sources=files,
-            goal='A post',
-            point=True,
-            research_from={'documents': True, 'sites': SITES[:1], 'web': False},
-        )
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['pipeline'][:3], ['research-plan', 'research', 'outline'])
-        self.assertEqual(record['research_from']['sites'], SITES[:1])
-        # Your documents only: the files are read at every step, and no research stage is added.
-        found = self.start(
-            mode='from-files',
-            sources=self.material(('plain.txt', 'Hops add latency. ' * 40)),
-            goal='A post',
-            research_from={'documents': True, 'sites': [], 'web': False},
-        )
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['after_angles'], {'research': 'none', 'stop': 'package'})
-        self.assertEqual(record['research_from'], {'documents': True, 'sites': [], 'web': False})
-
-    def material(self, *files):
-        import base64
-
-        with patch.object(blog_library.shutil, 'which', return_value=None):
-            result = management.dispatch(
-                self.root,
-                'upload',
-                {
-                    'operation': studio.digest(repr(files).encode())[:32],
-                    'purpose': 'material',
-                    'keep': False,
-                    'analyze': False,
-                    'files': [
-                        {'filename': name, 'content': base64.b64encode(body.encode()).decode()}
-                        for name, body in files
-                    ],
-                },
-            )
-        return [row['source']['id'] for row in result['files']]
-
-    def test_from_files_angles_keep_your_sites_for_after_the_pick(self):
-        files = self.material(('notes.md', 'Retries cost money. ' * 40))
-        found = self.start(
-            mode='from-files',
-            sources=files,
-            goal='A post',
-            research_from={'documents': True, 'sites': SITES[:1], 'web': False},
-        )
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(run['after_angles'], {'research': 'web-allowed', 'stop': 'package'})
-        self.assertEqual(record['research_policy'], 'web-allowed')
-
     def test_a_site_added_for_this_blog_is_checked_by_the_server_and_not_saved(self):
         before = self.shared()
         added = management.dispatch(self.root, 'research-site', {'site': 'Example.ORG/Guide/'})
@@ -247,57 +90,20 @@ class StartFormTests(SharedSitesCase):
             management.dispatch(self.root, 'research-site', {'site': 'example.org', 'more': 1})
         self.assertEqual(self.shared(), before)
 
-    def test_saved_run_inputs_keep_the_research_shape_and_old_words(self):
+    def test_the_editors_research_words_keep_the_research_shape(self):
         source = self.source('The gateway retries a failed call once.')
 
-        def create(*words):
-            args = studio.parser().parse_args(
-                [
-                    '--root',
-                    str(self.root),
-                    'run',
-                    'create',
-                    '--audience',
-                    'Authors',
-                    '--goal',
-                    'Explain',
-                    '--title',
-                    'Synthetic',
-                    '--source',
-                    source['id'],
-                    *words,
-                ]
-            )
-            # The public create command is retired; exercise saved input aliases
-            # with the internal compatibility fixture constructor.
-            data = {
-                'title': 'Synthetic',
-                'audience': 'Authors',
-                'goal': 'Explain',
-                'sources': [source['id']],
-            }
-            if args.research is not None:
-                data['research'] = args.research
-            found = runner.create(self.root, data)
+        def checked(research):
+            # The manuscript editor's check of the facts, as Edit manuscript asks for it.
+            found = self.editor_run('factual-support', research=research, sources=[source['id']])
             return runner.load(self.root, found['id'])[1]
 
-        record = create('--research', 'web-allowed')
+        record = checked('web-allowed')
         self.assertEqual(record['research_from'], {'documents': True, 'sites': [], 'web': True})
-        record = create('--research', 'supplied-only')
+        record = checked('supplied-only')
         self.assertEqual(record['research_from'], {'documents': True, 'sites': [], 'web': False})
-        record = create('--research', 'none')
+        record = checked('none')
         self.assertIsNone(record['research_from'])
-        with self.assertRaisesRegex(ValueError, 'not both'):
-            runner.create(
-                self.root,
-                {
-                    'title': 'Synthetic',
-                    'audience': 'Authors',
-                    'goal': 'Explain',
-                    'research_from': {'documents': False, 'sites': [], 'web': True},
-                    'research': 'none',
-                },
-            )
 
 
 class OldRunTests(SharedSitesCase):
@@ -311,13 +117,17 @@ class OldRunTests(SharedSitesCase):
 
     def test_old_saved_values_are_mapped(self):
         source = self.source('The gateway retries a failed call once.')
-        shown = self.forget(self.start(sources=[source['id']], research='supplied-only'))
+
+        def checked(research):
+            return self.editor_run('factual-support', research=research, sources=[source['id']])
+
+        shown = self.forget(checked('supplied-only'))
         self.assertEqual(shown['research_from'], {'documents': True, 'sites': [], 'web': False})
         self.assertEqual(shown['research_says'], 'Research from your documents.')
-        shown = self.forget(self.start(sources=[source['id']], research='web-allowed'))
+        shown = self.forget(checked('web-allowed'))
         self.assertEqual(shown['research_from'], {'documents': True, 'sites': [], 'web': True})
         self.assertEqual(shown['research_says'], 'Research from your documents and the public web.')
-        shown = self.forget(self.start(sources=[source['id']], research='none'))
+        shown = self.forget(checked('none'))
         self.assertIsNone(shown['research_from'])
         self.assertEqual(shown['research_says'], 'No research.')
         # An old run's payload, and so its stage pins, carry no research_from.
@@ -671,7 +481,7 @@ class DiscoveryTests(unittest.TestCase):
 
 class GateTests(SharedSitesCase):
     def test_the_research_gate_names_the_sites_that_refused_pages(self):
-        found = self.start(research_from={'documents': False, 'sites': SITES[:1], 'web': False})
+        found = self.editor_run('factual-support', research='web-allowed')
         engine = runner.Engine(self.root, lambda *a, **k: self.fail('No provider job'))
         self.addCleanup(engine.close)
         engine.note_research(found['id'], {'outside': {'count': 2, 'sites': SITES[:1]}})
@@ -697,23 +507,6 @@ class WithoutHarnessResearchTests(SharedSitesCase):
     def setUp(self):
         super().setUp()
         self.helper.return_value = None
-
-    def test_your_sites_alone_need_harness_research(self):
-        for chosen in (
-            {'documents': False, 'sites': SITES[:1], 'web': False},
-            {'documents': True, 'sites': SITES, 'web': False},
-        ):
-            with self.subTest(chosen=chosen), self.assertRaises(ValueError) as caught:
-                self.start(sources=[self.source()['id']], research_from=chosen)
-            self.assertEqual(str(caught.exception), runner.NEEDS_HARNESS_RESEARCH)
-            self.assertIn('Open Status', str(caught.exception))
-        self.assertEqual(list((self.root / 'articles').iterdir()), [], 'nothing was started')
-        # With the public web ticked too, the run starts on the older research path.
-        found = self.start(research_from={'documents': False, 'sites': SITES[:1], 'web': True})
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertNotIn('research_contract', run)
-        self.assertEqual(run['pipeline'][:2], ['research-plan', 'research'])
-        self.assertEqual(record['research_from']['web'], True)
 
     def test_status_says_whether_harness_research_is_here(self):
         import computer

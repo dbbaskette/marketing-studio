@@ -576,22 +576,6 @@ class ContextJobTests(Fixture):
         self.assertTrue(current['outline_content'])
         folder, _ = studio.item(self.root, 'articles', current['id'])
         self.assertFalse((folder / 'DRAFT.md').exists())
-        run = blog_runner.create(
-            self.root,
-            {
-                'id': current['id'],
-                'mode': 'from-outline',
-                'outline_text': current['outline_content'],
-                'goal': 'Explain the synthetic gateway',
-                'audience': 'Developers',
-                'stop': 'draft',
-                'research': 'none',
-            },
-        )
-        self.assertEqual(run['id'], current['id'])
-        self.assertEqual(
-            studio.item(self.root, 'articles', current['id'])[1]['stop_point'], 'draft'
-        )
 
 
 class AdvisoryAndOutcomeTests(Fixture):

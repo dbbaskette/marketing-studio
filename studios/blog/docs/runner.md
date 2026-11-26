@@ -766,7 +766,12 @@ one is opening it on the desk, Delete, and taking it in a team only so that it c
 the desk; a finished one also keeps what its Done card offers. It is never handed over.
 
 The manuscript editor's own checks still run as review and revise runs: **Edit
-manuscript** starts and reads them. A finished one reads on its run and its review pages.
+manuscript** starts and reads them. A check goes on through its steps (its research plan
+and research, or its claims map, and a revision's draft) to its review by itself, and the
+editor screen says which step is under way; it stops before then only for **Stop this
+pass**, a failure, or a step that changed under it, each said there with how to start the
+pass again. These are the only runs the runner makes. A finished one reads on its run and
+its review pages.
 
 **Blogs** shows every blog, on the desk, saved step by step, and saved writing. Each card
 has **Delete**, as each blog in Home's lists does, which asks for the blog's title, stops
@@ -797,14 +802,12 @@ links and quoted claims need review: the browser runner does not independently
 fetch and validate every citation. An approved review does not mark all existing
 Blog Studio factual checks as passed.
 
-**Pause after this step** lets the current job finish and prevents another.
-**Stop** ends its process. Failed jobs retain previous writing and offer
-**Try again**, which makes that step again in a new job. No job approves its own
-result or publishes a blog. **Finish**, at the last step, always opens its
+**Stop** ends a job's process. A failed job retains previous writing. No job approves
+its own result or publishes a blog. **Finish**, on a run's last step, always opens its
 confirmation, whatever the review level: it approves the shown version and keeps
 the draft in the team library as a reference and an example of its kind of post.
 
-A stopped run says what to do next beside the error:
+A stopped desk step says what to do next beside the error:
 
 - **A CLI failure** names **Status → Check this computer** and offers **Open
   Status**, including for an assistant that is not installed or cannot start.

@@ -457,34 +457,6 @@ class ManuscriptTests(Fixture):
         with self.assertRaisesRegex(ValueError, 'Pause or stop'):
             self.action('save', content='An unsafe concurrent edit.')
 
-    def test_from_outline_starts_at_draft_and_ideas_stop_before_draft(self):
-        found = runner.create(
-            self.root,
-            {
-                'title': 'Synthetic outline',
-                'audience': 'Developers',
-                'goal': 'Explain',
-                'mode': 'from-outline',
-                'outline_text': '# First\n## Then',
-                'research': 'none',
-                'stop': 'draft',
-            },
-        )
-        self.assertEqual(found['next'], 'draft')
-        _, data, _ = runner.job(self.root, found['id'])
-        self.assertEqual(data['documents']['outline'], '# First\n## Then')
-        ideas = runner.create(
-            self.root,
-            {
-                'title': 'Synthetic ideas',
-                'audience': 'Developers',
-                'goal': 'Find an angle',
-                'mode': 'ideas',
-            },
-        )
-        self.assertEqual([v['stage'] for v in ideas['stages']], ['outline'])
-        self.assertIn('three distinct blog angles', runner.job(self.root, ideas['id'])[2])
-
     def test_local_workspace_is_not_joined_and_has_no_false_changed_notice(self):
         root = self.base / 'local' / 'blogs'
         root.mkdir(parents=True)

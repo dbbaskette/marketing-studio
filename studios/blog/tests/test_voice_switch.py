@@ -330,9 +330,12 @@ class ToneWhileOffTests(EnforcementCase):
         )
 
     def create(self):
-        return blog_runner.create(
-            self.root,
-            {'title': 'T', 'audience': 'A', 'goal': 'G', 'research': 'none', 'tone': 'Warm'},
+        """A manuscript registered in chat, which takes the default voice while the switch is
+        on, and the run the manuscript editor's check makes for it."""
+        from test_blog_runner import editor_check, manuscript
+
+        return editor_check(
+            self.root, manuscript(self.root, 'A synthetic draft.', 'T'), 'proofread'
         )
 
     def desk(self):

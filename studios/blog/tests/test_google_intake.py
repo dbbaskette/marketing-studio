@@ -185,17 +185,9 @@ class GoogleIntakeTests(unittest.TestCase):
         small = body.replace(base64.b64encode(large).decode(), base64.b64encode(gm.PNG).decode())
         studio.save_artifact(folder, 'draft', small, record)
         studio.persist(folder, 'articles', record)
-        blog_runner.create(
-            self.root,
-            {
-                'id': result['id'],
-                'mode': 'revise',
-                'goal': 'Clarify this synthetic draft',
-                'audience': 'Authors',
-                'research': 'none',
-                'stop': 'draft',
-            },
-        )
+        from test_blog_runner import editor_check
+
+        editor_check(self.root, result['id'], 'revise')  # Its run has the draft step.
         shown = blog_runner.document(self.root, result['id'], 'draft')
         self.assertEqual(shown['content'], small)  # Download remains complete.
         self.assertTrue(shown['images_omitted'])

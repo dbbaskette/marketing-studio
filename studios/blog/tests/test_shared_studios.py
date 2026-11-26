@@ -99,17 +99,10 @@ class ConfigTests(unittest.TestCase):
         self.config.write_text(
             '{"schema":1,"assistant":{"agent":"claude"},"person":{"name":"First Author"}}'
         )
-        # Seed an older saved run without reopening its retired public create route.
-        first = blog_runner.create(
-            root,
-            {
-                'title': 'Synthetic defaults',
-                'audience': 'Authors',
-                'goal': 'Explain synthetic defaults',
-                'research': 'none',
-                'stop': 'outline',
-            },
-        )
+        # A run the manuscript editor's check makes takes the shared assistant when it starts.
+        from test_blog_runner import editor_check, manuscript
+
+        first = editor_check(root, manuscript(root, 'Synthetic defaults.'), 'proofread')
         import desk_chat
 
         conversation = desk_chat.create(
@@ -122,7 +115,6 @@ class ConfigTests(unittest.TestCase):
         )
         self.assertEqual(conversation['execution'], 'conversation')
         self.assertEqual(first['engine'], 'claude')
-        self.assertEqual(studio.item(root, 'articles', first['id'])[1]['author'], 'First Author')
         self.config.write_text(
             '{"schema":1,"assistant":{"agent":"codex"},"person":{"name":"Second Author"}}'
         )
@@ -130,7 +122,6 @@ class ConfigTests(unittest.TestCase):
             studio.item(root, 'articles', conversation['id'])[1]['author'], 'First Author'
         )
         self.assertEqual(blog_runner.survey(root, first['id'])['engine'], 'claude')
-        self.assertEqual(studio.item(root, 'articles', first['id'])[1]['author'], 'First Author')
 
     def test_credentials_and_invalid_updates_preserve_file(self):
         self.config.write_text('{"schema":1,"future":"kept"}')
