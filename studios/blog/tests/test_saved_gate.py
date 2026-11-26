@@ -626,6 +626,36 @@ class DefectTests(WalkCase):
                 self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
             )
 
+    def test_only_a_task_that_can_be_applied_to_a_blog_is_discarded(self):
+        import tool_jobs
+
+        for kind, metadata in (
+            ('import', {}),
+            ('voice-learn', {'name': 'Avery', 'samples': []}),
+            ('desk-section', {'article': 'a-desk-blog', 'desk': {}}),
+        ):
+            with self.subTest(kind=kind):
+                tool_jobs.write(
+                    self.root,
+                    {
+                        'id': 'd' * 32,
+                        'kind': kind,
+                        'payload': {},
+                        'basis': 'synthetic',
+                        'metadata': metadata,
+                        'status': 'ready',
+                        'created_at': studio.now(),
+                        'attempts': 1,
+                        'result': {'content': 'A synthetic result.', 'notes': ''},
+                        'error': '',
+                    },
+                )
+                task = self.root / '.blog-runs/tools' / ('d' * 32 + '.json')
+                kept = task.read_bytes()
+                with self.assertRaisesRegex(ValueError, tool_jobs.NOT_DISCARDABLE):
+                    tool_jobs.discard(self.root, 'd' * 32)
+                self.assertEqual(task.read_bytes(), kept)
+
     def test_a_ready_task_of_any_other_saved_blog_is_not_discarded(self):
         shown = self.load_all()
         for name in ('nothing-made', 'finished', 'unreadable'):

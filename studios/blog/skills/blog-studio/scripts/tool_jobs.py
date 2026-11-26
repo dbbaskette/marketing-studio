@@ -198,6 +198,10 @@ def control(root, ident, action, engine):
 
 
 NOT_DISCARDED = 'Only a ready result that was not saved can be discarded.'
+# The tool tasks that can sit ready on a saved blog and be applied to it (job-apply): the
+# only ones a discard lets go of. Every other kind, an import among them, is refused.
+DISCARDABLE = ('repurpose', 'interview-question', 'interview-outline')
+NOT_DISCARDABLE = 'This kind of task cannot be discarded here.'
 
 
 def discard(root, ident):
@@ -207,12 +211,12 @@ def discard(root, ident):
     result cannot be saved to it) then opens on the desk or is read-only as what it holds
     decides. Only this computer's record of the task changes."""
     saved = read(root, ident)
+    if saved.get('kind') not in DISCARDABLE:
+        raise ValueError(NOT_DISCARDABLE)
     if saved['metadata'].get('article'):
         from team_workspace import guard
 
         guard(root, saved['metadata']['article'])
-    if saved['kind'] in DESK:
-        raise ValueError('Skip it on the desk, where the draft it changes is shown.')
     if saved['status'] != 'ready' or saved.get('applied'):
         raise ValueError(NOT_DISCARDED)
     saved.update(status='cancelled', result=None, error='', discarded_at=studio.now())
