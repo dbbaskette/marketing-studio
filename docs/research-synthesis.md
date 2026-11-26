@@ -477,6 +477,46 @@ again. Identities an older Marketing Studio kept, digests and all, are recognise
 same research and keyed anew as they are met. Harness Research 1.3.1 is the oldest
 installed and it is installed from `main`.
 
+## The independent check in review units
+
+Harness Research 1.6.0 can plan the independent check of a saved dossier as review units
+(`references/review-units-capability.json`, protocol `harness-review-units-v1`). A case
+started on a Harness Research that offers them keeps `research_execution.review` (schema 1,
+the protocol, state schema 4, output schema 2 and a plan of at most eight content units),
+and its check is done in units for as long as the case lives; `research_session.protocol`
+and the collection protocol are unchanged. A case without that entry, every case started
+before, and every case on an older Harness Research, keeps the single review, whatever is
+installed later. A case with the entry that finds a Harness Research without units is
+refused with a plain sentence asking for Harness Research to be updated; it is never checked
+the old way. Only the collection adapter (`research_run.Run.check`, through
+`research_units.Check`) knows units; the serial adapter keeps the single review.
+
+A check in units saves the dossier as before, then runs `review-units plan` and reviews every
+unit not kept: content units at most three at a time and never more than the run's limit,
+each a fresh job named `research:review-<round>-<unit>` with its own reviewer label and
+invocation, given its assignment, `review-synthesis.md`, `review-unit.md` and only the
+captures and originals of the sources it owns or is given. Its answer is checked in the job
+against the unit's template (`research_checks.unit_problems`, in the native job check and in
+`research_text.Transport`), then accepted; a unit that fails, is refused or is stopped is
+confirmed ended with that outcome and does not stop its peers. The final unit, which reads
+the whole dossier and owns the assessment, runs once every content unit holds. The
+assembled review is written to the case's `review.json`, so objections, groups, unreadable
+originals, an incomplete check and the corrections each area needs read it as they read a
+single review. A retry reviews only the units not kept; a correction round plans again and
+reviews only the units whose basis changed, with the final unit. A check that stops stops
+its units through Harness Research and leaves the collection as it was, so a later run goes
+on with the same dossier and every accepted unit; a check left incomplete by an unread
+original reviews that unit and the final again. Review-unit jobs count as their round's
+review in time and cost. A case handed on carries its plan record and receipts, so it still
+verifies. While units run, each active reviewer appears in the progress under its unit as
+its section (the final unit as `final-check`, apart from the final brief's author).
+
+A supplied document that Harness Research 1.6.0 takes in has the origin `supplied:<name>`;
+earlier cases keep the absolute path of the folder copy they were taken from. Wherever a
+studio shows or hands a writer an origin, a supplied document is said to be one
+(`research_paths.shown_origin`), never shown as a folder of the computer; origins are still
+compared exactly as Harness Research records them.
+
 Harness Slides 0.17.0 similarly offers opt-in `--review-context` draft inspection
 reuse. Changed slides and immediate neighbors need inspection; brand, fonts,
 layout, order, renderer and review-question changes expand invalidation. A
