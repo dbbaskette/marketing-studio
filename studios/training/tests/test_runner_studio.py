@@ -380,7 +380,7 @@ class StatusTests(StudioCase):
 
 class SavedWorkTests(StudioCase):
     def test_saved_work_prints_the_report_and_changes_nothing(self):
-        import saved_fixtures   # a saved training begun on the legacy queue, at its research plan
+        import saved_fixtures   # a saved training stopped at its research plan: read-only
         root = saved_fixtures.load(self, 'research-plan-gate')
         jobs = len(self.workers.jobs)
         files = {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
@@ -394,8 +394,9 @@ class SavedWorkTests(StudioCase):
         self.assertEqual(said['schema'], 2)
         self.assertFalse(said['complete'])
         self.assertTrue(said['issues'])
-        self.assertEqual([entry['path'] for entry in said['paths'][0]['needed_by']],
-                         [str(root)])
+        kinds = {entry['id']: [item['path'] for item in entry['needed_by']]
+                 for entry in said['paths']}
+        self.assertEqual(kinds['read-only-record'], [str(root)])
         self.assertEqual(said['unused'], [])
         self.assertEqual(len(self.workers.jobs), jobs, 'asking starts nothing')
         self.assertEqual(self.git('status', '--porcelain'), porcelain)

@@ -225,8 +225,8 @@ def parser() -> argparse.ArgumentParser:
     serving.set_defaults(handler=serve)
     commands.add_parser('status', help='what is set up and where every run is, as JSON'
                         ).set_defaults(handler=status)
-    saving = commands.add_parser('saved-work', help='which saved trainings still need each '
-                                 'older path, as JSON')
+    saving = commands.add_parser('saved-work', help='what saved trainings there are, and '
+                                 'what becomes of each, as JSON')
     saving.add_argument('--folder', action='append', type=Path,
                         help='a training folder to look at besides the workspace')
     saving.set_defaults(handler=saved_work)

@@ -25,6 +25,19 @@ PATHS = {
     'old-harness-slides': ('Branches for a Harness Slides that lists no capabilities. No saved '
                            'work needs these. They are reached only by a Harness Slides that '
                            'lists no capabilities.'),
+    # What becomes of saved work that nothing continues any more, by kind: a studio that
+    # reports these lists each saved item under the one that holds for it (GitHub issue
+    # #547).
+    'opens-on-desk': ('Saved work with a plan, outline or draft. Nothing continues it; it '
+                      'opens on the desk through the explicit, previewed migration.'),
+    'finished-earlier': ('Saved work the earlier flow finished. It keeps its finished Open on '
+                         'the desk.'),
+    'waiting-to-open': ('Saved work whose opening on the desk was interrupted. Finishing the '
+                        'opening completes it.'),
+    'read-only-record': ('Saved work with nothing made yet, or whose records cannot be read. '
+                         'It is kept to read and never continued.'),
+    'bring-in-first': ('Work made in a conversation, in a folder of its own. It is brought '
+                       'into the workspace first, then opens on the desk or is kept to read.'),
 }
 
 

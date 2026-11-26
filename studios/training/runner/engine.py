@@ -8893,12 +8893,31 @@ class Engine(Reviewing):
 
     # --- what saved trainings still need -----------------------------------------------
 
+    # What `studio saved-work` reports of Training Studio's saved work, by kind (GitHub issue
+    # #547): what becomes of each, now that nothing continues saved work.
+    SAVED_KINDS = ('opens-on-desk', 'finished-earlier', 'waiting-to-open', 'read-only-record',
+                   'bring-in-first')
+    SAVED_KIND_OF = {'migrates': 'opens-on-desk', 'finished': 'finished-earlier',
+                     'read-only': 'read-only-record'}
+    SAVED_WHY = {'opens-on-desk': 'It has a plan, outline or draft; it opens on the desk '
+                                  'through the explicit migration.',
+                 'finished-earlier': 'It was finished; it keeps its finished Open on the desk.',
+                 'waiting-to-open': 'Its opening on the desk was interrupted; finishing the '
+                                    'opening completes it.',
+                 'bring-in-first': 'It was made in a conversation and is brought into the '
+                                   'workspace first.'}
+
     def saved_work(self, folders=()) -> dict:
-        """Which saved trainings still need each older path, as `saved_work.report` says:
-        every training in the workspace a run drives, each of `folders` that holds a run,
-        and the conversation trainings this computer remembers. Only read: no lock is
-        taken, nothing is written and nothing is asked online. Unreadable records are reported as unresolved."""
+        """What saved training there is, as `saved_work.report` says it, by what becomes of
+        each: it opens on the desk, it is finished, its opening waits to be finished, it is
+        a read-only record, or it was made in a conversation and is brought in first. It
+        looks at every training in the workspace, each of `folders`, and the trainings this
+        computer remembers; desk work is not saved work and is left out. Only read: no lock
+        is taken, nothing is written and nothing is asked online. A candidate that cannot be
+        looked at is reported as unresolved."""
         from studio_core import saved_work
+        from runner import desk_migration
+        from runner.desk_chat import _files
         found: dict[str, list[dict]] = {}
         issues = []
         roots = saved_work.workspace_roots(gitstate.settings_path(), gitstate.MARKER, issues)
@@ -8925,41 +8944,44 @@ class Engine(Reviewing):
                 saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
                 saved_work.checked_tree(root)
                 if not (root / RECORD).exists() and (root / workspace.STATE_DIR / 'session.json').exists():
-                    saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
-                    session = workspace.load(root)
-                    if session.get('flow') != 'desk':
-                        found.setdefault('gated-flow', []).append(saved_work.needs(
-                            root, session['title'] or root.name, 'Saved guided creation flow.'))
-                    started = workspace.statuses(root, session).get('research', 'not-started')
-                    if not session.get('research_contract') and started == 'not-started':
-                        found.setdefault('research-queue', []).append(saved_work.needs(
+                    try:
+                        session = workspace.load(root)
+                    except WorkspaceError:
+                        # A conversation's training whose record cannot be read.
+                        found.setdefault('read-only-record', []).append(saved_work.needs(
+                            root, root.name, 'Its record cannot be read; it is kept to read.'))
+                        continue
+                    if not workspace.on_desk(session):
+                        found.setdefault('bring-in-first', []).append(saved_work.needs(
                             root, session['title'] or root.name,
-                            'A conversation training whose research has not started.'))
+                            self.SAVED_WHY['bring-in-first']))
                     continue
                 saved_work.checked_path(root / RECORD)
-                read_record(root)  # validate effective migration state without erasing raw compatibility
-                record = json.loads((root / RECORD).read_bytes())
-                if record is None:
-                    raise ValueError('Saved run record is missing.')
-                survey = self._survey_files(root, record)
-                done, title = survey.done, survey.session['title'] or root.name
-                level = review_policy.level(record)
+                kind = self.saved_kind(root)
+                if kind is None:
+                    continue   # desk work
+                try:
+                    title = json.loads((root / workspace.STATE_DIR / 'session.json')
+                                       .read_bytes()).get('title') or root.name
+                except (OSError, ValueError, AttributeError):
+                    title = root.name
+                if kind == 'opening':
+                    ident, why = 'waiting-to-open', self.SAVED_WHY['waiting-to-open']
+                elif kind == 'unread':
+                    ident, why = 'read-only-record', desk_migration.UNREAD
+                else:
+                    files = _files(root)
+                    outcome = desk_migration.classify(
+                        files, desk_migration._unfinished(self, root, files))
+                    if outcome['outcome'] == 'desk':
+                        continue
+                    ident = self.SAVED_KIND_OF[outcome['outcome']]
+                    why = outcome.get('reason') or self.SAVED_WHY[ident]
             except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError) as exc:
                 saved_work.issue(issues, root, str(exc))
                 continue
-            if record.get('flow') != 'desk':
-                found.setdefault('gated-flow', []).append(saved_work.needs(root, title, 'Saved guided creation flow.'))
-            if not record.get('research_contract') and 'research' not in done:
-                found.setdefault('research-queue', []).append(saved_work.needs(
-                    root, title, 'Its research has not run, and it was started before '
-                    'Harness Research could synthesize.'))
-            if 'review_layout' not in record and level != 'step_by_step' \
-                    and 'review:final' not in done:
-                found.setdefault('review-layout-1', []).append(saved_work.needs(
-                    root, title, 'It began before the current review layout, and its final '
-                    'review is still to come.'))
-        return saved_work.report(('research-queue', 'review-layout-1', 'old-harness-slides', 'gated-flow'),
-                                 found, scope=scope, issues=issues)
+            found.setdefault(ident, []).append(saved_work.needs(root, title, why))
+        return saved_work.report(self.SAVED_KINDS, found, scope=scope, issues=issues)
 
 def _assets_said(problem: dict, recorded: dict) -> str:
     """One problem the slides tool found with a deck's assets, as the person is told it. A

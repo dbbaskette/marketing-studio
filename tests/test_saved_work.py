@@ -45,7 +45,11 @@ class SavedWorkTests(unittest.TestCase):
 
     def test_every_path_has_its_sentence_and_names_no_studio(self):
         self.assertEqual(set(saved_work.PATHS), {'research-queue', 'cover-sample',
-                                                 'review-layout-1', 'old-harness-slides', 'gated-flow'})
+                                                 'review-layout-1', 'old-harness-slides', 'gated-flow',
+                                                 # What becomes of saved work, by kind (#547).
+                                                 'opens-on-desk', 'finished-earlier',
+                                                 'waiting-to-open', 'read-only-record',
+                                                 'bring-in-first'})
         for about in saved_work.PATHS.values():
             self.assertTrue(about.endswith('.'), about)
             for name in ('Presentation Studio', 'Training Studio'):
