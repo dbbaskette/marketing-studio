@@ -58,14 +58,11 @@ is there. Deck pages still name each deck by its folder; that is not covered her
 """
 from __future__ import annotations
 
-import ipaddress
 import re
-import socket
 import threading
 from contextlib import contextmanager
-from urllib.parse import urlsplit
 
-from studio_core import source_folders, source_intake
+from studio_core import repository_address, source_folders, source_intake
 
 VIA_HEADER = 'X-Marketing-Studio-Via'
 NETWORK = 'network'
@@ -125,77 +122,21 @@ SETUP_HERE = ('Set the workspace up on this computer itself: from a phone, set-u
 BRAND_ADDRESS = ("From a phone, give the brand skill's repository as a web address "
                  '(https://… or git@host:owner/repository.git). A folder on this computer, '
                  'or clearing it, is done on this computer itself.')
-# The scp-like form git reads as a remote: a user, a host and a path, with no slash before
-# the colon and nothing that could be read as an option.
-_HOST = re.compile(r'[a-z0-9_][a-z0-9_.:-]*(%[a-z0-9_.-]+)?')
-_SCP = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.+-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s]+')
-
-
 BRAND_UNREAD = ("The brand skill's repository could not be read from here. The reason is "
                 'shown when it is given on this computer itself.')
 
 
-def _numbers(host: str):
-    """The address a host written as numbers stands for, in any spelling git and ssh take
-    (`127.1` and `2130706433` are 127.0.0.1), or None for a name."""
-    plain = host.strip('[]').split('%', 1)[0]
-    try:
-        found = ipaddress.ip_address(plain)
-    except ValueError:
-        try:
-            found = ipaddress.IPv4Address(socket.inet_aton(plain))
-        except (OSError, ValueError):
-            return None
-    mapped = getattr(found, 'ipv4_mapped', None)
-    return mapped or found
-
-
-def _own_names() -> set[str]:
-    """This computer's own host name, its short form and its local-network form."""
-    try:
-        name = socket.gethostname().strip().rstrip('.').casefold()
-    except OSError:
-        return set()
-    short = name.split('.', 1)[0]
-    return {one for one in (name, short, short + '.local') if one}
-
-
 def this_computer(host) -> bool:
-    """Whether a host names this computer: localhost or a name under it, a loopback or
-    unspecified address, or this computer's own host name. Nothing is looked up."""
-    if not isinstance(host, str) or not host.strip():
-        return True
-    name = host.strip().rstrip('.').casefold()
-    if name == 'localhost' or name.endswith('.localhost'):
-        return True
-    found = _numbers(name)
-    if found is not None:
-        return found.is_loopback or found.is_unspecified
-    return name in _own_names()
+    """Whether a host names this computer; the rule every studio shares
+    (studio_core.repository_address). Nothing is looked up."""
+    return repository_address.this_computer(host)
 
 
 def web_repository(address) -> bool:
     """Whether a repository address is one git reads as a remote on another computer,
-    never a path here: an https:// or ssh:// address, or user@host:path, whose host is not
-    this computer. Read from its text alone."""
-    if not isinstance(address, str):
-        return False
-    value = address.strip()
-    if not value or any(character.isspace() or ord(character) < 32 for character in value):
-        return False
-    if _SCP.fullmatch(value):
-        return not this_computer(value.split('@', 1)[1].split(':', 1)[0])
-    try:
-        parts = urlsplit(value)
-        host = parts.hostname
-    except ValueError:
-        return False
-    # A user or host that starts with a dash would reach ssh as an option
-    # (ssh://-oProxyCommand=...), and a host is letters, digits, dots, dashes and colons.
-    user = parts.netloc.rpartition('@')[0]
-    if not host or user.startswith('-') or not _HOST.fullmatch(host):
-        return False
-    return parts.scheme.lower() in ('https', 'ssh') and not this_computer(host)
+    never a path here. One rule for a phone in every studio and in Marketing Studio:
+    studio_core.repository_address.web_repository. Read from its text alone."""
+    return repository_address.web_repository(address)
 
 
 def unread_said(said: str) -> str:
