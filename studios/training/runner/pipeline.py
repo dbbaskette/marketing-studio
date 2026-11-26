@@ -1784,7 +1784,7 @@ def findings_text(root: Path) -> str:
                       f"Limits: {result.get('limits', 'none')}"]
         for passage in result.get('evidence') or []:
             quote = ' '.join(str(passage.get('quote', '')).split())
-            lines.append(f"Quoted from {passage.get('title')} ({passage.get('origin')}): "
+            lines.append(f"Quoted from {passage.get('title')} ({research_contract.shown_origin(passage.get('origin'))}): "
                          f'"{quote}"')
         lines.append('')
     return '\n'.join(lines)

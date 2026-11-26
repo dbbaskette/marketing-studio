@@ -354,7 +354,8 @@ async function recoverActivity(id,owner) {
     await new Promise(resolve=>setTimeout(resolve,2000));
   }
 }
-const stoppedWords='Stopped. Nothing is running for it now, and your saved work is kept.';
+// Said of the infographic: what research keeps is said on its own card (#379).
+const stoppedWords='Stopped. Nothing is running for it now, and your saved infographic is kept.';
 function recoveredNotice(result) {
   if(result?.state==='stopped'){toast(stoppedWords);return;}
   if(result?.state==='interrupted'){error(result.problem+' '+result.next);return;}
@@ -1647,7 +1648,8 @@ async function researchSheet(){
         else if(state.state==='paused')hooks.resume=()=>control('resume');
         else if(['failed','stopped'].includes(state.state))hooks.retry=()=>control('retry');
         parts.push(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
-        if(state.problem)parts.push(make('p','problem',state.problem));
+        // The card already says how research ended, in the same sentence: said once (#379).
+        if(state.problem&&state.problem!==state.progress?.ended_in?.said)parts.push(make('p','problem',state.problem));
         if(state.state==='complete')parts.push(make('p','quiet','Use research adds its checked findings as a source and asks your assistant for a story from them.'));
         if(state.kept)parts.push(make('p',state.kept.state==='kept'?'quiet':'problem',state.kept.state==='kept'?'Kept in the Document Library too, for other projects.':'Not kept in the Document Library: '+(state.kept.problem||'it could not be kept.')+' The research itself is complete.'));
       }

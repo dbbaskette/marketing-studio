@@ -10,7 +10,7 @@ import unittest
 
 from runner_support import StudioCase, URL
 from runner import engine as engines, research
-from studio_core import research_contract as contract, research_session as parallel
+from studio_core import research_contract as contract, research_session as parallel, research_units
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
@@ -71,7 +71,10 @@ class ParallelNativeTests(StudioCase):
         record = self.engine._load(root)
         self.assertEqual(record['schema'], 4)
         self.assertTrue(parallel.protocol(record))
-        self.assertCountEqual(self.phases, ['investigate'] * 2 + ['synthesize', 'review'])
+        # A new deck on Harness Research 1.6.0 checks each unit that holds evidence, then the
+        # final unit (#378); on an older one, one review.
+        self.assertCountEqual(self.phases, ['investigate'] * 2 + ['synthesize']
+                              + ['review'] * (3 if research_units.capability(RUNTIME) else 1))
         facts, _ = contract.read_bundle(root / 'research')
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(len({f['author'] for f in facts['facts']}), 2)
@@ -124,3 +127,76 @@ class ParallelNativeTests(StudioCase):
         self.assertNotEqual(kept, untidy)
         self.assertEqual(kept, tidy(kept))
         self.assertEqual(registered, [hashlib.sha256(kept.encode()).hexdigest()])
+        # #550: the bundle, shared with a team, names no folder of the computer that made it,
+        # only on a Harness Research that records a supplied document as supplied:<name> (1.6.0 and newer); an older one records the folder it was taken from.
+        if contract.labels_supplied(RUNTIME):
+            import tempfile
+            self.assertTrue(all(source['origin'].startswith('supplied:') for source in facts['sources']))
+            places = {str(root), str(root.resolve()), tempfile.gettempdir(),
+                      str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+            published = [path for path in (root / 'research').rglob('*') if path.is_file()]
+            self.assertTrue(published)
+            for path in published:
+                said = path.read_bytes().decode('utf-8', 'replace')
+                for place in places:
+                    self.assertNotIn(place, said, path.name)
+
+
+@unittest.skipUnless(RUNTIME and research_units.capability(RUNTIME), 'Harness Research with review units required.')
+class UnitNativeTests(StudioCase):
+    """A new deck's check in review units through the native jobs (#378)."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.parallel_research = True
+        self.research = research.Research(Path(RUNTIME))
+        self.web.page(URL, TEXT, 'text/plain')
+        self.workers.then('research-result', *([self.worker] * 12))
+        self.barrier, self.phases, self.units, self.fail_unit = None, [], [], False
+
+    def worker(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        if 'review_template' in payload:
+            unit = payload['review_template']['unit']
+            self.units.append((unit, sorted(source['file'] for source in tools._index())))
+            if self.fail_unit and unit != research_units.FINAL:
+                from runner import agents
+                self.fail_unit = False
+                self.phases.append('review')
+                return agents.Outcome(False, 'failed', 'Synthetic unit check failed.', seconds=1)
+        return ParallelNativeTests.worker(self, tools, job)
+
+    def test_each_unit_is_its_own_job_with_its_own_captures_and_a_failed_one_is_checked_again_alone(self):
+        self.fail_unit = True
+        root = self.start(research=True, research_questions=['Synthetic capacity question?', 'Synthetic health question?'])
+        self.assertEqual(self.engine._load(root)['research_execution']['review'], research_units.entry(RUNTIME))
+        self.assertTrue(self.view(root)['problem'])
+        self.assertEqual(len(self.units), 2, 'every content unit ran; the final waits')
+        self.assertTrue(all(len(files) == 1 for _, files in self.units), 'a content unit holds its own capture only')
+        self.phases.clear(); self.units.clear()
+        self.engine.act(root, 'retry')
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(self.phases, ['review', 'review'], 'investigation and synthesis are kept')
+        self.assertEqual(self.units[-1][0], research_units.FINAL)
+        names = [name for name in self.engine._load(root)['steps'] if contract.job_round(name) == ('review', 1)]
+        self.assertEqual(len(names), 3)
+        self.assertIn('research:review-1-final', names)
+
+    def test_a_part_out_of_time_is_named_and_offers_more_time(self):
+        from runner import agents
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'review_template' in payload and payload['review_template']['unit'] != research_units.FINAL \
+                    and not getattr(self, 'timed', False):
+                self.timed = True
+                return agents.Outcome(False, 'timeout', 'Synthetic: the job reached its time limit.', seconds=900)
+            return self.worker(tools, job)
+        self.workers.queued['research-result'][:] = [worker] * 12
+        root = self.start(research=True, research_questions=['Synthetic capacity question?', 'Synthetic health question?'])
+        saved = self.engine._load(root)
+        ended = saved['research_execution']['progress']['ended_in']
+        halted = saved.get('halted') or saved.get('problem') or {}
+        self.assertEqual((ended['part'], ended['how']), ('review-unit', 'timed-out'))
+        self.assertEqual(halted['why'], ended['said'], 'the stop says what the research card says')
+        self.assertEqual(halted['action'], 'more-time')

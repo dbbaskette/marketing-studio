@@ -19,16 +19,54 @@ SHARED = (Path('Library/Application Support/Harness Research'), Path('.local/sha
 # Harness Research 1.0.1 and newer exit 1 for a needs-revision review and for stale
 # evidence while still printing the result. Callers judge that result's status.
 RESULTS = {('synthesis', 'review'), ('synthesis', 'verify'), ('synthesis', 'status')}
+# Harness Research 1.6.0's review units exit 1 from any action whose result reports stale
+# work or failed integrity (a review that no longer checks out, which the next plan sets
+# aside), and from an assembly that needs revision, still printing the result. A refusal
+# prints nothing on standard output.
+RESULT_GROUPS = {'review-units'}
 
 
 def answered(args, code, out):
     """True when a command that exited 1 still printed its JSON result."""
-    if code != 1 or tuple(args[:2]) not in RESULTS:
+    if code != 1 or (tuple(args[:2]) not in RESULTS and (args[:1] or [None])[0] not in RESULT_GROUPS):
         return False
     try:
         return isinstance(json.loads(out), dict)
     except (TypeError, ValueError):
         return False
+
+
+def refusal(error):
+    """Whether `error` is Harness Research saying no to one command, as the studios raise it:
+    a ValueError where Marketing Studio runs the helper itself (research_session and
+    research_contract `Workflow.command`), or, through Training Studio's and Presentation
+    Studio's research tool, its `Refused`, a WorkspaceError that carries the one line the
+    helper printed as `line` (shared_runner.research). A stop is never one."""
+    if isinstance(error, (InterruptedError, KeyboardInterrupt)):
+        return False
+    return isinstance(error, ValueError) or isinstance(getattr(error, 'line', None), str)
+
+
+# The first Harness Research that records a supplied document taken in new as
+# `supplied:<name>` rather than the absolute path of the folder it was taken from (#550).
+SUPPLIED_LABELS = (1, 6, 0)
+
+
+def version(runtime):
+    """The release a Harness Research runtime states in its package.json, as numbers, or None."""
+    try:
+        said = json.loads((Path(runtime) / 'package.json').read_text())['version']
+        parts = [int(part) for part in str(said).split('-')[0].split('.')[:3]]
+        return tuple(parts + [0] * (3 - len(parts)))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def labels_supplied(runtime):
+    """Whether this runtime records a new supplied document's origin as `supplied:<name>`,
+    so that a research bundle it makes names no folder of the computer."""
+    found = version(runtime)
+    return found is not None and found >= SUPPLIED_LABELS
 
 
 HELPER_SECONDS = 120   # the longest one helper command may take

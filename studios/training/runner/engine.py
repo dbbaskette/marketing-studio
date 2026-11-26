@@ -4745,8 +4745,10 @@ class Engine(Reviewing):
         if outcome.reason == 'timeout':
             if research_sections.timeout(self, root, refusal, 'training'): return
             return self._out_of_time(root, 'research', 'The research', record, 1)
+        # The final brief or a review unit already says what is kept, in the run's one
+        # sentence (#379): beside it, only what is true of every stop.
         kept = ('Completed, checked research areas are kept privately for retry. Only missing or refused areas run again.'
-                if research_parallel.protocol(record) else KEPT)
+                if research_parallel.protocol(record) and not getattr(refusal, 'research_ended', None) else KEPT)
         self._problem(root, 'research', 'failed', str(refusal), kept)
 
     def _check_unfinished(self, root: Path, refusal: WorkspaceError) -> None:
@@ -7543,8 +7545,13 @@ class Engine(Reviewing):
         if problem:
             return problem.get('state', 'failed'), problem['what']
         if halt == 'stopped':
-            return 'stopped', ('Stopped. Everything finished before it is kept; the step '
-                               'that was in hand starts over on resume.')
+            # Research that stopped says so in the run's one sentence (#379), which the
+            # research card shows too; nothing beside it claims more is kept.
+            ended = research_parallel_native.stopped_words((record.get('research_execution') or {}).get('progress'))
+            if ended:
+                return 'stopped', ended
+            return 'stopped', ('Stopped. Finished materials are kept; the step that was in hand '
+                               'starts over on resume.')
         if halt == 'paused':
             return 'paused', ('Pausing. The step in hand finishes first.' if run.workers
                               else 'Paused. Nothing new starts until you resume.')

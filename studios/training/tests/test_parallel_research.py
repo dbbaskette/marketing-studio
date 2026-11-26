@@ -6,11 +6,12 @@ import json
 import os
 from pathlib import Path
 import threading
+import time
 import unittest
 
 from runner_support import StudioCase, URL
 from runner import engine as engines, research
-from studio_core import research_contract as contract, research_session as parallel
+from studio_core import research_contract as contract, research_session as parallel, research_transport, research_units
 from studio_core.shared_runner.worker_tools import tidy
 from synthesis_fixture import TEXT, dossier, review
 
@@ -18,6 +19,13 @@ from synthesis_fixture import TEXT, dossier, review
 UNTIDY = 'Overview of  Synthetic  Queues   \n' + TEXT.replace('. More', '.  More') + '  \n\n\n\nDATA TSL \n'
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+
+
+def checks(content):
+    """The check jobs of one round: a new training on a Harness Research with review units
+    (1.6.0, #378) checks each unit that holds evidence and then the final unit; on an older one,
+    one review."""
+    return ['review'] * (content + 1 if RUNTIME and research_units.capability(RUNTIME) else 1)
 
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for pinned helper tests.')
@@ -95,7 +103,7 @@ class ParallelNativeTests(StudioCase):
         record = self.engine._load(root)
         self.assertEqual(record['schema'], parallel.RECORD_SCHEMA)
         self.assertTrue(parallel.protocol(record))
-        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize'] + checks(3))
         facts, _ = contract.read_bundle(root / 'research')
         self.assertTrue(facts['review']['accepted'])
         self.assertEqual(len({f['author'] for f in facts['facts']}), 3)
@@ -142,7 +150,7 @@ class ParallelNativeTests(StudioCase):
         self.assertTrue(facts['sources'])
         self.assertTrue(all(source.get('source_date') == '2026-10-01' for source in facts['sources']))
         self.assertTrue(all('date' not in source and 'unsupported_note' not in source for source in facts['sources']))
-        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize'] + checks(3))
 
     def test_fact_kind_correction_stays_in_the_same_investigator_invocation(self):
         self.fact_kind_correction = True
@@ -152,7 +160,7 @@ class ParallelNativeTests(StudioCase):
         facts, _ = contract.read_bundle(root / 'research')
         self.assertTrue(facts['review']['accepted'])
         self.assertTrue(all('kind' not in fact for fact in facts['facts']))
-        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize'] + checks(3))
 
     def test_parallel_research_prepares_one_topics_review_before_materials(self):
         from runner import training_plan
@@ -168,7 +176,7 @@ class ParallelNativeTests(StudioCase):
         self.assertEqual(shown['state'], 'waiting')
         self.assertTrue(shown['training_plan']['levels'][0]['modules'])
         self.assertFalse(self.workers.of('document'))
-        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize'] + checks(3))
 
     def test_missing_or_unknown_parallel_protocol_refuses_resume(self):
         self.barrier = None
@@ -235,6 +243,25 @@ class ParallelNativeTests(StudioCase):
         self.assertNotEqual(tidy(supplied), supplied, 'The supplied text is not already tidy')
         self.assertEqual(self.registered(root), [hashlib.sha256(tidy(supplied).encode()).hexdigest()])
 
+    def test_a_supplied_document_leaves_no_folder_of_this_computer_in_the_published_bundle(self):
+        # #550: a research bundle built from supplied documents with parallel collection is
+        # shared; it names no folder of the computer that made it, in any published file.
+        import tempfile
+        root = self.supplied_start(TEXT)
+        facts = self.researched(root)
+        if not contract.labels_supplied(RUNTIME):
+            self.skipTest('The bundle names no folder only on a Harness Research that records a supplied document as supplied:<name> (1.6.0 and newer); an older one records the folder it was taken from.')
+        origins = {source['origin'] for source in facts['sources']}
+        self.assertTrue(origins and all(origin.startswith('supplied:') for origin in origins), origins)
+        places = {str(root), str(root.resolve()), tempfile.gettempdir(),
+                  str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+        published = [path for path in (root / 'research').rglob('*') if path.is_file()]
+        self.assertTrue(published)
+        for path in published:
+            said = path.read_bytes().decode('utf-8', 'replace')
+            for place in places:
+                self.assertNotIn(place, said, path.name)
+
     def test_try_again_recovers_a_capture_registered_untidied(self):
         # #295: an earlier version registered the text as it came, the kept investigations
         # hold the tidied text the assistant read, and the dossier check refused synthesis.
@@ -248,5 +275,108 @@ class ParallelNativeTests(StudioCase):
         self.phases.clear()
         self.engine.act(root, 'retry')
         self.researched(root)
-        self.assertEqual(self.phases, ['synthesize', 'review'],
+        # One supplied document is one source, so one unit holds evidence.
+        self.assertEqual(self.phases, ['synthesize'] + checks(1),
                          'Try again keeps the investigations; synthesis and review run again')
+
+
+@unittest.skipUnless(RUNTIME and research_units.capability(RUNTIME), 'Harness Research with review units required.')
+class UnitNativeTests(StudioCase):
+    """A new training's check in review units through the native jobs (#378)."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.parallel_research = True
+        self.research = research.Research(Path(RUNTIME))
+        self.web.page(URL, TEXT, 'text/plain')
+        self.workers.then('research-result', *([self.worker] * 12))
+        self.barrier, self.phases, self.units, self.fail_unit = None, [], [], False
+
+    def worker(self, tools, job):
+        payload = json.loads(tools.read_input('research-task')[1])
+        if 'review_template' in payload:
+            unit = payload['review_template']['unit']
+            self.units.append((unit, sorted(source['file'] for source in tools._index())))
+            if self.fail_unit and unit != research_units.FINAL:
+                from runner import agents
+                self.fail_unit = False
+                self.phases.append('review')
+                return agents.Outcome(False, 'failed', 'Synthetic unit check failed.', seconds=1)
+        return ParallelNativeTests.worker(self, tools, job)
+
+    def test_each_unit_is_its_own_job_with_its_own_captures_and_a_failed_one_is_checked_again_alone(self):
+        self.fail_unit = True
+        root = self.start()
+        self.assertEqual(self.engine._load(root)['research_execution']['review'], research_units.entry(RUNTIME))
+        self.assertTrue(self.view(root)['problem'])
+        # The stop names the part that failed and keeps the others' checks (#379), in the
+        # words the progress says it in.
+        saved = self.engine._load(root)
+        progress = saved['research_execution']['progress']
+        ended = progress['ended_in']
+        self.assertEqual((ended['part'], ended['how'], ended['total']), ('review-unit', 'failed', 4))
+        # One ending, one sentence: the stop says what the progress says, counted once the
+        # peers that were still working had ended (both kept).
+        self.assertEqual(saved['problem']['what'], ended['said'])
+        self.assertRegex(ended['said'], r'^The independent check of “.+\?” could not finish: Synthetic unit check '
+                         r'failed\. The checks of the other 2 parts are kept; only what is left is checked again, then '
+                         r'the whole research\.$')
+        self.assertEqual(sorted(unit['status'] for unit in progress['review_units']), ['failed', 'kept', 'kept', 'waiting'])
+        self.assertEqual(research_transport.describe(progress), ended['said'])
+        self.assertEqual(len(self.units), 3, 'every content unit ran; the final waits')
+        self.assertTrue(all(len(files) == 1 for _, files in self.units), 'a content unit holds its own capture only')
+        self.phases.clear(); self.units.clear()
+        self.engine.act(root, 'retry')
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(self.phases, ['review', 'review'], 'investigation and synthesis are kept')
+        self.assertEqual(self.units[-1][0], research_units.FINAL)
+        names = [name for name in self.engine._load(root)['steps'] if contract.job_round(name) == ('review', 1)]
+        self.assertEqual(len(names), 4)
+        self.assertIn('research:review-1-final', names)
+
+    def test_a_research_stop_is_said_in_the_run_s_one_sentence_and_nothing_else_claims_kept(self):
+        # Stop while an area is gathered: the training's stop text is the run's sentence, and
+        # the generic line that everything finished is kept is not shown with it (#379).
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'source_outline' in payload and not getattr(self, 'stopping', False):
+                self.stopping = True
+                root = self.engine.trainings()[0]
+                threading.Thread(target=self.engine.act, args=(root, 'stop'), daemon=True).start()
+                deadline = time.monotonic() + 10
+                while not self.engine._run(root).stop.is_set() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+            return self.worker(tools, job)
+        self.workers.queued['research-result'][:] = [worker] * 12
+        root = self.start()
+        deadline = time.monotonic() + 10
+        while self.view(root)['state'] != 'stopped' and time.monotonic() < deadline:
+            time.sleep(0.05)
+        view = self.view(root)
+        progress = self.engine._load(root)['research_execution']['progress']
+        said = progress['ended_in']['said']
+        self.assertEqual((progress['ended_in']['part'], progress['ended_in']['how']), ('research', 'stopped'))
+        self.assertTrue(said.startswith('Research stopped. '), said)
+        self.assertEqual((view['state'], view['sentence']), ('stopped', said))
+        self.assertNotIn('finished before it is kept', view['sentence'])
+
+    def test_a_part_out_of_time_is_named_with_what_is_kept_and_offers_more_time(self):
+        from runner import agents
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'review_template' in payload and payload['review_template']['unit'] != research_units.FINAL \
+                    and not getattr(self, 'timed', False):
+                self.timed = True
+                return agents.Outcome(False, 'timeout', 'Synthetic: the job reached its time limit.', seconds=900)
+            return self.worker(tools, job)
+        self.workers.queued['research-result'][:] = [worker] * 12
+        root = self.start()
+        saved = self.engine._load(root)
+        ended = saved['research_execution']['progress']['ended_in']
+        self.assertEqual((ended['part'], ended['how']), ('review-unit', 'timed-out'))
+        self.assertEqual(saved['problem']['what'], ended['said'])
+        self.assertRegex(ended['said'], r'^The independent check of “.+\?” ran out of time: ')
+        self.assertIn(' are kept; only what is left is checked again, then the whole research.', ended['said'])
+        self.assertEqual(saved['problem']['action'], 'more-time')
+        self.assertTrue(saved['problem']['kept'].startswith('It ran out of the time a step may take'))

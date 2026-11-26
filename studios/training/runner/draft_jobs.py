@@ -10,6 +10,7 @@ import checks
 import home
 import workspace
 from studio_core import step_times
+from studio_core.research_paths import shown_origin
 from studio_core.drafting import basis, prompts, record
 
 from runner import briefs, drafts, pipeline
@@ -210,7 +211,8 @@ def references(root, session, draft, section, blueprint):
                   'summary': summary, 'conditions': item.get('conditions') or [],
                   'counter': item.get('counter') or [], 'gaps': item.get('gaps') or [],
                   'date': item.get('date') or source_meta.get('date') or '',
-                  'origin': item.get('url') or item.get('document') or source_meta.get('origin') or 'research'}
+                  # A supplied document is said to be one, never shown as a folder (#550).
+                  'origin': item.get('url') or item.get('document') or shown_origin(source_meta.get('origin')) or 'research'}
         entry = next((line for line in source.splitlines() if f'`{ident}`' in line), None)
         if entry is None:
             # Guide entries have no finding ID. Match the exact runner-written entry,

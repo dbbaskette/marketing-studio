@@ -7,10 +7,13 @@ from unittest.mock import patch
 from helpers import Isolated, ROOT
 from runner import research_jobs, intake
 from runner.workspace import Store
-from studio_core import research_sources
+from studio_core import research_sources, research_units
 sys.path.insert(0, str(ROOT/'tests'))
 from synthesis_fixture import TEXT, dossier, review
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
+# A new request on Harness Research 1.6.0 checks its one source's unit, then the final unit
+# (#378); on an older one, one review.
+CHECKS = ['review'] * (2 if RUNTIME and research_units.capability(RUNTIME) else 1)
 
 
 @unittest.skipUnless(RUNTIME, 'Select the pinned disposable Harness Research runtime.')
@@ -53,12 +56,30 @@ class ResearchJobsTests(Isolated):
             while self.jobs.active and time.monotonic()<deadline: time.sleep(.025)
         state = self.jobs.read(self.p['id'])
         self.assertEqual(state['state'],'complete',state)
-        self.assertEqual(self.calls,['investigate','synthesize','review'])
+        self.assertEqual(self.calls,['investigate','synthesize']+CHECKS)
         self.assertEqual(self.store.read(self.p['id'])['revision'],0)
         preview = self.jobs.control(self.p['id'],'preview')
         adopted = intake.adopt(self.store,self.p['id'],preview['id'],expected_revision=0)
         self.assertEqual(adopted['sources'][0]['kind'],'research')
-        self.assertEqual(self.calls,['investigate','synthesize','review'])
+        # #550: the research bundle built from supplied notes names no folder of this computer.
+        import tempfile
+        from pathlib import Path
+        from studio_core import research_contract, research_session
+        root, saved = self.jobs._state(self.p['id'])
+        self.assertEqual(saved['execution'].get('review'), research_units.entry(RUNTIME))
+        output = research_contract.output_root(research_session.case_for(root))
+        facts, manifest = research_contract.read_bundle(output)
+        # Only a Harness Research that records a supplied document as supplied:<name>
+        # (1.6.0 and newer) leaves no folder; an older one records the folder.
+        if research_contract.labels_supplied(RUNTIME):
+            self.assertTrue(all(s['origin'].startswith('supplied:') for s in facts['sources'] if s['permission'] == 'selected'))
+            places = {str(self.workspace), str(Path(self.workspace).resolve()), tempfile.gettempdir(),
+                      str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+            for name in [entry['file'] for entry in manifest['artifacts']] + ['output.json']:
+                said = (output / name).read_bytes().decode('utf-8', 'replace')
+                for place in places:
+                    self.assertNotIn(place, said, name)
+        self.assertEqual(self.calls,['investigate','synthesize']+CHECKS)
 
     def test_captured_project_material_is_included_without_reupload_or_external_search(self):
         preview = intake.prepare(TEXT.encode(),kind='text',name='Primary synthetic material')
@@ -70,7 +91,7 @@ class ResearchJobsTests(Isolated):
             while self.jobs.active and time.monotonic()<deadline: time.sleep(.025)
         result=self.jobs.read(self.p['id'])
         self.assertEqual(result['state'],'complete',result)
-        self.assertEqual(self.calls,['investigate','synthesize','review'])
+        self.assertEqual(self.calls,['investigate','synthesize']+CHECKS)
         self.assertEqual(self.store.read(self.p['id'])['revision'],self.p['revision'])
 
     def run_job(self, during=None):
@@ -120,6 +141,16 @@ class ResearchJobsTests(Isolated):
         state = self.run_job(audience)
         self.assertEqual(state['state'], 'failed', state)
         self.assertNotIn('kept', state)
+
+    def test_a_research_stop_is_said_in_the_run_s_one_sentence(self):
+        # What the research panel shows of the stop is the run's sentence, said once (#379).
+        state = self.run_job(lambda project: self.jobs.control(project['id'], 'stop'))
+        self.assertEqual(state['state'], 'stopped', state)
+        ended = state['progress']['ended_in']
+        self.assertEqual((ended['part'], ended['how']), ('research', 'stopped'))
+        self.assertEqual(state['problem'], ended['said'])
+        self.assertTrue(ended['said'].startswith('Research stopped. '), ended['said'])
+        self.assertTrue(ended['next'].startswith('Next: '))
 
     def test_research_from_the_library_made_for_something_else_is_imported_and_says_so(self):
         from runner import research, sources

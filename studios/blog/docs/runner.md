@@ -839,7 +839,10 @@ A stopped desk step says what to do next beside the error:
   the CLI reports them (Claude Code does; Codex, as Blog Studio runs it, does not).
   Research that stops before its check accepts it is kept in the blog's
   `.studio-research-draft` folder, which the Team Hub skips and a shared studios
-  repository ignores. It is used only while the blog's inputs and research version
+  repository ignores. What going on keeps depends on when it stopped: a stop during the
+  independent check keeps the evidence, the drafts and every part already checked, and only
+  what is left is checked again; a stop at any other time stops the research's collection,
+  so going on gathers the evidence again and writes the report again from your sources. It is used only while the blog's inputs and research version
   are the ones it was made for; research saved any other way lets it go. A refusal lists **What the research check objected to**,
   grouped by kind and verdict with the first note of each. **Try again** continues
   from the kept draft for up to three more rounds, within the step's limit, and says

@@ -509,6 +509,44 @@ def review_problems(review, template, runtime=None):
     return problems
 
 
+# Harness Research 1.6.0's review units (studio_core.research_units): one reviewer answers for
+# one unit of a saved dossier, in the answer its template gives.
+REVIEW_UNITS = 'harness-review-units-v1'
+UNIT_FIELDS = ('schema', 'protocol', 'plan', 'digest', 'unit', 'attempt', 'reviewer',
+               'originals', 'facts', 'findings', 'prose', 'assessment')
+
+
+def unit_review(template):
+    """Whether a review template is one review unit's, not the whole dossier's."""
+    return isinstance(template, dict) and template.get('protocol') == REVIEW_UNITS
+
+
+def unit_problems(answer, template, runtime=None):
+    """What Harness Research would refuse in one review unit's answer, every one at once,
+    checked against the unit's template: the fields that bind it to its plan, digest, unit,
+    attempt and reviewer, exactly what the unit owns, each once, and the whole-dossier
+    assessment on the final unit only. The per-item rules are review_problems'."""
+    if not isinstance(answer, dict):
+        return ['Return the unit answer as one JSON object, filled in from review_template.']
+    problems = []
+    for key in UNIT_FIELDS[:7]:
+        if answer.get(key) != template.get(key):
+            problems.append(f'Set {key} to {template.get(key)!r}, exactly as review_template gives it.')
+    extra = sorted(str(key) for key in answer if key not in UNIT_FIELDS)
+    if extra:
+        problems.append('Leave out ' + ', '.join(extra[:10]) + ': a unit answer holds only what '
+                        'review_template holds.')
+    final = 'assessment' in template
+    if not final and 'assessment' in answer:
+        problems.append('Leave out assessment: only the final unit answers the whole-dossier assessment.')
+    # The items, as a single review's are checked; a content unit has no assessment to check.
+    stand_in = {'coverage': 'accurate', 'usefulness': 'adequate', 'note': 'Not part of this unit.'}
+    problems += review_problems({**answer, 'schema': 2, 'digest': template.get('digest'),
+                                 'assessment': answer.get('assessment') if final else stand_in},
+                                {**template, 'schema': 2}, runtime)
+    return problems
+
+
 def citation_sources(value, captures):
     """Resolve only exact job handles to a unique, verified dossier source identity.
 

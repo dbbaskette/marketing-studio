@@ -7,7 +7,7 @@ import unittest
 
 from runner_support import StudioCase, URL, BLUEPRINT, DOCUMENT
 from runner import agents, outline_first as outline, research, training_plan
-from studio_core import research_contract, research_session
+from studio_core import research_contract, research_session, research_units
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
@@ -118,7 +118,10 @@ class OutlineIntegrationTests(StudioCase):
         after=training_plan.decide(self.engine,root,plan['expected'],'approve',outline=value)
         self.assertFalse(after['problem'],after['problem'])
         self.assertEqual(after['state'],'done')
-        self.assertCountEqual(self.phases,['investigate','investigate','synthesize','review'])
+        # A new training on Harness Research 1.6.0 checks each approved section's unit, then
+        # the final unit (#378); on an older one, one review.
+        self.assertCountEqual(self.phases,['investigate','investigate','synthesize']
+                              + ['review'] * (3 if research_units.capability(RUNTIME) else 1))
         questions=[q for task in self.tasks for q in task['questions']]
         self.assertEqual({q['id'] for q in questions},{'section-foundations','section-limits'})
         self.assertFalse(any(q['id']=='section-application' for q in questions))

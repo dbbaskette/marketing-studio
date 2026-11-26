@@ -85,7 +85,8 @@ const RUN_WORDS = {
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
-  stop: 'Stopped. Everything made so far is kept.',
+  // Said of the deck: what research keeps is said on its own card (#379).
+  stop: 'Stopped. The slides and outline made so far are kept.',
   retry: 'Trying again.',
   'more-time': 'Trying again, with twice the time for each step.',
   undo: 'The last step was undone. It carries on from there.',

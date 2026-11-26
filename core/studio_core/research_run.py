@@ -19,8 +19,66 @@ import secrets
 import threading
 
 from studio_core import research_contract as rc, research_timing, research_sections, research_preview, research_quality
-from studio_core import research_reading
+from studio_core import research_reading, research_units
 from studio_core import research_session as session
+
+
+# What a review unit's state in Harness Research (`review-units status`) is shown as (#379).
+# Accepted this time and kept from an earlier check both mean it is not reviewed again.
+UNIT_SHOWN = {'pending': 'waiting', 'reserved': 'waiting', 'running': 'working', 'finished': 'working',
+              'accepted': 'kept', 'kept': 'kept', 'failed': 'failed', 'refused': 'failed',
+              'cancelled': 'stopped'}
+# Which host phase works in which stage of the page, for the observed number working now.
+STAGE_OF = {'investigate': 'gather', 'read': 'gather', 'synthesize': 'combine', 'review': 'check'}
+LABEL_MOST = 80   # a unit's name is a question cut to this, never more of the research
+# Harness Research's review phases in which a unit's status is one of the saved dossier's
+# plan: before it plans again (needs-plan, a review that no longer checks out), it is not.
+UNIT_PLANNED = ('reviewing', 'ready-to-assemble', 'assembled', 'stopped')
+
+
+def clocked(attempts, now):
+    """How long the latest of these host attempts took, or has taken so far: {'attempts',
+    'seconds', and 'started_at' while it works}, or {} when none was made."""
+    if not attempts:
+        return {}
+    last = max(attempts, key=lambda attempt: attempt.get('started_at') or '')
+    working = not last.get('ended_at')
+    seconds = (now - research_timing.stamp(last['started_at'])) if working else last.get('seconds')
+    shown = {'attempts': len(attempts)}
+    if isinstance(seconds, (int, float)):
+        shown['seconds'] = round(max(0, seconds), 1)
+    if working:
+        shown['started_at'] = last['started_at']
+    return shown
+
+
+def timed_out(error):
+    """Whether a job ended because it ran out of its time: a native job's outcome, or a text
+    transport's reason."""
+    return getattr(getattr(error, 'outcome', None), 'reason', None) == 'timeout' \
+        or getattr(error, 'reason', None) in ('timeout', 'time-limit')
+
+
+class Watched:
+    """The run's helper while a check in units runs: every command goes to the helper as it
+    is, and what each review-units command says of a unit is shown on the page (#379)."""
+
+    def __init__(self, workflow, run):
+        self._workflow, self._run = workflow, run
+
+    def __getattr__(self, name):
+        return getattr(self._workflow, name)
+
+    def command(self, root, group, action, value=None, **flags):
+        result = self._workflow.command(root, group, action, value, **flags)
+        if group == 'review-units':
+            # What is shown is read from a copy, after the command has done what it does:
+            # nothing in showing it can change a command's result, fail a unit or the check.
+            try:
+                self._run.unit_seen(action, copy.deepcopy(value), copy.deepcopy(result))
+            except Exception:
+                pass
+        return result
 
 
 def review_context(helper_value, reuse_value, section_value):
@@ -36,7 +94,7 @@ class Run:
 
     def __init__(self, workflow, root, task, invoke, sources, *, limit, progress, allowed,
                  cancelled, readable, restart_stopped, section_policy, section_context, impact,
-                 input_snapshot, creator_review, reading, earlier):
+                 input_snapshot, creator_review, reading, earlier, review_units=None):
         self.workflow, self.root, self.task, self.sources = workflow, root, task, sources
         self.given_invoke = invoke   # the studio's own; self.invoke records each call first
         self.limit, self.progress, self.allowed, self.cancelled = limit, progress, allowed, cancelled
@@ -44,10 +102,34 @@ class Run:
         self.section_policy, self.section_context, self.impact = section_policy, section_context, impact
         self.input_snapshot, self.creator_review, self.reading = input_snapshot, creator_review, reading
         self.earlier = earlier
+        # The case's review-units entry: its check is done in units (research_units.Check),
+        # held in `checking` while one runs. None: the single review.
+        self.review_units, self.checking = review_units, None
+        # What the page is shown of each review unit, by id, in plan order (#379); and of the
+        # final brief while sections are combined: None until combining reaches it.
+        self.units_shown, self.final_shown = {}, None
+        # Work known to be done again (#379): never shown or counted as kept until it is.
+        self.final_again, self.sections_again = False, set()
+        self.units_plan = None    # the review plan file the units were last listed from
+        self.ended_at = None      # 'check' or 'final' when the run ended there
+        # The collection was stopped: going on starts its next generation, which gathers the
+        # evidence again, so nothing gathered or written from it is kept.
+        self.collection_stopped = False
         self.host_lock = threading.RLock()    # over the host record of invocations
         self.state_lock = threading.RLock()   # over the progress the page is shown
 
     def go(self):
+        """The run, and when it ends early, where and what is kept, said once (#379)."""
+        try:
+            return self.steps()
+        except BaseException as error:
+            try:
+                self.ended(error)
+            except Exception:
+                pass   # saying where it ended never changes how it ended
+            raise
+
+    def steps(self):
         """The run, step by step: the checked bundle, as rc.read_bundle returns it."""
         self.prepare()
         self.open_case()
@@ -88,6 +170,12 @@ class Run:
             raise ValueError('Restore the saved focused research policy before continuing.')
         if session.unresolved(root):
             raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
+        if self.review_units is not None:
+            # A case that started checking in units goes on in units, or is refused plainly.
+            if not research_units.valid(self.review_units):
+                raise ValueError(research_units.UNREADABLE)
+            if research_units.capability(workflow.runtime) is None:
+                raise ValueError(research_units.GONE)
         if self.section_policy and self.impact:
             from studio_core import research_impact
             research_impact.context_current(root, task, self.impact)
@@ -124,9 +212,11 @@ class Run:
         payload = copy.deepcopy(payload)
         payload.setdefault('_execution', {}).setdefault('invocation', 'research-invocation-' + secrets.token_hex(16))
         invocation = payload['_execution']['invocation']
+        unit = payload['_execution'].get('unit')   # a review unit's, shown as its section
         attempt = {'phase': phase, 'invocation': invocation, 'worker': payload['worker'],
                    'stream': payload['_execution'].get('stream'),
-                   'section': payload['_execution'].get('section'), 'started_at': session.now(), 'status': 'working'}
+                   'section': payload['_execution'].get('section') or (research_units.section(unit) if unit else None),
+                   'started_at': session.now(), 'status': 'working', **({'unit': unit} if unit else {})}
         with self.host_lock:
             self.host['attempts'].append(attempt)
             rc.write(self.case, self.host_file, json.dumps(self.host))
@@ -190,11 +280,13 @@ class Run:
                 timing = research_timing.account(host['started'], host['attempts'])
                 active = [{'id': a['worker'], 'phase': a['phase'], 'stream': a.get('stream'),
                            'section': a.get('section'),
-                           'status': a.get('status', 'working')}
+                           'status': a.get('status', 'working'), **({'unit': a['unit']} if a.get('unit') else {})}
                           for a in host['attempts'] if not a.get('ended_at')]
+                self.units_timed(tracked, host['attempts'])
             unconfirmed = sum(a['status'] == 'termination-unconfirmed' for a in active)
             tracked['agents'] = {'count': None if unconfirmed else len(active),
                                  'unconfirmed': unconfirmed, 'active': active}
+            tracked['counts'] = self.counts(tracked, active, unconfirmed)
             if timing['incomplete']:
                 timing.update(active_seconds=None, assistant_seconds=None)
             tracked['timing'] = timing
@@ -203,19 +295,255 @@ class Run:
             if phase == 'complete': tracked['checked_result_seconds'] = timing.get('elapsed_seconds')
             self.progress(copy.deepcopy(tracked))
 
+    # What the page is shown of each unit of work (#379): the areas gathered, the sections
+    # combined, the final brief, and each review unit with the final whole-research check;
+    # how long each took from the host's own record of its attempts, and how many work now.
+    # Names and numbers only: never evidence, prose or review text.
+
+    def units_timed(self, tracked, attempts):
+        """Each area's, section's, final brief's and review unit's attempts and time, from the
+        host record (held under host_lock). What will be done again says so (`again`)."""
+        now = research_timing.stamp(session.now())
+        def by(test):
+            return [attempt for attempt in attempts if attempt.get('started_at') and test(attempt)]
+        if self.collection_stopped:
+            # Whatever a peer finishes after the stop is gathered or written again later, and
+            # no correction is under way: going on starts the collection's next generation.
+            self.redo(streams=[area['id'] for area in tracked['streams']],
+                      sections=[row['id'] for row in tracked.get('combining') or ()], final=True)
+            if self.final_shown == 'kept':
+                self.final_shown, self.final_again = 'waiting', True
+            tracked.pop('correction', None)
+            if self.cancelled():
+                # A job the stop ended was stopped, not failed.
+                for row in [*tracked['streams'], *(tracked.get('combining') or ())]:
+                    if row.get('status') == 'failed': row['status'] = 'stopped'
+        for area in tracked['streams']:
+            for key in ('attempts', 'seconds', 'started_at'): area.pop(key, None)
+            area.update(clocked(by(lambda a: a['phase'] == 'investigate' and a.get('stream') == area['id']), now))
+        for row in tracked.get('combining') or ():
+            for key in ('attempts', 'seconds', 'started_at', 'again'): row.pop(key, None)
+            row.update(clocked(by(lambda a: a['phase'] == 'synthesize' and a.get('section') == row['id']), now))
+            if row['id'] in self.sections_again:
+                if row.get('status') == 'kept' and not self.collection_stopped:
+                    self.sections_again.discard(row['id'])
+                else:
+                    row['again'] = True
+        if self.final_shown is not None:
+            tracked['final_brief'] = {'status': self.final_shown,
+                **({'again': True} if self.final_again and self.final_shown != 'kept' else {}), **clocked(
+                by(lambda a: a['phase'] == 'synthesize' and a.get('section') == 'final'), now)}
+        if self.units_shown:
+            tracked['review_units'] = [
+                {**{key: unit[key] for key in ('id', 'kind', 'label', 'status')},
+                 **({'again': True} if unit.get('again') and unit['status'] != 'kept' else {}),
+                 **clocked(by(lambda a, ident=unit['id']: a['phase'] == 'review' and a.get('unit') == ident), now),
+                 **({'attempts': unit['attempt']} if unit.get('attempt') else {})}
+                for unit in self.units_shown.values()]
+
+    def counts(self, tracked, active, unconfirmed):
+        """For each stage with units: how many work now (observed: the host's live jobs, never
+        the configured limit; None when a job's end is unconfirmed), wait, are kept and failed."""
+        rows = {'gather': tracked['streams'],
+                'combine': [*(tracked.get('combining') or ()),
+                            *([tracked['final_brief']] if tracked.get('final_brief') else [])],
+                'check': tracked.get('review_units') or []}
+        shown = {}
+        for stage, units in rows.items():
+            if not units:
+                continue
+            working = sum(STAGE_OF.get(agent['phase']) == stage for agent in active)
+            shown[stage] = {'working': None if unconfirmed else working, 'total': len(units),
+                            **{state: sum(unit.get('status') == state for unit in units)
+                               for state in ('waiting', 'kept', 'failed', 'stopped')}}
+        return shown
+
+    def unit_label(self, unit):
+        """A review unit's name a person can read: the question of the area it checks, or
+        the whole research for the final unit."""
+        if unit.get('kind') == 'final' or unit.get('id') == research_units.FINAL:
+            return 'the whole research'
+        questions = {area['id']: area['questions'] for area in self.tracked['streams']}
+        named = [questions[area] for area in unit.get('areas') or () if questions.get(area)]
+        if not named:
+            return 'one part of the research'
+        first = str(named[0][0])
+        first = first if len(first) <= LABEL_MOST else first[:LABEL_MOST - 1].rstrip() + '…'
+        more = len(named) - 1
+        return first + (f' (and {more} more area{"" if more == 1 else "s"})' if more else '')
+
+    def unit_seen(self, action, value, result):
+        """What one review-units command said of the units. A listing (status, plan) is taken
+        silently, and only from a plan of the saved dossier: before the plan says which parts
+        are kept, none is called kept. A change a unit's own command made is reported."""
+        with self.state_lock:
+            before = copy.deepcopy(self.units_shown)
+            listed = result.get('units') if isinstance(result, dict) else None
+            if isinstance(listed, list) and listed and all(isinstance(u, dict) and u.get('id') for u in listed):
+                current = result.get('phase') in UNIT_PLANNED
+                if current and isinstance(result.get('plan_file'), str):
+                    self.units_plan = result['plan_file']
+                shown = {}
+                for unit in listed:
+                    status = UNIT_SHOWN.get(unit.get('status'), 'waiting') if current else 'waiting'
+                    earlier = before.get(unit['id']) or {}
+                    shown[unit['id']] = {
+                        'id': unit['id'], 'kind': 'final' if unit.get('kind') == 'final' or unit['id'] == research_units.FINAL else 'content',
+                        'label': self.unit_label(unit), 'status': status,
+                        'attempt': unit.get('attempt') if type(unit.get('attempt')) is int else None,
+                        'again': status != 'kept' and bool(earlier.get('again') or (not current and before))}
+                self.units_shown = shown
+                return
+            ident = value.get('unit') if isinstance(value, dict) else None
+            ident = ident.get('id') if isinstance(ident, dict) else ident
+            shown = self.units_shown.get(ident) if isinstance(ident, str) else None
+            if shown is not None:
+                if action == 'register':
+                    shown['status'] = 'working'
+                    number = ((result or {}).get('registration') or {}).get('number')
+                    if type(number) is int: shown['attempt'] = number
+                elif action == 'accept':
+                    shown['status'], shown['again'] = 'kept', False
+                elif action == 'finish' and value.get('outcome') in ('failed', 'refused', 'cancelled'):
+                    shown['status'] = UNIT_SHOWN[value['outcome']]
+                elif action == 'retry':
+                    shown['status'] = 'waiting'
+            elif action == 'stop':
+                for unit in self.units_shown.values():
+                    if unit['status'] == 'working': unit['status'] = 'stopped'
+            changed = self.units_shown != before
+        if changed:
+            self.report()
+
+    def final_progress(self, state, error=None):
+        """What section combining says of the final brief: waiting, working, kept, or ended
+        by `error` (failed, or stopped by a stop or pause), shown on the page."""
+        with self.state_lock:
+            if error is not None:
+                state = 'stopped' if self.stopped_by(error) else 'failed'
+                self.ended_at = 'final'
+            self.final_shown = state
+            if state == 'kept':
+                self.final_again = False
+        self.report()
+
+    def stopped_by(self, error):
+        """Whether `error` is a stop or pause rather than a failure."""
+        return isinstance(error, (InterruptedError, KeyboardInterrupt)) or type(error).__name__ == 'Stopped' \
+            or bool(self.cancelled()) or not self.allowed()
+
+    def redo(self, *, streams=(), sections=(), final=False, units=None):
+        """What is now known to be done again, never shown or counted as kept (held under
+        state_lock): areas investigated again, section drafts and the final brief written
+        again, review units (`units`: their ids, or True for every one) checked again."""
+        for area in self.tracked['streams']:
+            if area['id'] in streams:
+                area['status'] = 'waiting'
+                area.pop('evidence', None)
+        self.sections_again |= set(sections)
+        for row in self.tracked.get('combining') or ():
+            if row['id'] in self.sections_again and row.get('status') == 'kept' or (
+                    self.collection_stopped and row.get('status') == 'kept'):
+                row['status'] = 'waiting'
+                row.pop('preview', None)
+        if final and self.final_shown is not None:
+            self.final_shown, self.final_again = 'waiting', True
+        for ident, unit in self.units_shown.items():
+            if units is True or (units and ident in units):
+                unit['status'], unit['again'] = 'waiting', True
+
+    def ended(self, error):
+        """Where a run that ended early ended, how, and what it keeps, said once when every
+        peer has ended: in `ended_in` for every page and in the error every studio shows."""
+        from studio_core import research_transport
+        if not hasattr(self, 'tracked'):
+            return
+        stopped = self.stopped_by(error)
+        how = ('paused' if not self.cancelled() and not self.allowed() else 'stopped') if stopped \
+            else 'invalidated' if self.collection_stopped else 'timed-out' if timed_out(error) else 'failed'
+        with self.state_lock:
+            if stopped:
+                # A job the stop or pause ended was stopped, not failed.
+                for row in [*self.tracked['streams'], *(self.tracked.get('combining') or ())]:
+                    if row.get('status') == 'failed': row['status'] = 'stopped'
+            where = None
+            units = list(self.units_shown.values())
+            if self.collection_stopped:
+                pass   # nothing gathered or written is kept: said of the research as a whole
+            elif self.ended_at == 'check' and units:
+                if stopped:
+                    for unit in units:
+                        if unit['status'] == 'working': unit['status'] = 'stopped'
+                ended = [unit for unit in units if unit['status'] == ('stopped' if stopped else 'failed')]
+                if ended:
+                    named = [unit for unit in ended if unit['kind'] != 'final']
+                    where = ('whole-check' if not named else 'review-unit',
+                             {'label': named[0]['label'] if len(named) == 1 else None, 'parts': len(named),
+                              'kept': sum(unit['status'] == 'kept' for unit in units), 'total': len(units)})
+            elif self.ended_at == 'final' and self.final_shown in ('failed', 'stopped'):
+                drafts = self.tracked.get('combining') or []
+                where = ('final-brief', {'kept': sum(row.get('status') == 'kept' for row in drafts),
+                                         'total': len(drafts)})
+        if where is None and not stopped and not self.collection_stopped:
+            return   # a failure elsewhere keeps its own words
+        # Every count final, as the page will show it; a stop or pause is said as one, even
+        # where a peer that ended with it reported a failure after it.
+        self.report(how if stopped else None)
+        with self.state_lock:
+            part, facts = where or ('research', {})
+            detail = '' if stopped or how == 'invalidated' else getattr(error, 'research_detail', None) or str(error)
+            regathers = self.collection_stopped
+            said = research_transport.ended_words(part, how, detail=detail, regathers=regathers,
+                                                  summary=research_transport.kept_summary(self.tracked), **facts)
+            # What a page says to do next is taken from the same ending, never a fixed line.
+            self.tracked['ended_in'] = {'part': part, 'how': how,
+                **{key: value for key, value in facts.items() if key != 'parts' and value is not None},
+                **({'regathers': True} if regathers else {}), 'said': said,
+                'next': research_transport.next_words(part, how, regathers)}
+            ended_in = copy.deepcopy(self.tracked['ended_in'])
+        try:
+            error.research_ended = ended_in
+            # The one sentence: what each studio shows of this ending is what the page says.
+            error.args = (said,)
+        except (AttributeError, TypeError):
+            pass
+        self.report()
+
+    def units_again(self, review):
+        """The review units a retry of an incomplete check reviews again (those owning an
+        unread original, and the final unit), never shown as kept."""
+        if not self.units_shown:
+            return
+        try:
+            again = set(research_units.rechecked(self.case, self.units_plan, review))
+        except (OSError, ValueError, KeyError, TypeError):
+            again = True   # not known: none is called kept
+        with self.state_lock:
+            self.redo(units=again)
+
     def require(self):
         """Go on only while the originals are unchanged, the run is not stopped and it is
         allowed: otherwise the collection is stopped or paused, and the run ends."""
-        case = self.case
+        case, checking = self.case, self.checking
         if self.originals.changed():
+            if checking: checking.stop()
             self.workflow.command(case, 'collection', 'stop')
+            with self.state_lock:
+                self.collection_stopped = True
             self.report('invalidated')
             raise ValueError('A selected original changed during research. Earlier evidence is kept; capture and approve its new revision.')
         if self.cancelled():
-            self.workflow.command(case, 'collection', 'stop')
+            # A check in units is stopped by itself: the collection stays complete, and the
+            # units it accepted are kept for when it goes on.
+            if checking: checking.stop()
+            else:
+                self.workflow.command(case, 'collection', 'stop')
+                with self.state_lock:
+                    self.collection_stopped = True
             self.report('stopped')
             raise InterruptedError('Research stopped; accepted evidence is kept.')
         if not self.allowed():
+            if checking: checking.stop()
             self.workflow.command(case, 'collection', 'pause')
             self.report('paused')
             raise InterruptedError('Research paused; accepted evidence is kept.')
@@ -278,6 +606,8 @@ class Run:
             if self.section_policy: research_sections.invalidate(case, review, affected)
             for stream in affected:
                 self.workflow.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The creator explicitly requested another correction attempt.'})
+            with self.state_lock:
+                self.redo(streams=affected)
 
     def read_in_groups(self):
         """More than fifty documents are read in groups first, one agent to a group, and each
@@ -373,10 +703,16 @@ class Run:
         pending = []
         for area in self.areas:
             saved = next(s for s in status['workstreams'] if s['id'] == area['id'])
-            if saved['status'] == 'accepted': self.report(stream=area['id'], state='kept')
-            else: pending.append((area, saved))
+            if saved['status'] != 'accepted': pending.append((area, saved))
+        # Every area as the collection holds it, at once: one that will be investigated
+        # again is never shown as kept (#379).
+        with self.state_lock:
+            waiting = {area['id'] for area, _ in pending}
+            for row in self.tracked['streams']:
+                if row['id'] not in waiting: row['status'] = 'kept'
+                elif row['status'] == 'kept': row['status'] = 'waiting'; row.pop('evidence', None)
         # Do not paint a fresh investigation when only synthesis prose needs repair.
-        if pending: self.report('investigate')
+        self.report('investigate' if pending else None)
         failures = []
         with ThreadPoolExecutor(max_workers=min(3, max(1, self.limit))) as pool:
             futures = [pool.submit(contextvars.copy_context().run, self.collect, area, saved, number, len(pending))
@@ -423,6 +759,8 @@ class Run:
                 'note': 'The host transport returned from this isolated invocation.'})
             if require_cancelled:
                 workflow.command(case, 'collection', 'stop')
+                with self.state_lock:
+                    self.collection_stopped = True
                 raise InterruptedError('Stopped research cannot adopt a late response.')
             value = json.loads(text)
             research_quality.evidence(value, task.get('research_policy'))
@@ -489,6 +827,8 @@ class Run:
         if not registry['facts']:
             for area in self.areas:
                 self.workflow.command(case, 'collection', 'retry', {'workstream': area['id'], 'reason': 'No cited facts were collected; review source access before retrying.'})
+            with self.state_lock:
+                self.redo(streams=[area['id'] for area in self.areas])
             self.report('needs-attention')
             raise ValueError('The investigators found no cited facts. Captured work and gaps are kept; review source access and the approved scope.')
         base = {'schema': 2, **{k: self.task[k] for k in rc.TASK_FIELDS}, 'sources': registry['sources'], 'facts': registry['facts']}
@@ -508,7 +848,8 @@ class Run:
                 offered_final, self.invoke, round=number,
                 guidance=(runtime / 'references/synthesize.md').read_text(),
                 policy={**self.section_policy, 'workers': self.limit}, require=self.require,
-                notify=self.section_progress, context=self.section_context, earlier=self.earlier_context)
+                notify=self.section_progress, context=self.section_context, earlier=self.earlier_context,
+                final=self.final_progress)
             self.require()
         elif (number == 1 and not pending and self.context_unchanged
               and research_quality.coverage(self.review)['unread']
@@ -516,6 +857,12 @@ class Run:
               and not session.check_frozen(self.dossier, {'evidence_base': base})):
             # Saved non-sectioned runs also resume an unfinished check without
             # paying a synthesizer to rewrite the same validated dossier.
+            worker = self.prior['author']
+        elif (number == 1 and not pending and self.context_unchanged and self.unfinished_units()
+              and isinstance(self.dossier, dict) and self.prior.get('author')
+              and not session.check_frozen(self.dossier, {'evidence_base': base})):
+            # A check in units that stopped or failed goes on with the dossier it checks,
+            # so every unit it accepted is kept.
             worker = self.prior['author']
         else:
             worker = 'synthesizer-' + secrets.token_hex(12)
@@ -531,9 +878,19 @@ class Run:
             raise ValueError('Synthesis changed registered evidence; investigator work is kept.')
         return worker
 
+    def unfinished_units(self):
+        """Whether the saved dossier has a check in units begun and not assembled."""
+        if self.review_units is None or self.prior.get('review') or not self.prior.get('digest'):
+            return False
+        status = self.workflow.command(self.case, 'review-units', 'status')
+        return status.get('plan') is not None and status.get('planned_digest') == self.prior['digest']
+
     def section_progress(self, values):
         """What section synthesis reports of its sections, shown to the page."""
         with self.state_lock:
+            if self.cancelled():
+                # A section the stop ended was stopped, not failed.
+                values = [{**row, 'status': 'stopped'} if row.get('status') == 'failed' else row for row in values]
             self.tracked['combining'] = values
             if any(row.get('preview') for row in values) and 'first_readable_seconds' not in self.tracked:
                 with self.host_lock:   # section workers append attempts
@@ -556,18 +913,33 @@ class Run:
                 self.report('complete')
                 return rc.read_bundle(rc.output_root(case))
         self.report('review')
-        reviewer = 'reviewer-' + secrets.token_hex(12)
         output = rc.output_root(case)
-        payload = {'task': task, 'worker': reviewer, 'dossier': dossier, 'review_template': status['review_template'],
-            **{key: (output / (key + '.md')).read_text() for key in ('report', 'brief', 'evidence')},
-            'review_outline': self.review_outline,
-            'return': 'Independently inspect the exact saved evidence and prose. Return complete review JSON. Read each capture and supplied original; report access gaps honestly. ' + rc.REVIEWED,
-            '_execution': {'phase': 'review', 'round': number}}
-        text, _ = self.invoke('review', (workflow.runtime / 'references/review-synthesis.md').read_text(), payload, offered_final, False)
-        self.require()
-        review = self.review = json.loads(text)
-        rc.write(case, 'review.json', text)
-        status = workflow.helper.command(case, 'review', 'review.json', reviewer)
+        if self.review_units is not None:
+            # In units (#378): the assembled review is kept where the single review is.
+            # What the check's review-units commands say of each unit is shown on the page.
+            helper, self.workflow = self.workflow, Watched(self.workflow, self)
+            self.checking = research_units.Check(self, number, offered_final)
+            try:
+                review, status = self.checking.go()
+            except BaseException:
+                self.ended_at = 'check'   # said once every unit has ended (ended)
+                raise
+            finally:
+                self.checking, self.workflow = None, helper
+            self.review = review
+            rc.write(case, 'review.json', json.dumps(review))
+        else:
+            reviewer = 'reviewer-' + secrets.token_hex(12)
+            payload = {'task': task, 'worker': reviewer, 'dossier': dossier, 'review_template': status['review_template'],
+                **{key: (output / (key + '.md')).read_text() for key in ('report', 'brief', 'evidence')},
+                'review_outline': self.review_outline,
+                'return': 'Independently inspect the exact saved evidence and prose. Return complete review JSON. Read each capture and supplied original; report access gaps honestly. ' + rc.REVIEWED,
+                '_execution': {'phase': 'review', 'round': number}}
+            text, _ = self.invoke('review', (workflow.runtime / 'references/review-synthesis.md').read_text(), payload, offered_final, False)
+            self.require()
+            review = self.review = json.loads(text)
+            rc.write(case, 'review.json', text)
+            status = workflow.helper.command(case, 'review', 'review.json', reviewer)
         if status.get('status') == 'complete':
             verified = workflow.helper.command(case, 'verify')
             if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
@@ -586,6 +958,7 @@ class Run:
         cause = rc.unreadable_originals(review, dossier)
         said = (self.readable(cause) if self.readable else '') if cause else None
         if cause and said is not None:
+            self.units_again(review)
             raise rc.CheckCouldNotFinish(rc.objections(case), number - 1, cause, said or None)
         coverage = research_quality.coverage(review)
         if coverage['unread']:
@@ -593,13 +966,18 @@ class Run:
             # the legacy single-reviewer contract cannot reuse partial attestations.
             self.tracked['review_coverage'] = coverage
             self.tracked.pop('correction', None)
+            self.units_again(review)
             self.report('check-incomplete')
             raise research_quality.IncompleteCheck(coverage)
         affected = sorted(session.corrections(review, registry, sectioned=bool(self.section_policy)))
-        if self.section_policy: research_sections.invalidate(case, review, affected)
+        written = research_sections.invalidate(case, review, affected) if self.section_policy else ()
         for stream in affected:
             workflow.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The independent review requested evidence correction.'})
-            self.report(stream=stream, state='waiting')
+        # A correction round begins: what it does again is never shown as kept (#379). The
+        # final brief is written again, and which parts of the check hold is known only once
+        # the corrected dossier is planned.
+        with self.state_lock:
+            self.redo(streams=affected, sections=written, final=bool(self.section_policy), units=True)
         notes = [item['note'] for item in review.get('facts', [])
                  if item.get('verdict') not in ('supported', 'pending') and item.get('note')]
         assessment = review.get('assessment') or {}

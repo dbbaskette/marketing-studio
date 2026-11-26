@@ -87,6 +87,20 @@ class MoveTests(unittest.TestCase):
         engine, record = self.move(self.old)
         self.assertEqual((record, engine.stored), (self.record, 0))
 
+    def test_how_a_case_is_checked_moves_with_it_unchanged(self):
+        """#378: a case keeps its review entry, or its lack of one, across every move."""
+        from studio_core import research_units, blog_migration
+        entry = {'schema': 1, 'protocol': research_units.PROTOCOL, 'state_schema': 4,
+                 'output_schema': 2, 'max_units': research_units.MAX_UNITS}
+        for review in (None, entry):
+            with self.subTest(review=review):
+                self.record = {'research_contract': rc.capability(self.old),
+                               'research_execution': {**parallel.execution(self.old), **({'review': review} if review else {})}}
+                engine, record = self.move(self.new)
+                self.assertEqual(research_units.of(record['research_execution']), review)
+                self.assertTrue(parallel.protocol(record))
+                self.assertTrue(blog_migration.execution_kept(record['research_execution']))
+
     def test_a_contract_run_without_collection_moves_its_label_only(self):
         self.record = {'research_contract': rc.capability(self.old)}
         engine, record = self.move(self.new)

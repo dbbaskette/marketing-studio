@@ -115,12 +115,19 @@ def project(record, found, cards, state, sentence, *, queued=False, mine=True):
         'synthesize': 'Writing research sections', 'combining-findings': 'Combining findings',
         'review': 'Independent check', 'independent-check': 'Independent check',
         'creator-review': 'Creator decisions', 'check-incomplete': 'Check incomplete'}.get(progress.get('phase'))
-    if any(agent.get('section') == 'final' or agent.get('stream') == 'final'
-           for agent in (progress.get('agents') or {}).get('active', ())):
+    if (progress.get('final_brief') or {}).get('status') == 'working' or any(
+            agent.get('section') == 'final' or agent.get('stream') == 'final'
+            for agent in (progress.get('agents') or {}).get('active', ())):
         research['phase'] = 'Assembling the research brief'
+    elif any(unit.get('kind') == 'final' and unit.get('status') == 'working'
+             for unit in progress.get('review_units') or ()):
+        research['phase'] = 'Checking the whole research'
     research['counts'] = []
+    # Each review unit of the independent check is counted as a part (#379); research saved
+    # before units has none, and shows what it showed before.
     for key, label, accepted in (('streams', 'areas collected', ('kept', 'accepted')),
-                                  ('combining', 'section drafts saved', ('kept',))):
+                                  ('combining', 'section drafts saved', ('kept',)),
+                                  ('review_units', 'parts of the independent check kept', ('kept',))):
         rows = progress.get(key) or (progress.get('workstreams') if key == 'streams' else []) or []
         if rows:
             research['counts'].append({'label': label, 'done': sum(row.get('status') in accepted for row in rows), 'total': len(rows)})

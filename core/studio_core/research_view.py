@@ -54,7 +54,7 @@ def _account(folder, questions):
     assessment = review.get('assessment') if isinstance(review.get('assessment'), dict) else {}
     accepted = manifest.get('status') == 'complete' and bool(review.get('accepted'))
     sources = [s for s in facts.get('sources') or () if isinstance(s, dict)]
-    titles = {s.get('id'): s.get('title') or s.get('origin') or s.get('id') for s in sources}
+    titles = {s.get('id'): s.get('title') or research_contract.shown_origin(s.get('origin')) or s.get('id') for s in sources}
     asked = [{'id': q['id'], 'question': _line(q.get('question'))} for q in questions
              if isinstance(q, dict) and isinstance(q.get('id'), str)]
     ids = [q['id'] for q in asked]

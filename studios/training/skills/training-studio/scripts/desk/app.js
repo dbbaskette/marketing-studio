@@ -138,8 +138,9 @@ const CONVERSATION_WORDS = ['none', 'In conversation'];
 const STEERED = {
   pause: 'Paused. Nothing more is started until you resume it.',
   resume: 'Carrying on.',
-  stop: 'Stopped. The step in hand was ended and its work so far is lost; everything '
-    + 'finished before it is kept.',
+  // Said of the training's materials: what research keeps is said on its own card (#379).
+  stop: 'Stopped. The step in hand was ended and its work so far is lost; finished '
+    + 'materials are kept.',
   retry: 'Trying again.',
   'more-time': 'Trying again, with twice the time for each step.',
   'finish-level': 'It finishes this level, then waits. Resume it when you are ready for the next.',
@@ -663,8 +664,10 @@ function researchActivity(run, controls = null) {
     return panel;
   }
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
+  // How research ended, in the run's one sentence, when it said one (#379).
+  const ended = research.ended_in && typeof research.ended_in.said === 'string' ? research.ended_in.said : '';
   const node = add(card(names[research.phase] || 'Research'),
-    make('p', 'quiet', 'Completed research areas are kept for retry.'));
+    make('p', 'quiet', ended || 'Completed research areas are kept for retry.'));
   const rows = make('ul', 'plain');
   const words = { waiting: 'Waiting', working: 'Working', kept: 'Evidence kept', failed: 'Needs retry' };
   for (const area of list(research.streams)) {

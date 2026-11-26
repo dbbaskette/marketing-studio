@@ -125,6 +125,15 @@ def case_files(source):
         raise ValueError('Research state and bundle describe different revisions.')
     names = {'.harness-research/synthesis.json', prefix + 'output.json'}
     names.update(prefix + entry['file'] for entry in manifest['artifacts'])
+    # A review assembled from review units (Harness Research 1.6.0, #378) is checked against
+    # its plan record and each unit's receipt wherever the case goes.
+    units = (state.get('review') or {}).get('units') if state.get('schema') == 4 else None
+    if isinstance(units, dict):
+        if not isinstance(units.get('plan'), str) or not isinstance(units.get('receipts'), list):
+            raise ValueError('The assembled research review cannot be read; preserve it for inspection.')
+        names.add('.harness-research/review-units-data/plan-' + units['plan'] + '.json')
+        names.update(receipt['file'] for receipt in units['receipts']
+                     if isinstance(receipt, dict) and isinstance(receipt.get('file'), str))
     for capture in facts['sources']:
         for key, digest_key in (('file', 'sha256'), ('original_file', 'original_sha256')):
             if capture.get(key):

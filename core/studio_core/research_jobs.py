@@ -26,6 +26,11 @@ def job_round(name):
     parallel = re.fullmatch(r'research:(investigate|synthesize)-(\d+)(?:-area[123])?', str(name))
     if parallel:
         return parallel[1], int(parallel[2])
+    # One review unit of a round's independent check (#378): research:review-2-unit-<hex>,
+    # and the unit that checks the whole, research:review-2-final.
+    unit = re.fullmatch(r'research:review-(\d+)-(?:unit-[0-9a-f]{16}|final)', str(name))
+    if unit:
+        return 'review', int(unit[1])
     head, _, rest = str(name).partition(':')
     phase, _, number = rest.rpartition('-')
     if head == 'research' and phase in ('author', 'review') and number.isdigit():

@@ -1225,8 +1225,8 @@ class HaltTests(StudioCase):
         self.assertEqual(still_running(written(pids)), [])
         view = self.view(root)
         self.assertEqual((said[0]['state'], view['state'], view['sentence'], view['problem']),
-                         ('stopped', 'stopped', 'Stopped. Everything finished before it is kept; '
-                          'the step that was in hand starts over on resume.', None))
+                         ('stopped', 'stopped', 'Stopped. Finished materials are kept; the step that '
+                          'was in hand starts over on resume.', None))
         self.assertEqual(self.engine.act(root, 'resume')['state'], 'done')
 
     def test_what_cannot_be_done_as_things_stand_is_refused_in_a_sentence(self):

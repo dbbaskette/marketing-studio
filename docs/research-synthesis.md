@@ -137,6 +137,56 @@ An unconfirmed termination makes `count` null; legacy snapshots without this fie
 show an unavailable count. Neither case claims zero workers. Host execution
 records stay in the existing private, ignored case directory.
 
+### The units doing the work
+
+The snapshot (schema 1; fields are only ever added) also says which unit of work is slow
+and which work is already safe. Each is read from what the run already holds: the host's
+record of its own attempts and what Harness Research's `review-units` commands answer. No
+evidence, preview or review text is added, and no request is made for it.
+
+- `streams[]` and `combining[]` rows carry `attempts`, `seconds` (the latest attempt: how
+  long it took, or has taken so far) and, while one works, `started_at`, so the page times
+  it from its start.
+- `final_brief: {status, attempts, seconds, started_at?}`: the final brief as its own entry
+  (waiting, working, kept, failed or stopped), apart from the section drafts. Present only
+  when sections are combined.
+- `review_units[]: {id, kind: content|final, label, status, attempts, seconds,
+  started_at?}`: each review unit of a check in units, in plan order. `label` is the
+  question of the area it checks, or "the whole research" for the final unit. `kept`
+  means it will not be reviewed again, whether accepted in this check or kept from an
+  earlier one. A check by one reviewer has no `review_units`.
+- `counts: {gather|combine|check: {working, waiting, kept, failed, stopped, total}}`, for
+  each stage with units. `working` is observed (the host's live jobs of that stage), never
+  the configured limit, and `null` while a job's end is unconfirmed.
+- `again: true` on a section draft, the final brief or a review unit that was done and will
+  be done again: a correction round rewrites the drafts it names and the final brief, and
+  which parts of the check hold is not known until the corrected dossier is planned, so until
+  then none is kept. After an incomplete check, the parts a retry reviews again say so too.
+  "Kept" is said and counted only of work that will not be done again as things stand.
+- What a stop does today, in every studio (Blog Studio too, since it goes on as the others
+  do): a stop during the independent check stops only the parts of the check at work; the
+  collection, the section drafts, the final brief and every part already checked are kept,
+  and going on checks only what is left, then the whole research. A stop at any other time,
+  or a selected original that changed, stops the collection: going on starts its next
+  generation, which gathers the evidence again and writes the drafts again, so nothing
+  gathered or written from it is called kept, and no correction is under way any more. A
+  stop that reaches a job before the run does (a studio's own Stop ending the job) leaves the
+  collection as it was, and what it accepted is kept. A pause keeps what it has.
+- `ended_in: {part: final-brief|review-unit|whole-check|research, how: failed|timed-out|stopped|paused|invalidated,
+  label?, kept?, total?, regathers?, said, next}` when the run ended early. `next` is what the
+  card says to do next, from the same ending (`research_transport.next_words`). It is computed once, after every
+  peer has ended (`research_run.Run.ended`), by `research_transport.ended_words`, and the same
+  string becomes the message of the error the run raises, so a studio's stop text, its
+  problem, `describe()` and the card say one sentence. A job that ends while its peers work
+  names its part and counts nothing (`job_words`). No sentence names a button: it says what
+  is done again when research goes on.
+
+The shared card lists each stage's units one line each (name, state in words, tries, time),
+with what works now and what failed shown and the rest in a collapsed list; the final brief
+and the whole-research check are their own lines. The running stage says its counts in
+words; a stopped run says what it kept. A snapshot saved before these fields draws as it
+did. `tests/test_research_unit_progress.py` and `tests/research_page_check.js` cover it.
+
 | Transition | Screen behavior | Regression coverage |
 | --- | --- | --- |
 | Investigation starts/ends | Live robot count follows observed invocations; current stage has accent fill and `aria-current` | `SessionTests.test_live_agents_follow_actual_invocations_in_every_phase`, shared component checks |
@@ -476,6 +526,47 @@ of its files, so an update never makes finished research, its sections or its re
 again. Identities an older Marketing Studio kept, digests and all, are recognised as the
 same research and keyed anew as they are met. Harness Research 1.3.1 is the oldest
 installed and it is installed from `main`.
+
+## The independent check in review units
+
+Harness Research 1.6.0 can plan the independent check of a saved dossier as review units
+(`references/review-units-capability.json`, protocol `harness-review-units-v1`). A case
+started on a Harness Research that offers them keeps `research_execution.review` (schema 1,
+the protocol, state schema 4, output schema 2 and a plan of at most eight content units),
+and its check is done in units for as long as the case lives; `research_session.protocol`
+and the collection protocol are unchanged. A case without that entry, every case started
+before, and every case on an older Harness Research, keeps the single review, whatever is
+installed later. A case with the entry that finds a Harness Research without units is
+refused with a plain sentence asking for Harness Research to be updated; it is never checked
+the old way. Only the collection adapter (`research_run.Run.check`, through
+`research_units.Check`) knows units; the serial adapter keeps the single review.
+
+A check in units saves the dossier as before, then runs `review-units plan` and reviews every
+unit not kept: content units at most three at a time and never more than the run's limit,
+each a fresh job named `research:review-<round>-<unit>` with its own reviewer label and
+invocation, given its assignment, `review-synthesis.md`, `review-unit.md` and only the
+captures and originals of the sources it owns or is given. Its answer is checked in the job
+against the unit's template (`research_checks.unit_problems`, in the native job check and in
+`research_text.Transport`), then accepted; a unit that fails, is refused or is stopped is
+confirmed ended with that outcome and does not stop its peers. The final unit, which reads
+the whole dossier and owns the assessment, runs once every content unit holds. The
+assembled review is written to the case's `review.json`, so objections, groups, unreadable
+originals, an incomplete check and the corrections each area needs read it as they read a
+single review. A retry reviews only the units not kept; a correction round plans again and
+reviews only the units whose basis changed, with the final unit. A check that stops stops
+its units through Harness Research and leaves the collection as it was, so a later run goes
+on with the same dossier and every accepted unit; a check left incomplete by an unread
+original reviews that unit and the final again. Review-unit jobs count as their round's
+review in time and cost. A case handed on carries its plan record and receipts, so it still
+verifies. While units run, each active reviewer appears in the progress under its unit as
+its section (the final unit as `final-check`, apart from the final brief's author), and
+each unit has its own line (`review_units`, see "The units doing the work").
+
+A supplied document that Harness Research 1.6.0 takes in has the origin `supplied:<name>`;
+earlier cases keep the absolute path of the folder copy they were taken from. Wherever a
+studio shows or hands a writer an origin, a supplied document is said to be one
+(`research_paths.shown_origin`), never shown as a folder of the computer; origins are still
+compared exactly as Harness Research records them.
 
 Harness Slides 0.17.0 similarly offers opt-in `--review-context` draft inspection
 reuse. Changed slides and immediate neighbors need inspection; brand, fonts,
