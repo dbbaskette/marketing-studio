@@ -264,18 +264,29 @@ class SavedLockTests(runner_support.DeskCase):
 
     def test_start_up_looks_into_a_bounded_number_of_folders(self):
         # GitHub issue #544: the walk of work/ and sources/ stops at a bound; a lock in a
-        # folder beyond it is left where it is.
+        # folder beyond it is left where it is. One chain of folders, so the order the disk
+        # lists them in does not matter: at most three folders are looked into.
         from unittest import mock
         root = self.load_saved('research-plan', title='Many folders')
-        near, far = root / 'work/a/.studio-research/lock', root / 'work/z/y/x/.studio-research/lock'
+        near, far = root / 'work/.studio-research/lock', root / 'work/a/b/c/.studio-research/lock'
         for lock in (near, far):
             lock.parent.mkdir(parents=True, exist_ok=True)
             lock.write_text('x\n')
-        # work, work/a, work/a/.studio-research and work/z are looked into; work/z/y is not.
-        with mock.patch.object(engines, 'UNMARK_FOLDERS', 4):
+        with mock.patch.object(engines, 'UNMARK_FOLDERS', 3):
             self.engine.resume()
         self.assertFalse(near.exists())
         self.assertTrue(far.exists())
+
+    def test_start_up_walks_as_the_running_step_check_does(self):
+        # Review of #544: the same walk as `sync_guard.worker_in_progress`, `.git` left out,
+        # so a lock there, which that check never counts, is not touched either.
+        root = self.load_saved('research-plan', title='Its own repository')
+        kept = root / 'work/.git/x/.studio-research/lock'
+        kept.parent.mkdir(parents=True)
+        kept.write_text('x\n')
+        self.assertFalse(sync_guard.worker_in_progress(self.space.repo))
+        self.engine.resume()
+        self.assertTrue(kept.exists())
 
     def test_a_lock_of_a_step_this_process_runs_is_kept(self):
         root = self.load_saved('build', title='Running')

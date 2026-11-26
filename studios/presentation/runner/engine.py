@@ -213,9 +213,13 @@ SAVED_LOCKS = ('work/step.lock', '.training-studio/step.lock',
                'work/.harness-slides/design/.lock', '.studio-research/lock')
 NESTED_LOCKS = ('.harness-slides/design/.lock', '.studio-research/lock')
 # How many folders of a saved deck's work/ and of its sources/ start-up looks into for lock
-# files: the bound the shared running-step check (`sync_guard.worker_in_progress`) walks a
-# cache to. A lock in a folder beyond it is left; that check already refuses so large a cache
-# as unknown, so nothing that check counts is cleared past where it looks.
+# files. It is the bound the shared running-step check (`sync_guard.worker_in_progress`)
+# walks a cache to, and the walk is that check's own: top-down in the order the disk lists
+# folders, with `.git` and every link left out. So the folders start-up looks into are the
+# ones that check looks into, and every lock it can find there is cleared. A lock in a
+# folder beyond the bound is left where it is: for so large a cache that check refuses, as it
+# did before, naming the deck and saying its work or sources folder holds too many folders
+# to check, until the person makes the folder smaller.
 UNMARK_FOLDERS = 2000
 # What makes the shared running-step check wait, as far as this Presentation Studio knows it.
 # Start-up recovers every step a stopped runner left marked, so a marker that is still there
@@ -1194,8 +1198,8 @@ class Engine(Jobs, Researching, DeskActions):
                 if seen >= UNMARK_FOLDERS:
                     break
                 here = Path(folder)
-                directories[:] = sorted(name for name in directories
-                                        if not (here / name).is_symlink())
+                directories[:] = [name for name in directories if name != '.git'
+                                  and not (here / name).is_symlink()]
                 for name in NESTED_LOCKS:
                     self._unlock(root, here / name)
 
