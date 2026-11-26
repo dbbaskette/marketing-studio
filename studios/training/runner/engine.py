@@ -1893,6 +1893,8 @@ class Engine(Reviewing):
                             getattr(step.step, 'id', '') if step.step else '')
                     if record.get('halt_after') is not None and not self._resting(record):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
+                    if step.kind == 'done' and not self._resting(record):
+                        moved = self._held_back(root, found) or moved
                     if moved:
                         # Desk work's own end (issue #549): the run has come to rest with
                         # nothing for it to do until the person acts on the desk, so what it
@@ -2003,6 +2005,20 @@ class Engine(Reviewing):
             record['halt'], record['halt_after'] = 'paused', None
             self._store(root, record)
             self._commit(root, f'level {level} finished; paused as asked on the page')
+
+    def _held_back(self, root: Path, found: pipeline.Survey) -> bool:
+        """On the desk, every material is Ready and something else keeps the index back, so
+        the index step is not due: say so as the training's next step, in the desk's words,
+        as the earlier flow's index step did ("the training is not ready yet"), so the core's
+        status and the desk agree (GitHub issue #549). True when that was committed."""
+        with self.files:
+            record = self._load(root)
+            says = drafts.held_back(self, root, record, found)
+            if not says or workspace.load(root).get('next_step') == says:
+                return False
+            workspace.checkpoint(root, next_step=says)
+            self._commit(root, 'every material is ready; the training is not ready yet')
+        return True
 
     def _wait_arrived(self, root: Path) -> None:
         """The run waits for the person anyway, so there is no longer a level to finish

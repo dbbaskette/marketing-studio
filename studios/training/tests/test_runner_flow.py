@@ -295,6 +295,29 @@ class YoodliTests(FlowCase):
         self.assertIn('No copy of the brief is ready to upload: This computer has no '
                       'converter for Word files.', self.workers.of('yoodli')[0].task)
 
+    def test_waiting_on_a_google_doc_the_next_step_says_what_the_desk_says(self):
+        # GitHub issue #549: with every material Ready and the brief's Google Doc not made,
+        # the core's next step kept "... Next: write the index." while the desk said the
+        # training is not ready. The two now agree, and agree again once the Doc is made.
+        from runner import drafts
+        self.copies.refuse['google'] = 'Google access is not set up on this computer.'
+        root = self.start(yoodli=True, copies=['google'])
+        self.all_ready(root)
+        standing = drafts.standing(self.engine, root)
+        self.assertEqual(standing['state'], 'needs-you')
+        self.assertTrue(standing['sentence'].startswith(drafts.ALL_READY + ' '),
+                        standing['sentence'])
+        self.assertIn('Google Doc', standing['sentence'])
+        self.assertEqual(workspace.status(root)['next_step'], standing['sentence'])
+        self.assertIn('not ready yet', self.view(root)['sentence'])
+        self.assertEqual(self.git('status', '--porcelain'), '', 'and it is committed')
+        self.copies.refuse.clear()
+        after = self.engine.copies_again(root)
+        self.assertEqual(after['finished']['ready'], True)
+        self.assertEqual(workspace.status(root)['next_step'], after['sentence'])
+        self.assertTrue(after['sentence'].startswith('This training is finished'),
+                        after['sentence'])
+
     def test_without_yoodli_no_scenario_is_laid_out(self):
         root = self.start()
         self.to_end(root)

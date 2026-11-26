@@ -1279,13 +1279,11 @@ def standing(engine, root, record: dict | None = None, found=None,
                                   .capitalize())
         nxt, level = to(drafted, label=f"Review {drafted['label']}"), drafted['level']
     elif counts['materials'] and counts['ready'] == counts['materials']:
-        import assess
-        import desk
         from runner import pipeline
-        blocking = assess.run_checks(root)['blocking']
-        if blocking:   # every material is Ready, and something else keeps the index back
+        back = _held_back_says(root, counts)
+        if back:   # every material is Ready, and something else keeps the index back
             phase, now, words = 'attention', 'needs-you', PHASE_WORDS['attention']
-            said = f'{ALL_READY} {desk.plainly_on_desk(blocking[0])}'
+            said = back
         elif (root / pipeline.INDEX).is_file() and found.next.kind == 'done':
             phase, now, words, said = 'ready', 'finished', PHASE_WORDS['ready'], ALL_READY
         else:
@@ -1303,6 +1301,26 @@ def standing(engine, root, record: dict | None = None, found=None,
     return {'state': now, 'phase': phase, 'words': words, 'sentence': said.strip(),
             'level': level or '', 'counts': counts, 'levels': by_level, 'next': nxt,
             'offer': offer, 'kinds': kinds}
+
+
+def _held_back_says(root: Path, counts: dict) -> str | None:
+    """With every material Ready and something else keeping the index back, such as a copy
+    Yoodli names that is not made, what is in the way, as the desk says it; else None."""
+    if not counts['materials'] or counts['ready'] != counts['materials']:
+        return None
+    import assess
+    import desk
+    blocking = assess.run_checks(root)['blocking']
+    return f'{ALL_READY} {desk.plainly_on_desk(blocking[0])}' if blocking else None
+
+
+def held_back(engine, root, record: dict, found) -> str | None:
+    """For a desk training whose materials are all Ready but whose index is kept back, the
+    sentence the desk says of it (`standing`), for the core's next step to say the same
+    (GitHub issue #549); None for any other. Reads only."""
+    if not on_desk(record) or in_conversation(record):
+        return None
+    return _held_back_says(Path(root), _tally(_cards(engine, Path(root), record, found)))
 
 
 # A stage of the row, from its materials' cards: done only once every one is Ready.
