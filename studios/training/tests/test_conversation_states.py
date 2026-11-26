@@ -1,6 +1,7 @@
 """Every saved state a training made in a conversation with the helper `training.py` can be in
-(GitHub issue #547), loaded from its stored copy (`saved_fixtures.conversation`, captured by
-driving the helper with `capture_conversation.py`).
+(GitHub issue #547), loaded from its stored copy (`saved_fixtures.conversation`). The stored
+copies were captured by driving the helper's commands that continued such a training; those
+commands are gone, so the copies cannot be captured again.
 
 Such a training lives in a folder of its own, outside the workspace. Nothing continues it:
 it is listed there with Bring in as its one way on, and Bring in copies it into the workspace

@@ -83,6 +83,11 @@ def load(case, state: str) -> Path:
 # `research-import`) or a decision on the helper's page. None has a run record: no runner
 # drove it. Such a training lives in a folder of its own, outside the workspace, and reaches
 # the runner only through Bring in.
+#
+# Those commands and that page are gone, so these trees are the only record of what the
+# retired helper wrote and cannot be captured again. They are history: never rewritten, and
+# never compared with what is installed today except where a test says what a difference
+# would mean for saved work (the Yoodli profile, in `test_saved_fixtures.py`).
 
 CONVERSATION = FIXTURES / 'conversation'
 

@@ -106,20 +106,7 @@ def saved_init(root, *args):
     import home
     import stored_builders
 
-    def started():
-        import sync_guidance
-        import training
-        import workspace
-        parsed = training.parser().parse_args(['init', *args])
-        workspace.init(root, parsed.title, parsed.levels, parsed.brief_kind, parsed.deck_target,
-                       parsed.brand, parsed.yoodli, parsed.copies, parsed.approval,
-                       parsed.delivery)
-        sync_guidance.adopt(root)
-        return training.summarise(root)
-
-    found = stored_builders.step(root, 'saved_init', list(args), started)
-    if found is not None:
-        return found
+    stored_builders.step(root, 'saved_init', list(args))
     report = assess.describe(Path(root))
     home.remember(Path(root), report['title'], report['levels'])
     return report
