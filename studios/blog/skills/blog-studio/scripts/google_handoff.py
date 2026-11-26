@@ -20,6 +20,11 @@ NOT_SIGNED_IN = (
 NOT_FINISHED = 'Finish the blog first; its approved draft is what goes to Google.'
 RECONCILING = 'The last upload is being checked. Wait for it, then look at the blog again.'
 NO_DRAFT = 'This blog has no draft yet. Write some on the desk first, then make its Google Doc.'
+CHANGED_HERE = (
+    "This blog's DRAFT.md was changed outside the desk since the desk last wrote it, so it is "
+    'not sent. Make a change on the desk to write the draft again (the changed file is kept in '
+    'History), then make its Google Doc.'
+)
 
 
 class Conflict(ValueError):
@@ -37,13 +42,18 @@ def pending_link(record):
 
 
 def _ready(root, ident, desk):
-    """Whether the draft may go to Google: a finished run's approved draft, or any draft on
-    the writing desk, which has no run and is never finished first."""
-    directory, _ = studio.item(root, 'articles', ident)
+    """Whether the draft may go to Google: a finished run's approved draft, or a draft on
+    the writing desk, which has no run and is never finished first. As a run refused a draft
+    changed since it wrote it, a desk draft must be the text the desk last wrote (the digest
+    it records with every write); a record with no digest is not refused for that."""
+    directory, record = studio.item(root, 'articles', ident)
     draft = directory / 'DRAFT.md'
     if desk:
         if not draft.is_file() or not draft.read_text().strip():
             raise Conflict(NO_DRAFT)
+        written = (record.get('artifact_hashes') or {}).get('draft')
+        if written and studio.digest(draft.read_bytes()) != written:
+            raise Conflict(CHANGED_HERE)
         return
     if not blog_runner.survey(root, ident)['complete'] or not draft.is_file():
         raise Conflict(NOT_FINISHED)

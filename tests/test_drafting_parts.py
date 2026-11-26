@@ -71,7 +71,7 @@ class PartsTests(unittest.TestCase):
         )
         self.assertEqual(
             MARKDOWN.break_message(6),
-            'A heading would start a new section. Add sections on the Outline tab.',
+            'A heading would start a new section. Add sections under Outline in the parts list.',
         )
         self.assertEqual(
             MARKDOWN.added_message('##'),

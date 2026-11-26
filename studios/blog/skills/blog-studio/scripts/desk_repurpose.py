@@ -54,8 +54,13 @@ def repurpose(root, ident, job_id, title, content):
         )
         if lines:
             data['manuscript'] = content.rstrip() + '\n\n' + '\n\n'.join(lines) + '\n'
-    made = desk.create(root, data)
-    job['applied'] = {'desk': {'id': made['id'], 'title': made['title']}, 'posted': False}
-    job['saved_content'] = content
-    tool_jobs.write(root, job)
+    def settle(made):
+        # The job's receipt names the new blog first, so asking again returns it.
+        job['applied'] = {'desk': {'id': made['id'], 'title': made['title']}, 'posted': False}
+        job['saved_content'] = content
+        tool_jobs.write(root, job)
+
+    made = desk.create(root, data, settle)
+    if made['share_problem']:
+        return {**job['applied']['desk'], 'share_problem': made['share_problem']}
     return job['applied']['desk']

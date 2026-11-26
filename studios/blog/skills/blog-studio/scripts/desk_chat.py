@@ -90,8 +90,8 @@ def create(root, data):
     if scope == 'part' and data.get('way', 'draft') != 'draft':
         raise ValueError('A part scope starts with a supplied draft.')
     before(root)
-    with studio.locked(root):
-        made = desk.create(root, data)
+    def settle(made):
+        # The conversation's own record, before the blog is shared with a Team Hub.
         ident = made['id']
         directory, record = studio.item(root, 'articles', ident)
         record.update(execution='conversation', conversation_scope=scope)
@@ -103,7 +103,13 @@ def create(root, data):
                 steps = [scope]
             start.update(steps=steps, step=steps[0], execution='conversation')
             desk.write_start(root, ident, start)
+
+    with studio.locked(root):
+        made = desk.create(root, data, settle)
+        ident = made['id']
         result = _read(root, ident)
+        if made['share_problem']:
+            result['share_problem'] = made['share_problem']
     saved(root, ident, 'Start Blog Studio work in conversation')
     return result
 
