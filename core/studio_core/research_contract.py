@@ -20,7 +20,7 @@ if __name__ == '__main__':
 # Moved into focused modules beside this one; every name stays importable from here, and
 # the names callers and tests replace are read from here at call time.
 from studio_core.research_paths import (
-    inside, write)
+    inside, write, SUPPLIED, local_origin, shown_origin)
 from studio_core.research_runtime import (
     SHARED, RESULTS, answered, HELPER_SECONDS, HELPER_TICK, HELPER_STOPPED, run_helper,
     capability, stable, stable_place, find_runtime)
@@ -39,7 +39,7 @@ from studio_core.research_schema import (
 from studio_core.research_checks import (
     capture_texts, clipped, packet_problems, source_metadata, repeated, within, distinct,
     block_problems, refs_problems, synthesis_problems, review_problems, citation_sources,
-    uncaptured)
+    uncaptured, REVIEW_UNITS, unit_review, unit_problems)
 from studio_core.research_handback import (
     UNFINISHED, TAIL, SYNTHESIS_TAIL, tailed, check_json, aside, collection_preflight,
     refused)

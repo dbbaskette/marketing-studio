@@ -102,9 +102,17 @@ def capability(runtime):
 
 
 def execution(runtime, workers=3):
+    """The execution record a new case starts with. When the installed Harness Research
+    offers review units, the case keeps that as its own entry, `review`, and its independent
+    check is done in units for as long as it lives (studio_core.research_units); a case
+    without the entry keeps the single review whatever is installed later."""
     supported = capability(runtime)
+    if not supported:
+        return None
+    from studio_core import research_units
+    units = research_units.entry(runtime)
     return {'schema': 1, 'protocol': PROTOCOL, 'workers': min(3, max(1, int(workers))),
-            'capability': supported} if supported else None
+            'capability': supported, **({'review': units} if units else {})}
 
 
 def protocol(record):
@@ -364,7 +372,7 @@ class Workflow:
             result = rc.run_helper([shutil.which('node') or 'node',
                 str(self.runtime / 'scripts/harness-research.mjs'), *args],
                 rc.HELPER_SECONDS, self.cancelled)
-            if result.returncode:
+            if result.returncode and not rc.answered(args, result.returncode, result.stdout):
                 raise ValueError((result.stderr.strip().splitlines() or ['Harness Research did not finish.'])[-1])
             return json.loads(result.stdout)
 
@@ -445,14 +453,17 @@ class Workflow:
     def run(self, root, task, invoke, sources=(), *, limit=3, progress=lambda state: None,
             allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False,
             section_policy=None, section_context=None, impact=None, input_snapshot=None,
-            creator_review=False, reading=False, earlier=None, **_):
+            creator_review=False, reading=False, earlier=None, review_units=None, **_):
         """`earlier` is what the run's record held of the helper before it moved to the
         installed one ({'capability', 'reuse', 'section_context'}). A case an older Marketing
-        Studio saved is named and checked by those; it goes on as the same research. The run's
+        Studio saved is named and checked by those; it goes on as the same research.
+        `review_units` is the case's `review` entry (research_units.of): with it, the
+        independent check is done in review units; without it, by the single review. The run's
         steps, and what they share, are studio_core.research_run.Run."""
         from studio_core.research_run import Run
         return Run(self, root, task, invoke, sources, limit=limit, progress=progress,
                    allowed=allowed, cancelled=cancelled, readable=readable,
                    restart_stopped=restart_stopped, section_policy=section_policy,
                    section_context=section_context, impact=impact, input_snapshot=input_snapshot,
-                   creator_review=creator_review, reading=reading, earlier=earlier).go()
+                   creator_review=creator_review, reading=reading, earlier=earlier,
+                   review_units=review_units).go()

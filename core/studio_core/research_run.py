@@ -19,7 +19,7 @@ import secrets
 import threading
 
 from studio_core import research_contract as rc, research_timing, research_sections, research_preview, research_quality
-from studio_core import research_reading
+from studio_core import research_reading, research_units
 from studio_core import research_session as session
 
 
@@ -36,7 +36,7 @@ class Run:
 
     def __init__(self, workflow, root, task, invoke, sources, *, limit, progress, allowed,
                  cancelled, readable, restart_stopped, section_policy, section_context, impact,
-                 input_snapshot, creator_review, reading, earlier):
+                 input_snapshot, creator_review, reading, earlier, review_units=None):
         self.workflow, self.root, self.task, self.sources = workflow, root, task, sources
         self.given_invoke = invoke   # the studio's own; self.invoke records each call first
         self.limit, self.progress, self.allowed, self.cancelled = limit, progress, allowed, cancelled
@@ -44,6 +44,9 @@ class Run:
         self.section_policy, self.section_context, self.impact = section_policy, section_context, impact
         self.input_snapshot, self.creator_review, self.reading = input_snapshot, creator_review, reading
         self.earlier = earlier
+        # The case's review-units entry: its check is done in units (research_units.Check),
+        # held in `checking` while one runs. None: the single review.
+        self.review_units, self.checking = review_units, None
         self.host_lock = threading.RLock()    # over the host record of invocations
         self.state_lock = threading.RLock()   # over the progress the page is shown
 
@@ -88,6 +91,12 @@ class Run:
             raise ValueError('Restore the saved focused research policy before continuing.')
         if session.unresolved(root):
             raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
+        if self.review_units is not None:
+            # A case that started checking in units goes on in units, or is refused plainly.
+            if not research_units.valid(self.review_units):
+                raise ValueError(research_units.UNREADABLE)
+            if research_units.capability(workflow.runtime) is None:
+                raise ValueError(research_units.GONE)
         if self.section_policy and self.impact:
             from studio_core import research_impact
             research_impact.context_current(root, task, self.impact)
@@ -124,9 +133,11 @@ class Run:
         payload = copy.deepcopy(payload)
         payload.setdefault('_execution', {}).setdefault('invocation', 'research-invocation-' + secrets.token_hex(16))
         invocation = payload['_execution']['invocation']
+        unit = payload['_execution'].get('unit')   # a review unit's, shown as its section
         attempt = {'phase': phase, 'invocation': invocation, 'worker': payload['worker'],
                    'stream': payload['_execution'].get('stream'),
-                   'section': payload['_execution'].get('section'), 'started_at': session.now(), 'status': 'working'}
+                   'section': payload['_execution'].get('section') or (research_units.section(unit) if unit else None),
+                   'started_at': session.now(), 'status': 'working', **({'unit': unit} if unit else {})}
         with self.host_lock:
             self.host['attempts'].append(attempt)
             rc.write(self.case, self.host_file, json.dumps(self.host))
@@ -190,7 +201,7 @@ class Run:
                 timing = research_timing.account(host['started'], host['attempts'])
                 active = [{'id': a['worker'], 'phase': a['phase'], 'stream': a.get('stream'),
                            'section': a.get('section'),
-                           'status': a.get('status', 'working')}
+                           'status': a.get('status', 'working'), **({'unit': a['unit']} if a.get('unit') else {})}
                           for a in host['attempts'] if not a.get('ended_at')]
             unconfirmed = sum(a['status'] == 'termination-unconfirmed' for a in active)
             tracked['agents'] = {'count': None if unconfirmed else len(active),
@@ -206,16 +217,21 @@ class Run:
     def require(self):
         """Go on only while the originals are unchanged, the run is not stopped and it is
         allowed: otherwise the collection is stopped or paused, and the run ends."""
-        case = self.case
+        case, checking = self.case, self.checking
         if self.originals.changed():
+            if checking: checking.stop()
             self.workflow.command(case, 'collection', 'stop')
             self.report('invalidated')
             raise ValueError('A selected original changed during research. Earlier evidence is kept; capture and approve its new revision.')
         if self.cancelled():
-            self.workflow.command(case, 'collection', 'stop')
+            # A check in units is stopped by itself: the collection stays complete, and the
+            # units it accepted are kept for when it goes on.
+            if checking: checking.stop()
+            else: self.workflow.command(case, 'collection', 'stop')
             self.report('stopped')
             raise InterruptedError('Research stopped; accepted evidence is kept.')
         if not self.allowed():
+            if checking: checking.stop()
             self.workflow.command(case, 'collection', 'pause')
             self.report('paused')
             raise InterruptedError('Research paused; accepted evidence is kept.')
@@ -517,6 +533,12 @@ class Run:
             # Saved non-sectioned runs also resume an unfinished check without
             # paying a synthesizer to rewrite the same validated dossier.
             worker = self.prior['author']
+        elif (number == 1 and not pending and self.context_unchanged and self.unfinished_units()
+              and isinstance(self.dossier, dict) and self.prior.get('author')
+              and not session.check_frozen(self.dossier, {'evidence_base': base})):
+            # A check in units that stopped or failed goes on with the dossier it checks,
+            # so every unit it accepted is kept.
+            worker = self.prior['author']
         else:
             worker = 'synthesizer-' + secrets.token_hex(12)
             self.report('synthesize')
@@ -530,6 +552,13 @@ class Run:
         if session.check_frozen(self.dossier, {'evidence_base': base}):
             raise ValueError('Synthesis changed registered evidence; investigator work is kept.')
         return worker
+
+    def unfinished_units(self):
+        """Whether the saved dossier has a check in units begun and not assembled."""
+        if self.review_units is None or self.prior.get('review') or not self.prior.get('digest'):
+            return False
+        status = self.workflow.command(self.case, 'review-units', 'status')
+        return status.get('plan') is not None and status.get('planned_digest') == self.prior['digest']
 
     def section_progress(self, values):
         """What section synthesis reports of its sections, shown to the page."""
@@ -556,18 +585,28 @@ class Run:
                 self.report('complete')
                 return rc.read_bundle(rc.output_root(case))
         self.report('review')
-        reviewer = 'reviewer-' + secrets.token_hex(12)
         output = rc.output_root(case)
-        payload = {'task': task, 'worker': reviewer, 'dossier': dossier, 'review_template': status['review_template'],
-            **{key: (output / (key + '.md')).read_text() for key in ('report', 'brief', 'evidence')},
-            'review_outline': self.review_outline,
-            'return': 'Independently inspect the exact saved evidence and prose. Return complete review JSON. Read each capture and supplied original; report access gaps honestly. ' + rc.REVIEWED,
-            '_execution': {'phase': 'review', 'round': number}}
-        text, _ = self.invoke('review', (workflow.runtime / 'references/review-synthesis.md').read_text(), payload, offered_final, False)
-        self.require()
-        review = self.review = json.loads(text)
-        rc.write(case, 'review.json', text)
-        status = workflow.helper.command(case, 'review', 'review.json', reviewer)
+        if self.review_units is not None:
+            # In units (#378): the assembled review is kept where the single review is.
+            self.checking = research_units.Check(self, number, offered_final)
+            try:
+                review, status = self.checking.go()
+            finally:
+                self.checking = None
+            self.review = review
+            rc.write(case, 'review.json', json.dumps(review))
+        else:
+            reviewer = 'reviewer-' + secrets.token_hex(12)
+            payload = {'task': task, 'worker': reviewer, 'dossier': dossier, 'review_template': status['review_template'],
+                **{key: (output / (key + '.md')).read_text() for key in ('report', 'brief', 'evidence')},
+                'review_outline': self.review_outline,
+                'return': 'Independently inspect the exact saved evidence and prose. Return complete review JSON. Read each capture and supplied original; report access gaps honestly. ' + rc.REVIEWED,
+                '_execution': {'phase': 'review', 'round': number}}
+            text, _ = self.invoke('review', (workflow.runtime / 'references/review-synthesis.md').read_text(), payload, offered_final, False)
+            self.require()
+            review = self.review = json.loads(text)
+            rc.write(case, 'review.json', text)
+            status = workflow.helper.command(case, 'review', 'review.json', reviewer)
         if status.get('status') == 'complete':
             verified = workflow.helper.command(case, 'verify')
             if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':

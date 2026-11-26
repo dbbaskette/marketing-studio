@@ -4,7 +4,11 @@ Part of the schema-2 Harness Research integration; studio_core.research_contract
 re-exports every name here."""
 import os
 from pathlib import Path
+import re
 import secrets
+
+# How a supplied document is named where its origin is shown (issue #550).
+SUPPLIED = 'Supplied document'
 
 
 def inside(root, name):
@@ -22,6 +26,24 @@ def inside(root, name):
     if root not in path.resolve().parents:
         raise ValueError('Research paths must remain inside their case folder.')
     return path
+
+
+def local_origin(origin):
+    """Whether a research source's origin names a document on a computer, not a web address
+    or a label: Harness Research 1.6.0 records a new supplied document as `supplied:<name>`
+    (its name inside the folder it was taken from); earlier versions recorded the absolute
+    path of that folder's copy, and a `file:` address is one too."""
+    return isinstance(origin, str) and (origin.startswith(('supplied:', 'file:', '/', '\\\\'))
+                                        or bool(re.match(r'[A-Za-z]:[\\/]', origin)))
+
+
+def shown_origin(origin):
+    """A source's origin as a person or a writer is shown it: a web address or a label as it
+    is, and a supplied document, in either form `local_origin` knows, as SUPPLIED, never a
+    folder of this computer."""
+    if not isinstance(origin, str):
+        return ''
+    return SUPPLIED if local_origin(origin) else origin
 
 
 def write(root, name, value):

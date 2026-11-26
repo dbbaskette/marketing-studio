@@ -14,7 +14,7 @@ import time
 
 from studio_core.research_checks import (
     capture_texts, citation_sources, packet_problems, review_problems, source_metadata,
-    synthesis_problems, uncaptured)
+    synthesis_problems, uncaptured, unit_problems, unit_review)
 from studio_core.research_paths import inside, write
 from studio_core.research_schema import TASK_FIELDS, UNREADABLE
 
@@ -66,6 +66,9 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict):
             problems.append('Return a schema-2 JSON object.')
+        elif unit_review(spec.get('review_template')):
+            # One review unit's answer, checked against its unit's template (#378).
+            problems += unit_problems(value, spec['review_template'], spec.get('runtime'))
         elif isinstance(spec.get('review_template'), dict):
             # An independent review, checked against the template it was given (#303).
             problems += review_problems(value, spec['review_template'], spec.get('runtime'))

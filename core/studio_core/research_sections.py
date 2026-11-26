@@ -162,7 +162,7 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
                     row['preview'] = {'basis': receipt['basis'], 'digest': receipt['digest'],
                         'sections': excerpts, 'truncated': left <= 0,
                         'sources': [{'title': source.get('title', source.get('id', 'Source')),
-                                     'origin': source.get('origin', ''),
+                                     'origin': rc.shown_origin(source.get('origin', '')),
                                      'permission': source.get('permission', 'unknown')}
                                     for source in evidence(next(area for area in areas if area['id'] == row['id']))['sources'][:40]]}
                 else: row.pop('preview', None)

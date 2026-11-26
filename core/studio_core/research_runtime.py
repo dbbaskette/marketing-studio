@@ -19,11 +19,16 @@ SHARED = (Path('Library/Application Support/Harness Research'), Path('.local/sha
 # Harness Research 1.0.1 and newer exit 1 for a needs-revision review and for stale
 # evidence while still printing the result. Callers judge that result's status.
 RESULTS = {('synthesis', 'review'), ('synthesis', 'verify'), ('synthesis', 'status')}
+# Harness Research 1.6.0's review units exit 1 from any action whose result reports stale
+# work or failed integrity (a review that no longer checks out, which the next plan sets
+# aside), and from an assembly that needs revision, still printing the result. A refusal
+# prints nothing on standard output.
+RESULT_GROUPS = {'review-units'}
 
 
 def answered(args, code, out):
     """True when a command that exited 1 still printed its JSON result."""
-    if code != 1 or tuple(args[:2]) not in RESULTS:
+    if code != 1 or (tuple(args[:2]) not in RESULTS and (args[:1] or [None])[0] not in RESULT_GROUPS):
         return False
     try:
         return isinstance(json.loads(out), dict)

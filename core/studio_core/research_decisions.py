@@ -218,7 +218,8 @@ def render(value, *, legacy=False):
             for item in finding.get(key, []): evidence += block(item)
     for source in value['sources']:
         origin = source['origin']
-        linked = '[Original source](' + quote(origin, safe=':/?=&%#@+;,') + ')' if origin.startswith(('https://', 'http://')) else md(origin)
+        # A supplied document is said to be one, never shown as a folder (#550).
+        linked = '[Original source](' + quote(origin, safe=':/?=&%#@+;,') + ')' if origin.startswith(('https://', 'http://')) else md(rc.shown_origin(origin))
         evidence += f'<a id="{source["id"]}"></a>\n## {md(source["title"])}\n\n' + linked + '\n\n'
         if source.get('context_note'): evidence += md(source['context_note']) + '\n\n'
         for key in ('snapshot', 'original_snapshot'):

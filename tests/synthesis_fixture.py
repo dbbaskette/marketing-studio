@@ -27,7 +27,9 @@ def review(template, accepted=True):
     for group in ('facts', 'findings', 'prose'):
         for item in result[group]:
             item.update(verdict='supported' if accepted else 'narrow', note='Synthetic independent invocation inspected the saved context and scope.')
-    result['assessment'] = {'coverage': 'accurate', 'usefulness': 'adequate', 'note': 'Explicit synthetic scope and usable brief.'}
+    # A review unit's template carries the assessment only on the final unit (#378).
+    if 'assessment' in result or 'protocol' not in result:
+        result['assessment'] = {'coverage': 'accurate', 'usefulness': 'adequate', 'note': 'Explicit synthetic scope and usable brief.'}
     return result
 
 

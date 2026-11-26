@@ -21,6 +21,31 @@ class EvidencePreviewTests(unittest.TestCase):
         self.assertEqual(view['limitations'], ['Unknown'])
         self.assertEqual(len(packet['facts']), 50)
 
+    def test_a_supplied_document_is_shown_as_one_never_as_a_folder_of_this_computer(self):
+        """#550: Harness Research 1.6.0 records a new supplied document as supplied:<name>,
+        an earlier one by the absolute path of its folder copy. Both are shown as supplied."""
+        from studio_core import research_contract as rc
+        sources = [dict(id='s1', title='Notes', origin='supplied:notes/guide.md', permission='selected'),
+                   dict(id='s2', title='Deck', origin='/private/var/folders/x/inputs/a1.txt', permission='selected'),
+                   dict(id='s3', title='Page', origin='https://example.invalid/page', permission='public'),
+                   dict(id='s4', title='Label', origin='Supplied synthetic deck', permission='selected')]
+        packet = dict(request_digest='scope', generation=1, attempt=1, facts=[], sources=sources, limitations=[], gaps=[])
+        shown = [source['origin'] for source in preview.evidence(packet, 'basis')['sources']]
+        self.assertEqual(shown, [rc.SUPPLIED, rc.SUPPLIED, 'https://example.invalid/page', 'Supplied synthetic deck'])
+        for origin in ('supplied:a.txt', '/var/x/a.txt', 'C:\\inputs\\a.txt', '\\\\server\\a.txt', 'file:///x/a.txt'):
+            self.assertTrue(rc.local_origin(origin), origin)
+            self.assertEqual(rc.shown_origin(origin), rc.SUPPLIED)
+        self.assertEqual(rc.shown_origin(None), '')
+        # The creator-approved evidence a Training Studio research report publishes.
+        from studio_core import research_decisions
+        value = dict(topic='Synthetic', sources=sources[:3], facts=[], findings=[], sections=[], brief=[],
+                     comparisons=[], creator_review=dict(choices={}, notes={}))
+        evidence = research_decisions.render(value)['evidence.md']
+        self.assertNotIn('/private/var', evidence)
+        self.assertNotIn('supplied:', evidence)
+        self.assertEqual(evidence.count(rc.SUPPLIED), 2)
+        self.assertIn('[Original source](https://example.invalid/page)', evidence)
+
     def test_restore_requires_current_packet_hash_scope_generation_and_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
             case = Path(tmp)

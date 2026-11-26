@@ -16,7 +16,9 @@ def evidence(packet, basis):
         'facts': [{'statement': text(fact.get('statement')),
                    'citations': [{key: text(citation.get(key)) for key in ('source', 'quote', 'locator')}
                                  for citation in fact.get('citations', [])[:6]]} for fact in facts[:12]],
-        'sources': [{key: text(source.get(key)) for key in ('id', 'title', 'origin', 'permission', 'context', 'context_note')}
+        # A supplied document's origin is shown as such, never as a folder (#550).
+        'sources': [{key: text(rc.shown_origin(source.get(key)) if key == 'origin' else source.get(key))
+                     for key in ('id', 'title', 'origin', 'permission', 'context', 'context_note')}
                     for source in sources[:24]],
         'limitations': [text(item) for item in [*packet.get('limitations', []), *packet.get('gaps', [])][:12]],
         'truncated': len(facts) > 12 or len(sources) > 24 or any(len(str(f)) > 1200 for f in facts),
