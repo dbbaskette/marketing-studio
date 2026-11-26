@@ -891,9 +891,12 @@ class PhoneSettingsTests(PageCase):
         self.assertEqual(phone['brand']['repository'], caller.FOLDER_HERE)
         self.assertNotIn(str(self.base), json.dumps(phone))
         self.assertNotIn(str(self.base.resolve()), json.dumps(phone))
-        # Everything else is as this computer has it.
+        # Everything else is as this computer has it; the phone's set-up also says it is
+        # remote, so its Settings offer no set-up change it would be refused (#539).
+        self.assertIs(phone['remote'], True)
+        self.assertNotIn('remote', here)
         self.assertEqual({key: value for key, value in phone.items()
-                          if key not in ('workspace', 'brand', 'shared', 'upkeep')},
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep', 'remote')},
                          {key: value for key, value in here.items()
                           if key not in ('workspace', 'brand', 'shared', 'upkeep')})
         # The answers of the brand route and of the shared notice are shown the same way.
@@ -901,12 +904,21 @@ class PhoneSettingsTests(PageCase):
                 'repository': address, 'commit': '0' * 40}):
             status, made = self.send('brand', {'repository': 'https://example.invalid/b.git'},
                                      remote=True)
+            status_here, made_here = self.send(
+                'brand', {'repository': 'https://example.invalid/b.git'}, remote=False)
         self.assertEqual((status, made['brand']['repository']), (200, 'https://example.invalid/b.git'))
         self.assertIsNone(made['workspace']['path'])
+        self.assertIs(made['remote'], True)
         self.assertNotIn(str(self.base.resolve()), json.dumps(made))
+        self.assertEqual(status_here, 200, made_here)
+        self.assertNotIn('remote', made_here)
         status, seen = self.send('shared', {'seen': True}, remote=True)
         self.assertEqual(status, 200, seen)
+        self.assertIs(seen['remote'], True)
         self.assertNotIn(str(self.base.resolve()), json.dumps(seen))
+        status, seen = self.send('shared', {'seen': True}, remote=False)
+        self.assertEqual(status, 200, seen)
+        self.assertNotIn('remote', seen)
 
     def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
         # The planner's ruling on #539 (b): the same sentence whatever the folder holds.
