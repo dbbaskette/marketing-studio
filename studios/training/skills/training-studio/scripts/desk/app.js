@@ -2541,7 +2541,8 @@ function paintTraining(fresh) {
   // read-only record like any saved one: its files to read in place and one way on (#547).
   if (training.saved_record) {
     return paintSavedRecord({ path: training.path, title: training.title,
-      sentence: training.sentence, saved_record: training.saved_record, mine: false }, fresh);
+      sentence: training.sentence, saved_record: training.saved_record, mine: false,
+      saved: training.saved }, fresh);
   }
   if (training.error) {
     place({ title: training.title || 'Untitled', above, back: true },
@@ -5330,16 +5331,25 @@ function savedLead(run) {
     return finish;
   }
 
-  // A conversation's training is brought in, from the runner's page only (#547).
+  // A conversation's training is brought in, from the runner's page only, and only where the
+  // runner said Bring in would take it (#547): never on a phone, never one it would refuse.
   if (saved.outcome === 'bring') {
-    return view.runner && view.setup && view.setup.workspace
-      ? capsule('Bring it in', kind, askTeam('adopt', 'adopt'), 'adopt') : null;
+    return bringable(saved) ? capsule('Bring it in', kind, askTeam('adopt', 'adopt'), 'adopt')
+      : null;
   }
+  // A record with no way on from here (a phone, for one): nothing is offered.
+  if (!saved.next) return null;
   const copying = saved.next === 'copy';
   const go = capsule(copying ? 'Start new work from this' : 'Start a new training', kind,
     () => (copying ? copyAsNew({ path: run.path, title: run.title }, 'saved-next', go)
       : openNew('saved-next', false, go)), 'saved-next');
   return go;
+}
+
+// Whether this page offers Bring it in for a conversation's training: the runner's page, with
+// a workspace, and a record whose way on the runner said is Bring in.
+function bringable(saved) {
+  return Boolean(saved.next === 'bring' && view.runner && view.setup && view.setup.workspace);
 }
 
 function savedRecordIntro(run) {
@@ -5352,11 +5362,14 @@ function savedRecordIntro(run) {
     finished: 'Open on the desk keeps every material you approved ready, and the training '
       + 'is then changed on the desk.',
     waiting: 'Nothing here changes it. Once what it waits for clears, it opens on the desk.',
-    bring: view.runner && view.setup && view.setup.workspace ? 'Bring it in copies it into '
+    bring: bringable(saved) ? 'Bring it in copies it into '
       + 'your workspace and leaves this folder as it is. The copy then opens on the desk where '
       + 'it has a plan, or is kept to read.' : saved.elsewhere,
-  }[saved.outcome] || (copying ? 'Start new work from this opens the start form with its '
+  }[saved.outcome] || (!saved.next ? saved.elsewhere || 'Nothing can be done with it from here.'
+    : copying ? 'Start new work from this opens the start form with its '
     + 'setup and documents. This saved training is kept as it is.'
+    : run.saved === 'conversation' ? 'Start a new training opens an empty start form. This '
+      + 'training is kept as it is.'
     : 'Its start form cannot be read, so a new training starts from an empty form. This '
       + 'saved training is kept as it is.');
   return add(make('div', 'intro'), pageHead(make('p', 'lede run-says', run.sentence),

@@ -1029,6 +1029,47 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                                      reads)
                     self.assertIn('Rolling restarts', result['snapshots']['read']['text'])
 
+    def test_a_conversation_training_bring_in_would_refuse_offers_only_what_works(self):
+        """GitHub issue #547: a conversation's training kept in the workspace's repository is a
+        read-only record: why, in Bring in's own sentence, and Start a new training. On a phone
+        through the private link, Bring it in is never offered: the record says it is done on
+        the computer, and offers nothing that would be refused."""
+        from studio_core.shared_runner import caller
+        top = self.space.repo / 'notes' / 'kept-here'
+        saved_fixtures.place('conversation-blueprint-gate', top)
+        self.root = top   # the page plan is written beside it
+        said = engines.IN_REPOSITORY if self.space.repo != self.space.root else engines.ALREADY_IN
+        path = str(top)
+        here = {'GET /api/capabilities': [RUNNER], 'GET /api/setup': [ok(SET_UP)],
+                'GET /api/trainings': [ok(self.get('trainings'))],
+                'GET /api/training': [ok(self.get('training', path=path))],
+                'GET /api/computer': [ok({'items': []})], 'GET /api/agents': [ok(AGENTS_FOUND)],
+                **MODELS}
+        for narrow in (False, True):
+            with self.subTest(narrow=narrow):
+                result = self.run_page(here, [{'snapshot': 'record'}],
+                                       state={'screen': 'training', 'path': path}, narrow=narrow)
+                shot = result['snapshots']['record']
+                self.assertEqual(shot['filled'], ['Start a new training'])
+                self.assertNotIn('Bring it in', shot['buttons'])
+                for shown in (engines.CONVERSATION_KEPT, said, 'Read teaching plan',
+                              'Start a new training opens an empty start form.'):
+                    self.assertIn(shown, shot['text'])
+                self.assert_no_continuing(shot, result)
+        outside = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        with caller.answering({caller.VIA_HEADER: caller.NETWORK}):
+            phone = page.RunnerPage(8765, self.engine).detail(str(outside))
+        answers = {**here, 'GET /api/training': [ok(phone)],
+                   'GET /api/trainings': [ok(self.get('trainings'))]}
+        result = self.run_page(answers, [{'snapshot': 'record'}],
+                               state={'screen': 'training', 'path': str(outside)}, narrow=True)
+        shot = result['snapshots']['record']
+        self.assertEqual(shot['filled'], [])
+        for absent in ('Bring it in', 'Start a new training', 'Start new work from this'):
+            self.assertNotIn(absent, shot['buttons'])
+        self.assertIn(engines.BRING_ON_COMPUTER, shot['text'])
+        self.assert_no_continuing(shot, result)
+
     def test_a_record_that_opens_on_the_desk_offers_the_preview(self):
         fixture = self.fixture('blueprint-gate')
         self.assertEqual(self.listed(fixture)['run']['saved'], 'saved')

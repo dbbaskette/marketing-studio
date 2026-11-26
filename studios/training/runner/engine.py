@@ -298,6 +298,19 @@ HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brou
                    'Bring in a training folder that is outside the workspace.')
 IN_REPOSITORY = ("That folder is inside the workspace's repository, so it cannot be brought "
                  'into it. Bring in a training folder that is outside the workspace.')
+ALREADY_IN = 'This training is already in the workspace.'
+# The one refusal of Bring in that the person can clear: say how.
+NAME_TAKEN = ('The workspace already has a training in {where}. If that is the copy made of this '
+              'one, work on it there; if it is another training, this one can be brought in once '
+              'that one is deleted from the workspace.')
+# A conversation's training that Bring in refuses: a read-only record where it is, saying why
+# (`Engine.bring_refusal`, GitHub issue #547).
+CONVERSATION_KEPT = ('This training was made in a conversation and cannot be brought into the '
+                     'workspace, so it is kept where it is to read.')
+# On a phone through the private link nothing of this computer's folders is read, so Bring in
+# is not offered there (GitHub issue #539).
+BRING_ON_COMPUTER = ('Bringing a training into the workspace is done on the computer that runs '
+                     'Training Studio, not from a phone.')
 # Where a desk training stood when its run had made what it could and it was not finished:
 # not every material was marked ready, or something else kept it from being used.
 UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
@@ -8811,32 +8824,7 @@ class Engine(Reviewing):
         carries on from wherever its files say it is."""
         space, chosen, top = self.space(), settings.load(), Path(path)
         gitstate.identity(space.repo)
-        # Folders compared as folders, before anything is read: a folder holding the
-        # workspace would be copied into itself (GitHub issue #544).
-        where = team.overlaps(top, space.root)
-        if where == 'inside':
-            raise WorkspaceError('This training is already in the workspace.')
-        # The workspace's repository as a whole, too: a folder elsewhere in it, or one that
-        # holds it, is never copied into it.
-        where = where or team.overlaps(top, space.repo)
-        if where == 'inside':
-            raise WorkspaceError(IN_REPOSITORY)
-        if where == 'holds':
-            raise WorkspaceError(HOLDS_WORKSPACE)
-        try:
-            session = workspace.load(top)
-        except WorkspaceError as refusal:
-            raise WorkspaceError("This training's record cannot be read, so it cannot be "
-                                 f'brought into the workspace. {refusal}')
-        root = space.training(workspace.slugify(session['title']))
-        if root.exists():
-            raise WorkspaceError(f'The workspace already has a training in {space.folder}/'
-                                 f'{root.name}. If that is the copy made of this one, work '
-                                 'on it there.')
-        why = team.unacceptable(top)
-        if why:
-            raise WorkspaceError('This training cannot be brought into the workspace. '
-                                 + why)
+        session, root = self._bringing(space, top)
         with self.files:
             try:
                 team.copy_in(top, root)
@@ -8852,6 +8840,52 @@ class Engine(Reviewing):
             self._claimed(root, space)
         self.wake(root)
         return {'path': str(root), 'id': root.name}
+
+    def _bringing(self, space: gitstate.Workspace, top: Path) -> tuple[dict, Path]:
+        """Every check Bring in makes before it copies anything, in its order: its session
+        record and the folder its copy would take, or the WorkspaceError that refuses it.
+        Only reads: nothing is copied or written."""
+        # Folders compared as folders, before anything is read: a folder holding the
+        # workspace would be copied into itself (GitHub issue #544).
+        where = team.overlaps(top, space.root)
+        if where == 'inside':
+            raise WorkspaceError(ALREADY_IN)
+        # The workspace's repository as a whole, too: a folder elsewhere in it, or one that
+        # holds it, is never copied into it.
+        where = where or team.overlaps(top, space.repo)
+        if where == 'inside':
+            raise WorkspaceError(IN_REPOSITORY)
+        if where == 'holds':
+            raise WorkspaceError(HOLDS_WORKSPACE)
+        try:
+            session = workspace.load(top)
+        except WorkspaceError as refusal:
+            raise WorkspaceError("This training's record cannot be read, so it cannot be "
+                                 f'brought into the workspace. {refusal}')
+        root = space.training(workspace.slugify(session['title']))
+        if root.exists():
+            raise WorkspaceError(NAME_TAKEN.format(where=f'{space.folder}/{root.name}'))
+        why = team.unacceptable(top)
+        if why:
+            raise WorkspaceError('This training cannot be brought into the workspace. '
+                                 + why)
+        return session, root
+
+    def bring_refusal(self, path) -> str | None:
+        """Why a training made in a conversation cannot be brought into the workspace: the
+        sentence Bring in refuses it with, from the same checks (`_bringing`), or None when it
+        can be. Nothing is copied or written. With no workspace set up, None: the page says
+        that itself, and offers nothing until one is."""
+        space = self.workspace
+        if space is None or gitstate.marker(space.repo, space.folder) is None:
+            return None
+        try:
+            self._bringing(space, Path(path))
+        except WorkspaceError as refusal:
+            return str(refusal)
+        except OSError as failure:  # a folder that cannot be looked at is not brought in
+            return str(workspace.unreadable('session', failure))
+        return None
 
     def _brought(self, root: Path, chosen: settings.Settings,
                  space: gitstate.Workspace) -> dict:
@@ -8950,9 +8984,11 @@ class Engine(Reviewing):
                             root, root.name, 'Its record cannot be read; it is kept to read.'))
                         continue
                     if not workspace.on_desk(session):
-                        found.setdefault('bring-in-first', []).append(saved_work.needs(
+                        refusal = self.bring_refusal(root)
+                        found.setdefault('read-only-record' if refusal else 'bring-in-first',
+                                         []).append(saved_work.needs(
                             root, session['title'] or root.name,
-                            self.SAVED_WHY['bring-in-first']))
+                            refusal or self.SAVED_WHY['bring-in-first']))
                     continue
                 saved_work.checked_path(root / RECORD)
                 kind = self.saved_kind(root)

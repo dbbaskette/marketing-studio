@@ -910,6 +910,8 @@ class RunnerPage(desk.Page):
         try:
             if 'error' in item and self.engine.conversation_unread(item['path']):
                 return self.with_unread(item)
+            if item.get('saved') == 'conversation' and 'error' not in item:
+                return self.with_conversation(self.with_run(item))
             return self.with_run(item)
         except desk.Refusal:
             raise
@@ -933,6 +935,27 @@ class RunnerPage(desk.Page):
                                   'outside': where == 'outside', 'where': where,
                                   'files': self.engine._saved_files(root), 'waits': [],
                                   'retained': [], 'targets': []})
+        return item
+
+    def with_conversation(self, item: dict) -> dict:
+        """A training a conversation made, as the runner says it (GitHub issue #547): its one
+        action is Bring it in only where Bring in would take it, decided by the same checks
+        (`Engine.bring_refusal`). Where it would not, it is a read-only record where it is,
+        saying why, with a new training as its way on. On a phone nothing of this computer's
+        folders is read, and nothing is offered that would be refused: it says that bringing
+        a training in is done on the computer."""
+        record = item.get('saved_record')
+        if record is None:   # a list's row: its sentence and stages are the helper's own
+            return item
+        if caller.remote():
+            record.update(next=None, elsewhere=engines.BRING_ON_COMPUTER)
+            return item
+        where = self.engine.where(item['path'])
+        record.update(where=where, outside=where == 'outside')
+        refusal = self.engine.bring_refusal(item['path'])
+        if refusal:
+            item['sentence'] = engines.CONVERSATION_KEPT
+            record.update(outcome='read-only', why=refusal, next='new', elsewhere=None)
         return item
 
     def with_run(self, item: dict) -> dict:
