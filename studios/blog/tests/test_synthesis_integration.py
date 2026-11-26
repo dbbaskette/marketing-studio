@@ -381,6 +381,74 @@ class PlanningTaskTests(Fixture):
         )
 
 
+@unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for helper integration.')
+class DeskResearchTests(Fixture):
+    """A desk blog's research through the collection adapter and the real helper: its check
+    in review units (#378) and a bundle from a supplied document (#550)."""
+
+    def setUp(self):
+        super().setUp()
+        env = patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': RUNTIME})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def worker(self, calls):
+        def answer(engine, data, guidance, **options):
+            mode = (data.get('_execution') or {}).get('mode')
+            calls.append((mode, data['worker'], sorted(s['file'] for s in data.get('sources') or ())))
+            if 'review_template' in data:
+                value = review(data['review_template'])
+            elif mode == 'evidence':
+                capture = data['sources'][0]
+                value = dossier(data['worker'], capture['file'], capture['origin'], capture['permission'])
+                value['sources'][0]['original_file'] = capture['original_file']
+                value = {key: value[key] for key in ('schema', 'sources', 'facts')}
+            else:
+                fact = data['evidence']['facts'][0]['id']
+                value = dossier(data['worker'])
+                value['findings'] = [{**value['findings'][0], 'id': 'instance-min',
+                                      'summary': {'text': TEXT, 'kind': 'summary', 'refs': [fact]},
+                                      'support': [fact], 'conditions': []}]
+                value['sections'][0]['blocks'][0]['refs'] = [fact]
+                value['brief'][0]['blocks'][0]['refs'] = ['instance-min']
+                value = {key: value[key] for key in ('schema', 'findings', 'sections', 'brief')}
+            return {'content': json.dumps(value), 'notes': 'Synthetic only'}
+        return answer
+
+    def test_desk_research_checks_in_units_and_its_bundle_names_no_folder_of_this_computer(self):
+        from studio_core import research_session, research_units
+
+        directory = self.base / 'synthetic-desk-research'
+        directory.mkdir()
+        run = {'engine': 'claude', 'brief': {'audience': 'New learners', 'goal': 'Explain bounded examples'},
+               'research_contract': research_contract.capability(Path(RUNTIME)),
+               'research_execution': research_session.execution(RUNTIME, 3)}
+        payload = {'title': 'Synthetic explanation',
+                   'sources': [{'id': 'notes', 'origin': 'Supplied synthetic notes', 'text': TEXT,
+                                'name': 'Synthetic notes', 'purposes': ['reference'], 'status': 'ready'}],
+                   'documents': {'research-plan': '- **instance-min**: Minimum?'},
+                   'research_from': {'documents': True, 'sites': [], 'web': False}}
+        calls = []
+        synthesis_research.generate(directory, run, payload, self.worker(calls), seconds=60,
+                                    stop=threading.Event())
+        facts, manifest = research_contract.read_bundle(directory / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        reviews = [call for call in calls if call[0] == 'review-unit']
+        units = bool(research_units.capability(RUNTIME))
+        self.assertEqual(run['research_execution'].get('review'), research_units.entry(RUNTIME))
+        self.assertEqual(len(reviews), 2 if units else 0)
+        if units:
+            self.assertEqual(len({worker for _, worker, _ in reviews}), 2, 'a fresh reviewer for each unit')
+            self.assertEqual(len(facts['review']['reviewers']), 2)
+            self.assertTrue(all(s['origin'].startswith('supplied:') for s in facts['sources']))
+        places = {str(directory), str(directory.resolve()), tempfile.gettempdir(),
+                  str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+        for name in [entry['file'] for entry in manifest['artifacts']] + ['output.json']:
+            said = (directory / 'research' / name).read_bytes().decode('utf-8', 'replace')
+            for place in places:
+                self.assertNotIn(place, said, name)
+
+
 class ParallelMeterTests(unittest.TestCase):
     def test_investigator_usage_reaches_stage_meter_without_duplicate_main_usage(self):
         import blog_worker

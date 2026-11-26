@@ -12,6 +12,7 @@ from studio_core import (
     research_view,
     research_session,
     research_text,
+    research_units,
 )
 
 
@@ -135,6 +136,9 @@ def phase_words(phase, number, data):
     stream = (data.get('_execution') or {}).get('stream') if isinstance(data, dict) else None
     if phase == 'investigate' and isinstance(stream, str):
         words += ' ' + stream.removeprefix('area')[:40]  # Areas are area1, area2, …
+    unit = (data.get('_execution') or {}).get('unit') if isinstance(data, dict) else None
+    if phase == 'review' and isinstance(unit, str):   # one review unit of the check (#378)
+        words += ' as a whole' if unit == 'final' else ', one part'
     if phase != 'discovery' and isinstance(number, int) and number > 1:
         words += ', round ' + str(number)
     return words
@@ -490,6 +494,7 @@ def generate(
                 transport,
                 sources,
                 limit=run['research_execution']['workers'],
+                review_units=research_units.of(run['research_execution']),
                 progress=tell,
                 cancelled=stop.is_set,
                 earlier=earlier,
