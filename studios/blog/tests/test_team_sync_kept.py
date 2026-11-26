@@ -10,6 +10,7 @@ import isolation  # noqa: F401  (first: keeps every test off this computer's own
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -769,6 +770,441 @@ class CompanionAndSourceTests(unittest.TestCase):
             str(refused.exception),
             'Use an https or ssh repository address, or an absolute folder path.',
         )
+
+
+# What a new Blog Studio workspace's ignore file keeps out, in order.
+IGNORED = (
+    '/.uploads/',
+    '/.desk-imports/',
+    '/.library/',
+    '/.curation.json',
+    '**/.google-native/',
+    '**/.google-*.json',
+    '/.google-*/',
+    '/.google-*.json',
+    '/.harness-*/',
+    '/.source-analysis.json',
+    '/.active-article.json',
+    '/.blog-runner.lock',
+    '/work/',
+    '/sources/',
+    '/.blog-runs/',
+    '/.blog-run-settings.json',
+    '/.studio.lock',
+    '/.team-sync.json',
+    '/.desk-receipts/',
+    '/.derived-cache/',
+    '/.google-staging/',
+    '/.blog-settings.json',
+    '/.active-article',
+    '**/session.local.json',
+    '**/history/google-*-native.json',
+    '**/history/google-*-accepted.json',
+    '**/.harness-research/guidance/',
+    '**/.harness-slides/guidance/',
+    '*.lock',
+    '**/.blog-studio/lock',
+)
+
+
+class SettingUpTests(Disposable):
+    """What setting a workspace up writes, and when."""
+
+    def files(self):
+        """Each file under the data folder and the shared settings, with its bytes."""
+        found = {}
+        for top in (self.base / 'data', self.config.parent):
+            if top.is_dir():
+                for path in sorted(top.rglob('*')):
+                    if path.is_file() and 'workspaces' not in path.parts and path.suffix != '.lock':
+                        found[str(path)] = path.read_bytes()
+        return found
+
+    def test_a_new_workspace_has_its_readme_ignore_file_and_marker_committed(self):
+        space = gitstate.local(self.base / 'mine')
+        self.assertEqual(
+            (space.root / '.gitignore').read_text(),
+            '# Kept on each computer and never shared. Written by Blog Studio.\n'
+            + '\n'.join(IGNORED)
+            + '\n',
+        )
+        self.assertEqual(gitstate.IGNORED, IGNORED)
+        self.assertEqual((space.root / 'README.md').read_text(), gitstate.README)
+        self.assertTrue(
+            gitstate.README.startswith(
+                '# Blogs\n\nThis folder holds blogs made with Blog Studio, one folder each.'
+            )
+        )
+        self.assertEqual(
+            support.git(space.repo, 'log', '--format=%s'),
+            'Set up the Blog Studio workspace in blogs/',
+        )
+        self.assertEqual(
+            sorted(support.git(space.repo, 'ls-files').split()),
+            ['blogs/.gitignore', 'blogs/README.md', 'blogs/hub.json'],
+        )
+
+    def test_an_ignore_file_already_there_gains_only_what_it_lacks(self):
+        repo = self.base / 'mine'
+        (repo / 'blogs').mkdir(parents=True)
+        (repo / 'blogs' / '.gitignore').write_text('/work/\nown-entry\n')
+        space = gitstate.local(repo)
+        self.assertEqual(
+            (space.root / '.gitignore').read_text().splitlines(),
+            [
+                '/work/',
+                'own-entry',
+                '',
+                '# Kept on each computer and never shared. Written by Blog Studio.',
+                *[entry for entry in IGNORED if entry != '/work/'],
+            ],
+        )
+
+    def test_remember_keeps_only_the_name_the_clone_and_the_folder(self):
+        space = gitstate.Workspace('team', self.base / 'repo', 'blogs', 'main', 'address', 'asked')
+        self.assertIs(gitstate.remember(space), space)
+        self.assertEqual(
+            gitstate.settings_path().read_text(),
+            json.dumps(
+                {'schema': 1, 'name': 'team', 'repo': str(self.base / 'repo'), 'folder': 'blogs'},
+                indent=2,
+            )
+            + '\n',
+        )
+
+    def test_join_and_local_without_remembering_and_with_a_sharing_mode(self):
+        before = self.files()
+        found = gitstate.join(
+            str(self.remote), folder='blogs', share='asked', remember_workspace=False
+        )
+        self.assertEqual(found.share, 'asked')
+        self.assertEqual((found.branch, found.address), ('main', str(self.remote)))
+        self.assertFalse(gitstate.settings_path().exists())
+        self.assertFalse(self.config.exists())
+        self.assertEqual(set(self.files()) - set(before), set())
+        self.assertIsNone(gitstate.current())
+        joined = gitstate.join(str(self.remote), folder='blogs', share='decision')
+        self.assertEqual(joined.share, 'decision')
+        self.assertEqual(gitstate.current().root, found.root)
+        self.assertFalse(self.config.exists())  # gitstate never writes the shared settings
+        mine = gitstate.local(self.base / 'mine', share='asked')
+        self.assertEqual(mine.share, 'asked')
+        self.assertEqual(gitstate.current().root, mine.root)
+        self.assertEqual(gitstate.current().share, 'decision')  # as the shared settings say
+        self.assertFalse(self.config.exists())
+
+    def test_the_sharing_mode_set_up_returns_follows_the_same_clone_only(self):
+        studios_config.update({'share': 'asked'})
+        first = gitstate.join(str(self.remote), folder='blogs')
+        self.assertEqual(first.share, 'decision')  # a clone not yet remembered
+        again = gitstate.join(str(self.remote), folder='blogs')
+        self.assertEqual(again.share, 'asked')  # the remembered clone, as it is read
+        other = gitstate.local(self.base / 'mine')
+        self.assertEqual(other.share, 'decision')
+
+    def test_share_when_writes_the_shared_setting_every_time(self):
+        gitstate.join(str(self.remote), folder='blogs')
+        with self.assertRaisesRegex(support.WorkspaceError, 'Sharing is one of: decision, asked.'):
+            gitstate.share_when('never')
+        said = []
+        update = studios_config.update
+
+        def updating(*args, **kwargs):
+            said.append((args, kwargs))
+            return update(*args, **kwargs)
+
+        with mock.patch.object(studios_config, 'update', updating):
+            self.assertEqual(gitstate.share_when('asked').share, 'asked')
+            self.assertEqual(gitstate.share_when('asked').share, 'asked')
+        self.assertEqual(said, [(({'share': 'asked'},), {})] * 2)
+        self.assertEqual(json.loads(self.config.read_text())['share'], 'asked')
+        self.assertEqual(json.loads(gitstate.settings_path().read_text())['folder'], 'blogs')
+
+    def test_share_when_with_no_workspace_refuses(self):
+        with self.assertRaisesRegex(
+            support.WorkspaceError, 'No workspace is set up on this computer yet.'
+        ):
+            gitstate.share_when('asked')
+        self.assertFalse(self.config.exists())
+
+
+class CurrentShapeTests(Disposable):
+    """`current()` for each shape a remembered workspace can have."""
+
+    def setUp(self):
+        super().setUp()
+        self.space = gitstate.join(str(self.remote), folder='blogs')
+
+    def write(self, **record):
+        gitstate.settings_path().write_text(json.dumps(record))
+
+    def test_the_marker_names_the_branch_and_repository_over_an_older_record(self):
+        self.write(
+            schema=1,
+            name='team',
+            repo=str(self.space.repo),
+            folder='blogs',
+            branch='elsewhere',
+            address='https://example.invalid/old.git',
+        )
+        found = gitstate.current()
+        self.assertEqual((found.branch, found.address), ('main', str(self.remote)))
+        self.assertEqual(
+            json.loads(self.config.read_text())['team'],
+            {'repository': 'https://example.invalid/old.git', 'branch': 'elsewhere'},
+        )
+
+    def test_a_record_that_cannot_be_read_is_no_workspace(self):
+        shapes = [
+            {'schema': 2, 'name': 'team', 'repo': str(self.space.repo), 'folder': 'blogs'},
+            {'schema': 1, 'repo': str(self.space.repo), 'folder': 'blogs'},
+            {'schema': 1, 'name': 'team', 'folder': 'blogs'},
+            ['not', 'a', 'record'],
+        ]
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                gitstate.settings_path().write_text(json.dumps(shape))
+                self.assertIsNone(gitstate.current())
+        gitstate.settings_path().write_text('not json')
+        self.assertIsNone(gitstate.current())
+
+    def test_a_folder_with_no_marker_is_no_workspace(self):
+        self.write(schema=1, name='team', repo=str(self.space.repo), folder='elsewhere')
+        self.assertIsNone(gitstate.current())
+
+    def test_a_marker_of_another_tool_is_refused(self):
+        marker = self.space.root / 'hub.json'
+        marker.write_text(json.dumps({**json.loads(marker.read_text()), 'tool': 'other-tool'}))
+        with self.assertRaisesRegex(support.WorkspaceError, 'belongs to another tool'):
+            gitstate.current()
+
+    def test_a_workspace_that_needs_a_newer_blog_studio_is_refused(self):
+        marker = self.space.root / 'hub.json'
+        marker.write_text(
+            json.dumps({**json.loads(marker.read_text()), 'minimum_runtime': '999.0.0'})
+        )
+        with self.assertRaises(support.WorkspaceError) as refused:
+            gitstate.current()
+        self.assertEqual(
+            str(refused.exception),
+            'This workspace needs Blog Studio 999.0.0 or newer, and this computer has '
+            f'{support.runtime_version()}. Update Blog Studio, then try again.',
+        )
+
+
+class TwoClonesTests(Disposable):
+    """A whole sync between two clones of one team repository."""
+
+    def setUp(self):
+        super().setUp()
+        self.one = gitstate.join(str(self.remote), folder='blogs')
+        self.assertTrue(gitstate.sync(self.one)['shared'])  # the folder, set up once
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'teammate')
+        self.two = gitstate.join(str(self.remote), folder='blogs')
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'data')
+
+    def save(self, space, path, text, message):
+        target = space.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+        self.assertTrue(gitstate.commit(space, message, [path.split('/')[0]]))
+        return support.git(space.repo, 'rev-parse', 'HEAD')
+
+    def remote_log(self):
+        return support.git(self.remote, 'log', '--format=%s', 'main').splitlines()
+
+    def test_fetch_replay_and_push(self):
+        self.save(self.one, 'alpha/draft.md', 'One.\n', 'Alpha from one')
+        first = gitstate.sync(self.one)
+        self.assertEqual(
+            first,
+            {
+                'shared': True,
+                'reached': True,
+                'received': 0,
+                'unshared': 0,
+                'conflict': [],
+                'notice': None,
+            },
+        )
+        theirs = support.git(self.one.repo, 'rev-parse', 'HEAD')
+        self.save(self.two, 'beta/draft.md', 'Two.\n', 'Beta from two')
+        learned = []
+        report = gitstate.sync(self.two, before=learned.append)
+        self.assertEqual(
+            report,
+            {
+                'shared': True,
+                'reached': True,
+                'received': 1,
+                'unshared': 0,
+                'conflict': [],
+                'notice': None,
+            },
+        )
+        self.assertEqual(learned, [theirs])
+        self.assertEqual(self.remote_log()[:2], ['Beta from two', 'Alpha from one'])
+        self.assertEqual(
+            support.git(self.two.repo, 'rev-parse', 'HEAD'),
+            support.git(self.remote, 'rev-parse', 'main'),
+        )
+        self.assertTrue(gitstate.sync(self.one, push=False)['shared'])
+        self.assertEqual((self.one.root / 'beta' / 'draft.md').read_text(), 'Two.\n')
+
+    def test_a_conflict_stops_puts_things_back_and_set_aside_keeps_the_work(self):
+        self.save(self.one, 'gamma/draft.md', 'One.\n', 'Gamma from one')
+        gitstate.sync(self.one)
+        mine = self.save(self.two, 'gamma/draft.md', 'Two.\n', 'Gamma from two')
+        report = gitstate.sync(self.two)
+        self.assertEqual(report['conflict'], ['blogs/gamma/draft.md'])
+        self.assertFalse(report['shared'])
+        self.assertEqual(report['unshared'], 1)
+        self.assertTrue(
+            report['notice'].startswith(
+                'The same files were changed here and in the shared repository '
+                '(blogs/gamma/draft.md), and the runner will not choose between them.'
+            )
+        )
+        self.assertEqual(support.git(self.two.repo, 'rev-parse', 'HEAD'), mine)
+        self.assertEqual(self.remote_log()[0], 'Gamma from one')
+        self.assertTrue(gitstate.moved(self.two, 'gamma'))
+        self.assertEqual(gitstate.theirs(self.two, 'gamma/draft.md'), 'One.\n')
+        self.assertEqual(gitstate.unshared(self.two, 'gamma'), [mine])
+        self.assertEqual(gitstate.last_by(self.two, 'gamma')[0], 'Synthetic Author')
+        kept = gitstate.set_aside(self.two, 'gamma')
+        self.assertEqual(kept, f'refs/blog-studio/kept/gamma-{mine[:12]}')
+        self.assertEqual(gitstate.kept(self.two, 'gamma'), [kept])
+        self.assertEqual(support.git(self.two.repo, 'show', f'{kept}:blogs/gamma/draft.md'), 'Two.')
+        self.assertTrue(gitstate.sync(self.two)['shared'])
+        self.assertEqual((self.two.root / 'gamma' / 'draft.md').read_text(), 'One.\n')
+        gitstate.forget(self.two, kept)
+        self.assertEqual(gitstate.kept(self.two, 'gamma'), [])
+
+    def test_undo_takes_back_only_an_unshared_commit_of_one_blog(self):
+        self.save(self.one, 'alpha/draft.md', 'One.\n', 'Alpha shared')
+        gitstate.sync(self.one)
+        self.assertFalse(gitstate.undo(self.one, 'alpha'))  # shared already
+        before = support.git(self.one.repo, 'rev-parse', 'HEAD')
+        self.save(self.one, 'alpha/draft.md', 'Changed.\n', 'Alpha changed')
+        self.assertFalse(gitstate.undo(self.one, 'beta'))  # another blog's commit
+        self.assertTrue(gitstate.undo(self.one, 'alpha'))
+        self.assertEqual(support.git(self.one.repo, 'rev-parse', 'HEAD'), before)
+        self.assertEqual((self.one.root / 'alpha' / 'draft.md').read_text(), 'One.\n')
+
+    def test_a_caller_holding_blog_studios_lock_syncs_without_locking_itself_out(self):
+        self.save(self.one, 'alpha/draft.md', 'One.\n', 'Alpha from one')
+        with mock.patch.dict(os.environ, {'BLOG_STUDIO_LOCK_WAIT': '0.5'}):
+            with support.locked(self.one.repo / '.git' / 'blog-studio.lock'):
+                report = gitstate.sync(self.one)
+        self.assertTrue(report['shared'])
+
+
+class BrandSkillCallsTests(unittest.TestCase):
+    """How Blog Studio asks a brand skill: every question is the plain command, asked each
+    time, with the shared brands folder and nothing else in its environment."""
+
+    def setUp(self):
+        made = tempfile.TemporaryDirectory(prefix='blog-brand-calls-')
+        self.addCleanup(made.cleanup)
+        self.base = Path(made.name)
+        self.runtime = self.base / 'synthetic-brand'
+        (self.runtime / 'scripts').mkdir(parents=True)
+        self.script = self.runtime / 'scripts' / 'synthetic-brand.mjs'
+        self.script.write_text('// synthetic: lists its brands\n')
+        (self.runtime / 'SKILL.md').write_text('A synthetic brand skill.\n')
+        self.ran = []
+
+    def answer(self, command, cwd=None, *rest):
+        self.ran.append(list(command))
+        asked = command[2:]
+        if asked == ['version']:
+            return 0, 'Synthetic Brand 1.2.3\n', ''
+        if asked == ['brands', '--json']:
+            return (
+                0,
+                json.dumps([{'brand': 'fictional', 'name': 'Fictional', 'variants': ['light']}]),
+                '',
+            )
+        if asked == ['contract']:
+            return 0, 'Usage: contract export|check\n', ''
+        return 1, '', 'Usage: synthetic'
+
+    def test_a_named_skill_is_asked_its_version_then_each_question_every_time(self):
+        with (
+            mock.patch.object(brand, 'run_command', self.answer),
+            mock.patch.object(brand.shutil, 'which', return_value='/synthetic/node'),
+        ):
+            made = brand.Brand(self.runtime)
+            self.assertEqual((made.name, made.version), ('Synthetic Brand', '1.2.3'))
+            listed = made.brands()
+            self.assertEqual(made.brands(), listed)
+            self.assertTrue(made.contracts())
+            self.assertTrue(made.contracts())
+        node, script = '/synthetic/node', str(self.script)
+        self.assertEqual(
+            self.ran,
+            [
+                [node, script, 'version'],
+                [node, script, 'brands', '--json'],
+                [node, script, 'brands', '--json'],
+                [node, script, 'contract'],
+                [node, script, 'contract'],
+            ],
+        )
+        self.assertEqual(
+            listed, [{'brand': 'fictional', 'name': 'Fictional', 'variants': ['light']}]
+        )
+
+    def test_a_brand_skill_found_on_this_computer_is_asked_by_the_plain_command(self):
+        home = self.base / 'home'
+        installed = home / '.agents' / 'skills' / 'synthetic-brand'
+        shutil.copytree(self.runtime, installed)
+        with (
+            mock.patch.object(brand, 'run_command', self.answer),
+            mock.patch.object(brand.shutil, 'which', return_value='/synthetic/node'),
+            mock.patch.dict(os.environ, {brand.VARIABLE: ''}),
+        ):
+            os.environ.pop(brand.VARIABLE)
+            listed = brand.found(home=home)
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]['name'], 'Synthetic Brand')
+        self.assertTrue(all(command[0] == '/synthetic/node' for command in self.ran))
+        self.assertIn(['brands', '--json'], [command[2:] for command in self.ran])
+
+    def test_a_named_folder_without_a_skill_is_refused_in_a_sentence(self):
+        empty = self.base / 'empty'
+        empty.mkdir()
+        with (
+            mock.patch.dict(os.environ, {brand.VARIABLE: str(empty)}),
+            mock.patch.object(brand, '_installed', return_value=iter(())),
+        ):
+            with self.assertRaises(support.WorkspaceError) as refused:
+                brand.Brand(run=self.answer)
+        self.assertEqual(
+            str(refused.exception),
+            f'BRAND_SKILL_RUNTIME names {empty}, which does not hold a brand skill. Point it '
+            'at an installed one, or unset it.',
+        )
+
+    def test_the_brand_command_is_told_only_the_shared_brands_folder(self):
+        from studio_core import brand_skills
+
+        told = []
+
+        def run(command, cwd, seconds, said, env=None, **rest):
+            told.append((seconds, said, env, rest))
+            return 0, '', ''
+
+        with (
+            mock.patch.object(brand.companions, 'run_command', run),
+            mock.patch.dict(os.environ, {'HARNESS_SLIDES_ROOT': '', 'HARNESS_RESEARCH_ROOT': ''}),
+        ):
+            for name in ('HARNESS_SLIDES_ROOT', 'HARNESS_RESEARCH_ROOT'):
+                os.environ.pop(name)
+            brand.run_command(['node', 'synthetic'])
+        self.assertEqual(told, [(120, 'The brand skill', brand_skills.environment(), {})])
+        self.assertNotIn('HARNESS_SLIDES_ROOT', told[0][2])
+        self.assertNotIn('HARNESS_RESEARCH_ROOT', told[0][2])
 
 
 if __name__ == '__main__':
