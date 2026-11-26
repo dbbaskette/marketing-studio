@@ -77,6 +77,7 @@ provider job or reads this computer's studio settings:
 | Brands | `python3 tests/brands_fixture.py` |
 | Training Studio, a training being written | `python3 tests/training_progress_fixture.py` |
 | Training Studio, drafts to review | `python3 studios/training/tests/ui/training_plan_fixture.py --desk` |
+| Training Studio, drafts to review with Yoodli scenarios, whose layouts wait for the brief to be marked ready | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --yoodli` |
 | Training Studio, a deck that stopped | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --stopped-deck` |
 | A deck's slides, in either deck studio | `python3 tests/slide_review_fixture.py training --rendered` or `presentation` |
 | Presentation Studio, an empty workspace | `python3 studios/presentation/tests/ui/intake_fixture.py` |
@@ -93,6 +94,13 @@ The home fixture stops when the process that started it ends, so run it in the f
 Look at each changed screen at desktop and phone width, in light and dark. This is one
 person's look, not a regression check: it does not repeat itself, so a rule that must keep
 holding belongs in a module suite.
+
+To see a screen as a phone on the private link sees it, open it at phone width with the
+page's requests carrying the header `X-Marketing-Studio-Via: network`, which is all that
+tells a studio the network bridge carried a request; no fixture flag sets it. The
+module suites set the header themselves (`PhoneSettingsTests` and `PhoneRouteWalkTests` in
+each deck studio's `test_runner_page.py`, `tests/test_home_phone.py`,
+`tests/test_onboarding_phone.py`).
 
 For a setup-only repair after a full native suite run, use
 `bash scripts/ci/tart-macos.sh --guest scripts/ci/guest-shared-setup.sh`.

@@ -128,6 +128,8 @@ Where this computer can make a deck, set-up asks two more things.
 
 Nothing is changed until you save. You can change any of it later in Settings.
 
+**From a phone.** Opened from a phone through Marketing Studio's private link (a request the network bridge carried, `X-Marketing-Studio-Via: network`), set-up is done on this computer: it and its checks are refused with a sentence saying so, whatever they are sent, and Settings says "The set-up is changed on the computer that runs Training Studio." in place of **Change the set-up**. The brand skill's repository is taken only as an https or ssh address, or `user@host:path`, of another computer, and one that cannot be read is said without git's own reason. To a phone, Settings and the brand name no folder of this computer, and the skills' upkeep report gives no skill link's folder (its sentence saying a skill link is broken can still name one). **Bring in** is refused before any folder is read. Each training in a list is still named by its folder. On this computer nothing changes.
+
 The team repository, when to share and the agent, with its model and level, are shared by every studio on this computer: see [the shared studios config](#shared-studios-config).
 
 ## Shared studios config
