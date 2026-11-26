@@ -357,7 +357,10 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.desk(
                 lambda: self.engine.desk_outline_price(path, None)))
         if path == '/api/status':
-            return server.as_json(HTTPStatus.OK, self.engine.standing())
+            # Its decks are named as on every list; its upkeep report names no folder here
+            # to a phone (GitHub issue #539).
+            found = self.engine.standing()
+            return server.as_json(HTTPStatus.OK, {**found, 'upkeep': caller.shown(found['upkeep'])})
         if path == '/api/published':
             return server.as_json(HTTPStatus.OK, {'published': self.engine.published()})
         if path == '/api/delete':
@@ -641,19 +644,22 @@ class RunnerPage(server.Page):
                 self.deck(server.text(sent, 'path')), title))
         if path == '/api/bring':
             return server.as_json(HTTPStatus.OK, self.bring(sent))
+        # The upkeep report's links carry each skill link's folder: a phone is shown none
+        # (`caller.shown`, GitHub issue #539); a caller on this computer sees it whole.
         if path == '/api/companions':
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().update(
-                self.working())})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().update(
+                self.working()))})
         if path == '/api/upgrade':
             version = server.text(sent, 'version')
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().upgrade(
-                self.working(), version)})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().upgrade(
+                self.working(), version))})
         if path == '/api/restart':
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().restart(
-                self.working())})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().restart(
+                self.working()))})
         if path == '/api/versions':
             dismissed = server.text(sent, 'dismiss')
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().dismiss(dismissed)})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
+                self.keeper().dismiss(dismissed))})
         if path == '/api/brand':
             try:
                 return server.as_json(HTTPStatus.OK,
@@ -672,8 +678,8 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = server.text(sent, 'commit')
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
-                self.working(), commit)})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
+                self.keeper().install_brand(self.working(), commit))})
         return super().write(path, sent)
 
     def keeper(self):
