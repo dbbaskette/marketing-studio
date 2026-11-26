@@ -1896,13 +1896,20 @@ class RunTests(PageCase):
         self.assertEqual(self.post('setup', {'path': str(self.base / 'elsewhere')})
                          ['workspace']['path'], str(self.base / 'elsewhere'))
 
-    def ended(self, how) -> Path:
-        """A training whose research-plan step ended as `how` ends it."""
+    def ended(self, how, title: str) -> Path:
+        """A training of its own, titled `title`, started in the workspace in use now, whose
+        research-plan step ended as `how` ends it. It proves it is that training: started
+        here, in this workspace, with its own title."""
         self.workers.then('research-plan', *how)
+        space = self.engine.space()
         status, reply, _ = self.answer('POST', '/api/trainings', json.dumps(
-            {**FORM, 'flow': 'desk'}).encode(), origin=self.origin, kind='application/json')
-        self.assertIn(status, (200, 409), reply)
-        return self.engine.space().training('rolling-restarts')
+            {**FORM, 'flow': 'desk', 'title': title}).encode(), origin=self.origin,
+            kind='application/json')
+        self.assertEqual(status, 200, reply)
+        root = Path(reply['path'])
+        self.assertEqual(root.parent.resolve(), space.root.resolve(), 'in the workspace in use')
+        self.assertEqual(workspace.load(root)['title'], title)
+        return root
 
     def test_however_a_step_ends_its_mark_goes_and_the_workspace_may_move(self):
         # Fix round of GitHub issue #549: a Stop left the step's mark in place, so every
@@ -1910,7 +1917,7 @@ class RunTests(PageCase):
         from studio_core.shared_runner.write_markers import defer_share
 
         def stopped(tools, job):
-            self.engine.act(self.engine.space().training('rolling-restarts'), 'stop')
+            self.engine.act(self.engine.space().training('stopped-here'), 'stop')
             raise engines.companion.Stopped('Stopped on the page.')
 
         def raising(tools, job):
@@ -1919,7 +1926,7 @@ class RunTests(PageCase):
                                  ('failed', (fails(), fails(), fails()), 'failed'),
                                  ('raised', (raising,), 'failed')):
             with self.subTest(name):
-                root = self.ended(how)
+                root = self.ended(how, f'{name.capitalize()} here')
                 self.assertEqual(self.view(root)['state'], state)
                 self.assertFalse(self.engine.in_hand(root))
                 self.assertFalse(defer_share(self.engine), 'sharing is not held back')
