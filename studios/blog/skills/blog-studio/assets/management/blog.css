@@ -278,9 +278,12 @@
 .geo-pointer-waits{border-color:var(--yours-fill);background:var(--yours-wash)}
 .geo-pointer-waits>.geo-pointer-says{font-weight:650}
 
-/* A draft to read and no pressing move: the band is one quiet row, so the writing starts higher. */
-.workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr) auto;gap:.4rem 1.2rem}
-@media (max-width:52rem){.workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr)}}
+/* A draft to read and no pressing move: the band is one quiet row, so the writing starts higher.
+   The arc keeps room for its four phases (about 28rem); where the move does not fit beside it,
+   the move wraps under it, never squeezing the arc's labels to a letter a line. */
+.workbench-quiet .workbench-head{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem 1.2rem}
+.workbench-quiet .workbench-head>.track-arc{flex:1 1 28rem;min-width:0}
+.workbench-quiet .workbench-head>.move-card{flex:0 1 auto}
 .workbench-quiet .workbench-head>.move-card{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .8rem;padding:.4rem .8rem}
 .workbench-quiet .move-card>p:not(.move-label){display:none}
 .workbench-quiet .move-card .move-title{font-size:1rem;margin:0}
