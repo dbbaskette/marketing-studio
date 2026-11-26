@@ -440,13 +440,15 @@ class DeskResearchTests(Fixture):
         if units:
             self.assertEqual(len({worker for _, worker, _ in reviews}), 2, 'a fresh reviewer for each unit')
             self.assertEqual(len(facts['review']['reviewers']), 2)
+        # No folder of this computer in the bundle, only on a Harness Research that records a supplied document as supplied:<name> (1.6.0 and newer); an older one records the folder it was taken from.
+        if research_contract.labels_supplied(RUNTIME):
             self.assertTrue(all(s['origin'].startswith('supplied:') for s in facts['sources']))
-        places = {str(directory), str(directory.resolve()), tempfile.gettempdir(),
-                  str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
-        for name in [entry['file'] for entry in manifest['artifacts']] + ['output.json']:
-            said = (directory / 'research' / name).read_bytes().decode('utf-8', 'replace')
-            for place in places:
-                self.assertNotIn(place, said, name)
+            places = {str(directory), str(directory.resolve()), tempfile.gettempdir(),
+                      str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+            for name in [entry['file'] for entry in manifest['artifacts']] + ['output.json']:
+                said = (directory / 'research' / name).read_bytes().decode('utf-8', 'replace')
+                for place in places:
+                    self.assertNotIn(place, said, name)
 
 
 class ParallelMeterTests(unittest.TestCase):

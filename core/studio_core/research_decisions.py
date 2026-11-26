@@ -68,7 +68,7 @@ def flags(value, *, legacy=False):
                 f = lookup['findings'][ident]
                 for ref in set(f['support'] + f['counter'] + f['summary']['refs']):
                     found.update(c['source'] for c in facts.get(ref, {}).get('citations', []))
-        return [{'title': sources[s]['title'], 'origin': sources[s]['origin']} for s in sorted(found)]
+        return [{'title': sources[s]['title'], 'origin': rc.shown_origin(sources[s]['origin'])} for s in sorted(found)]
     for group in ('facts', 'findings', 'prose'):
         for row in review.get(group, []):
             if row.get('verdict') == 'supported':

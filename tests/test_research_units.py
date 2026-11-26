@@ -121,6 +121,107 @@ class UnitCheckTests(unittest.TestCase):
         verified = rc.Workflow(RUNTIME).command(session.case_for(elsewhere), 'verify')
         self.assertEqual((verified['status'], verified['artifact_integrity']), ('complete', 'verified'))
 
+    def fail_first(self, *questions):
+        """A reviewer that fails the first review of each of these questions' units."""
+        failing, failed = {area_of(question) for question in questions}, set()
+        def before(unit, payload):
+            areas = payload['assignment']['unit']['areas']
+            if areas and areas[0] in failing and areas[0] not in failed:
+                failed.add(areas[0])
+                raise ValueError('Synthetic reviewer failure')
+        return before
+
+    def test_a_check_continued_with_more_reviewers_plans_for_them_and_passes_first_time(self):
+        # The reviewer's reproduction: three units fail one at a time, then the check is
+        # continued three at a time (Training Studio can change its workers in between).
+        self.before = self.fail_first('question-1', 'question-2', 'question-3')
+        with self.assertRaisesRegex(ValueError, 'Synthetic reviewer failure'):
+            self.run_units(limit=1)
+        status = self.units_status()
+        self.assertEqual(status['max_reviewers'], 1)
+        kept = {row['id'] for row in status['units'] if row['status'] == 'accepted'}
+        self.assertEqual(len(kept), 1)
+        first, self.review_peak = len(self.reviews), 0
+        facts, _ = self.run_units(limit=3)
+        self.assertTrue(facts['review']['accepted'])
+        again = [row['unit'] for row in self.reviews[first:]]
+        self.assertEqual(len(again), 4, 'the three failed units and the final, at the first try')
+        self.assertFalse(kept & set(again), 'the accepted unit is kept')
+        self.assertEqual(self.units_status()['max_reviewers'], 3)
+        self.assertEqual(self.review_peak, 3)
+
+    def test_a_check_continued_with_fewer_reviewers_never_runs_more_at_once(self):
+        self.before = self.fail_first('question-0', 'question-1', 'question-2', 'question-3')
+        with self.assertRaisesRegex(ValueError, 'Synthetic reviewer failure'):
+            self.run_units(limit=3)
+        self.assertEqual(self.units_status()['max_reviewers'], 3)
+        self.review_peak = 0
+        facts, _ = self.run_units(limit=1)
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(self.review_peak, 1)
+        self.assertEqual(self.units_status()['max_reviewers'], 1)
+
+    def studio_tool(self, refuse=lambda args: None):
+        """The helper run as Training Studio's and Presentation Studio's research tool runs it
+        (shared_runner.research): a refusal is a WorkspaceError, not a ValueError, carrying
+        the one line the helper printed. `refuse(args)` says no in its place when it returns
+        a line."""
+        class WorkspaceError(Exception):
+            pass
+        class Refused(WorkspaceError):
+            def __init__(self, line):
+                super().__init__('harness-research refused: ' + line)
+                self.line = line
+        def call(*args):
+            said = refuse(args)
+            if said:
+                raise Refused(said)
+            done = rc.run_helper([shutil.which('node') or 'node', str(Path(RUNTIME) / 'scripts/harness-research.mjs'), *args])
+            if done.returncode and not rc.answered(args, done.returncode, done.stdout):
+                raise Refused((done.stderr.strip().splitlines() or ['it gave no reason'])[-1])
+            return json.loads(done.stdout)
+        self.workflow = session.Workflow(RUNTIME, call)
+        return Refused
+
+    def test_a_refusal_raised_as_the_deck_studios_raise_it_is_recorded_as_refused(self):
+        self.studio_tool()
+        broken = area_of('question-1')
+        def change(unit, answer, payload):
+            if payload['assignment']['unit']['areas'] == [broken] and not getattr(self, 'broke', False):
+                self.broke = True
+                answer['originals'][0]['looked_at'] = 'everything'   # Harness Research refuses an unknown field
+        self.change = change
+        with self.assertRaisesRegex(ValueError, 'harness-research refused: Unknown unit original field'):
+            self.run_units()
+        statuses = sorted(row['status'] for row in self.units_status()['units'])
+        self.assertEqual(statuses, ['accepted', 'accepted', 'accepted', 'pending', 'refused'])
+        first = len(self.reviews)
+        facts, _ = self.run_units()
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual([row['areas'] for row in self.reviews[first:]], [[broken], []])
+
+    def test_a_stop_stays_a_stop_when_confirming_its_end_is_refused(self):
+        self.studio_tool(lambda args: 'Synthetic refusal to record the end.' if tuple(args[:2]) == ('review-units', 'finish') else None)
+        def before(unit, payload):
+            if unit == units.FINAL:   # the only unit in flight: nothing else says stopped
+                self.cancel.set()
+        self.before = before
+        with self.assertRaisesRegex(InterruptedError, 'Research stopped'):
+            self.run_units(limit=1)
+        self.assertEqual(self.states[-1]['phase'], 'stopped')
+
+    def test_a_stop_stays_a_stop_when_confirming_its_end_fails_otherwise(self):
+        def refuse(args):
+            if tuple(args[:2]) == ('review-units', 'finish'):
+                raise OSError('Synthetic: the helper could not be started.')
+        self.studio_tool(refuse)
+        def before(unit, payload):
+            if unit == units.FINAL:   # the only unit in flight: nothing else says stopped
+                self.cancel.set()
+        self.before = before
+        with self.assertRaisesRegex(InterruptedError, 'Research stopped'):
+            self.run_units(limit=1)
+
     def test_never_more_units_at_once_than_the_limit(self):
         facts, _ = self.run_units(limit=2)
         self.assertTrue(facts['review']['accepted'])
@@ -402,6 +503,26 @@ class UnitContractTests(unittest.TestCase):
         self.assertEqual(rc.unit_problems(review(final), final), [])
         self.assertIn('assessment.coverage', ' '.join(rc.unit_problems({**review(final), 'assessment': {}}, final)))
         self.assertTrue(rc.unit_review(template)); self.assertFalse(rc.unit_review({'schema': 2}))
+
+    def test_what_a_runtime_records_of_supplied_documents_is_read_from_its_version(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = Path(temp)
+            self.assertIsNone(rc.version(runtime))
+            self.assertFalse(rc.labels_supplied(runtime))
+            for said, labels in (('1.5.1', False), ('1.6.0', True), ('1.10.2', True), ('2.0.0-rc.1', True), ('1.6', True)):
+                (runtime / 'package.json').write_text(json.dumps({'version': said}))
+                self.assertEqual(rc.labels_supplied(runtime), labels, said)
+
+    def test_a_refusal_is_known_however_the_studio_raises_it_and_a_stop_never_is(self):
+        class WorkspaceError(Exception):
+            pass
+        class Refused(WorkspaceError):
+            line = 'Unknown unit original field: x.'
+        self.assertTrue(rc.refusal(ValueError('no')))
+        self.assertTrue(rc.refusal(Refused('no')))
+        self.assertFalse(rc.refusal(WorkspaceError('no')))
+        self.assertFalse(rc.refusal(InterruptedError('Research stopped.')))
+        self.assertFalse(rc.refusal(OSError('gone')))
 
     def test_a_review_units_result_that_exits_1_is_still_read(self):
         self.assertTrue(rc.answered(['review-units', 'assemble'], 1, '{"status": "needs-revision"}'))

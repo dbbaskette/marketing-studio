@@ -69,14 +69,16 @@ class ResearchJobsTests(Isolated):
         self.assertEqual(saved['execution'].get('review'), research_units.entry(RUNTIME))
         output = research_contract.output_root(research_session.case_for(root))
         facts, manifest = research_contract.read_bundle(output)
-        self.assertTrue(all(s['origin'].startswith('supplied:') for s in facts['sources'] if s['permission'] == 'selected')
-                        or not research_units.capability(RUNTIME))
-        places = {str(self.workspace), str(Path(self.workspace).resolve()), tempfile.gettempdir(),
-                  str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
-        for name in [entry['file'] for entry in manifest['artifacts']] + ['output.json']:
-            said = (output / name).read_bytes().decode('utf-8', 'replace')
-            for place in places:
-                self.assertNotIn(place, said, name)
+        # Only a Harness Research that records a supplied document as supplied:<name>
+        # (1.6.0 and newer) leaves no folder; an older one records the folder.
+        if research_contract.labels_supplied(RUNTIME):
+            self.assertTrue(all(s['origin'].startswith('supplied:') for s in facts['sources'] if s['permission'] == 'selected'))
+            places = {str(self.workspace), str(Path(self.workspace).resolve()), tempfile.gettempdir(),
+                      str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+            for name in [entry['file'] for entry in manifest['artifacts']] + ['output.json']:
+                said = (output / name).read_bytes().decode('utf-8', 'replace')
+                for place in places:
+                    self.assertNotIn(place, said, name)
         self.assertEqual(self.calls,['investigate','synthesize']+CHECKS)
 
     def test_captured_project_material_is_included_without_reupload_or_external_search(self):

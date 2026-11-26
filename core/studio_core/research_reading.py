@@ -212,7 +212,7 @@ def keep(root, group, areas, value, worker) -> None:
         ranked = held['relevance'].setdefault(areas_key(areas), {})
         for note in value['notes']:
             source = group[int(note['source'][1:]) - 1]
-            held['notes'][key(source)] = {'file': source['file'], 'title': source.get('title') or source.get('origin') or source['file'],
+            held['notes'][key(source)] = {'file': source['file'], 'title': source.get('title') or rc.shown_origin(source.get('origin')) or source['file'],
                                          'covers': note['covers'].strip(), 'terms': [term.strip() for term in note['terms']],
                                          'read': note['read'], 'worker': worker}
             ranked[key(source)] = [{'area': by_label[one['area']], 'rank': one['rank']} for one in note['bears_on']]

@@ -36,6 +36,39 @@ def answered(args, code, out):
         return False
 
 
+def refusal(error):
+    """Whether `error` is Harness Research saying no to one command, as the studios raise it:
+    a ValueError where Marketing Studio runs the helper itself (research_session and
+    research_contract `Workflow.command`), or, through Training Studio's and Presentation
+    Studio's research tool, its `Refused`, a WorkspaceError that carries the one line the
+    helper printed as `line` (shared_runner.research). A stop is never one."""
+    if isinstance(error, (InterruptedError, KeyboardInterrupt)):
+        return False
+    return isinstance(error, ValueError) or isinstance(getattr(error, 'line', None), str)
+
+
+# The first Harness Research that records a supplied document taken in new as
+# `supplied:<name>` rather than the absolute path of the folder it was taken from (#550).
+SUPPLIED_LABELS = (1, 6, 0)
+
+
+def version(runtime):
+    """The release a Harness Research runtime states in its package.json, as numbers, or None."""
+    try:
+        said = json.loads((Path(runtime) / 'package.json').read_text())['version']
+        parts = [int(part) for part in str(said).split('-')[0].split('.')[:3]]
+        return tuple(parts + [0] * (3 - len(parts)))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def labels_supplied(runtime):
+    """Whether this runtime records a new supplied document's origin as `supplied:<name>`,
+    so that a research bundle it makes names no folder of the computer."""
+    found = version(runtime)
+    return found is not None and found >= SUPPLIED_LABELS
+
+
 HELPER_SECONDS = 120   # the longest one helper command may take
 HELPER_TICK = 0.2      # seconds between looks at whether a running helper command was stopped
 HELPER_STOPPED = 'Research stopped; accepted evidence is kept.'

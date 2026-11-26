@@ -248,6 +248,8 @@ class ParallelNativeTests(StudioCase):
         import tempfile
         root = self.supplied_start(TEXT)
         facts = self.researched(root)
+        if not contract.labels_supplied(RUNTIME):
+            self.skipTest('The bundle names no folder only on a Harness Research that records a supplied document as supplied:<name> (1.6.0 and newer); an older one records the folder it was taken from.')
         origins = {source['origin'] for source in facts['sources']}
         self.assertTrue(origins and all(origin.startswith('supplied:') for origin in origins), origins)
         places = {str(root), str(root.resolve()), tempfile.gettempdir(),

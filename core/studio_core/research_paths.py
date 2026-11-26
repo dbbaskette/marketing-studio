@@ -32,8 +32,9 @@ def local_origin(origin):
     """Whether a research source's origin names a document on a computer, not a web address
     or a label: Harness Research 1.6.0 records a new supplied document as `supplied:<name>`
     (its name inside the folder it was taken from); earlier versions recorded the absolute
-    path of that folder's copy, and a `file:` address is one too."""
-    return isinstance(origin, str) and (origin.startswith(('supplied:', 'file:', '/', '\\\\'))
+    path of that folder's copy, and a `file:` address is one too. A section author is shown a
+    supplied document's retained copy as `retained-original:<file>` (research_sections)."""
+    return isinstance(origin, str) and (origin.startswith(('supplied:', 'retained-original:', 'file:', '/', '\\\\'))
                                         or bool(re.match(r'[A-Za-z]:[\\/]', origin)))
 
 

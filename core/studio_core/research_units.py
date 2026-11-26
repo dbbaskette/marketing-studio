@@ -138,7 +138,16 @@ class Check:
         self.stopped = False
 
     def command(self, action, value=None, **flags):
-        return self.run.workflow.command(self.case, 'review-units', action, value, **flags)
+        """One review-units command. Harness Research saying no is raised as Refused, however
+        the studio runs the helper (rc.refusal), with what it said; a stop stays a stop."""
+        try:
+            return self.run.workflow.command(self.case, 'review-units', action, value, **flags)
+        except Refused:
+            raise
+        except Exception as error:
+            if rc.refusal(error):
+                raise Refused(str(error)) from error
+            raise
 
     def stop(self):
         """Stop the outstanding units through Harness Research: it cancels them and refuses
@@ -190,6 +199,12 @@ class Check:
             if phase not in ('reviewing', 'ready-to-assemble', 'assembled'):
                 raise ValueError(f'Harness Research reports the review units as {phase!r}.')
             self.settle(status)
+            if status.get('max_reviewers') != self.most:
+                # Planned under another limit (a stopped or failed check continued with more or
+                # fewer reviewers): the same plan, taking this run's limit, so registrations
+                # are never refused for capacity and never exceed the limit.
+                status = self.plan()
+                continue
             if not redone and self.again(status):
                 redone = True
                 status = self.command('status')
@@ -211,7 +226,7 @@ class Check:
             try:
                 self.command('finish', {'unit': unit['id'], 'reviewer': unit['reviewer'],
                                         'attempt': unit['attempt'], 'outcome': outcome, 'note': ORPHANED})
-            except ValueError:
+            except Refused:
                 pass   # Already confirmed ended; a plan that still cannot go on says why.
 
     def again(self, status):
@@ -294,10 +309,7 @@ class Check:
             problems = unit_problems(answer, template, run.workflow.runtime)
             if problems:
                 raise Refused(' '.join(problems))
-            try:
-                self.command('accept', answer)
-            except ValueError as error:
-                raise Refused(str(error)) from None
+            self.command('accept', answer)   # a refusal is raised as Refused
             accepted = True
         except BaseException as error:
             if not accepted and getattr(error, 'terminal_confirmed', True):
@@ -305,6 +317,8 @@ class Check:
                            else 'refused' if isinstance(error, Refused) else 'failed')
                 try:
                     self.command('finish', {**terminal, 'outcome': outcome, 'note': ENDED[outcome]})
-                except ValueError:
-                    pass   # The next check confirms it (settle); the failure itself is raised.
+                except BaseException:
+                    # Nothing in confirming the end replaces what ended it: a stop stays a
+                    # stop. The next check confirms it (settle).
+                    pass
             raise

@@ -127,18 +127,19 @@ class ParallelNativeTests(StudioCase):
         self.assertNotEqual(kept, untidy)
         self.assertEqual(kept, tidy(kept))
         self.assertEqual(registered, [hashlib.sha256(kept.encode()).hexdigest()])
-        # #550: the bundle, shared with a team, names no folder of the computer that made it.
-        import tempfile
-        self.assertTrue(all(source['origin'].startswith('supplied:') for source in facts['sources'])
-                        or not research_units.capability(RUNTIME))
-        places = {str(root), str(root.resolve()), tempfile.gettempdir(),
-                  str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
-        published = [path for path in (root / 'research').rglob('*') if path.is_file()]
-        self.assertTrue(published)
-        for path in published:
-            said = path.read_bytes().decode('utf-8', 'replace')
-            for place in places:
-                self.assertNotIn(place, said, path.name)
+        # #550: the bundle, shared with a team, names no folder of the computer that made it,
+        # only on a Harness Research that records a supplied document as supplied:<name> (1.6.0 and newer); an older one records the folder it was taken from.
+        if contract.labels_supplied(RUNTIME):
+            import tempfile
+            self.assertTrue(all(source['origin'].startswith('supplied:') for source in facts['sources']))
+            places = {str(root), str(root.resolve()), tempfile.gettempdir(),
+                      str(Path(tempfile.gettempdir()).resolve()), str(Path.home())}
+            published = [path for path in (root / 'research').rglob('*') if path.is_file()]
+            self.assertTrue(published)
+            for path in published:
+                said = path.read_bytes().decode('utf-8', 'replace')
+                for place in places:
+                    self.assertNotIn(place, said, path.name)
 
 
 @unittest.skipUnless(RUNTIME and research_units.capability(RUNTIME), 'Harness Research with review units required.')
