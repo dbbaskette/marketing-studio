@@ -114,11 +114,17 @@ async function sRoute(screen,id=null,stage=null,replace=false){if(studio.screen=
 // Home is reached with setup done.
 function sLibraryWaiting(){try{const held=JSON.parse(sessionStorage.getItem('blog-studio-library-start')||'null');sessionStorage.removeItem('blog-studio-library-start');return held&&typeof held==='object'?held:null;}catch(_){return null;}}
 // The page's scripts are deferred, and a reply (a fresh key's first one, say) can come before
-// the last of them (desk.js) has run, so a screen it draws is not yet defined. Every deferred
-// script has run once DOMContentLoaded fires: a route waits for it while the page still loads.
-function sScriptsLoaded(){return typeof document==='undefined'||document.readyState!=='loading'?null:new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));}
+// the last of them (desk.js) has run, so a screen it draws is not yet defined. readyState
+// cannot tell: it is already 'interactive' while deferred scripts run. DOMContentLoaded fires
+// once every one of them has run (or failed to load), and runner.js, which runs before
+// desk.js, listens for it here: a route waits for that moment.
+const S_SCRIPTS=(()=>{const page=typeof document==='undefined'?null:document,held={ran:true,wait:null};
+  if(!page||typeof page.addEventListener!=='function'||page.readyState==='complete')return held;
+  held.ran=false;held.wait=new Promise(resolve=>page.addEventListener('DOMContentLoaded',()=>{held.ran=true;resolve();},{once:true}));return held;})();
+// A script of the page that did not load leaves its screens undefined: said as that, with Reload.
+function sPartMissing(error){return error?.name==='ReferenceError';}
 async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
-  const loading=sScriptsLoaded();if(loading)await loading;
+  if(!S_SCRIPTS.ran)await S_SCRIPTS.wait;
   if(screen==='home'&&studio.settings?.configured){const waiting=sLibraryWaiting();if(waiting&&typeof sDeskFromLibrary==='function')return sDeskFromLibrary(waiting);}
   if(!intakeSaved&&studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart&&!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
@@ -140,7 +146,7 @@ async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
     else if(screen==='geo-report'){await sGeoReport(id);}
     else if(screen==='run'||screen==='gate'){const found=await api('run?id='+encodeURIComponent(id));if(turn!==studio.turn)return;studio.found=found;if(found.saved_record){if(screen!=='run')await sRoute('run',found.id,null,true);else sSavedRecord(found);return;}if(found.on_desk&&!found.stages){await sRoute('desk',found.id,null,true);return;}if(found.on_desk){if(screen!=='run')await sRoute('run',found.id,null,true);else sRun(found);return;}if(sEditingRun(found)&&!found.complete){await sRoute('editor',found.id,null,true);return;}if(screen==='gate')await sReadGate(stage||found.next);else sRun(found);}
     if(turn===studio.turn&&screen==='editor')$('title').focus({preventScroll:true});
-  }catch(error){if(turn===studio.turn)sPage(sCard('This view could not be read',sNode('p','problem',error.message),sButton('Try again',()=>studioNavigate(screen,id,stage))));}
+  }catch(error){if(turn===studio.turn)sPage(sPartMissing(error)?sCard('Part of this page did not load',sNode('p','problem','Blog Studio could not load all of its page, so this view cannot be shown. Reload the page to load it again; your work is kept.'),sButton('Reload the page',()=>location.reload(),'filled')):sCard('This view could not be read',sNode('p','problem',error.message),sButton('Try again',()=>studioNavigate(screen,id,stage))));}
   finally{if(turn===studio.turn)$('studio-page').removeAttribute('aria-busy');}
 }
 async function sReadList(turn=studio.turn){const results=await Promise.all([api('runs'),api('board?limit=20'),api('run-options'),api('team'),api('geo-reports')]);if(turn!==studio.turn)return false;studio.reports=results[4]?.items||[];studio.listing=results[0].items;studio.deleted=results[0].deleted||[];const guided=new Set(studio.listing.map(row=>row.id));studio.ordinary=results[1].items.filter(row=>!guided.has(row.id));studio.total=results[1].total;studio.options=results[2];studio.settings=results[2].settings;studio.brand=results[2].brand;studio.team=results[3];return true;}
@@ -374,6 +380,7 @@ function sShown(){return document.hidden?new Promise(resolve=>{const back=()=>{i
 // and the first answer (or the page being shown again) resets the wait.
 const S_POLL=3000,S_POLL_MOST=60000;
 async function sPoll(){
+  if(!S_SCRIPTS.ran)return;  // Nothing is drawn again before the page's scripts have all run.
   if(document.hidden||studio.polling||studio.busy||studio.sheet||['settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;
   if(Date.now()<(studio.pollAfter||0))return;
   studio.polling=true;const turn=studio.turn;let failed=false;
