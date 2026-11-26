@@ -617,6 +617,83 @@ class WorkspaceValuesTests(WholeModuleTests):
         self.assertEqual(held, ['in', 'out'])
 
 
+class BrandValuesTests(WholeModuleTests):
+    """What a studio that makes no slides passes to the brand module, and what the deck
+    studios get by default."""
+
+    def brand(self, **values):
+        from studio_core import shared_runner
+        hosts = {'workspace': self.workspace, 'companion': _fake('own_companion')}
+        return shared_runner.whole_module('brand', self.name, 'Example', MODULES=hosts,
+                                          **values)
+
+    def made(self, module, ran):
+        runtime = self.folder / 'skill'
+        (runtime / 'scripts').mkdir(parents=True)
+
+        def run(command, cwd=None):
+            ran.append(command[2:])
+            if command[2:4] == ['contract', 'export']:
+                out = Path(command[command.index('--output') + 1])
+                out.mkdir(parents=True, exist_ok=True)
+                for name in ('brand-contract.json', 'DESIGN.md', 'VOICE.md'):
+                    (out / name).write_text('{}')
+            return 0, '{}', ''
+
+        return module.Brand(runtime, run=run)
+
+    def test_the_deck_studios_ways_are_the_defaults(self):
+        made = self.brand(PINS=self.folder / 'missing.json')
+        self.assertEqual(made.ROOTS, {'HARNESS_SLIDES_ROOT': 'slides',
+                                      'HARNESS_RESEARCH_ROOT': 'research'})
+        self.assertEqual((made.UNABLE, made.MEDIUM, made.DOCTOR_PROFILE),
+                         ('a deck cannot be made', 'slides', 'presentation'))
+        self.assertTrue(made.QUICK_ASKS and made.TELLS_DELIVERY)
+        self.assertEqual(made.FLOOR, made.TESTED)
+        ran = []
+        brand = self.made(made, ran)
+        ran.clear()
+        brand.export(self.folder / 'out', 'fictional', 'light', 'live')
+        brand.ready()
+        self.assertEqual(ran, [
+            ['contract', 'export', '--medium', 'slides', '--brand', 'fictional', '--variant',
+             'light', '--delivery', 'live', '--output', str(self.folder / 'out')],
+            ['doctor', '--profile', 'presentation', '--json']])
+
+    def test_a_studio_that_makes_no_slides(self):
+        made = self.brand(ROOTS={}, UNABLE='nothing can be branded', QUICK_ASKS=False,
+                          MEDIUM='letters', TELLS_DELIVERY=False, DOCTOR_PROFILE=None)
+        self.assertIsNone(made.FLOOR)
+        self.assertIsNone(made.too_old('0.0.1'))
+        before = self.loaded()
+        from studio_core import brand_skills
+        self.assertEqual(made.told(), brand_skills.environment())
+        self.assertEqual(self.loaded(), before)
+        ran = []
+        brand = self.made(made, ran)
+        ran.clear()
+        voice = self.folder / 'voice.json'
+        brand.export(self.folder / 'out', 'fictional', None, voice_profile=voice)
+        self.assertEqual(ran, [['contract', 'export', '--medium', 'letters', '--brand',
+                                'fictional', '--output', str(self.folder / 'out'),
+                                '--voice-profile', str(voice)]])
+        for refused in (brand.ready, lambda: brand.audit(self.folder / 'x', 'fictional', None)):
+            with self.assertRaises(self.workspace.WorkspaceError) as said:
+                refused()
+            self.assertEqual(str(said.exception), made.NO_PROFILE)
+        self.assertIsNone(brand.fonts())
+        self.assertEqual(len(ran), 1)   # neither was asked of the skill
+        with mock.patch.dict('os.environ', {made.VARIABLE: ''}), \
+                mock.patch.object(made, '_installed', return_value=iter(())):
+            import os
+            os.environ.pop(made.VARIABLE)
+            with self.assertRaises(self.workspace.WorkspaceError) as said:
+                made.Brand(run=lambda command, cwd=None: (1, '', ''))
+        self.assertEqual(str(said.exception), 'No brand skill was found on this computer, so '
+                         'nothing can be branded. Install one, or name its folder in '
+                         'BRAND_SKILL_RUNTIME, then try again.')
+
+
 class DeckSyncLockTests(unittest.TestCase):
     def test_each_deck_studio_s_sync_also_holds_blog_studio_s_lock(self):
         # A deck studio's sync in a shared repository never runs while Blog Studio writes
