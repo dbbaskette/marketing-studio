@@ -5092,14 +5092,17 @@ function adding(run) {
 
 // A run that is done has finished the training, or has made everything but the deck.
 function runStanding(run) {
+  // Who runs it comes first: a training nobody runs, or a teammate runs, is not worked on
+  // here whatever its files say. Only a finished one is said to be finished (#544).
+  const done = Boolean(run.finished && run.finished.ready);
+  if (run.mine === false && !done) {
+    return run.driver ? RUN_WORDS.elsewhere : ['off', 'Nobody is running it'];
+  }
   if (run.finished) {
     return run.finished.ready ? ['done', 'Finished']
       : ['late', 'Not ready to use yet'];
   }
   if (run.deck_left) return ['done', 'Everything but the slide deck is made'];
-  if (run.mine === false) {
-    return run.driver ? RUN_WORDS.elsewhere : ['off', 'Nobody is running it'];
-  }
   if (queued(run)) return ['none', 'Waiting its turn'];
   return run.state === 'working' && (adding(run) || outlining(run)) ? RUN_WORDS.waiting
     : runWords(run);

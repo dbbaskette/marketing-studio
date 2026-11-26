@@ -296,6 +296,9 @@ TAKEN = '{name} took this training over on {when}. This computer stopped working
 SET_ASIDE = (' What this computer had made and not yet shared is kept on this computer, and '
              'can be brought back.')
 THEIRS = '{name} is running this training from another computer.'
+# Where a desk training stood when its run had made what it could and it was not finished:
+# not every material was marked ready, or something else kept it from being used.
+UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
 LAST = ' What is here is what was last shared{when}. {then} It may have moved on since.'
 BROKEN = ('"{title}" was changed on this computer and on another at the same time, so '
           'nothing here can be shared. One side must take it over. Taking it over here '
@@ -7523,6 +7526,17 @@ class Engine(Reviewing):
             return []
         return list(self._since_fetch('kept', root, lambda: gitstate.kept(space, root)))
 
+    @staticmethod
+    def _finished(record: dict, found: pipeline.Survey, state: str) -> bool:
+        """Whether a training is finished: done, and on the desk with its index written,
+        which is due only once every material is Ready. A desk training whose work is all
+        made but not all Ready is done for its run, and not finished: it keeps its driver."""
+        if state != 'done':
+            return False
+        if not drafts.on_desk(record):
+            return True
+        return any(step.id == 'package' for step in found.steps) and 'package' in found.done
+
     def _then(self, record: dict, found: pipeline.Survey) -> str:
         """Where a training stood when it was last shared, said of the past: nothing here
         knows what the computer that drives it is doing now."""
@@ -7540,7 +7554,9 @@ class Engine(Reviewing):
         if step.kind == 'stuck':
             return f'Then, it could not go on: {step.why}'
         if step.kind == 'done':
-            return 'Then, it was finished.'
+            # On the desk, done for its run is not finished until the index is written.
+            return 'Then, it was finished.' if self._finished(record, found, 'done') \
+                else UNFINISHED_THEN
         if step.kind == 'deck':
             return f'Then: {pipeline.deck_says(found)}'
         if self._away(found):
@@ -7574,7 +7590,12 @@ class Engine(Reviewing):
         if mine:
             return mine, who, state, sentence, None
         if who is None:
-            return mine, who, *((state, sentence) if state == 'done'
+            # Only a finished training, or a desk one still its finisher's, keeps what its
+            # files say: one handed over before it was finished says that nobody runs it
+            # (GitHub issue #544).
+            kept = self._finished(record, found, state) or (
+                state == 'done' and (record.get('drafts') or {}).get('finished_by'))
+            return mine, who, *((state, sentence) if kept
                                 else ('stopped', team.NOBODY)), None
         last = self._last_shared(root, record, found)
         when = f", on {team.day(last['at'])}" if last['at'] else ''

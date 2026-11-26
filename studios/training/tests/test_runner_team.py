@@ -253,12 +253,25 @@ class DriverTests(Team):
                          'nothing was written to it there')
         self.assertEqual(len(self.workers.jobs), jobs, 'and nothing was worked on there')
 
+    def test_a_teammate_is_told_a_training_whose_work_is_made_is_not_finished(self):
+        # The driver is kept until every material is Ready (the owner's ruling on #549), so a
+        # teammate reads who runs it, and that it was not finished when it was last shared.
+        root = self.desk_started()
+        self.fetch(self.blake)
+        view = self.seen(self.blake, root)
+        self.assertEqual((view['mine'], view['driver']['name'], view['state']),
+                         (False, 'Alex', 'elsewhere'))
+        self.assertIn('Alex is running this training from another computer.', view['sentence'])
+        self.assertIn(engines.UNFINISHED_THEN, view['sentence'])
+        self.assertNotIn('it was finished', view['sentence'])
+
     def test_handing_over_leaves_a_training_for_anyone_to_take(self):
         root = self.desk_started()
         handed = self.drive(self.alex, root, 'hand-over')
-        # A desk training's work is all done here, so it says what is made, not who runs it.
-        self.assertEqual((handed['mine'], handed['driver'], handed['state']),
-                         (False, None, 'done'))
+        # Its work is all made, but not all marked ready: it is not finished, so it says
+        # that nobody runs it, not what its files say (GitHub issue #544).
+        self.assertEqual((handed['mine'], handed['driver'], handed['state'], handed['sentence']),
+                         (False, None, 'stopped', team.NOBODY))
         self.assertEqual(self.shared()[0], 'Rolling restarts: Alex hands this training over')
         with self.be(self.alex), self.assertRaisesRegex(engines.Elsewhere,
                                                         'Nobody is running this training'):

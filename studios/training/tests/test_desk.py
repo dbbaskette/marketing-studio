@@ -8627,6 +8627,38 @@ class PackageTests(unittest.TestCase):
 
 
 
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class RunStandingTests(unittest.TestCase):
+    """Where a run stands, as the outline screen says it beside a deck's words: who runs it
+    comes before what its files say (GitHub issue #544)."""
+
+    def standing(self, run: dict) -> list:
+        page = (PAGE / 'app.js').read_text(encoding='utf-8')
+        words = re.search(r'^const RUN_WORDS = \{.*?^\};', page, re.S | re.M).group(0)
+        told = re.search(r'^function runStanding\(run\) \{.*?^\}', page, re.S | re.M).group(0)
+        script = (words + '\n' + told + '\nconst queued = () => false, adding = () => false, '
+                  'outlining = () => false;\nconst runWords = (run) => RUN_WORDS[run.state];\n'
+                  'console.log(JSON.stringify(runStanding(' + json.dumps(run) + ')));')
+        done = subprocess.run([NODE, '-e', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_a_training_nobody_runs_says_so_even_with_all_its_work_made(self):
+        unready = {'ready': False, 'limitations': [], 'blocking': ['x']}
+        self.assertEqual(self.standing({'mine': False, 'driver': None, 'state': 'stopped',
+                                        'finished': unready}),
+                         ['off', 'Nobody is running it'])
+        self.assertEqual(self.standing({'mine': False, 'driver': {'name': 'Alex'},
+                                        'state': 'elsewhere', 'finished': unready,
+                                        'deck_left': {'says': 'x'}}),
+                         ['none', 'Run by your teammates'])
+        # A finished training is finished, whoever reads it.
+        self.assertEqual(self.standing({'mine': False, 'driver': None, 'state': 'done',
+                                        'finished': {'ready': True}}), ['done', 'Finished'])
+        self.assertEqual(self.standing({'mine': True, 'state': 'done', 'finished': unready}),
+                         ['late', 'Not ready to use yet'])
+
+
 class TrainingNamesTests(unittest.TestCase):
     """Training Studio says each thing one way, true at every review level."""
 
