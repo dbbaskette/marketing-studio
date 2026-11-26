@@ -158,12 +158,20 @@ evidence, preview or review text is added, and no request is made for it.
 - `counts: {gather|combine|check: {working, waiting, kept, failed, stopped, total}}`, for
   each stage with units. `working` is observed (the host's live jobs of that stage), never
   the configured limit, and `null` while a job's end is unconfirmed.
-- `ended_in: {part: final-brief|review-unit|whole-check, how: failed|timed-out|stopped,
-  label?, kept, total, said}` when the final brief or the check in units ended early.
-  `said` comes from `research_transport.ended_words`, the one sentence every studio shows
-  for it: the final brief names itself and keeps every section draft; a review unit is
-  named and the other parts' checks are kept. Training Studio's and Presentation Studio's
-  job failure, and Training Studio's final-brief timeout, use the same words.
+- `again: true` on a section draft, the final brief or a review unit that was done and will
+  be done again: a correction round rewrites the drafts it names and the final brief, and
+  which parts of the check hold is not known until the corrected dossier is planned, so until
+  then none is kept. After an incomplete check, the parts a retry reviews again say so too.
+  "Kept" is said and counted only of work that will not be done again as things stand. A stop
+  outside the check stops the collection, and going on gathers the evidence again, so nothing
+  gathered or written from it is called kept; a pause keeps what it has.
+- `ended_in: {part: final-brief|review-unit|whole-check|research, how: failed|timed-out|stopped|paused,
+  label?, kept?, total?, said}` when the run ended early. It is computed once, after every
+  peer has ended (`research_run.Run.ended`), by `research_transport.ended_words`, and the same
+  string becomes the message of the error the run raises, so a studio's stop text, its
+  problem, `describe()` and the card say one sentence. A job that ends while its peers work
+  names its part and counts nothing (`job_words`). No sentence names a button: it says what
+  is done again when research goes on.
 
 The shared card lists each stage's units one line each (name, state in words, tries, time),
 with what works now and what failed shown and the rest in a collapsed list; the final brief

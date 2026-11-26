@@ -9,6 +9,10 @@ const StudioResearch = (() => {
   const field = (label, value, key, multiline = false) => { const wrap = make('label', 'field'); const input = make(multiline ? 'textarea' : 'input', 'input'); input.value = value || ''; input.dataset.key = key; if (multiline) input.rows = 3; return { wrap: add(wrap, make('span', 'field-label', label), input), input }; };
   const check = (text, on, fn, key) => { const n = make('label', 'check'); const input = make('input'); input.type = 'checkbox'; input.checked = !!on; input.dataset.key = key; input.addEventListener('change', () => fn(input.checked)); return add(n, input, make('span', '', text)); };
   const array = value => Array.isArray(value) ? value : [];
+  // Records only: a saved or partly written snapshot may hold anything (#379).
+  const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
+  const records = value => array(value).filter(record);
+  const asked = q => typeof q === 'string' ? q : record(q) ? String(q.question || q.text || q.id || '') : '';
   const message = error => error && error.message || String(error || 'This action could not finish.');
   const summary = state => !state ? 'Loading sources…' : state.external ? (state.restricted ? 'Use supplied sources and search approved sites.' : 'Use supplied sources and search the public web.') : 'Use supplied sources only.';
 
@@ -444,21 +448,23 @@ const StudioResearch = (() => {
   }
 
   function workingDraft(state) {
+    if (!record(state)) return null;
     if (['creator-approved','stopped','stopping','paused','pausing','invalidated','complete','ready-for-review'].includes(state.phase)) return null;
-    const rows = array(state.combining).filter(row => row.status === 'kept' && row.preview);
+    const all = records(state.combining).map(row => record(row.preview) ? row : {...row, preview: undefined});
+    const rows = all.filter(row => row.status === 'kept' && row.preview);
     if (!rows.length) return null;
     const lines = ['# Working draft — independent check pending', '',
       'Incomplete, unreviewed research prose. This is not a finished learner guide or approved material.', '',
-      rows.length + ' of ' + array(state.combining).length + ' section drafts available.', ''];
-    for (const row of array(state.combining)) {
+      rows.length + ' of ' + all.length + ' section drafts available.', ''];
+    for (const row of all) {
       if (row.status !== 'kept' || !row.preview) {
         const question = array(row.questions)[0];
-        lines.push('## Section pending', '', typeof question === 'string' ? question : question?.question || question?.text || row.id, '', 'Status: ' + row.status, '');
+        lines.push('## Section pending', '', asked(question) || row.id, '', 'Status: ' + row.status, '');
         continue;
       }
       lines.push('Revision: ' + row.preview.basis, '');
-      for (const section of array(row.preview.sections)) lines.push('## ' + section.title, '', section.text || '', '');
-      lines.push('Sources:', ...array(row.preview.sources).map(source => '- ' + source.title + ' (' + source.permission + ')' + (source.origin ? ': ' + source.origin : '')), '');
+      for (const section of records(row.preview.sections)) lines.push('## ' + section.title, '', section.text || '', '');
+      lines.push('Sources:', ...records(row.preview.sources).map(source => '- ' + source.title + ' (' + source.permission + ')' + (source.origin ? ': ' + source.origin : '')), '');
       if (row.preview.truncated) lines.push('This preview is shortened; the complete contribution remains saved.', '');
     }
     return {rows, text: lines.join('\n')};
@@ -473,6 +479,11 @@ const StudioResearch = (() => {
     brief: {waiting: 'Waits for every section draft', working: 'Writing', kept: 'Kept', failed: 'Retry needed', stopped: 'Stopped'},
     check: {waiting: 'Waiting', working: 'Checking', kept: 'Checked and kept', failed: 'Retry needed', stopped: 'Stopped'},
     whole: {waiting: 'Waits for every part', working: 'Checking', kept: 'Checked and kept', failed: 'Retry needed', stopped: 'Stopped'}};
+  // Work that was done and will be done again (`again`) is never called kept.
+  const AGAIN_WORDS = {combine: {waiting: 'To be written again', working: 'Writing again'},
+    brief: {waiting: 'To be written again', working: 'Writing again'},
+    check: {waiting: 'Checked again after the correction', working: 'Checking again'},
+    whole: {waiting: 'Checked again after the correction', working: 'Checking again'}};
   // How long a unit took, or has taken so far: a working one is timed from its start, never
   // less than the time the snapshot said, and its words change without being announced.
   const since = started => { const at = Date.parse(started); return Number.isFinite(at) ? (Date.now() - at) / 1000 : null; };
@@ -480,40 +491,53 @@ const StudioResearch = (() => {
     let seconds = Number.isFinite(row.seconds) ? row.seconds : null;
     if (row.status === 'working') {
       // Drawn again on every poll: the same time the tick would say, never a step back.
-      const now = row.started_at ? since(row.started_at) : null;
-      if (now !== null) seconds = Math.max(seconds || 0, now);
-      const span = make('span', '', seconds === null && !row.started_at ? '' : ' · ' + duration(seconds || 0) + ' so far');
-      if (row.started_at) { span.dataset.started = row.started_at; span.dataset.seconds = String(seconds || 0); }
+      // With no start to time it from, a time would only grow stale: none is shown.
+      const now = typeof row.started_at === 'string' ? since(row.started_at) : null;
+      if (now === null) return null;
+      const span = make('span', '', ' · ' + duration(Math.max(seconds || 0, now)) + ' so far');
+      span.dataset.started = row.started_at; span.dataset.seconds = String(seconds || 0);
       return span;
     }
     if (seconds === null || row.status === 'waiting') return null;
     return make('span', '', (row.status === 'kept' ? ' · took ' : ' · after ') + duration(seconds));
   }
-  function unitLine(name, row, words, extra) {
-    const item = make('li');
-    item.dataset.state = row.status || 'waiting';
-    add(item, make('span', '', name + ' · ' + (words[row.status] || 'Status unavailable')),
+  function unitLine(name, row, kind, extra) {
+    const item = make('li'), words = UNIT_WORDS[kind], again = row.again === true && AGAIN_WORDS[kind][row.status];
+    item.dataset.state = typeof row.status === 'string' ? row.status : 'waiting';
+    add(item, make('span', '', name + ' · ' + (again || words[row.status] || 'Status unavailable')),
       Number.isInteger(row.attempts) && row.attempts > 1 ? make('span', '', ' · try ' + row.attempts) : null, unitTime(row), extra || null);
     return item;
   }
   // The stage running says, in words, how many of its units work now (observed, never the
   // limit; not known when a job's end is unconfirmed), wait, are kept and need a retry.
+  // A number missing from a partly saved snapshot is left unsaid, never "undefined".
   function stageCounts(label, held, what, key) {
-    if (!held || !held.total) return null;
-    const parts = [held.working === null || held.working === undefined ? 'how many are working now is not known' : held.working + ' working now'];
-    if (held.waiting) parts.push(held.waiting + ' waiting');
-    parts.push(held.kept + ' kept');
-    if (held.failed) parts.push(held.failed + ' need a retry');
-    if (held.stopped) parts.push(held.stopped + ' stopped');
-    const said = make('p', 'research-progress-note', label + ': ' + plural(held.total, what) + ', ' + parts.join(', ') + '.');
+    const whole = n => Number.isInteger(n) && n >= 0;
+    if (!record(held) || !whole(held.total) || !held.total) return null;
+    const parts = [];
+    if (held.working === null) parts.push('how many are working now is not known');
+    else if (whole(held.working)) parts.push(held.working + ' working now');
+    if (whole(held.waiting) && held.waiting) parts.push(held.waiting + ' waiting');
+    if (whole(held.kept)) parts.push(held.kept + ' kept');
+    if (whole(held.failed) && held.failed) parts.push(held.failed + ' need a retry');
+    if (whole(held.stopped) && held.stopped) parts.push(held.stopped + ' stopped');
+    const said = make('p', 'research-progress-note', label + ': ' + plural(held.total, what) + (parts.length ? ', ' + parts.join(', ') : '') + '.');
     said.dataset.key = 'research-units-' + key;
     return said;
   }
   // Every unit's line in a collapsed list, with what works now and what failed shown above it.
+  // The list of what works now says, in visible words, which stage it belongs to.
+  function nowList(stageName, key, lines) {
+    if (!lines.length) return null;
+    const title = make('p', 'field-label', stageName + ': working now or needing a retry'); title.id = key + '-now-title'; title.dataset.key = key + '-now-title';
+    const list = make('ul'); list.dataset.key = key + '-now'; list.setAttribute('aria-labelledby', title.id);
+    for (const line of lines) list.append(line);
+    return add(make('div'), title, list);
+  }
   function unitGroup(key, summaryText, lines, running) {
     const box = make('div', 'stack'); box.dataset.key = key;
     const now = lines.filter(([row]) => ['working', 'failed', 'stopped'].includes(row.status));
-    if (running && now.length) { const list = make('ul'); list.setAttribute('aria-label', 'Working now or needing a retry'); for (const [, line] of now) list.append(line()); box.append(list); }
+    if (running && now.length) box.append(nowList('Check sources', key, now.map(([, line]) => line())));
     const details = make('details', 'research-correction-details'); details.dataset.key = key + '-all';
     const summary = make('summary', '', summaryText); summary.dataset.key = key + '-toggle';
     const list = make('ul'); for (const [, line] of lines) list.append(line());
@@ -533,25 +557,28 @@ const StudioResearch = (() => {
       }
     }, 1000);
   }
-  // What a stopped or paused run keeps, from its counts.
-  function keptWords(state) {
-    const counts = state.counts || {}, said = [];
-    if (counts.gather?.total) said.push(counts.gather.kept + ' of ' + plural(counts.gather.total, 'research area'));
-    const drafts = array(state.combining);
-    if (drafts.length) said.push(drafts.filter(row => row.status === 'kept').length + ' of ' + plural(drafts.length, 'section draft'));
-    if (state.final_brief?.status === 'kept') said.push('the final brief');
-    if (counts.check?.total) said.push(counts.check.kept + ' of ' + plural(counts.check.total, 'part of the check', 'parts of the check'));
-    return said.length ? 'Kept: ' + (said.length === 1 ? said[0] : said.slice(0, -1).join(', ') + ' and ' + said.at(-1)) + '.' : '';
+  // A snapshot drawn as it is, whatever it holds: entries that are not records are passed
+  // over, a number that is missing is not said, and the page never throws (#379).
+  function tidy(given) {
+    const state = {...given};
+    for (const key of ['streams', 'workstreams', 'combining', 'review_units']) if (state[key] !== undefined) state[key] = records(state[key]);
+    for (const key of ['final_brief', 'counts', 'reading', 'correction', 'review_coverage', 'timing']) if (!record(state[key])) delete state[key];
+    if (state.agents !== undefined) state.agents = record(state.agents) ? {...state.agents, active: records(state.agents.active)} : undefined;
+    if (state.reading) state.reading = {...state.reading, groups: records(state.reading.groups)};
+    if (!(record(state.ended_in) && typeof state.ended_in.said === 'string' && state.ended_in.said)) delete state.ended_in;
+    if (state.combining) state.combining = state.combining.map(row => row.preview === undefined || record(row.preview) ? row : {...row, preview: undefined});
+    if (typeof state.phase !== 'string') delete state.phase;
+    return state;
   }
-
-  function progress(state, hooks = {}) {
-    if (!state) return null;
+  function progress(given, hooks = {}) {
+    if (!record(given)) return null;
+    const state = tidy(given);
     const phase = state.phase || 'investigate';
     const incomplete = ['check-incomplete', 'creator-review'].includes(phase);
     const assembling = state.final_brief?.status === 'working' || array(state.agents?.active).some(agent => agent.section === 'final' || agent.stream === 'final');
     const reviewUnits = array(state.review_units), unitNames = Object.fromEntries(reviewUnits.map(unit => [unit.id, unit.label]));
-    const ended = state.ended_in && state.ended_in.said && !['complete', 'ready-for-review'].includes(phase) ? state.ended_in : null;
-    const halted = !!ended && ended.how !== 'stopped';
+    const ended = state.ended_in && !['complete', 'ready-for-review'].includes(phase) ? state.ended_in : null;
+    const halted = !!ended && !['stopped', 'paused'].includes(ended.how);
     const titles = {'creator-review': 'Research needs your decision', 'creator-approved': 'Research choices saved', read: 'Reading your documents', investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
     const box = make('section', 'research-progress paper'); box.setAttribute('aria-label', 'Research progress');
     const stage = {read:0, investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, 'check-incomplete':2, 'creator-review':2, complete:3, 'ready-for-review':3}[phase];
@@ -609,7 +636,7 @@ const StudioResearch = (() => {
       const reader = make('details', 'research-correction-details'); reader.dataset.key = 'research-working-draft';
       const toggle = make('summary', '', 'Read working draft · ' + draft.rows.length + (draft.rows.length === 1 ? ' section available' : ' sections available')); toggle.dataset.key = 'research-working-draft-toggle';
       add(reader, toggle, make('p', 'quiet', 'Incomplete, unreviewed research prose. This is not a finished learner guide or approved material.'));
-      for (const row of draft.rows) for (const section of array(row.preview.sections)) {
+      for (const row of draft.rows) for (const section of records(row.preview.sections)) {
         reader.append(make('h4', 'row-title', section.title));
         for (const text of String(section.text || '').split('\n\n')) reader.append(make('p', '', text));
         if (row.preview.truncated) reader.append(make('p', 'quiet', 'Preview shortened; the complete contribution remains saved.'));
@@ -637,7 +664,8 @@ const StudioResearch = (() => {
     box.append(steps);
     // Work that ended early says where, what is kept and what to do, before any list.
     const where = ended ? add(make('div', 'research-current-activity'), make('p', 'research-progress-note', ended.said),
-      make('p', 'quiet research-next', 'Next: ' + (halted ? 'try again' : 'continue') + ' when you are ready. Only the unfinished work runs again; what is kept is not done again.')) : null;
+      make('p', 'quiet research-next', halted ? 'Next: when you go on, only the unfinished work runs again; what is kept is not done again.'
+        : ended.how === 'paused' ? 'Next: resume when you are ready. Only the unfinished work runs again.' : 'Next: continue when you are ready. Only the unfinished work runs again.')) : null;
     if (where) { where.dataset.key = 'research-ended'; box.append(where); }
     if (state.correction && !['complete','ready-for-review'].includes(phase)) {
       const correction = make('section', 'research-correction');
@@ -690,41 +718,43 @@ const StudioResearch = (() => {
       const summary = make('summary', '', phase==='complete'?'Earlier drafts and queued notes':keptDrafts + ' of ' + combining.length + ' section drafts kept');
       summary.dataset.key = 'research-combining-toggle'; details.append(summary);
       const list = make('ul');
-      const named = row => array(row.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).join('; ');
+      const named = row => array(row.questions).map(asked).join('; ');
       // While sections are combined: what works now and what needs a retry, above the list.
       if (stage === 1) {
-        const now = make('ul'); now.setAttribute('aria-label', 'Working now or needing a retry'); now.dataset.key = 'research-combining-now';
-        for (const row of combining) if (['working', 'failed', 'stopped'].includes(row.status)) now.append(unitLine(named(row), row, UNIT_WORDS.combine));
-        if (brief && ['working', 'failed', 'stopped'].includes(brief.status)) now.append(unitLine('Final brief', brief, UNIT_WORDS.brief));
-        if (now.childNodes.length) box.append(now);
+        const busy = row => ['working', 'failed', 'stopped'].includes(row.status);
+        const now = nowList('Combine findings', 'research-combining', [...combining.filter(busy).map(row => unitLine(named(row), row, 'combine')),
+          ...(brief && busy(brief) ? [unitLine('Final brief', brief, 'brief')] : [])]);
+        if (now) box.append(now);
       }
       for (const row of combining) {
         if(phase==='complete'&&!row.preview)continue;
-        const item=phase==='complete'?make('li','',named(row) + ' · Earlier draft'):unitLine(named(row), row, UNIT_WORDS.combine);
+        const item=phase==='complete'?make('li','',named(row) + ' · Earlier draft'):unitLine(named(row), row, 'combine');
         if(row.preview){
           const preview=make('details','paper research-section-preview');preview.dataset.key='research-preview-'+row.id;
           const toggle=make('summary','',phase==='complete'?'Earlier section draft and queued note':'Read saved section draft');toggle.dataset.key='research-preview-toggle-'+row.id;preview.append(toggle);
           add(preview,make('p','field-label',phase==='complete'?'Superseded by the checked research report.':'Draft—independent check pending'),make('p','quiet','Read-only saved prose for this approved section. Not eligible for final delivery. Revision '+String(row.preview.basis).slice(0,12)+'.'));
-          for(const section of array(row.preview.sections)){preview.append(make('h4','row-title',section.title));for(const text of String(section.text||'').split('\n\n'))preview.append(make('p','',text));}
+          for(const section of records(row.preview.sections)){preview.append(make('h4','row-title',section.title));for(const text of String(section.text||'').split('\n\n'))preview.append(make('p','',text));}
           if(row.preview.truncated)preview.append(make('p','quiet','Preview shortened; the complete saved draft is retained.'));
-          preview.append(make('p','quiet','Sources: '+array(row.preview.sources).map(source=>source.title+' ('+source.permission+')').join('; ')+'. Preview adds no sources or permissions.'));
+          preview.append(make('p','quiet','Sources: '+records(row.preview.sources).map(source=>source.title+' ('+source.permission+')').join('; ')+'. Preview adds no sources or permissions.'));
           preview.append(...[noteEditor(row,hooks)].filter(Boolean));item.append(preview);
         }
         list.append(item);
       }
       // The final brief is its own line, after the section drafts it is written from.
-      if (brief && phase !== 'complete') { const line = unitLine('Final brief', brief, UNIT_WORDS.brief); line.dataset.key = 'research-final-brief'; list.append(line); }
+      if (brief && phase !== 'complete') { const line = unitLine('Final brief', brief, 'brief'); line.dataset.key = 'research-final-brief'; list.append(line); }
       details.append(list); box.append(details);
       if(Number.isFinite(state.first_readable_seconds))box.append(make('p','quiet','First saved section readable at '+state.first_readable_seconds+' seconds'+(Number.isFinite(state.checked_result_seconds)?'; checked result at '+state.checked_result_seconds+' seconds.':'; final independent check still pending.')));
-      if (phase !== 'complete') box.append(make('p', 'quiet', 'Section drafts are kept for retry. The assembled research still needs its independent check.'));
+      if (phase !== 'complete') box.append(make('p', 'quiet', combining.some(row => row.again === true) || brief?.again === true
+        ? 'The correction rewrites the drafts marked to be written again, from the corrected evidence; only the drafts marked kept stay as they are. The assembled research still needs its independent check.'
+        : 'Section drafts are kept for retry. The assembled research still needs its independent check.'));
     }
     // The independent check in parts: each part's line, and the whole-research check last.
     if (reviewUnits.length) {
       const said = countsSaid('check'); if (said) box.append(said);
       const parts = reviewUnits.filter(unit => unit.kind !== 'final'), whole = reviewUnits.filter(unit => unit.kind === 'final');
       const keptParts = reviewUnits.filter(unit => unit.status === 'kept').length;
-      const lines = [...parts.map(unit => [unit, () => unitLine(unit.label || 'One part of the research', unit, UNIT_WORDS.check)]),
-        ...whole.map(unit => [unit, () => { const line = unitLine('Whole-research check', unit, UNIT_WORDS.whole); line.dataset.key = 'research-whole-check'; return line; }])];
+      const lines = [...parts.map(unit => [unit, () => unitLine(typeof unit.label === 'string' && unit.label || 'One part of the research', unit, 'check')]),
+        ...whole.map(unit => [unit, () => { const line = unitLine('Whole-research check', unit, 'whole'); line.dataset.key = 'research-whole-check'; return line; }])];
       box.append(unitGroup('research-review-units', ['complete', 'ready-for-review'].includes(phase) ? 'Parts of the independent check · ' + reviewUnits.length
         : keptParts + ' of ' + plural(reviewUnits.length, 'part') + ' of the independent check kept', lines, stage === 2 || phase === 'check-incomplete' || !!ended));
     }
@@ -733,8 +763,7 @@ const StudioResearch = (() => {
     const working = areas.filter(a => ['running', 'working'].includes(a.status)).length;
     const failed = areas.filter(a => ['failed', 'refused'].includes(a.status)).length;
     const checkingParts = reviewUnits.length > 0, wholeWorking = reviewUnits.some(unit => unit.kind === 'final' && unit.status === 'working');
-    const kept_ = ['stopped', 'stopping', 'paused', 'pausing'].includes(phase) ? keptWords(state) : '';
-    const activity = kept_ ? kept_ + ' Continue when you are ready: only unfinished work runs again.' : stage === 2 && checkingParts ? (wholeWorking
+    const activity = stage === 2 && checkingParts ? (wholeWorking
       ? 'Every part is checked and kept. One independent reviewer is checking the whole research: coverage, usefulness and consistency. Research is not finished until this check passes.'
       : 'Independent reviewers are checking the research in ' + plural(reviewUnits.filter(unit => unit.kind !== 'final').length, 'part') + ', each against its own sources; the whole research is checked once every part is kept. Research is not finished until this check passes.')
       : phase === 'creator-review' ? 'The draft and independent-check notes are saved. Choose what to include, include with a warning, or exclude; no correction loop is running.' : phase === 'creator-approved' ? 'The creator decided which flagged content to use. The saved report follows those choices.' : incomplete ? 'The check did not finish reading its required sources. Evidence and draft prose are retained; no correction round was started.' : stage === 0 ? (count > 0 ? count + (count === 1 ? ' investigator is' : ' investigators are') + ' reading sources and checking the research questions.' : 'Preparing the remaining investigations. Collected evidence is kept.') : stage === 1 ? (assembling ? 'Section drafts are saved. One author is assembling the final brief; no new research is needed for this step.' : 'Evidence collection is complete. Section authors are writing the working draft; saved sections are readable now.') : stage === 2 ? 'The independent reviewer is checking the report and brief against the captured sources. Research is not finished until this check passes.' : stage === 3 ? 'The report and reference brief have passed the independent source check.' : phase === 'needs-revision' ? 'The independent check requested corrections. Collected evidence is kept while the affected work is revised.' : 'Collected evidence is kept. Continue when you are ready.';
@@ -754,7 +783,7 @@ const StudioResearch = (() => {
       const list = make('ul', 'research-areas');
       const words = {kept: 'Evidence kept', accepted: 'Evidence kept', waiting: 'Waiting', pending: 'Waiting', running: 'Working', working: 'Working', failed: 'Needs retry', refused: 'Needs retry', cancelled: 'Stopped', 'termination-unconfirmed': 'Waiting for termination confirmation'};
       for (const [index, area] of areas.entries()) {
-        const questions = array(area.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).filter(Boolean);
+        const questions = array(area.questions).map(asked).filter(Boolean);
         const item = make('li', 'research-area');
         item.dataset.state = ['kept','accepted'].includes(area.status) ? 'done' : ['failed','refused','termination-unconfirmed'].includes(area.status) ? 'review' : ['running','working'].includes(area.status) ? 'current' : 'none';
         const mark = make('span', 'bead'); mark.dataset.state = item.dataset.state; mark.setAttribute('aria-hidden', 'true');

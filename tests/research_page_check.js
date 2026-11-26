@@ -298,7 +298,9 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   assert.deepEqual(lines.children.map(text),[long+' · Checked and kept · try 2 · took 3 seconds','Synthetic question 2 · Checking · 12 seconds so far','Synthetic question 3 · Retry needed · after 40 seconds','Synthetic question 4 · Waiting','Whole-research check · Waits for every part']);
   assert.equal(lines.children.at(-1).dataset.key,'research-whole-check','the whole-research check is its own line, last');
   assert.ok(lines.children[1].children.at(-1).dataset.started,'a working part is timed in the page from its start, never less than it was');
-  const now=group.children[0];assert.equal(now.tagName,'ul');
+  const nowBox=group.children[0],now=nowBox.children[1];assert.equal(now.tagName,'ul');
+  assert.equal(nowBox.children[0].className,'field-label');assert.equal(nowBox.children[0].textContent,'Check sources: working now or needing a retry','a sighted person reads which stage the list belongs to');
+  assert.equal(now['aria-labelledby'],nowBox.children[0].id);
   assert.deepEqual(now.children.map(text),['Synthetic question 2 · Checking · 12 seconds so far','Synthetic question 3 · Retry needed · after 40 seconds'],'what works now and what failed show without opening the list');
   assert.ok(nodes.some(n=>n.textContent==='Independent reviewer · Synthetic question 2'),'a reviewer is named by its part');
   assert.ok(nodes.some(n=>n.textContent.startsWith('Independent reviewers are checking the research in 4 parts')));
@@ -320,26 +322,42 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   assert.equal(text(briefKey('research-final-brief')),'Final brief · Writing · 5 seconds so far');
   assert.equal(briefKey('research-final-brief').parent.children.indexOf(briefKey('research-final-brief')),2,'after the section drafts');
   assert.deepEqual(briefKey('research-combining-now').children.map(text),['Final brief · Writing · 5 seconds so far']);
+  assert.equal(briefKey('research-combining-now-title').textContent,'Combine findings: working now or needing a retry');
   assert.equal(briefKey('research-units-combine').textContent,'Combine findings: 3 parts, 1 working now, 2 kept.');
   assert.ok(brief.some(n=>text(n)==='Section two · Draft kept · try 2 · took 30 seconds'),'a section kept after a retry reads as kept');
   // A final brief that failed is named, with the section drafts kept, in the server's words.
-  const said='The final brief could not finish. All 2 section drafts are kept; Try again writes only the final brief.';
+  const said='The final brief could not finish. All 2 section drafts are kept; only the final brief is written again.';
   const failed=all(kit.progress({...combining,agents:{count:0,active:[]},final_brief:{status:'failed',attempts:1,seconds:9},ended_in:{part:'final-brief',how:'failed',kept:2,total:2,said}}));
   {const top=kit.progress({...combining,agents:{count:0,active:[]},final_brief:{status:'failed'},ended_in:{part:'final-brief',how:'failed',said}}).children.map(n=>n.dataset.key);
    assert.ok(top.indexOf('research-ended')>=0&&top.indexOf('research-ended')<top.indexOf('research-combining'),'where it ended is said before any list');}
   {const halt=all(kit.progress({phase:'stopped',review_units:units,ended_in:{part:'review-unit',how:'stopped',said:'Research stopped during the independent check of “Synthetic question 2”.'}}));
-   assert.ok(halt.some(n=>n.textContent.startsWith('Next: continue when you are ready.')));assert.ok(!halt.some(n=>n.textContent==='Research needs attention'),'a stop is not a failure');}
+   assert.ok(halt.some(n=>n.textContent.startsWith('Next: continue when you are ready.')));assert.ok(!halt.some(n=>n.textContent==='Research needs attention'),'a stop is not a failure');
+   const pause=all(kit.progress({phase:'paused',review_units:units,ended_in:{part:'review-unit',how:'paused',said:'Research paused during the independent check of “Synthetic question 2”.'}}));
+   assert.ok(pause.some(n=>n.textContent.startsWith('Next: resume when you are ready.')),'a pause is called a pause');assert.ok(!pause.some(n=>n.textContent==='Research needs attention'));}
   {const gathering=all(kit.progress({phase:'investigate',streams:[{id:'a',status:'kept'},{id:'b',status:'working',started_at:ago(3)},{id:'c',status:'waiting'}],counts:{gather:{working:1,waiting:1,kept:1,failed:0,stopped:0,total:3}}}));
    assert.ok(gathering.some(n=>n.textContent==='1 of 3 areas collected · 1 working · 1 waiting'),'gathering says how many wait');
    assert.ok(gathering.some(n=>n.textContent===' · 3 seconds so far'),'a working area is timed');}
   assert.ok(failed.some(n=>n.textContent===said));assert.ok(failed.some(n=>n.textContent==='Research needs attention'));
-  assert.ok(!failed.some(n=>n.textContent.startsWith('Combine findings:')),'no running counts once it ended');
+  assert.ok(!failed.some(n=>n.dataset.key==='research-units-combine'),'no running counts once it ended');
   assert.ok(failed.some(n=>n.className==='research-stage-state'&&n.textContent==='Incomplete'));
   assert.ok(!failed.some(n=>n.textContent==='Working now'));
-  // A stopped run says what it kept.
-  const stopped=all(kit.progress({phase:'stopped',streams:[{id:'a',status:'kept'}],combining:combining.combining,final_brief:{status:'kept'},review_units:units,
-   counts:{gather:{total:1,kept:1},combine:{total:3,kept:3},check:{total:5,kept:1,waiting:2,failed:1,working:0}}}));
-  assert.ok(stopped.some(n=>n.textContent==='Kept: 1 of 1 research area, 2 of 2 section drafts, the final brief and 1 of 5 parts of the check. Continue when you are ready: only unfinished work runs again.'));
+  // A stopped run says what it kept in the run's one sentence; the page counts nothing itself.
+  const stopSaid='Research stopped. Kept: 1 of 1 research area and 2 of 2 section drafts.';
+  const stopped=all(kit.progress({phase:'stopped',streams:[{id:'a',status:'kept'}],combining:combining.combining,final_brief:{status:'waiting',again:true},review_units:units,
+   counts:{gather:{total:1,kept:1},combine:{total:3,kept:2},check:{total:5,kept:1,waiting:2,failed:1,working:0}},ended_in:{part:'research',how:'stopped',said:stopSaid}}));
+  assert.equal(stopped.filter(n=>n.textContent.includes('Kept:')).length,1,'one sentence says what is kept');assert.ok(stopped.some(n=>n.textContent===stopSaid));
+  assert.ok(!all(kit.progress({phase:'stopped',streams:[{id:'a',status:'kept'}],counts:{gather:{total:1,kept:1}}})).some(n=>n.textContent.includes('Kept:')),'without the run\'s sentence the page counts nothing of its own');
+  // Work done again is never called kept: the final brief and the parts after a correction.
+  {const redo=all(kit.progress({phase:'investigate',round:2,streams:[{id:'a',status:'waiting'}],combining:[{id:'s1',questions:['Section one'],status:'waiting',again:true},{id:'s2',questions:['Section two'],status:'kept'}],
+    final_brief:{status:'waiting',again:true},review_units:units.map(u=>({id:u.id,kind:u.kind,label:u.label,status:'waiting',again:true}))}));
+   assert.ok(redo.some(n=>text(n)==='Section one · To be written again'));assert.ok(redo.some(n=>text(n)==='Section two · Draft kept'));
+   assert.ok(redo.some(n=>text(n)==='Final brief · To be written again'));
+   assert.ok(redo.some(n=>text(n)==='Synthetic question 2 · Checked again after the correction'));assert.ok(redo.some(n=>text(n)==='Whole-research check · Checked again after the correction'));
+   assert.ok(redo.some(n=>n.textContent==='0 of 5 parts of the independent check kept'));assert.ok(redo.some(n=>n.textContent==='1 of 2 section drafts kept'));
+   assert.ok(!redo.some(n=>n.textContent==='Section drafts are kept for retry. The assembled research still needs its independent check.'),'no sentence calls every draft kept');}
+  // A working part with no start to time it from shows no time.
+  {const untimed=all(kit.progress({phase:'review',review_units:[{id:'u',kind:'content',label:'Untimed',status:'working',seconds:400}]}));
+   assert.ok(untimed.some(n=>n.tagName==='li'&&text(n)==='Untimed · Checking'));assert.ok(!untimed.some(n=>/so far/.test(n.textContent)),'no stale time');}
   // Live numbers that are not known are said to be unknown, never the limit.
   const unknown=all(kit.progress({...checking,agents:{count:null,unconfirmed:1,active:[{phase:'review',status:'termination-unconfirmed'}]},counts:{check:{working:null,waiting:2,kept:1,failed:1,stopped:0,total:5}}}));
   assert.equal(unknown.find(n=>n.className==='research-agent-count').textContent,'—');
@@ -351,6 +369,18 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   assert.ok(legacy.some(n=>text(n)==='Older section · Draft kept'));
   assert.ok(legacy.some(n=>n.textContent==='Evidence kept'));
   assert.ok(legacy.some(n=>n.textContent==='The independent reviewer is checking the report and brief against the captured sources. Research is not finished until this check passes.'));
+  // Any shape a saved or partly written snapshot may hold draws without throwing, and a number
+  // that is missing is not said.
+  for(const [what,hostile] of [['null units',{review_units:[null]}],['odd units',{review_units:[1,'x',[],{id:null,label:7,status:{}}]}],['null areas',{streams:[null,{id:'a',questions:[null,{question:'Q'}],status:'kept'}]}],
+    ['null sections',{combining:[null,{id:'s',questions:null,status:'kept',preview:'text'}]}],['null final brief',{final_brief:null}],['partial final brief',{final_brief:{}}],['string final brief',{final_brief:'kept'}],
+    ['null agents',{agents:null}],['null active',{agents:{count:1,active:[null,{phase:'review'}]}}],['counts missing stages',{counts:{}}],['partial counts',{phase:'review',review_units:[{id:'u',status:'kept'}],counts:{check:{total:2}}}],
+    ['partial gather counts',{counts:{gather:{total:3}},streams:[{id:'a',status:'kept'}]}],['counts null',{counts:null}],['ended_in string',{ended_in:'stopped'}],['ended_in number',{ended_in:3}],['ended_in array',{ended_in:['x']}],
+    ['ended_in without words',{ended_in:{part:'final-brief',said:null}}],['phase object',{phase:{}}],['reading odd',{reading:{total:5,read:1,groups:[null]}}],['workstreams null',{workstreams:[null]}],['everything null',{streams:null,combining:null,review_units:null,counts:null,agents:null,final_brief:null,ended_in:null}]]){
+   let drawn;assert.doesNotThrow(()=>{drawn=kit.progress({phase:'review',...hostile});},what);
+   assert.ok(!all(drawn).some(n=>/undefined|NaN|\[object Object\]/.test(n.textContent)),what+': nothing says undefined');}
+  assert.equal(all(kit.progress({phase:'review',review_units:[{id:'u',status:'kept'}],counts:{check:{total:2}}})).find(n=>n.dataset.key==='research-units-check').textContent,'Check sources: 2 parts.');
+  for(const value of [null,'x',3,[]])assert.equal(kit.progress(value),null);
+  assert.doesNotThrow(()=>kit.workingDraft({phase:'synthesize',combining:[null,{status:'kept',preview:{basis:'b',sections:[null,{title:'T',text:'x'}],sources:[null]}}]}));
   const older=all(kit.progress({phase:'review',agents:{count:1,active:[{phase:'review',section:'final-check',unit:'final'}]}}));
   assert.ok(older.some(n=>n.textContent==='Independent reviewer · the whole research'));assert.ok(!older.some(n=>n.textContent==='Assembling the final brief'));}
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');

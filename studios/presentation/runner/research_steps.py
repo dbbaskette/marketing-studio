@@ -345,7 +345,9 @@ class Researching:
                             self._title(record.get('agent')), outcome, outcome.detail), KEPT,
                             action=stops.agent_action(outcome))
                     elif outcome.reason == 'timeout' and getattr(refusal, 'section', None):
+                        # The final brief's own sentence already says what is kept (#379).
                         self._problem(root, 'research', 'failed', str(refusal),
+                            KEPT if getattr(refusal, 'research_ended', None) else
                             'Completed research areas and section contributions are kept. '
                             'Try again continues with the unfinished work.',
                             detail={'section': refusal.section})

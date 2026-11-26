@@ -10,7 +10,7 @@ import unittest
 
 from runner_support import StudioCase, URL
 from runner import engine as engines, research
-from studio_core import research_contract as contract, research_session as parallel, research_units
+from studio_core import research_contract as contract, research_session as parallel, research_transport, research_units
 from studio_core.shared_runner.worker_tools import tidy
 from synthesis_fixture import TEXT, dossier, review
 
@@ -311,11 +311,17 @@ class UnitNativeTests(StudioCase):
         # The stop names the part that failed and keeps the others' checks (#379), in the
         # words the progress says it in.
         saved = self.engine._load(root)
-        self.assertRegex(saved['problem']['what'], r'^The independent check of “.+\?” could not '
-                         r'finish: Synthetic unit check failed\. ')
-        ended = saved['research_execution']['progress']['ended_in']
+        progress = saved['research_execution']['progress']
+        ended = progress['ended_in']
         self.assertEqual((ended['part'], ended['how'], ended['total']), ('review-unit', 'failed', 4))
-        self.assertRegex(ended['said'], r'^The independent check of “.+\?” could not finish\. ')
+        # One ending, one sentence: the stop says what the progress says, counted once the
+        # peers that were still working had ended (both kept).
+        self.assertEqual(saved['problem']['what'], ended['said'])
+        self.assertRegex(ended['said'], r'^The independent check of “.+\?” could not finish: Synthetic unit check '
+                         r'failed\. The checks of the other 2 parts are kept; only what is left is checked again, then '
+                         r'the whole research\.$')
+        self.assertEqual(sorted(unit['status'] for unit in progress['review_units']), ['failed', 'kept', 'kept', 'waiting'])
+        self.assertEqual(research_transport.describe(progress), ended['said'])
         self.assertEqual(len(self.units), 3, 'every content unit ran; the final waits')
         self.assertTrue(all(len(files) == 1 for _, files in self.units), 'a content unit holds its own capture only')
         self.phases.clear(); self.units.clear()
@@ -327,3 +333,23 @@ class UnitNativeTests(StudioCase):
         names = [name for name in self.engine._load(root)['steps'] if contract.job_round(name) == ('review', 1)]
         self.assertEqual(len(names), 4)
         self.assertIn('research:review-1-final', names)
+
+    def test_a_part_out_of_time_is_named_with_what_is_kept_and_offers_more_time(self):
+        from runner import agents
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'review_template' in payload and payload['review_template']['unit'] != research_units.FINAL \
+                    and not getattr(self, 'timed', False):
+                self.timed = True
+                return agents.Outcome(False, 'timeout', 'Synthetic: the job reached its time limit.', seconds=900)
+            return self.worker(tools, job)
+        self.workers.queued['research-result'][:] = [worker] * 12
+        root = self.start()
+        saved = self.engine._load(root)
+        ended = saved['research_execution']['progress']['ended_in']
+        self.assertEqual((ended['part'], ended['how']), ('review-unit', 'timed-out'))
+        self.assertEqual(saved['problem']['what'], ended['said'])
+        self.assertRegex(ended['said'], r'^The independent check of “.+\?” ran out of time: ')
+        self.assertIn(' are kept; only what is left is checked again, then the whole research.', ended['said'])
+        self.assertEqual(saved['problem']['action'], 'more-time')
+        self.assertTrue(saved['problem']['kept'].startswith('It ran out of the time a step may take'))

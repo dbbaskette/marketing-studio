@@ -76,6 +76,7 @@ provider job or reads this computer's studio settings:
 | Marketing Studio home and the Document Library | `python3 tests/library_visual_server.py` |
 | Brands | `python3 tests/brands_fixture.py` |
 | Training Studio, a training being written | `python3 tests/training_progress_fixture.py` |
+| Training Studio, research progress in units of work: the check in parts with one working, the final brief being written, a part that failed, a stopped check, a correction round gathering again, a snapshot saved before units | `python3 tests/training_progress_fixture.py --research check`, `brief`, `failed`, `stopped`, `correction` or `legacy` |
 | Training Studio, drafts to review | `python3 studios/training/tests/ui/training_plan_fixture.py --desk` |
 | Training Studio, drafts to review with Yoodli scenarios, whose layouts wait for the brief to be marked ready | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --yoodli` |
 | Training Studio, a deck that stopped | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --stopped-deck` |

@@ -68,25 +68,32 @@ def grant(record, problem):
 
 
 def timeout(engine, root, error, product):
+    """Stop research whose section, final brief or review unit ran out of time, offering
+    more time. The final brief and a review unit are said in the one sentence the run said
+    of them (research_run.Run.ended, in str(error)), with the limit beside it (#379)."""
     section = getattr(error, 'section', None)
-    if not section:
+    ended = getattr(error, 'research_ended', None)
+    named = isinstance(ended, dict) and ended.get('part') in ('final-brief', 'review-unit', 'whole-check')
+    if not section and not named:
         return False
-    from studio_core import research_transport
-    seconds = error.section_seconds
+    thing = 'training' if product == 'training' else 'deck'
     loaded = engine._load(root)
-    current = loaded['section_synthesis']
-    own = section in current['more_time']
-    if section == 'final':
-        # The final brief names itself and keeps every section draft (#379), in the words
-        # every studio uses for it.
-        drafts = ((loaded.get('research_execution') or {}).get('progress') or {}).get('combining') or []
-        kept = research_transport.kept_words('final-brief', sum(row.get('status') == 'kept' for row in drafts) or len(drafts))
+    if section and not named:
+        seconds = error.section_seconds
+        own = section in loaded['section_synthesis']['more_time']
+        engine._problem(root, 'research', 'failed', stops.timed_out(
+            'The final brief' if section == 'final' else 'Combining this section', seconds, 1, thing, own),
+            'Completed research areas and section contributions are kept. Retry works only on unfinished contributions.',
+            stops.MORE_TIME, detail={'seconds': seconds, 'section': section})
+        return True
+    if section:
+        seconds = error.section_seconds
+        own = section in loaded['section_synthesis']['more_time']
     else:
-        kept = 'Completed research areas and section contributions are kept. Retry works only on unfinished contributions.'
-    engine._problem(root, 'research', 'failed', stops.timed_out(
-        'The final brief' if section == 'final' else 'Combining this section',
-        seconds, 1, 'training' if product == 'training' else 'deck', own),
-        kept, stops.MORE_TIME, detail={'seconds': seconds, 'section': section})
+        seconds = loaded['limits']['step_seconds']
+        own = bool(loaded.get('more_time')) and seconds == loaded['more_time']
+    engine._problem(root, 'research', 'failed', str(error), stops.timed_out('It', seconds, 1, thing, own),
+                    stops.MORE_TIME, detail={'seconds': seconds, **({'section': section} if section else {})})
     return True
 
 
@@ -306,10 +313,12 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
 
 
 def invalidate(case, review, evidence_areas=()):
-    """Keep valid drafts; rerun only contributions named by a rejected check."""
+    """Keep valid drafts; rerun only contributions named by a rejected check. Returns the
+    sections that will be written again (the final brief always is, when there is one)."""
     path = rc.inside(case, '.harness-research/studio-combining.json')
-    if not path.exists(): return
+    if not path.exists(): return []
     saved = json.loads(path.read_bytes())
+    marked = []
     bad_findings = {row['id'] for row in review.get('findings', []) if row.get('verdict') not in ('supported', 'pending')}
     bad_prose = [row for row in review.get('prose', []) if row.get('verdict') not in ('supported', 'pending')]
     any_named = bool(bad_findings or bad_prose or evidence_areas)
@@ -322,6 +331,8 @@ def invalidate(case, review, evidence_areas=()):
         if ident in evidence_areas or bad_findings & names or prose or broad:
             receipt.update(needs_revision=True, review={'findings': [row for row in review.get('findings', []) if row['id'] in names and row['id'] in bad_findings],
                 'prose': prose, 'assessment': assessment})
+            marked.append(ident)
     if saved.get('final'):
         saved['final'].update(needs_revision=True, review={'prose': bad_prose, 'assessment': assessment})
     rc.write(case, str(path.relative_to(case)), json.dumps(saved))
+    return marked

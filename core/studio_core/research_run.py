@@ -31,6 +31,9 @@ UNIT_SHOWN = {'pending': 'waiting', 'reserved': 'waiting', 'running': 'working',
 # Which host phase works in which stage of the page, for the observed number working now.
 STAGE_OF = {'investigate': 'gather', 'read': 'gather', 'synthesize': 'combine', 'review': 'check'}
 LABEL_MOST = 80   # a unit's name is a question cut to this, never more of the research
+# Harness Research's review phases in which a unit's status is one of the saved dossier's
+# plan: before it plans again (needs-plan, a review that no longer checks out), it is not.
+UNIT_PLANNED = ('reviewing', 'ready-to-assemble', 'assembled', 'stopped')
 
 
 def clocked(attempts, now):
@@ -69,7 +72,12 @@ class Watched:
     def command(self, root, group, action, value=None, **flags):
         result = self._workflow.command(root, group, action, value, **flags)
         if group == 'review-units':
-            self._run.unit_seen(action, value, result)
+            # What is shown is read from a copy, after the command has done what it does:
+            # nothing in showing it can change a command's result, fail a unit or the check.
+            try:
+                self._run.unit_seen(action, copy.deepcopy(value), copy.deepcopy(result))
+            except Exception:
+                pass
         return result
 
 
@@ -100,10 +108,28 @@ class Run:
         # What the page is shown of each review unit, by id, in plan order (#379); and of the
         # final brief while sections are combined: None until combining reaches it.
         self.units_shown, self.final_shown = {}, None
+        # Work known to be done again (#379): never shown or counted as kept until it is.
+        self.final_again, self.sections_again = False, set()
+        self.units_plan = None    # the review plan file the units were last listed from
+        self.ended_at = None      # 'check' or 'final' when the run ended there
+        # The collection was stopped: going on starts its next generation, which gathers the
+        # evidence again, so nothing gathered or written from it is kept.
+        self.collection_stopped = False
         self.host_lock = threading.RLock()    # over the host record of invocations
         self.state_lock = threading.RLock()   # over the progress the page is shown
 
     def go(self):
+        """The run, and when it ends early, where and what is kept, said once (#379)."""
+        try:
+            return self.steps()
+        except BaseException as error:
+            try:
+                self.ended(error)
+            except Exception:
+                pass   # saying where it ended never changes how it ended
+            raise
+
+    def steps(self):
         """The run, step by step: the checked bundle, as rc.read_bundle returns it."""
         self.prepare()
         self.open_case()
@@ -276,22 +302,35 @@ class Run:
 
     def units_timed(self, tracked, attempts):
         """Each area's, section's, final brief's and review unit's attempts and time, from the
-        host record (held under host_lock)."""
+        host record (held under host_lock). What will be done again says so (`again`)."""
         now = research_timing.stamp(session.now())
         def by(test):
             return [attempt for attempt in attempts if attempt.get('started_at') and test(attempt)]
+        if self.collection_stopped:
+            # Whatever a peer finishes after the stop is gathered or written again later.
+            self.redo(streams=[area['id'] for area in tracked['streams']],
+                      sections=[row['id'] for row in tracked.get('combining') or ()], final=True)
+            if self.final_shown == 'kept':
+                self.final_shown, self.final_again = 'waiting', True
         for area in tracked['streams']:
             for key in ('attempts', 'seconds', 'started_at'): area.pop(key, None)
             area.update(clocked(by(lambda a: a['phase'] == 'investigate' and a.get('stream') == area['id']), now))
         for row in tracked.get('combining') or ():
-            for key in ('attempts', 'seconds', 'started_at'): row.pop(key, None)
+            for key in ('attempts', 'seconds', 'started_at', 'again'): row.pop(key, None)
             row.update(clocked(by(lambda a: a['phase'] == 'synthesize' and a.get('section') == row['id']), now))
+            if row['id'] in self.sections_again:
+                if row.get('status') == 'kept' and not self.collection_stopped:
+                    self.sections_again.discard(row['id'])
+                else:
+                    row['again'] = True
         if self.final_shown is not None:
-            tracked['final_brief'] = {'status': self.final_shown, **clocked(
+            tracked['final_brief'] = {'status': self.final_shown,
+                **({'again': True} if self.final_again and self.final_shown != 'kept' else {}), **clocked(
                 by(lambda a: a['phase'] == 'synthesize' and a.get('section') == 'final'), now)}
         if self.units_shown:
             tracked['review_units'] = [
                 {**{key: unit[key] for key in ('id', 'kind', 'label', 'status')},
+                 **({'again': True} if unit.get('again') and unit['status'] != 'kept' else {}),
                  **clocked(by(lambda a, ident=unit['id']: a['phase'] == 'review' and a.get('unit') == ident), now),
                  **({'attempts': unit['attempt']} if unit.get('attempt') else {})}
                 for unit in self.units_shown.values()]
@@ -328,53 +367,58 @@ class Run:
         return first + (f' (and {more} more area{"" if more == 1 else "s"})' if more else '')
 
     def unit_seen(self, action, value, result):
-        """What one review-units command said of the units, shown on the page when it
-        changed what the page shows."""
+        """What one review-units command said of the units. A listing (status, plan) is taken
+        silently, and only from a plan of the saved dossier: before the plan says which parts
+        are kept, none is called kept. A change a unit's own command made is reported."""
         with self.state_lock:
             before = copy.deepcopy(self.units_shown)
             listed = result.get('units') if isinstance(result, dict) else None
             if isinstance(listed, list) and listed and all(isinstance(u, dict) and u.get('id') for u in listed):
-                # A status or plan lists every unit of the plan: shown in its order.
-                self.units_shown = {unit['id']: {
-                    'id': unit['id'], 'kind': 'final' if unit.get('kind') == 'final' or unit['id'] == research_units.FINAL else 'content',
-                    'label': self.unit_label(unit), 'status': UNIT_SHOWN.get(unit.get('status'), 'waiting'),
-                    'attempt': unit.get('attempt') if type(unit.get('attempt')) is int else None}
-                    for unit in listed}
-            else:
-                ident = (value or {}).get('unit') if isinstance(value, dict) else None
-                ident = ident.get('id') if isinstance(ident, dict) else ident
-                shown = self.units_shown.get(ident)
-                if shown is not None:
-                    if action == 'register':
-                        shown['status'] = 'working'
-                        number = ((result or {}).get('registration') or {}).get('number')
-                        if type(number) is int: shown['attempt'] = number
-                    elif action == 'accept':
-                        shown['status'] = 'kept'
-                    elif action == 'finish' and value.get('outcome') in ('failed', 'refused', 'cancelled'):
-                        shown['status'] = UNIT_SHOWN[value['outcome']]
-                    elif action == 'retry':
-                        shown['status'] = 'waiting'
-                elif action == 'stop':
-                    for unit in self.units_shown.values():
-                        if unit['status'] == 'working': unit['status'] = 'stopped'
+                current = result.get('phase') in UNIT_PLANNED
+                if current and isinstance(result.get('plan_file'), str):
+                    self.units_plan = result['plan_file']
+                shown = {}
+                for unit in listed:
+                    status = UNIT_SHOWN.get(unit.get('status'), 'waiting') if current else 'waiting'
+                    earlier = before.get(unit['id']) or {}
+                    shown[unit['id']] = {
+                        'id': unit['id'], 'kind': 'final' if unit.get('kind') == 'final' or unit['id'] == research_units.FINAL else 'content',
+                        'label': self.unit_label(unit), 'status': status,
+                        'attempt': unit.get('attempt') if type(unit.get('attempt')) is int else None,
+                        'again': status != 'kept' and bool(earlier.get('again') or (not current and before))}
+                self.units_shown = shown
+                return
+            ident = value.get('unit') if isinstance(value, dict) else None
+            ident = ident.get('id') if isinstance(ident, dict) else ident
+            shown = self.units_shown.get(ident) if isinstance(ident, str) else None
+            if shown is not None:
+                if action == 'register':
+                    shown['status'] = 'working'
+                    number = ((result or {}).get('registration') or {}).get('number')
+                    if type(number) is int: shown['attempt'] = number
+                elif action == 'accept':
+                    shown['status'], shown['again'] = 'kept', False
+                elif action == 'finish' and value.get('outcome') in ('failed', 'refused', 'cancelled'):
+                    shown['status'] = UNIT_SHOWN[value['outcome']]
+                elif action == 'retry':
+                    shown['status'] = 'waiting'
+            elif action == 'stop':
+                for unit in self.units_shown.values():
+                    if unit['status'] == 'working': unit['status'] = 'stopped'
             changed = self.units_shown != before
         if changed:
             self.report()
 
     def final_progress(self, state, error=None):
         """What section combining says of the final brief: waiting, working, kept, or ended
-        by `error` (failed, or stopped by a stop), shown on the page."""
-        how = None
-        if error is not None:
-            state, how = ('stopped', 'stopped') if self.stopped_by(error) else \
-                ('failed', 'timed-out' if timed_out(error) else 'failed')
+        by `error` (failed, or stopped by a stop or pause), shown on the page."""
         with self.state_lock:
+            if error is not None:
+                state = 'stopped' if self.stopped_by(error) else 'failed'
+                self.ended_at = 'final'
             self.final_shown = state
-            if how:
-                sections = self.tracked.get('combining') or []
-                self.ended_in('final-brief', how, kept=sum(row.get('status') == 'kept' for row in sections),
-                              total=len(sections))
+            if state == 'kept':
+                self.final_again = False
         self.report()
 
     def stopped_by(self, error):
@@ -382,35 +426,86 @@ class Run:
         return isinstance(error, (InterruptedError, KeyboardInterrupt)) or type(error).__name__ == 'Stopped' \
             or bool(self.cancelled()) or not self.allowed()
 
-    def ended_in(self, part, how, *, kept, total, label=None, parts=1):
-        """Where this run ended, said once for every studio (research_transport.ended_words):
-        the final brief or a review unit, how, and what is kept."""
-        from studio_core import research_transport
-        self.tracked['ended_in'] = {
-            'part': part, 'how': how, **({'label': label} if label else {}), 'kept': kept, 'total': total,
-            'said': research_transport.ended_words(part, how, label=label, parts=parts, kept=kept, total=total)}
+    def redo(self, *, streams=(), sections=(), final=False, units=None):
+        """What is now known to be done again, never shown or counted as kept (held under
+        state_lock): areas investigated again, section drafts and the final brief written
+        again, review units (`units`: their ids, or True for every one) checked again."""
+        for area in self.tracked['streams']:
+            if area['id'] in streams:
+                area['status'] = 'waiting'
+                area.pop('evidence', None)
+        self.sections_again |= set(sections)
+        for row in self.tracked.get('combining') or ():
+            if row['id'] in self.sections_again and row.get('status') == 'kept' or (
+                    self.collection_stopped and row.get('status') == 'kept'):
+                row['status'] = 'waiting'
+                row.pop('preview', None)
+        if final and self.final_shown is not None:
+            self.final_shown, self.final_again = 'waiting', True
+        for ident, unit in self.units_shown.items():
+            if units is True or (units and ident in units):
+                unit['status'], unit['again'] = 'waiting', True
 
-    def units_ended(self, error):
-        """A check in units that ended early: which unit, how, and the checks kept."""
-        units = list(self.units_shown.values())
-        if not units:
+    def ended(self, error):
+        """Where a run that ended early ended, how, and what it keeps, said once when every
+        peer has ended: in `ended_in` for every page and in the error every studio shows."""
+        from studio_core import research_transport
+        if not hasattr(self, 'tracked'):
             return
         stopped = self.stopped_by(error)
-        if stopped:
-            for unit in units:
-                if unit['status'] == 'working': unit['status'] = 'stopped'
-        ended = [unit for unit in units if unit['status'] == ('stopped' if stopped else 'failed')] \
-            or [unit for unit in units if unit['status'] in ('failed', 'stopped', 'working')]
-        kept = sum(unit['status'] == 'kept' for unit in units)
-        if not ended:
-            return
-        final = all(unit['kind'] == 'final' for unit in ended)
-        named = [unit for unit in ended if unit['kind'] != 'final']
+        how = ('paused' if not self.cancelled() and not self.allowed() else 'stopped') if stopped \
+            else 'timed-out' if timed_out(error) else 'failed'
         with self.state_lock:
-            self.ended_in('whole-check' if final else 'review-unit',
-                          'stopped' if stopped else 'timed-out' if timed_out(error) else 'failed',
-                          label=named[0]['label'] if len(named) == 1 else None,
-                          parts=len(named), kept=kept, total=len(units))
+            where = None
+            units = list(self.units_shown.values())
+            if stopped and self.collection_stopped:
+                pass   # nothing gathered or written is kept: said of the research as a whole
+            elif self.ended_at == 'check' and units:
+                if stopped:
+                    for unit in units:
+                        if unit['status'] == 'working': unit['status'] = 'stopped'
+                ended = [unit for unit in units if unit['status'] == ('stopped' if stopped else 'failed')]
+                if ended:
+                    named = [unit for unit in ended if unit['kind'] != 'final']
+                    where = ('whole-check' if not named else 'review-unit',
+                             {'label': named[0]['label'] if len(named) == 1 else None, 'parts': len(named),
+                              'kept': sum(unit['status'] == 'kept' for unit in units), 'total': len(units)})
+            elif self.ended_at == 'final' and self.final_shown in ('failed', 'stopped'):
+                drafts = self.tracked.get('combining') or []
+                where = ('final-brief', {'kept': sum(row.get('status') == 'kept' for row in drafts),
+                                         'total': len(drafts)})
+        if where is None and not stopped:
+            return   # a failure elsewhere keeps its own words
+        # Every count final, as the page will show it; a stop or pause is said as one, even
+        # where a peer that ended with it reported a failure after it.
+        self.report(how if stopped else None)
+        with self.state_lock:
+            part, facts = where or ('research', {})
+            detail = '' if stopped else getattr(error, 'research_detail', None) or str(error)
+            said = research_transport.ended_words(part, how, detail=detail,
+                                                  summary=research_transport.kept_summary(self.tracked), **facts)
+            self.tracked['ended_in'] = {'part': part, 'how': how,
+                **{key: value for key, value in facts.items() if key != 'parts' and value is not None}, 'said': said}
+            ended_in = copy.deepcopy(self.tracked['ended_in'])
+        try:
+            error.research_ended = ended_in
+            # The one sentence: what each studio shows of this ending is what the page says.
+            error.args = (said,)
+        except (AttributeError, TypeError):
+            pass
+        self.report()
+
+    def units_again(self, review):
+        """The review units a retry of an incomplete check reviews again (those owning an
+        unread original, and the final unit), never shown as kept."""
+        if not self.units_shown:
+            return
+        try:
+            again = set(research_units.rechecked(self.case, self.units_plan, review))
+        except (OSError, ValueError, KeyError, TypeError):
+            again = True   # not known: none is called kept
+        with self.state_lock:
+            self.redo(units=again)
 
     def require(self):
         """Go on only while the originals are unchanged, the run is not stopped and it is
@@ -419,13 +514,18 @@ class Run:
         if self.originals.changed():
             if checking: checking.stop()
             self.workflow.command(case, 'collection', 'stop')
+            with self.state_lock:
+                self.collection_stopped = True
             self.report('invalidated')
             raise ValueError('A selected original changed during research. Earlier evidence is kept; capture and approve its new revision.')
         if self.cancelled():
             # A check in units is stopped by itself: the collection stays complete, and the
             # units it accepted are kept for when it goes on.
             if checking: checking.stop()
-            else: self.workflow.command(case, 'collection', 'stop')
+            else:
+                self.workflow.command(case, 'collection', 'stop')
+                with self.state_lock:
+                    self.collection_stopped = True
             self.report('stopped')
             raise InterruptedError('Research stopped; accepted evidence is kept.')
         if not self.allowed():
@@ -492,6 +592,8 @@ class Run:
             if self.section_policy: research_sections.invalidate(case, review, affected)
             for stream in affected:
                 self.workflow.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The creator explicitly requested another correction attempt.'})
+            with self.state_lock:
+                self.redo(streams=affected)
 
     def read_in_groups(self):
         """More than fifty documents are read in groups first, one agent to a group, and each
@@ -587,10 +689,16 @@ class Run:
         pending = []
         for area in self.areas:
             saved = next(s for s in status['workstreams'] if s['id'] == area['id'])
-            if saved['status'] == 'accepted': self.report(stream=area['id'], state='kept')
-            else: pending.append((area, saved))
+            if saved['status'] != 'accepted': pending.append((area, saved))
+        # Every area as the collection holds it, at once: one that will be investigated
+        # again is never shown as kept (#379).
+        with self.state_lock:
+            waiting = {area['id'] for area, _ in pending}
+            for row in self.tracked['streams']:
+                if row['id'] not in waiting: row['status'] = 'kept'
+                elif row['status'] == 'kept': row['status'] = 'waiting'; row.pop('evidence', None)
         # Do not paint a fresh investigation when only synthesis prose needs repair.
-        if pending: self.report('investigate')
+        self.report('investigate' if pending else None)
         failures = []
         with ThreadPoolExecutor(max_workers=min(3, max(1, self.limit))) as pool:
             futures = [pool.submit(contextvars.copy_context().run, self.collect, area, saved, number, len(pending))
@@ -637,6 +745,8 @@ class Run:
                 'note': 'The host transport returned from this isolated invocation.'})
             if require_cancelled:
                 workflow.command(case, 'collection', 'stop')
+                with self.state_lock:
+                    self.collection_stopped = True
                 raise InterruptedError('Stopped research cannot adopt a late response.')
             value = json.loads(text)
             research_quality.evidence(value, task.get('research_policy'))
@@ -703,6 +813,8 @@ class Run:
         if not registry['facts']:
             for area in self.areas:
                 self.workflow.command(case, 'collection', 'retry', {'workstream': area['id'], 'reason': 'No cited facts were collected; review source access before retrying.'})
+            with self.state_lock:
+                self.redo(streams=[area['id'] for area in self.areas])
             self.report('needs-attention')
             raise ValueError('The investigators found no cited facts. Captured work and gaps are kept; review source access and the approved scope.')
         base = {'schema': 2, **{k: self.task[k] for k in rc.TASK_FIELDS}, 'sources': registry['sources'], 'facts': registry['facts']}
@@ -792,9 +904,8 @@ class Run:
             self.checking = research_units.Check(self, number, offered_final)
             try:
                 review, status = self.checking.go()
-            except BaseException as error:
-                self.units_ended(error)
-                self.report()
+            except BaseException:
+                self.ended_at = 'check'   # said once every unit has ended (ended)
                 raise
             finally:
                 self.checking, self.workflow = None, helper
@@ -830,6 +941,7 @@ class Run:
         cause = rc.unreadable_originals(review, dossier)
         said = (self.readable(cause) if self.readable else '') if cause else None
         if cause and said is not None:
+            self.units_again(review)
             raise rc.CheckCouldNotFinish(rc.objections(case), number - 1, cause, said or None)
         coverage = research_quality.coverage(review)
         if coverage['unread']:
@@ -837,13 +949,18 @@ class Run:
             # the legacy single-reviewer contract cannot reuse partial attestations.
             self.tracked['review_coverage'] = coverage
             self.tracked.pop('correction', None)
+            self.units_again(review)
             self.report('check-incomplete')
             raise research_quality.IncompleteCheck(coverage)
         affected = sorted(session.corrections(review, registry, sectioned=bool(self.section_policy)))
-        if self.section_policy: research_sections.invalidate(case, review, affected)
+        written = research_sections.invalidate(case, review, affected) if self.section_policy else ()
         for stream in affected:
             workflow.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The independent review requested evidence correction.'})
-            self.report(stream=stream, state='waiting')
+        # A correction round begins: what it does again is never shown as kept (#379). The
+        # final brief is written again, and which parts of the check hold is known only once
+        # the corrected dossier is planned.
+        with self.state_lock:
+            self.redo(streams=affected, sections=written, final=bool(self.section_policy), units=True)
         notes = [item['note'] for item in review.get('facts', [])
                  if item.get('verdict') not in ('supported', 'pending') and item.get('note')]
         assessment = review.get('assessment') or {}

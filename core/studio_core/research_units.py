@@ -123,6 +123,21 @@ def section(unit):
     return FINAL_SECTION if unit == FINAL else unit
 
 
+def unread_of(review):
+    """The sources an assembled review says it did not read the original of."""
+    return {item.get('source') for item in review.get('originals') or ()
+            if isinstance(item, dict) and item.get('read_original') is False}
+
+
+def rechecked(case, plan_file, review):
+    """The review units a check of the same dossier reviews again after `review` left
+    originals unread: each content unit owning one, then the final unit."""
+    plan = json.loads(rc.inside(case, plan_file).read_bytes())
+    unread = unread_of(review)
+    return [unit['id'] for unit in plan['units']
+            if unit['kind'] == 'content' and set(unit['owns']['sources']) & unread] + [FINAL]
+
+
 class Check:
     """One independent check of the saved dossier of `run` (a research_run.Run) in units:
     `go` returns (the assembled review, the helper's result of assembling it)."""
@@ -246,12 +261,9 @@ class Check:
         final = next((unit for unit in status['units'] if unit['id'] == FINAL), {})
         if final.get('status') != 'accepted' or final.get('reviewer') not in (review.get('reviewers') or ()):
             return False
-        plan = json.loads(rc.inside(self.case, status['plan_file']).read_bytes())
-        unread = {item.get('source') for item in review.get('originals') or ()
-                  if isinstance(item, dict) and item.get('read_original') is False}
+        unread = unread_of(review)
         units = {unit['id']: unit['status'] for unit in status['units']}
-        again = [unit['id'] for unit in plan['units']
-                 if unit['kind'] == 'content' and set(unit['owns']['sources']) & unread] + [FINAL]
+        again = rechecked(self.case, status['plan_file'], review)
         for ident in again:
             if units.get(ident) != 'reserved':
                 self.command('retry', {'unit': ident, 'reason': UNREAD if ident != FINAL or unread else CORRECTED})

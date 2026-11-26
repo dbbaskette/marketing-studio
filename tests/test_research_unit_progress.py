@@ -53,7 +53,9 @@ class UnitProgressTests(Borrowed, unittest.TestCase):
         self.assertEqual({unit['label'] for unit in shown if unit['kind'] == 'content'}, questions,
                          'each part is named by the area it checks')
         for unit in shown:
-            self.assertEqual(self.history(unit['id']), ['waiting', 'working', 'kept'])
+            # A part is listed silently from its plan and shown once a part's job starts: the
+            # first parts are shown working at once, the others wait their turn.
+            self.assertIn(self.history(unit['id']), (['waiting', 'working', 'kept'], ['working', 'kept']))
             self.assertEqual(unit['attempts'], 1)
             self.assertGreaterEqual(unit['seconds'], 0.1, 'each review took the worker its pause')
             self.assertLess(unit['seconds'], 60)
@@ -94,7 +96,7 @@ class UnitProgressTests(Borrowed, unittest.TestCase):
 
     def test_a_failed_unit_is_failed_its_peers_kept_and_the_failure_names_it(self):
         self.before = self.fail_first('question-2')
-        with self.assertRaisesRegex(ValueError, 'Synthetic reviewer failure'):
+        with self.assertRaisesRegex(ValueError, 'Synthetic reviewer failure') as raised:
             self.run_units()
         last = self.states[-1]
         statuses = {unit['label']: unit['status'] for unit in last['review_units']}
@@ -102,11 +104,12 @@ class UnitProgressTests(Borrowed, unittest.TestCase):
                                     'Synthetic question 2': 'failed', 'Synthetic question 3': 'kept',
                                     'the whole research': 'waiting'})
         self.assertEqual(last['counts']['check']['failed'], 1)
-        said = ('The independent check of “Synthetic question 2” could not finish. The checks of the '
-                'other 3 parts are kept; Try again checks only what is left, then the whole research.')
+        said = ('The independent check of “Synthetic question 2” could not finish: Synthetic reviewer failure. '
+                'The checks of the other 3 parts are kept; only what is left is checked again, then the whole research.')
         self.assertEqual(last['ended_in'], {'part': 'review-unit', 'how': 'failed', 'label': 'Synthetic question 2',
                                             'kept': 3, 'total': 5, 'said': said})
         self.assertEqual(transport.describe(last), said)
+        self.assertEqual(str(raised.exception), said, 'one ending, one sentence')
         # Tried again: the kept units read as kept, not as checked again.
         facts, _ = self.run_units()
         self.assertTrue(facts['review']['accepted'])
@@ -151,12 +154,14 @@ class FinalBriefProgressTests(unittest.TestCase):
 
     def test_a_final_brief_failure_names_the_final_brief_and_keeps_every_section_draft(self):
         self.fail_final = True
-        with self.assertRaisesRegex(ValueError, 'Synthetic final brief timeout'):
+        with self.assertRaisesRegex(ValueError, 'Synthetic final brief timeout') as raised:
             self.run_sections()
         last = self.states[-1]
         self.assertEqual(last['final_brief']['status'], 'failed')
         self.assertEqual({row['status'] for row in last['combining']}, {'kept'}, 'the section drafts are kept')
-        said = 'The final brief could not finish. All 4 section drafts are kept; Try again writes only the final brief.'
+        said = ('The final brief could not finish: Synthetic final brief timeout. All 4 section drafts are kept; '
+                'only the final brief is written again.')
+        self.assertEqual(str(raised.exception), said, 'one ending, one sentence')
         self.assertEqual(last['ended_in']['said'], said)
         self.assertEqual(last['counts']['combine']['failed'], 1)
         self.assertEqual(last['counts']['combine']['kept'], 4)
@@ -177,13 +182,16 @@ class WordsTests(unittest.TestCase):
     def test_each_part_names_itself_and_what_is_kept(self):
         self.assertEqual(transport.ended_words('final-brief', 'timed-out', kept=3, detail='It ran out of time'),
                          'The final brief ran out of time: It ran out of time. All 3 section drafts are kept; '
-                         'Try again writes only the final brief.')
+                         'only the final brief is written again.')
         self.assertEqual(transport.ended_words('whole-check', 'failed', kept=4),
                          'The independent check of the whole research could not finish. The checks of all 4 parts '
-                         'are kept; Try again checks only the whole research.')
+                         'are kept; only the whole research is checked again.')
         self.assertEqual(transport.ended_words('review-unit', 'stopped', label='Costs', kept=1),
                          'Research stopped during the independent check of “Costs”. The checks of the other 1 part '
-                         'are kept; Try again checks only what is left, then the whole research.')
+                         'are kept; only what is left is checked again, then the whole research.')
+        self.assertEqual(transport.ended_words('final-brief', 'failed', kept=0),
+                         'The final brief could not finish. Only the final brief is written again.',
+                         'no section draft is called kept that is not counted')
         self.assertEqual(transport.ended_words('review-unit', 'failed', parts=2, kept=0),
                          'The independent check of 2 parts of the research could not finish. No other part of the '
                          'check had finished; evidence and drafts are kept.')
@@ -193,36 +201,56 @@ class WordsTests(unittest.TestCase):
                     'review_units': [{'id': 'unit-a', 'label': 'Costs', 'status': 'working'},
                                      {'id': 'unit-b', 'label': 'Risks', 'status': 'kept'},
                                      {'id': 'final', 'label': 'the whole research', 'status': 'waiting'}]}
-        self.assertEqual(transport.job_ended({'section': 'final'}, progress), ('final-brief', {'kept': 2, 'total': 2}))
-        self.assertEqual(transport.job_ended({'unit': 'unit-a'}, progress),
-                         ('review-unit', {'label': 'Costs', 'kept': 1, 'total': 3}))
-        self.assertEqual(transport.job_ended({'unit': 'final'}, progress), ('whole-check', {'kept': 1, 'total': 3}))
+        self.assertEqual(transport.job_ended({'section': 'final'}, progress), ('final-brief', None))
+        self.assertEqual(transport.job_ended({'unit': 'unit-a'}, progress), ('review-unit', 'Costs'))
+        self.assertEqual(transport.job_ended({'unit': 'final'}, progress), ('whole-check', None))
         self.assertIsNone(transport.job_ended({'stream': 'area1'}, progress))
+        self.assertEqual(transport.job_words('review-unit', 'Costs', 'It failed.'),
+                         'The independent check of “Costs” could not finish: It failed. The other parts carry on; '
+                         'what they finish is kept.')
 
     def test_a_stopped_run_says_what_it_kept(self):
         progress = {'phase': 'stopped', 'streams': [{'status': 'kept'}] * 2,
                     'combining': [{'status': 'kept'}, {'status': 'waiting'}], 'final_brief': {'status': 'waiting'},
-                    'counts': {'gather': {'total': 2, 'kept': 2}, 'combine': {'total': 3, 'kept': 1},
-                               'check': {'total': 3, 'kept': 0}}}
-        self.assertEqual(transport.describe(progress),
-                         'Research stopped. Kept: 2 of 2 research areas, 1 of 2 section drafts and 0 of 3 parts of the check.')
+                    'review_units': [{'status': 'waiting'}] * 3}
+        said = 'Research stopped. Kept: 2 of 2 research areas and 1 of 2 section drafts.'
+        self.assertEqual(transport.ended_words('research', 'stopped', summary=transport.kept_summary(progress)), said)
+        # describe says the run's one sentence, and counts nothing of its own.
+        self.assertEqual(transport.describe({**progress, 'ended_in': {'said': said}}), said)
+        self.assertNotIn('Kept', transport.describe(progress))
         # A snapshot saved before #379 says what it said.
         self.assertEqual(transport.describe({'phase': 'review', 'workstreams': []}),
                          'Independently checking the report against the captured sources.')
         self.assertEqual(transport.describe({'phase': 'synthesize', 'agents': {'active': [{'section': 'final'}]}}),
                          'Assembling the final brief from saved section drafts.')
 
-    def test_a_final_brief_timeout_in_training_studio_says_the_final_brief(self):
+    def test_a_final_brief_or_part_out_of_time_in_training_studio_is_the_run_s_one_sentence(self):
         problems = []
         engine = SimpleNamespace(
-            _load=lambda root: {'section_synthesis': {'more_time': {}}, 'research_execution': {
-                'progress': {'combining': [{'status': 'kept'}] * 3}}},
+            _load=lambda root: {'section_synthesis': {'more_time': {}}, 'limits': {'step_seconds': 900}},
             _problem=lambda *args, **kwargs: problems.append((args, kwargs)))
-        error = SimpleNamespace(section='final', section_seconds=450)
+        brief = ('The final brief ran out of time: Timed out. All 3 section drafts are kept; '
+                 'only the final brief is written again.')
+        error = Exception(brief)
+        error.section, error.section_seconds = 'final', 450
+        error.research_ended = {'part': 'final-brief', 'how': 'timed-out', 'said': brief}
         self.assertTrue(sections.timeout(engine, None, error, 'training'))
-        (_, _, _, what, kept, _), _ = problems[0]
-        self.assertTrue(what.startswith('The final brief ran out of the time a step may take'))
-        self.assertEqual(kept, 'All 3 section drafts are kept; Try again writes only the final brief.')
+        (_, step, state, what, kept, action), extra = problems[0]
+        self.assertEqual(what, brief, 'the stop says what the progress says')
+        self.assertTrue(kept.startswith('It ran out of the time a step may take: it was stopped after 7.5 minutes.'))
+        self.assertNotIn('Try again', what)
+        self.assertEqual((action, extra['detail']), ('more-time', {'seconds': 450, 'section': 'final'}))
+        # A part of the check out of time: named, with what is kept, and more time for the step.
+        part = ('The independent check of “Costs” ran out of time: Timed out. The checks of the other 3 parts are '
+                'kept; only what is left is checked again, then the whole research.')
+        error = Exception(part)
+        error.research_ended = {'part': 'review-unit', 'how': 'timed-out', 'label': 'Costs', 'said': part}
+        self.assertTrue(sections.timeout(engine, None, error, 'training'))
+        (_, _, _, what, kept, action), extra = problems[1]
+        self.assertEqual(what, part)
+        self.assertEqual((action, extra['detail']), ('more-time', {'seconds': 900}))
+        # Neither: another step's timeout, said as before.
+        self.assertFalse(sections.timeout(engine, None, Exception('x'), 'training'))
 
     def test_how_a_job_ended_is_read_from_the_error(self):
         self.assertTrue(research_run.timed_out(SimpleNamespace(outcome=SimpleNamespace(reason='timeout'))))

@@ -3,7 +3,8 @@
 `--research STATE` shows a synthetic research progress snapshot instead of the creator's
 saved choices, to look at the units doing the work (#379): `check` (the check in parts, one
 working), `brief` (the final brief being written), `failed` (a part of the check failed),
-`stopped` (a stopped run) or `legacy` (a snapshot saved before units)."""
+`stopped` (a stopped check), `correction` (a correction round gathering again: what it redoes
+is not called kept) or `legacy` (a snapshot saved before units)."""
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
@@ -22,7 +23,7 @@ import desk
 from studio_core import research_transport
 
 asked = argparse.ArgumentParser()
-asked.add_argument('--research', choices=('check', 'brief', 'failed', 'stopped', 'legacy'))
+asked.add_argument('--research', choices=('check', 'brief', 'failed', 'stopped', 'correction', 'legacy'))
 chosen = asked.parse_args().research
 
 
@@ -61,6 +62,20 @@ def snapshot(state):
                   'section': units[1]['id'], 'unit': units[1]['id'], 'status': 'working'}]}
     if state == 'failed':
         units[2].update(status='failed', attempts=1, seconds=95)
+    if state == 'correction':
+        streams[1].update(status='working', attempts=2, seconds=12, started_at=ago(12))
+        combining[1].update(status='waiting', again=True)
+        for unit in units:
+            unit.update(status='waiting', again=True); unit.pop('seconds', None)
+        return {'schema': 1, 'phase': 'investigate', 'round': 2, 'round_limit': 3, 'streams': streams,
+                'combining': combining, 'final_brief': {'status': 'waiting', 'again': True, 'attempts': 1, 'seconds': 52},
+                'review_units': units, 'timing': timing,
+                'agents': {'count': 1, 'unconfirmed': 0, 'active': [{'id': 'investigator-x', 'phase': 'investigate',
+                           'stream': 'area-1', 'section': None, 'status': 'working'}]},
+                'correction': {'areas': ['area-1'], 'notes': ['Synthetic: one fact needs a narrower claim.']},
+                'counts': {'gather': {'working': 1, 'waiting': 0, 'kept': 3, 'failed': 0, 'stopped': 0, 'total': 4},
+                           'combine': {'working': 0, 'waiting': 2, 'kept': 3, 'failed': 0, 'stopped': 0, 'total': 5},
+                           'check': {'working': 0, 'waiting': 5, 'kept': 0, 'failed': 0, 'stopped': 0, 'total': 5}}}
     if state == 'stopped':
         units[2].update(status='stopped', seconds=30); units[3].update(status='waiting'); units[3].pop('seconds')
     tally = {key: sum(u['status'] == key for u in units) for key in ('waiting', 'kept', 'failed', 'stopped')}
@@ -75,7 +90,8 @@ def snapshot(state):
         kept = sum(u['status'] == 'kept' for u in units)
         shown['ended_in'] = {'part': 'review-unit', 'how': how, 'label': units[2]['label'], 'kept': kept,
                              'total': len(units), 'said': research_transport.ended_words(
-                                 'review-unit', how, label=units[2]['label'], kept=kept, total=len(units))}
+                                 'review-unit', how, label=units[2]['label'], kept=kept, total=len(units),
+                                 detail='' if state == 'stopped' else 'Synthetic unit check failed.')}
     return shown
 
 
