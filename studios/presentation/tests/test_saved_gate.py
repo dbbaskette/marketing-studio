@@ -262,6 +262,21 @@ class SavedLockTests(runner_support.DeskCase):
                 self.assertEqual({path.relative_to(root).as_posix(): path.read_bytes()
                                   for path in root.rglob('*') if path.is_file()}, kept)
 
+    def test_start_up_looks_into_a_bounded_number_of_folders(self):
+        # GitHub issue #544: the walk of work/ and sources/ stops at a bound; a lock in a
+        # folder beyond it is left where it is.
+        from unittest import mock
+        root = self.load_saved('research-plan', title='Many folders')
+        near, far = root / 'work/a/.studio-research/lock', root / 'work/z/y/x/.studio-research/lock'
+        for lock in (near, far):
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            lock.write_text('x\n')
+        # work, work/a, work/a/.studio-research and work/z are looked into; work/z/y is not.
+        with mock.patch.object(engines, 'UNMARK_FOLDERS', 4):
+            self.engine.resume()
+        self.assertFalse(near.exists())
+        self.assertTrue(far.exists())
+
     def test_a_lock_of_a_step_this_process_runs_is_kept(self):
         root = self.load_saved('build', title='Running')
         lock = root / 'work/.harness-slides/design/.lock'
