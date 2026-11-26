@@ -305,12 +305,23 @@ class DeskActions:
 
     def _desk_change(self, path):
         """Hold a desk deck for a change that draws something again: a deck this computer
-        delivered is taken back first, as asking for changes to it is."""
-        root = self._desk_held(path)
+        delivered is taken back first, as asking for changes to it is. Nobody drives a
+        delivered deck, so it is taken back before it is held: holding it first would refuse
+        it as nobody's (GitHub issue #549). Anyone may take such a deck; only this computer
+        is let through without asking."""
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('There is no deck there.')
+        record = self._load(root)
+        desk.refuse_off_desk(record)
         space = self.space()
-        if self._delivered_here(self._load(root)):
-            self._take(root, space)
-        self.hold(root)
+        if self._delivered_here(record):
+            from runner.engine import Elsewhere
+            try:
+                self.hold(root)   # still refused while starting up or in conversation
+            except Elsewhere:
+                self._take(root, space)
+        root = self._desk_held(root)
         return root, space, gitstate.identity(space.repo)
 
     def _desk_ask(self, root, record: dict, state: dict, sections, note: str, space) -> tuple:
