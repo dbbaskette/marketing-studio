@@ -113,7 +113,12 @@ async function sRoute(screen,id=null,stage=null,replace=false){if(studio.screen=
 // A Document Library item kept for after setup (see the first navigation) opens New blog once
 // Home is reached with setup done.
 function sLibraryWaiting(){try{const held=JSON.parse(sessionStorage.getItem('blog-studio-library-start')||'null');sessionStorage.removeItem('blog-studio-library-start');return held&&typeof held==='object'?held:null;}catch(_){return null;}}
+// The page's scripts are deferred, and a reply (a fresh key's first one, say) can come before
+// the last of them (desk.js) has run, so a screen it draws is not yet defined. Every deferred
+// script has run once DOMContentLoaded fires: a route waits for it while the page still loads.
+function sScriptsLoaded(){return typeof document==='undefined'||document.readyState!=='loading'?null:new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));}
 async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
+  const loading=sScriptsLoaded();if(loading)await loading;
   if(screen==='home'&&studio.settings?.configured){const waiting=sLibraryWaiting();if(waiting&&typeof sDeskFromLibrary==='function')return sDeskFromLibrary(waiting);}
   if(!intakeSaved&&studio.screen==='desk-start'&&screen!=='desk-start'&&studio.deskStart&&!await sDeskKeep(studio.deskStart,false))return notice(sBlogIntake().problem,true);
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
