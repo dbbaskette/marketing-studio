@@ -106,9 +106,10 @@ What a caller needs to know
   `studio_core.shared_runner.caller`) is a phone's: `POST /api/setup` and
   `POST /api/setup/check` are 403 whatever they send, `POST /api/brand` is 403 unless its
   `repository` is a web address on another computer, and `POST /api/adopt` is 403 before
-  the folder is read (GitHub issue #539). What it is shown of set-up and the brand names no
-  folder on this computer, and a brand repository that cannot be read is said without
-  git's own words. A caller on this computer is answered as before.
+  the folder is read (GitHub issue #539). What it is shown of set-up, the brand and the
+  upkeep report names no folder on this computer, the set-up it is shown says `remote`
+  (so the page offers it no set-up change), and a brand repository that cannot be read is
+  said without git's own words. A caller on this computer is answered as before.
 - Every request that passes the rules tells the engine a page is open, which is how the
   runner knows not to notify through the computer instead.
 - `POST /api/documents` alone may carry up to DOCUMENT_LIMIT bytes, because it carries a
@@ -393,6 +394,14 @@ def activity_asked(one) -> dict:
     return {'entry': given('entry'), 'job': given('job'), 'since': int(since)}
 
 
+def described(found: dict) -> dict:
+    """The set-up as this caller is shown it (`caller.shown`). Through the network bridge it
+    also says `remote`, so the page offers no set-up change a phone would be refused
+    (GitHub issue #539); a caller on this computer gets the set-up exactly as before."""
+    shown = caller.shown(found)
+    return {**shown, 'remote': True} if caller.remote() else shown
+
+
 class RunnerPage(desk.Page):
     """What the page may ask the runner, on top of what it may ask the desk."""
     reads = (*desk.READS, *READS)
@@ -455,7 +464,7 @@ class RunnerPage(desk.Page):
                                                 'install': gitstate.installed_copy()})
         if path == '/api/setup':
             # Through the network bridge, with no folder path (GitHub issue #539).
-            return desk.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
+            return desk.as_json(HTTPStatus.OK, described(setup.describe(self.engine)))
         if path == '/api/agents':
             return desk.as_json(HTTPStatus.OK, {'agents': self.agents()})
         if path == '/api/models':
@@ -1172,7 +1181,7 @@ class RunnerPage(desk.Page):
         if path == '/api/brand':
             try:
                 return desk.as_json(HTTPStatus.OK,
-                                    caller.shown(setup.save_brand(self.engine, sent)))
+                                    described(setup.save_brand(self.engine, sent)))
             except brand_source.Unreadable as refusal:
                 # Git's own reason can name hosts and ports: kept from a phone (#539).
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST,
@@ -1189,7 +1198,7 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '
                                    'notice about the shared values has been read.')
             setup.notice_read()
-            return desk.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
+            return desk.as_json(HTTPStatus.OK, described(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = desk.text(sent, 'commit')
             return desk.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
@@ -1201,7 +1210,7 @@ class RunnerPage(desk.Page):
         if path == '/api/setup/check':
             return desk.as_json(HTTPStatus.OK, shaped(setup.check, sent))
         if path == '/api/setup':
-            return desk.as_json(HTTPStatus.OK, caller.shown(
+            return desk.as_json(HTTPStatus.OK, described(
                 setup.apply(self.engine, shaped(setup.read, sent))))
         if path == '/api/trainings':
             # The source editor's draft, and the Document Library's revisions chosen beside it.

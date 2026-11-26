@@ -3679,6 +3679,8 @@ function limitsSays(limits) {
   return says.join(' ');
 }
 
+const SETUP_ELSEWHERE = 'The set-up is changed on the computer that runs Training Studio.';
+
 // Settings, with the runner: where the trainings are kept, who can see them, and the way in
 // to change any of it.
 function workspaceCard() {
@@ -3700,7 +3702,9 @@ function workspaceCard() {
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
-    add(make('div', 'bar'), capsule('Change the set-up', '', () => show('setup'), 'setup')));
+    // A phone is refused set-up (#539): it is told where set-up is changed instead.
+    held.remote ? make('p', 'quiet', SETUP_ELSEWHERE)
+      : add(make('div', 'bar'), capsule('Change the set-up', '', () => show('setup'), 'setup')));
   return node;
 }
 

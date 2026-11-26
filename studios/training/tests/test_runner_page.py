@@ -1103,9 +1103,11 @@ class PhoneSettingsTests(PageCase):
             self.assertNotIn(shown, json.dumps(phone))
         # Everything else is as this computer has it.
         self.assertEqual({key: value for key, value in phone.items()
-                          if key not in ('workspace', 'brand', 'shared')},
+                          if key not in ('workspace', 'brand', 'shared', 'remote')},
                          {key: value for key, value in here.items()
                           if key not in ('workspace', 'brand', 'shared')})
+        # It is told it is a phone, so the page offers no set-up change (fix round, #539).
+        self.assertEqual((phone.get('remote'), 'remote' in here), (True, False))
         # The answers of the brand route and of the shared notice are shown the same way.
         with mock.patch.object(brand_source, 'check', lambda address, place: {
                 'repository': address, 'commit': '0' * 40}):
