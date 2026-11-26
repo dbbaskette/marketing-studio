@@ -231,7 +231,8 @@ class ListTests(DeskCase):
         session['artifacts'] = {'intake': {}}
         record.write_text(json.dumps(session), encoding='utf-8')
         listed = self.listed()
-        self.assertIn('KeyError', listed[str(self.root)]['error'])
+        # Said plainly, never as the error's own type or text (GitHub issue #544).
+        self.assertEqual(listed[str(self.root)]['error'], desk.UNREADABLE)
         self.assertIn('counts', listed[str(other)])
 
 

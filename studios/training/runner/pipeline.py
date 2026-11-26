@@ -1411,7 +1411,7 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     from runner import training_plan
     if drafts.on_desk(run):
         listed, done = training_plan.group(root, session, run, listed, done)
-    waits = handoff_waits(listed, done, seen.copyable)
+    waits = handoff_waits(listed, done, seen.copyable, state)
     first = next((step for step in listed if step.id not in done
                   and step.artifact not in waits), None)
     return Survey(session, state, listed, done,
@@ -1421,19 +1421,24 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
                   research_of(run), waits)
 
 
-def handoff_waits(listed, done, copyable) -> frozenset[str]:
+def handoff_waits(listed, done, copyable, state=None) -> frozenset[str]:
     """On the desk, the Yoodli layouts still to write whose level's brief has no copy to
     name yet: the person has neither marked that brief Ready nor sent it to its copies, and
     the desk makes no copy of a draft by itself. A layout names the copy of the brief to
     upload, so it is written once that brief's copies are made, or found not to be makeable,
     as it was after the brief's approval in the earlier flow (GitHub issue #549). Its gate
-    and copies wait with it. Elsewhere, and for a layout already written, nothing waits."""
+    and copies wait with it. Elsewhere, for a layout already written, and where the brief is
+    left out or cannot be made (so no copy of it ever will be), nothing waits."""
     if copyable is None:
         return frozenset()
+
+    def brief(step):
+        return workspace.qualify('brief', workspace.split(step.artifact)[1])
     return frozenset(
         step.artifact for step in listed
         if step.kind == 'agent' and step.stage == 'yoodli' and step.id not in done
-        and workspace.qualify('brief', workspace.split(step.artifact)[1]) not in copyable)
+        and brief(step) not in copyable
+        and (state or {}).get(brief(step)) not in ('skipped', 'unavailable'))
 
 
 def _next(first: Step | None, session: dict, state: dict, asked: dict,
