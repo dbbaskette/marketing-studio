@@ -88,7 +88,12 @@ class StoredBuilderTreeTests(StudioCase):
             for mark in (b'/Users/', b'/home/', b'/var/folders/', b'/private/', b'/tmp/'):
                 self.assertNotIn(mark, data, name)
         for name, tree in stored.items():
-            self.assertEqual(stored_builders.key(tree['steps']), name)
+            # A builder's tree is keyed by its steps; a state a test's own helper command
+            # reached, by what the training held and the command (`replay`).
+            if 'steps' in tree:
+                self.assertEqual(stored_builders.key(tree['steps']), name)
+            else:
+                self.assertTrue(name.startswith('t-') and tree['step'], name)
 
 
 class ConversationTreeTests(StudioCase):

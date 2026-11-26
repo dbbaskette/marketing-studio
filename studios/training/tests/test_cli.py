@@ -51,16 +51,22 @@ class Flow(TrainingCase):
     """Drives the helper the way the assistant does, in process."""
 
     def cli(self, *args, expect=0) -> dict:
+        """Run the helper. A command that continued a training (they are gone) reaches the
+        state it made from its stored copy (`stored_builders.command`)."""
+        def run():
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                try:
+                    code = training.main(['--dir', str(self.root), *args])
+                except SystemExit as stopped:
+                    code = stopped.code
+            return code, captured.getvalue()
         if args and args[0] in stored_builders.CONTINUING:
-            stored_builders.trace('training.py ' + args[0])
-        captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
-            try:
-                code = training.main(['--dir', str(self.root), *args])
-            except SystemExit as stopped:
-                code = stopped.code
-        self.assertEqual(code, expect, captured.getvalue())
-        return json.loads(captured.getvalue())
+            code, output = stored_builders.command(self.root, list(args), run)
+        else:
+            code, output = run()
+        self.assertEqual(code, expect, output)
+        return json.loads(output)
 
     @builder
     def make(self, artifact: str, relative: str, text: str) -> None:

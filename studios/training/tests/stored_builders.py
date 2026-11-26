@@ -10,10 +10,10 @@ builder marked `@builder` now places the tree it made, stored byte for byte unde
 still reads such a training (lists, checks, the hub, the index, Google, copies) runs on a
 stored tree and needs none of those commands.
 
-A test that changes its training between builders, by writing a file or running a helper
-command itself, leaves the stored path: every builder after that drives the helper as before.
-`TRAINING_STUDIO_HELPER_TRACE=<file>` lists each test that still drives a helper command that
-continues a training, for the issue's phase 2.
+A test that changes its training itself (writing a file, making a Google Doc) and then calls
+a builder, or runs one of those helper commands itself (`test_cli.Flow.cli`), reaches the
+state that step made from what the training held then, stored the same way and keyed by
+that (`replay`), with the command's exit code and answer as the helper gave them.
 
 The trees were recorded by running the suites that use these builders with
 `TRAINING_STUDIO_RECORD_BUILDERS=1` while the helper's commands existed. A builder whose steps
@@ -190,13 +190,10 @@ def step(root, name: str, arguments, run):
         steps = state['steps'] if state['steps'] is not None and digest(now) == state['tree'] \
             else None
     if steps is None:
-        trace(f'{name} after the test changed the training itself')
+        # The test changed the training itself: the state this builder reaches from what the
+        # training holds now is stored by that, as a helper command's is (`replay`).
         _state[str(root)] = {'steps': None, 'tree': None}
-        _depth += 1
-        try:
-            return run()
-        finally:
-            _depth -= 1
+        return replay(root, name, arguments, lambda: (run(), None))[0]
     steps = [*steps, [name, plain(arguments)]]
     stored = trees().get(key(steps))
     if stored is not None and not recording():
@@ -220,6 +217,101 @@ def step(root, name: str, arguments, run):
     _store(steps, after)
     _state[str(root)] = {'steps': steps, 'tree': digest(after)}
     return answer
+
+
+def normal(tree: dict[str, bytes]) -> str:
+    """A tree's digest with every time it records left out, so the same state reached at
+    another time has the same digest."""
+    return digest(_normal(tree))
+
+
+def replay(root, name: str, arguments, run):
+    """Reach on `root`, from whatever it holds now, the state `name` with `arguments` made
+    from it when it was recorded: a helper command a test runs itself (`command`), or a
+    builder after the test changed the training. Keyed by what the training held (times left
+    out) and the step. Answers `run()`'s (answer, output); a placed state answers the stored
+    output and None."""
+    global _depth
+    root = Path(root)
+    now = files(root)
+    step_ = [name, plain(arguments)]
+    name_ = 't-' + hashlib.sha256(json.dumps([normal(now), step_], sort_keys=True)
+                                  .encode()).hexdigest()[:24]
+    stored = trees().get(name_)
+    if stored is not None and not recording():
+        tree = {path: (BLOBS / sha).read_bytes() for path, sha in stored['files'].items()}
+        _place(root, now, tree)
+        _locked(root)
+        return None, stored.get('output')
+    if not recording():
+        raise AssertionError(f'No stored state for {step_} from what this training holds. '
+                             f'Record it with {RECORD}=1 (see stored_builders.py).')
+    _depth += 1
+    try:
+        answer, output = run()
+    finally:
+        _depth -= 1
+    _store_state(name_, step_, files(root), output)
+    return answer, output
+
+
+def _store_state(name: str, step_: list, tree: dict[str, bytes], output) -> None:
+    for data in tree.values():
+        for mark in (b'/Users/', b'/home/', b'/var/folders/', b'/private/', b'/tmp/'):
+            if mark in data:
+                raise AssertionError(f'A recorded state names a place on this computer: {step_}')
+    if output is not None and any(mark in json.dumps(output).encode() for mark in
+                                  (b'/Users/', b'/home/', b'/var/folders/', b'/private/', b'/tmp/')):
+        raise AssertionError(f'A recorded answer names a place on this computer: {step_}')
+    found = trees()
+    if name in found:
+        stored = {path: (BLOBS / sha).read_bytes() for path, sha in found[name]['files'].items()}
+        if _normal(stored) != _normal(tree):
+            raise AssertionError(f'The same step from the same state made a different tree: '
+                                 f'{step_}')
+        return
+    BLOBS.mkdir(parents=True, exist_ok=True)
+    entry = {}
+    for path, data in tree.items():
+        sha = hashlib.sha256(data).hexdigest()
+        if not (BLOBS / sha).is_file():
+            (BLOBS / sha).write_bytes(data)
+        entry[path] = sha
+    found[name] = {'step': step_, 'files': entry, 'output': output}
+    merged = json.loads(TREES.read_text(encoding='utf-8')) if TREES.is_file() else {}
+    merged.update(found)
+    TREES.write_text(json.dumps(merged, indent=1, sort_keys=True) + '\n', encoding='utf-8')
+
+
+def command(root, arguments: list, run):
+    """A helper command that continues a training, run by a test to reach a state: the state
+    it made, stored (`replay`), and its exit code and output as the helper gave them. `run()`
+    answers (code, output) and runs only while recording."""
+    if _depth:
+        return run()
+    root = Path(root)
+    places = ((str(root), '@TRAINING@'), (str(root.parent), '@BESIDE@'))
+
+    def recorded():
+        code, output = run()
+        kept = output
+        for place, mark in places:
+            kept = kept.replace(place, mark)
+        return (code, output), [code, kept]
+    answer, output = replay(root, 'training.py', [
+        _marked(argument, places) for argument in arguments], recorded)
+    if answer is not None:
+        return answer
+    code, kept = output
+    for place, mark in places:
+        kept = kept.replace(mark, place)
+    return code, kept
+
+
+def _marked(argument, places):
+    for place, mark in places:
+        argument = str(argument).replace(place, mark)
+    return argument
 
 
 def builder(method):
