@@ -1,4 +1,4 @@
-"""A training's checks and readiness, its status as a person reads it, and decisions.
+"""A training's checks and readiness, and its status as a person reads it.
 
 The command line, the page and the runner all ask through here, so that each gets the same
 answer. Nothing here prints or parses a command.
@@ -146,20 +146,13 @@ def run_checks(root: Path, show_all: bool = False) -> dict:
 
 
 def describe(root: Path) -> dict:
-    """Status for the user: the workspace's, with the Google Docs it keeps and the guidance pin."""
+    """Status for the user: the workspace's, with the Google Docs it keeps and the guidance pin.
+    A training a conversation made is a saved record: what it is, and its way on (GitHub
+    issue #547)."""
     report = workspace.status(root)
     report['google_docs'] = gdocs.copy_states(root, workspace.load(root))
     report['guidance'] = sync_guidance.summary(root)
+    if workspace.made_in_conversation(root):
+        report['saved_record'] = {'said': workspace.CONVERSATION_SAID,
+                                  'next': workspace.CONVERSATION_NEXT}
     return report
-
-
-def decide(root: Path, target: str, decision: str, note: str | None = None,
-           by: str = 'chat', seen: str | None = None, refresh: bool = False) -> dict:
-    """Record a decision and say which checks are failing once it is made.
-
-    The command line and the page both decide through here; only `by` tells them apart.
-    """
-    outcome = workspace.decide(root, target, decision, note, by, seen, refresh=refresh)
-    outcome['failing_checks'] = [item['check'] for item in run_checks(root)['checks']
-                                 if item['status'] == 'failed']
-    return outcome

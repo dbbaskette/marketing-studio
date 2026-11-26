@@ -1,0 +1,27 @@
+{
+  "docs": {
+    "document": {
+      "anchors": [
+        [
+          "Why this matters",
+          "<!-- covers: O3 -->"
+        ],
+        [
+          "What a rolling restart does",
+          "<!-- covers: O1 K1.1 K1.3 -->"
+        ],
+        [
+          "When capacity holds",
+          "<!-- covers: O2 K1.2 -->"
+        ]
+      ],
+      "file_id": "doc1",
+      "local_sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9",
+      "remote_sha256": "db962cff8e10b60ba8aace36dacc6d7bba17360d23eb591e9c89dab65ee52dda",
+      "synced_at": "2026-11-26T09:34:22Z",
+      "title": "Rolling restarts: learner guide",
+      "url": "https://docs.example.com/d/doc1/edit"
+    }
+  },
+  "schema": 1
+}

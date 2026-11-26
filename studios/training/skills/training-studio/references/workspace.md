@@ -1,6 +1,6 @@
 # Workspace
 
-Use [conversation commands](conversation.md) for new desk work. Below is the saved-work path.
+The helper's `save`, `checkpoint` and `export` below work on a desk training this computer runs. Desk work in a conversation uses the [conversation commands](conversation.md) instead.
 
 Deliverables are files in the training directory. Bookkeeping is under `.training-studio/`.
 
@@ -38,9 +38,9 @@ Status is computed from the files each time. Changing a setting makes only the a
 | `training.py save <artifact> --from <file>` | A rebuilt version, written first to a scratch file outside the directory. The version it replaces is kept |
 | `training.py save <artifact>` | A hand edit. It never claims a rebuild and never clears staleness |
 
-Never use `--built` or `--from` to clear a stale flag: they claim a rebuild against current inputs, which then needs approval again.
+Never use `--built` or `--from` to clear a stale flag. A save is never the person's approval: a material is Ready only when they mark it so on the desk.
 
-For an edited saved file, `training.py save <artifact>` records the edit without approval. Approve only at the person’s request; then update dependent work or ask whether to retain it.
+A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.
 
 ## Copies
 
@@ -50,7 +50,7 @@ For an edited saved file, `training.py save <artifact>` records the edit without
 - **Word.** `exports` lists each artifact that needs a `.docx` beside its source. `training.py export <artifact>` makes it with pandoc and records it. If it answers `unavailable`, tell the user why. A copy made another way is recorded with `--file <path>`.
 - **With Yoodli on,** the user uploads the brief's copy: its Google Doc when `google` is kept, otherwise a Word copy, which `exports` then lists with each `yoodli:<id>` whatever was chosen. Without one, tell the user the Yoodli handoff is incomplete. If a Google Doc cannot be made, ask whether to drop `google`.
 
-Redo a copy after every change to its source. Never tell the user to share or upload one that is not `current`. For a one-off Word copy while `word` is off, make it and record nothing.
+Redo a copy after every change to its source. Never tell the user to share or upload one that is not `current`.
 
 ## History and other rules
 

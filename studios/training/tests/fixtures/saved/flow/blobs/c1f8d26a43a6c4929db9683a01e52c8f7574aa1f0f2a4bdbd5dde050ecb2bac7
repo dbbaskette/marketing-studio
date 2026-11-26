@@ -1,0 +1,79 @@
+# Rolling restarts
+
+This training is ready.
+
+- **For:** solutions engineers who deploy apps but have not had to explain restart behaviour to a customer.
+- **Purpose:** field enablement
+- **Topic:** Rolling restarts
+- **Size:** a lesson, 25 minutes
+
+## Objectives
+
+- Describe what a rolling restart does
+- Explain when a rolling restart keeps capacity
+- Handle the objection that rolling restarts guarantee zero downtime
+
+## What is here
+
+| What | File | Status | Review |
+| --- | --- | --- | --- |
+| The intake summary | [intake.md](intake.md) | approved on 2026-11-26 | [its review](reviews/intake.md) |
+| The research plan | [.training-studio/research-plan.json](.training-studio/research-plan.json) | approved on 2026-11-26 | [its review](reviews/research-plan.md) |
+| The research report | [research-report.md](research-report.md) | approved on 2026-11-26 | [its review](reviews/research.md) |
+| The blueprint | [blueprint.md](blueprint.md) | approved on 2026-11-26 | [its review](reviews/blueprint.md) |
+| The learner guide | [document.md](document.md) | approved on 2026-11-26 | [its review](reviews/document.md) |
+| The brief | [product-brief.md](product-brief.md) | approved on 2026-11-26 | [its review](reviews/brief.md) |
+| The slide deck | [deck.pptx](deck.pptx) | approved on 2026-11-26 | [its review](reviews/deck.md) |
+| The practice scenario | [scenario.md](scenario.md) | approved on 2026-11-26 | [its review](reviews/scenario-main.md) |
+
+## Copies
+
+No Google Docs or Word files were asked for.
+
+## Coverage
+
+| Objective | Guide (declared) | Deck (reviewed) | Practice (exercised, from the practice plan) |
+| --- | --- | --- | --- |
+| O1: Describe what a rolling restart does | yes | slide 2 | yes |
+| O2: Explain when a rolling restart keeps capacity | yes | slide 2 | yes |
+| O3: Handle the objection that rolling restarts guarantee zero downtime | yes | slide 2 | yes |
+
+- Declared: a section of the guide says it teaches the objective. Whether it does is for a reader to judge.
+- Reviewed: the slides recorded for the objective when the deck was read against the blueprint.
+- Exercised: the blueprint's practice plan gives the objective to a scenario that has been written.
+
+Planned assessment
+| Objective | Evidence or example shown | Learner task | What earns credit |
+| --- | --- | --- | --- |
+| O1 — Describe what a rolling restart does | A three-instance web app restarted one instance at a time while it serves traffic. Show a simulated status line: A serving, B restarting, C serving. | What happens to an app's instances during a rolling restart? | States that instances are replaced in batches. |
+| O2 — Explain when a rolling restart keeps capacity | A three-instance web app restarted one instance at a time while it serves traffic. Show a simulated status line: A serving, B restarting, C serving. | Why does a single-instance app lose capacity during a rolling restart? | Explains the more-than-one-instance condition. |
+| O3 — Handle the objection that rolling restarts guarantee zero downtime | A three-instance web app restarted one instance at a time while it serves traffic. Show a simulated status line: A serving, B restarting, C serving. | A customer says rolling restarts guarantee zero downtime. What do you say? | Corrects the claim without dismissing the customer and agrees a next step. |
+
+Learner attempts were not recorded in this deck review.
+
+After approving this blueprint, choose its one-page job aid under Import selected studio material in Infographic Studio.
+
+## Open gaps and limitations
+
+### Open gaps
+
+- K1.4: no evidence was found for the zero-downtime claim, so the training does not teach it.
+- Rollback after a failed restart is not covered; the research question is still pending.
+
+### Limitations
+
+None.
+
+## Using the scenarios
+
+- [scenario.md](scenario.md): The zero-downtime objection (roleplay)
+
+Each works with any AI that can play a role: give it the scenario file and ask it to play the part the file describes. Give it the brief too, [product-brief.md](product-brief.md), as its reference for facts.
+
+## Research
+
+- The report: [research-report.md](research-report.md)
+- Approved on 2026-11-26.
+- Findings: 5 supported by the sources, 1 contradicted by the sources, 1 without enough evidence, 1 not researched.
+
+_This page is written from the training's record and is written again when the training changes, so a change made to it here is not kept._

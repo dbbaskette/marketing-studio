@@ -8,6 +8,10 @@ What a caller needs to know
     saved_work.needs(path, title, why)    # one saved item that needs a path, and why
     saved_work.report(ids, found)         # {'paths': [{'id', 'about', 'needed_by'}], 'unused'}
 
+- An older path a saved item still needs is `needed`. A kind of saved work (KINDS) is no
+  path: an item of that kind is `found`, and the kind says in `asks` what it needs from the
+  person, or None for nothing.
+
 - `found` maps path ids to dependencies; unresolved scope prevents claiming unused.
 - Report formatting performs no I/O; enumeration helpers only read directory entries.
 """
@@ -25,7 +29,30 @@ PATHS = {
     'old-harness-slides': ('Branches for a Harness Slides that lists no capabilities. No saved '
                            'work needs these. They are reached only by a Harness Slides that '
                            'lists no capabilities.'),
+    # What becomes of saved work that nothing continues any more, by kind: a studio that
+    # reports these lists each saved item under the one that holds for it (GitHub issue
+    # #547).
+    'opens-on-desk': ('Saved work with a plan, outline or draft. Nothing continues it; it '
+                      'opens on the desk through the explicit, previewed migration.'),
+    'finished-earlier': ('Saved work the earlier flow finished. It keeps its finished Open on '
+                         'the desk.'),
+    'waiting-to-open': ('Saved work whose opening on the desk was interrupted. Finishing the '
+                        'opening completes it.'),
+    'read-only-record': ('Saved work with nothing made yet, or whose records cannot be read. '
+                         'It is kept to read and never continued.'),
+    'bring-in-first': ('Work made in a conversation, in a folder of its own. It is brought '
+                       'into the workspace first, then opens on the desk or is kept to read.'),
 }
+
+# The ids above that are kinds of saved work, not paths of code (GitHub issue #547), and what
+# an item of each kind needs from the person: None for nothing.
+KINDS = ('opens-on-desk', 'finished-earlier', 'waiting-to-open', 'read-only-record',
+         'bring-in-first')
+ASKS = {'opens-on-desk': 'Open it on the desk: read the preview, then apply it.',
+        'finished-earlier': None,
+        'waiting-to-open': 'Finish opening it on the desk.',
+        'read-only-record': None,
+        'bring-in-first': 'Bring it in on the Training Studio page.'}
 
 
 def needs(path: Path, title: str, why: str) -> dict:
@@ -46,9 +73,14 @@ def report(ids: tuple, found: dict, *, scope: dict | None = None,
         needed = sorted(found.get(ident) or (), key=lambda item: item['path'])
         unresolved = sorted([*(unknown.get(ident) or ()), *issues],
                             key=lambda item: item.get('path', ''))
-        paths.append({'id': ident, 'about': PATHS[ident], 'needed_by': needed,
-                      'unknown_by': unresolved,
-                      'status': 'needed' if needed else 'unknown' if unresolved else 'unused'})
+        kind = ident in KINDS
+        entry = {'id': ident, 'about': PATHS[ident], 'needed_by': needed,
+                 'unknown_by': unresolved,
+                 'status': ('found' if kind else 'needed') if needed
+                 else 'unknown' if unresolved else 'unused'}
+        if kind:
+            entry['asks'] = ASKS[ident]
+        paths.append(entry)
     return {'schema': 2, 'scope': scope, 'complete': not issues and not any(unknown.values()),
             'issues': issues, 'paths': paths,
             'unused': [entry['id'] for entry in paths if entry['status'] == 'unused'],

@@ -1,17 +1,16 @@
 # Research plan
 
-Plan questions before research. The person approves the scope; saved work keeps its gates.
+Plan questions before research. The person approves the scope.
 
 ## Draft
 
 Outline-first page work writes this plan locally from approved sections and questions,
 without another planning assistant. A supplied-only synthesis plan has at most eight
 optional questions, each up to 300 characters, or one about the goal. Web synthesis still
-drafts a plan and keeps the person's own questions in their words. A training the runner
-saved before the desk is not continued in a conversation.
+drafts a plan and keeps the person's own questions in their words.
 
 
-Write `.training-studio/research-plan.json` in the format `harness-research` accepts. It is the one file under `.training-studio/` that you write.
+The plan you submit is in the format `harness-research` accepts:
 
 ```json
 {
@@ -33,7 +32,7 @@ Write `.training-studio/research-plan.json` in the format `harness-research` acc
 - **`purpose`** is always `planning`. It is a `harness-research` field, not the training's purpose.
 - **`scope`** is `supplied-only` when intake allows supplied documents only, and `public-web` otherwise, sites included.
 - **`sources`** has one entry per selected document, as `harness-research` defines them, with paths relative to the training directory.
-- **`items`** holds 1 to 8 questions for synthesis; a saved legacy queue allows 30. Each `id` is lowercase letters, digits and hyphens. The blueprint and the brief cite these IDs, so name each for its subject: `instance-min`, not `q7`.
+- **`items`** holds 1 to 8 questions for synthesis. Each `id` is lowercase letters, digits and hyphens. The blueprint and the brief cite these IDs, so name each for its subject: `instance-min`, not `q7`.
 - **`public_query`** uses non-confidential public terms only, and is `null` for supplied-only research.
 - **Leave out `input_files`.** If `intake.md` were registered there, `harness-research` would discard its findings whenever intake was edited.
 
@@ -54,10 +53,10 @@ Ask neutral questions. One that embeds a claim, such as "Do rolling restarts gua
 
 If the topic names a set, such as "all the X" or "every Y", ask the question that establishes its members. Never assume the list.
 
-One investigation answers synthesis questions together and an independent check reviews it. Ask at most eight; cover what the training needs to teach. Legacy queues keep thirty.
+One investigation answers synthesis questions together and an independent check reviews it. Ask at most eight; cover what the training needs to teach.
 
-## Gate 1
+## On the desk
 
-`training.py save research-plan --built`, then present the gate as the gates reference describes: the questions as a readable list grouped by the areas above, with the source scope.
+Read `studio desk context --folder PATH --target research-plan` and submit kind `text` with `{plan}`, keeping the returned source scope and sources, as the conversation reference describes. The questions read as a list grouped by the areas above. Then read the research-handoff reference.
 
-On approval: `training.py approve research-plan`, then read the research-handoff reference.
+A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.

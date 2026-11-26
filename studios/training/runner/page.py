@@ -115,10 +115,6 @@ What a caller needs to know
 - `POST /api/documents` alone may carry up to DOCUMENT_LIMIT bytes, because it carries a
   document, and only when it is asked with the key. Every other address keeps the desk's
   limit, and every one of the desk's rules still applies to this one.
-- `GET /api/gate` gains `whose` for a practice scenario: who wrote its file. For a Yoodli
-  scenario it gains `beside`, the scenario it was laid out from. For a deck it gains
-  `slides`, `review`, `audit` and `coverage`; `review` and `audit` are null, and the other
-  two empty, for a deck the runner did not make.
 - `GET /api/slide` answers one slide's picture as `image/png`, and nothing else: of a deck
   the runner rendered, named by `artifact`, or of a `section`'s latest preview while a
   deck is drawn, by `number`. It needs the key like every other read. What it sends is
@@ -196,7 +192,7 @@ What a caller needs to know
   `/api/drafts/send` {path, name} each answer it after the change (`level-ready` adds
   `marked` and `stopped`, `reviewed-ready` `marked` and `left`, `draft` adds `returned`, `send` adds `made` and `problems`).
   Each is 409 with `drafts.NOT_ON_DESK` for a saved training, and a desk training is 409
-  with `drafts.ON_DESK` at `/api/decide`, `/api/outline` and `GET /api/gate`. A saved
+  with `drafts.ON_DESK` at `/api/outline`. A saved
   record is 409 with `engines.SAVED_ONLY` at every route that continued it. A teammate reads the desk with only
   Download on each card, and each change is refused with who runs the training.
 - Add a source reads `GET /api/drafts/source-price?path=` before sending
@@ -227,10 +223,9 @@ What a caller needs to know
   when the person leaves the desk, commits it and shares it under the team's setting:
   {"committed"}. A person-owned scenario uses `POST /api/drafts/layout` {path, name, seen:
   file digest, note} to request the existing keep-wording layout path; rewrite is refused.
-- While a run is driving a training, its decisions cannot be moved back to a conversation:
-  a gate the runner waits at would then be one an assistant could pass. They can be moved
-  once the run is done as far as it goes, which is how a slide deck gets made. Moving them
-  either way wakes the run, which then looks at the training's files again.
+- No training is decided at a gate any more (GitHub issue #547): `/api/gate`, `/api/decide`
+  and `/api/approval` are gone with the helper's commands that continued a training a
+  conversation made. Such a training is brought in, then opened on the desk or read.
 """
 from __future__ import annotations
 
@@ -307,9 +302,10 @@ WRITES = (*WRITES, *library_context.ROUTES, LIBRARY_ADD, LIBRARY_UPDATE, LIBRARY
           LIBRARY_UPLOAD)
 # What may change a saved record, the earlier step-by-step flow's training, or a folder a
 # runner made: every other changing route refuses it, at one place (`write`). A route is
-# changing unless its body asks only to read ({"action": "read"}). Conversation-guided
-# trainings (no run record, outside the workspace) keep their own decisions on the desk's
-# routes; a folder that holds a runner's run record never passes as one.
+# changing unless its body asks only to read ({"action": "read"}). A training a
+# conversation made (no run record, outside the workspace) has no changing route of its own
+# any more: Bring in is its way to the desk. A folder that holds a runner's run record never
+# passes as one.
 SAVED_ALLOWED = {
     f'{DRAFTS}/migrate': 'the explicit opening on the desk: apply, or finish an interrupted one',
     f'{DRAFTS}/open': 'the finished Open on the desk',
@@ -332,8 +328,6 @@ NAMED = re.compile(r'[^A-Za-z0-9._-]+')
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
 DOCUMENT_LIMIT = 12_000_000     # bytes: one document of the largest size, in base64
-RUNNER_DECIDES = ('The runner is driving this training, so its decisions are made on the '
-                  'page.')
 
 
 def bundled(name: str, level: str, suffix: str) -> str:
@@ -551,10 +545,6 @@ class RunnerPage(desk.Page):
             name, part = one('name'), one('part')
             return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_versions(
                 root, name, part)))
-        if path == '/api/gate':
-            self.not_on_desk(one('path'))
-            self.not_saved(one('path'))
-            return desk.as_json(HTTPStatus.OK, self.gate(one('path'), one('artifact')))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
         if path == '/api/deck-draft-ticket':
@@ -640,30 +630,6 @@ class RunnerPage(desk.Page):
         if found is None:
             return shown
         return {**shown, 'binary': False, 'text': found[0], 'truncated': found[1]}
-
-    def gate(self, path: str, name: str) -> dict:
-        """The desk's gate. A practice scenario's also says whose file it is, and a Yoodli
-        scenario's names the scenario it was laid out from, to show beside it."""
-        shown = desk.gate(path, name)
-        shown['combined'] = self.engine.reviewing(path)
-        # What Ask for changes writes again, and what that took, said before it is asked for.
-        shown['redo'] = self.engine.redo(path, name)
-        if name == 'research':
-            shown['research_price'] = self.engine.research_price(path)
-            # Pages refused for being outside your sites, said with the sites named.
-            looks = self.engine.research_from(path)
-            shown['outside'] = looks['outside'] if looks else None
-            if shown.get('research') and shown['outside']:
-                shown['research'] = {**shown['research'], 'outside': shown['outside']}
-        kind = workspace.split(name)[0].partition(':')[0]
-        if kind == 'scenario':
-            shown['whose'] = self.engine.whose(path, name)
-        elif kind == 'yoodli':
-            source = name.replace('yoodli:', 'scenario:', 1)
-            shown['beside'] = {'artifact': source, 'label': desk.named(source)}
-        elif kind == 'deck':
-            shown.update(self.engine.deck_gate(path, name))
-        return shown
 
     def slide(self, one) -> bytes:
         """One slide's picture. The request names a training this computer knows, a deck
@@ -902,8 +868,12 @@ class RunnerPage(desk.Page):
         record lists, only inside the training's folder, and only as text. Writes nothing."""
         desk.registered(path)
         root = self.engine.driven(path)
+        if root is None and self.engine.conversation_unread(path):
+            root = Path(path)   # a conversation's training whose record cannot be read (#547)
+        elif root is None:
+            return super().saved_file(path, name)   # a conversation's, readable (#547)
         # Asked of the two small records and the one file only, never the whole folder.
-        if root is None or self.engine.saved_kind(root) is None:
+        elif self.engine.saved_kind(root) is None:
             raise desk.Refusal(HTTPStatus.NOT_FOUND, 'This training is not a saved record.')
         if name not in self.engine._saved_files(root):
             raise desk.Refusal(HTTPStatus.FORBIDDEN, 'That is not one of its saved files.')
@@ -938,6 +908,10 @@ class RunnerPage(desk.Page):
         hold, takes the list down. One that cannot be read is listed as its own row, with
         the runner's refusal as its sentence."""
         try:
+            if 'error' in item and self.engine.conversation_unread(item['path']):
+                return self.with_unread(item)
+            if item.get('saved') == 'conversation' and 'error' not in item:
+                return self.with_conversation(self.with_run(item))
             return self.with_run(item)
         except desk.Refusal:
             raise
@@ -947,6 +921,42 @@ class RunnerPage(desk.Page):
             item.update(run={'state': 'failed', 'sentence': said}, state='needs-you',
                         sentence=said, waiting=None)
             return item
+
+    def with_unread(self, item: dict) -> dict:
+        """A training a conversation made, outside the workspace, whose record cannot be
+        read: it can be neither brought in nor opened on the desk, so it is a read-only
+        record, said plainly, with its files to read in place and one way on, a new training
+        (GitHub issue #547). Only its two small records and file names are looked at."""
+        root = Path(item['path'])
+        where = self.engine.where(root)
+        item.update(error=engines.CONVERSATION_UNREAD_BRIEF, sentence=engines.CONVERSATION_UNREAD,
+                    saved_record={'outcome': 'read-only', 'why': engines.CONVERSATION_UNREAD_WHY,
+                                  'refusal': None, 'next': 'new',
+                                  'outside': where == 'outside', 'where': where,
+                                  'files': self.engine._saved_files(root), 'waits': [],
+                                  'retained': [], 'targets': []})
+        return item
+
+    def with_conversation(self, item: dict) -> dict:
+        """A training a conversation made, as the runner says it (GitHub issue #547): its one
+        action is Bring it in only where Bring in would take it, decided by the same checks
+        (`Engine.bring_refusal`). Where it would not, it is a read-only record where it is,
+        saying why, with a new training as its way on. On a phone nothing of this computer's
+        folders is read, and nothing is offered that would be refused: it says that bringing
+        a training in is done on the computer."""
+        record = item.get('saved_record')
+        if record is None:   # a list's row: its sentence and stages are the helper's own
+            return item
+        if caller.remote():
+            record.update(next=None, elsewhere=engines.BRING_ON_COMPUTER)
+            return item
+        where = self.engine.where(item['path'])
+        record.update(where=where, outside=where == 'outside')
+        refusal = self.engine.bring_refusal(item['path'])
+        if refusal:
+            item['sentence'] = engines.CONVERSATION_KEPT
+            record.update(outcome='read-only', why=refusal, next='new', elsewhere=None)
+        return item
 
     def with_run(self, item: dict) -> dict:
         """Add a training's run to what the desk says about it. A run with a question or
@@ -1043,38 +1053,6 @@ class RunnerPage(desk.Page):
                                'recorded': False}
         elif told['state'] != 'needs-you':
             item['waiting'] = None
-
-    # --- the desk's changes --------------------------------------------------------------
-
-    def decide(self, path: str, target: str, decision: str, note: str | None,
-               seen: str | None, refresh: bool = False) -> dict:
-        """Record a decision as the desk does. For a training a run is driving it is then
-        committed, shared if that is wanted, and the run is woken. A desk training has no
-        gates: it is refused, and changed on the desk."""
-        self.not_on_desk(path)
-        self.not_saved(path)
-        # Every training a run drives is desk work or a saved record, each refused above:
-        # only a training a conversation keeps outside the workspace is decided here.
-        return super().decide(path, target, decision, note, seen, refresh)
-
-    def move_approval(self, path: str, mode: str) -> dict:
-        """Move a training's decisions as the desk does, except away from the page while a
-        run is driving the training. The change is committed for a training a run drove."""
-        desk.registered(path)
-        if self.engine.driven(path) is None:
-            return super().move_approval(path, mode)
-        self.engine.hold(path)
-        found = self.engine.brief(path)
-        if found is not None and mode == 'chat' and found['state'] != 'done':
-            raise desk.Refusal(HTTPStatus.CONFLICT, RUNNER_DECIDES)
-        with self.engine.files:
-            self.engine.hold(path)
-            reply = super().move_approval(path, mode, held=self.engine.files)
-            driven = self.engine.changed(path, f'decisions are now made '
-                                         f'{workspace.WHERE[mode]}')
-        if driven:
-            self.engine.wake(path)
-        return reply
 
     # --- writes --------------------------------------------------------------------------
 

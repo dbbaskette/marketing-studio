@@ -23,7 +23,7 @@ Levels are independent: editing one never makes another stale. A scenario file a
 2. Draft the blueprint for every level before any is approved, and present them together. Overlap and gaps between levels show only here.
 3. Then finish one level at a time, lowest first: document, brief, deck, scenarios.
 
-`approve` keeps this order itself: once every blueprint is approved it moves to the lowest level's document, after a level's last stage to the next level, and after the last level to the package.
+The desk keeps this order itself: once every blueprint is ready it moves to the lowest level's document, after a level's last material to the next level, and after the last level to the index.
 
 One `README.md` covers the whole training, at the top. `deck-handoff.md` sits in the level's folder, and each level's deck is its own `harness-slides` task, as the deck-handoff reference describes.
 
@@ -35,6 +35,6 @@ One `README.md` covers the whole training, at the top. `deck-handoff.md` sits in
 
 ## Adding a level later
 
-`training.py checkpoint --add-level 301` adds 301 and leaves 101 as it is. A training past its blueprints goes back to the blueprint stage for 301. A level with work in it is never dropped. A plain training cannot be given levels; it needs a new directory.
+On a desk training this computer runs, `training.py checkpoint --add-level 301` adds 301 and leaves 101 as it is; desk work in a conversation cannot add a level. A training past its blueprints goes back to the blueprint stage for 301. A level with work in it is never dropped. A plain training cannot be given levels; it needs a new directory.
 
-If the new level needs more research, the top-up changes the shared research. Every existing level's blueprint and brief then show as stale. For a level the new findings do not touch, ask the user, then accept each as it is: `training.py approve blueprint@101 --accept-stale --reason "<their reason>"`, and the same for `brief@101`. That level's document, deck and scenarios then return to approved by themselves, because their own inputs did not change.
+If the new level needs more research, the top-up changes the shared research, and every existing level's blueprint and brief are held. For a level the new findings do not touch, the person keeps each as it is on the desk (Keep as it is), or updates it; what is built from it follows.

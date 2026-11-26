@@ -24,8 +24,7 @@ def serve(args, root):
 
 def register(commands):
     desk = commands.add_parser(
-        'desk', help='open the page: every training on this computer, and where gates are '
-                     'decided')
+        'desk', help='open the page: every training on this computer')
     desk.add_argument('--port', type=port, default=0,
                       help='the local port to serve on (default: one the system chooses)')
     desk.set_defaults(handler=serve)

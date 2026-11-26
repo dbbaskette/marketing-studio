@@ -13,18 +13,20 @@ fails this test.
 import contextlib
 import io
 import json
+from pathlib import Path
 
 import helpers  # noqa: F401
 import saved_fixtures
 import training
+import workspace
 from runner_support import StudioCase
 from runner import engine as engines, page, studio
 
 STATES = ('blueprint-gate', 'research-plan-gate', 'finished')
 # Every changing route the page serves that is not allowed: each refuses a saved record.
 REFUSED = (
-    '/api/answer', '/api/approval', '/api/asset', '/api/brand', '/api/brand/install',
-    '/api/companions', '/api/computer', '/api/copies', '/api/decide', '/api/documents',
+    '/api/answer', '/api/asset', '/api/brand', '/api/brand/install',
+    '/api/companions', '/api/computer', '/api/copies', '/api/documents',
     '/api/documents-library', '/api/documents-library-keep', '/api/documents-library-update',
     '/api/drafts/apply', '/api/drafts/deck-brand', '/api/drafts/deck-brand-copy',
     '/api/drafts/deck-note', '/api/drafts/deck-outline', '/api/drafts/deck-outline-price',
@@ -113,10 +115,11 @@ class SavedGuardTests(StudioCase):
         shutil.copytree(root, outside)
         native = page.RunnerPage(8765, self.engine)
         before = self.folder(outside)
-        for route in ('/api/decide', '/api/approval'):
+        # The gate's decisions that once reached such a folder are gone (GitHub issue
+        # #547); every changing route that names it still refuses it.
+        for route in ('/api/copies', '/api/documents', '/api/note'):
             with self.subTest(route=route), self.assertRaises(page.desk.Refusal) as caught:
-                native.write(route, {'path': str(outside), 'artifact': 'blueprint',
-                                     'decision': 'approve', 'mode': 'chat'})
+                native.write(route, {'path': str(outside), 'action': 'done'})
             self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
         self.assertEqual(self.folder(outside), before)
 
@@ -139,21 +142,133 @@ class SavedGuardTests(StudioCase):
                     self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
                     self.assert_untouched(root, before, head, action)
 
+    def helper(self, root, argv) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = training.main(['--dir', str(root), *argv])
+        self.assertEqual(code, 2, out.getvalue())
+        return json.loads(out.getvalue())['error']
+
     def test_the_helper_never_writes_a_training_a_runner_made(self):
+        import write_guard
         for state in STATES:
             root = saved_fixtures.load(self, state)
+            # Nothing continues a saved record (GitHub issue #547): every helper command
+            # that writes answers that its saved flow no longer continues.
             for argv in (['approve', 'blueprint'], ['skip', 'deck', '--reason', 'Not needed.'],
                          ['checkpoint', '--next', 'Something else'],
                          ['save', 'blueprint', '--built'],
-                         ['pin', 'harness-research', '--task', 'x']):
+                         ['pin', 'harness-research', '--task', 'x'],
+                         ['google', 'push', 'document', '--prepare',
+                          str(self.base / 'send.md')]):
                 with self.subTest(state=state, argv=argv):
                     before, head = self.folder(root), self.git('rev-parse', 'HEAD')
-                    out = io.StringIO()
-                    with contextlib.redirect_stdout(out):
-                        code = training.main(['--dir', str(root), *argv])
-                    self.assertEqual(code, 2, out.getvalue())
-                    self.assertIn('earlier step-by-step flow', json.loads(out.getvalue())['error'])
+                    said = self.helper(root, argv)
+                    self.assertEqual(said, write_guard.SAVED_RUNNER)
                     self.assert_untouched(root, before, head, ' '.join(argv))
+
+    def test_the_helper_never_writes_a_training_a_conversation_made(self):
+        """GitHub issue #547: a conversation's training is a saved record too; the helper
+        changes nothing in it."""
+        import write_guard
+        for state in ('conversation-blueprint-gate', 'conversation-finished'):
+            top = saved_fixtures.conversation(self, state)
+            for argv in (['approve', 'blueprint'], ['save', 'blueprint', '--built'],
+                         ['checkpoint', '--next', 'Something else'],
+                         ['export', 'document'], ['pin', 'harness-research', '--task', 'x'],
+                         ['google', 'push', 'document', '--prepare',
+                          str(self.base / 'send.md')]):
+                with self.subTest(state=state, argv=argv):
+                    before = self.folder(top)
+                    said = self.helper(top, argv)
+                    self.assertEqual(said, write_guard.SAVED_CONVERSATION
+                                     if argv[0] == 'google' else training.ENDED)
+                    self.assertEqual(self.folder(top), before)
+        # ENDED is one plain sentence, said only for a training a conversation made.
+        self.assertEqual(training.ENDED.count('. '), 0)
+        self.assertTrue(training.ENDED.endswith('.'))
+
+    def desk_training(self, **changes):
+        """A desk training this computer drives, finished by the runner."""
+        root = self.start(materials=['document', 'brief', 'scenario'], **changes)
+        self.to_end(root)
+        return root
+
+    def run_helper(self, root, argv) -> tuple[int, dict]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = training.main(['--dir', str(root), *argv])
+        return code, json.loads(out.getvalue())
+
+    def test_a_desk_training_keeps_the_helper_commands_desk_work_used(self):
+        """GitHub issue #547, ruling 2(a): `save` (a hand edit; the Google conflict and
+        unplaced-comment recovery), `checkpoint` (copies, levels) and `export` work on a desk
+        training this computer drives exactly as before the conversation's way of working
+        went. The others never changed a desk training: they say the desk's own way, and
+        change nothing."""
+        root = self.desk_training(copies=['word'])
+        guide = root / 'document.md'
+        guide.write_text(guide.read_text() + '\nA comment put back by hand.\n')
+        code, said = self.run_helper(root, ['save', 'document'])
+        self.assertEqual((code, said['artifact']), (0, 'document'))
+        self.assertEqual(said['sha256'], workspace.sha256_file(guide))
+        scratch = self.base / 'rebuilt.md'
+        scratch.write_text('# Learner guide\n\nRebuilt.\n')
+        self.assertEqual(self.run_helper(root, ['save', 'document', '--from', str(scratch)])[0], 0)
+        self.assertEqual(guide.read_text(), scratch.read_text())
+        code, said = self.run_helper(root, ['checkpoint', '--copies', 'word', 'google'])
+        self.assertEqual((code, sorted(said['settings']['copies'])), (0, ['google', 'word']))
+        code, said = self.run_helper(root, ['export', 'document', '--unavailable',
+                                            '--reason', 'No pandoc here'])
+        self.assertEqual(code, 0, said)
+        for argv in (['approve', 'document'], ['skip', 'yoodli', '--clear'],
+                     ['skip', 'deck', '--unavailable', '--reason', 'No slides'],
+                     ['pin', 'harness-slides', '--task', 't-1'],
+                     ['research-import', '--case', str(self.base)]):
+            with self.subTest(argv=argv):
+                before = self.folder(root)
+                self.assertEqual(self.helper(root, argv), training.DESK_WAY[argv[0]])
+                self.assertEqual(self.folder(root), before)
+        levelled = self.desk_training(levels=['101'], title='Two levels')
+        code, said = self.run_helper(levelled, ['checkpoint', '--add-level', '301'])
+        self.assertEqual((code, said['levels']), (0, ['101', '301']))
+
+    def test_the_guidance_names_no_helper_command_desk_work_is_refused(self):
+        """GitHub issue #547, ruling 2(b): every helper command SKILL.md and the references
+        tell a reader to run is one that works for desk work. The removed ones, which answer
+        a desk training with the desk's own way, and the retired `init` are never named; and
+        each one named is a command the helper has."""
+        import re
+        skill = Path(training.__file__).resolve().parents[1]
+        named = {}
+        for path in [skill / 'SKILL.md', *sorted((skill / 'references').rglob('*.md'))]:
+            for found in re.finditer(r'training\.py\s+([a-z][a-z-]*)', path.read_text()):
+                named.setdefault(found.group(1), set()).add(path.name)
+        known = set(training.parser()._subparsers._group_actions[0].choices)
+        self.assertTrue(named)
+        for command, files in sorted(named.items()):
+            with self.subTest(command=command, files=sorted(files)):
+                self.assertIn(command, known)
+                self.assertNotIn(command, (*training.ENDED_COMMANDS, 'init'))
+        # What desk work keeps is what the desk test above runs.
+        self.assertLessEqual(set(named) & {'save', 'checkpoint', 'export'},
+                             set(training.DESK_COMMANDS))
+
+    def test_desk_work_owned_by_a_conversation_keeps_its_own_way(self):
+        """As before: a desk training a conversation works on is changed only through the
+        checked desk operations; the helper says so."""
+        root = self.desk_training()
+        record = workspace.read_run(root)
+        record['execution'] = 'conversation'
+        workspace.write_run(root, record)
+        before = self.folder(root)
+        for argv in (['save', 'document'], ['checkpoint', '--next', 'x'],
+                     ['export', 'document']):
+            with self.subTest(argv=argv):
+                self.assertIn('being worked on in conversation', self.helper(root, argv))
+        self.assertEqual(self.helper(root, ['approve', 'document']),
+                         training.DESK_WAY['approve'])
+        self.assertEqual(self.folder(root), before)
 
 
 from test_runner_deck import DeckCase  # noqa: E402

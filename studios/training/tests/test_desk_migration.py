@@ -293,8 +293,11 @@ desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2
         for pins in ({'harness-research': {}}, {'harness-research': {'task': ''}},
                      {'harness-research': 't-1'}, {'harness-research': {'runtime': '/opt/r'}}):
             self.assertFalse(training_migration.session_supported({**session, 'pins': pins}), pins)
-        # As the helper saves one now, in a saved training that is then previewed.
-        workspace.pin(root, 'harness-research', task='t-1', run='r-1')
+        # As the helper saved one, in a saved training that is then previewed (the helper's
+        # pin command went with the conversation's way of working, GitHub issue #547).
+        session = workspace.load(root)
+        session['pins']['harness-research'] = {'task': 't-1', 'run': 'r-1'}
+        workspace.store(root, session)
         gitstate.commit(self.space, 'a companion task', [root])
         self.assertEqual(self.preview(root)['blockers'], [])
 

@@ -15,6 +15,7 @@ import helpers
 import runner_support  # noqa: F401  puts the runner on the import path
 from test_cli import example
 from test_runner_copies import REFUSAL, Built, Refusing
+from stored_builders import builder
 import desk
 import workspace
 from workspace import WorkspaceError
@@ -69,6 +70,7 @@ class Indexed(Built):
         with mock.patch.object(copies.shutil, 'which', lambda name: None):
             return copies.make(self.root, google=self.drive)
 
+    @builder
     def research_from(self, scope: str, sources: list) -> None:
         """Say the research was run from these supplied documents, and approve it again."""
         record = {**helpers.RESEARCH, 'scope': scope, 'sources': sources}

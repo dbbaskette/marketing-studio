@@ -1,0 +1,41 @@
+{
+  "artifacts": {},
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-26T09:13:26Z",
+      "event": "init"
+    }
+  ],
+  "exports": {},
+  "findings": null,
+  "gate": null,
+  "id": "script-alert-0-script",
+  "level": null,
+  "levels": [],
+  "next_step": "Complete intake",
+  "pending_question": null,
+  "pins": {},
+  "requests": [],
+  "research": null,
+  "schema": 1,
+  "settings": {
+    "approval": "chat",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "live",
+    "stages": [
+      "document",
+      "brief",
+      "deck",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {},
+  "stage": "intake",
+  "title": "<script>alert(0)</script>",
+  "unavailable": {}
+}

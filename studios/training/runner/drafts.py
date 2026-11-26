@@ -958,6 +958,9 @@ def _cards(engine, root: Path, record: dict, found) -> list[dict]:
                     continue
                 spec = workspace.artifact(root, session, name)
                 seen = workspace.sha256_file(root / spec['file'])
+                if seen is not None and name not in session['artifacts'] \
+                        and (session.get(workspace.UNSAVED) or {}).get(name) == seen:
+                    seen = None   # written in a conversation, never saved: not made here (#547)
                 waiting = _hold(root, session, holding, name, plain)[0]
                 needs = needs_you(root, found, name, record) if seen and kind == 'deck' else []
                 notes = review_notes(root, found, name) if seen and kind == 'deck' else []

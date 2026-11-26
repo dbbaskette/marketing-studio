@@ -11,7 +11,7 @@ Use checked `studio desk` commands for new work: [conversation](references/conve
 
 In a configured workspace, use `studio desk create --input FILE` with intake and scope. Inspect with `studio desk show --folder PATH`; only a person request authorizes `desk take`. Never edit records or History by hand. Preserve pins, practice metadata, sources, Google baselines and readiness.
 
-**Saved work** is no longer continued: [explicit migration](references/migration.md) opens work with a plan on the desk; finished work keeps Open on the desk; earlier or unreadable work is read-only. Bring in a conversation training first. `training.py status` reports it; [saved intake](references/intake.md) and [saved gates](references/gates.md) say how it was made. For `done`, run `training.py check --complete`. Show refusals as they are. `training.py desk` serves the page.
+**Saved work** is no longer continued: [explicit migration](references/migration.md) opens work with a plan on the desk; finished work keeps Open on the desk; earlier or unreadable work is read-only. A training made in a conversation is brought in first (Bring it in); one that cannot be is read, or new work starts from it. `training.py status` reports it; for `done`, run `training.py check --complete`. Show refusals as they are. `training.py desk` serves the page.
 
 ## Loading map
 
@@ -32,11 +32,10 @@ Load only the current step. Levelled names end in `@<level>`, files sit in `<lev
 
 | Also | Read |
 | --- | --- |
-| A short command: status, check, redo, skip | [short-commands](references/short-commands.md) |
 | Staleness, history, copies, restoring | [workspace](references/workspace.md) |
 | Before a public search, upload or share | [privacy](references/privacy.md) |
 | Google Docs for the document or brief | [google](references/google.md) |
-| The page: every training, and gates decided there | [desk](references/desk.md) |
+| The page: every training on this computer | [desk](references/desk.md) |
 | Sharing with a team, or reusing shared work | [hub](references/hub.md) |
 
 ## Boundaries

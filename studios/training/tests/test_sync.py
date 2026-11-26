@@ -77,7 +77,7 @@ class StartTests(SyncCase):
                          (self.first, 'fetched', False))
         entry = Path(result['entry'])
         self.assertEqual(entry.read_text(), (helpers.SKILL / 'SKILL.md').read_text())
-        self.assertTrue((entry.parent / 'references' / 'gates.md').is_file())
+        self.assertTrue((entry.parent / 'references' / 'desk.md').is_file())
         self.assertTrue((entry.parent / 'assets' / 'profiles' / 'yoodli.json').is_file())
         self.assertFalse((entry.parent / 'scripts').exists())
         self.assertEqual(Path(result['helper']), helpers.SCRIPTS / 'training.py')
@@ -488,7 +488,7 @@ class BroughtPinTests(TrustCase):
         workspace.init(self.project, 'Valkey')
         path = self.project / '.training-studio' / 'guidance.json'
         old = {'schema': 1, 'commit': self.first, 'path': str(gone),
-               'files': {'SKILL.md': 'ab' * 32, 'references/gates.md': 'cd' * 32},
+               'files': {'SKILL.md': 'ab' * 32, 'references/desk.md': 'cd' * 32},
                'runtime': '0.1.0', 'pinned_at': '2026-01-01T00:00:00Z'}
         path.write_text(json.dumps(old))
         self.assertFalse(gone.exists())

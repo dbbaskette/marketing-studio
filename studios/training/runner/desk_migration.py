@@ -62,6 +62,17 @@ SHARED = ('Shared saved records, retained inputs and the existing workspace reco
 SMALL = 16_000_000
 BRING = ('A conversation keeps it outside the workspace. Bring it in first; it is then '
          'classed like any other saved training.')
+# What History says of saved work that opens on the desk without part of what it holds
+# (GitHub issue #547). Each such file is kept as it is; nothing is made from it on the desk.
+OUTLINE_UNREAD = ('The saved outline of the slide deck{level} could not be read. Its file is '
+                  'kept as it is, and the deck is not made yet on the desk.')
+UNSAVED = ('{what} ({file}) was written but never saved. Its file is kept as it is, and it '
+           'is not made on the desk.')
+# Work its session calls finished that the runner's own survey does not: finished in a
+# conversation, with something the runner would still make never made.
+DONE_ELSEWHERE = ('It was marked finished in a conversation, but not everything the runner '
+                  'makes was made. What was never made is not made on the desk.')
+ACCEPTED = 'Accepted when it was marked finished: {said}'
 
 
 def _json(files, name):
@@ -75,7 +86,42 @@ def _material_files(session):
     return format.material_files(session)
 
 
-def materials(session, record, files):
+def _outline(files, outline, plan, delivery) -> dict | None:
+    """A saved deck outline read as the desk reads one, or None where it cannot be read
+    (GitHub issue #547: the training then opens on the desk without it). An outline that
+    reads but breaks the runner's rules is still a refusal."""
+    from runner import deck
+    try:
+        format.shared_material(outline, files[outline])
+        saved = _json(files, outline)
+        slides = saved.get('slides') if isinstance(saved, dict) else None
+        if not isinstance(slides, list) or not slides or any(not isinstance(slide, dict)
+                or not isinstance(slide.get('id'), str) or not isinstance(slide.get('title'), str)
+                or not isinstance(slide.get('notes', ''), str) for slide in slides):
+            raise ValueError('The saved deck outline cannot be read losslessly.')
+        if any(not isinstance(slide.get('points', []), list) or any(not isinstance(point, dict)
+                or not isinstance(point.get('text', ''), str) for point in slide.get('points', [])) for slide in slides):
+            raise ValueError('The saved slide points cannot be read losslessly.')
+    except (ValueError, KeyError, TypeError, UnicodeError):
+        return None
+    problems = deck.rules(saved, plan, delivery=delivery)
+    if problems:
+        raise ValueError('The saved deck outline needs attention: ' + ' '.join(problems))
+    return saved
+
+
+def _level_words(level) -> str:
+    return f' for level {level}' if level else ''
+
+
+def materials(session, record, files, notes=None, unsaved=None):
+    """The saved materials that open on the desk, and the saved files that opening needs.
+    `notes`, when given, gathers what History says of what is kept but not opened: a saved
+    deck outline that cannot be read, and a material file written but never saved. Each is
+    kept as it is, and is not made on the desk; `unsaved`, when given, gathers the names of
+    such unsaved materials."""
+    notes = [] if notes is None else notes
+    unsaved = [] if unsaved is None else unsaved
     names = _material_files(session)
     retained, required = [], [format.SESSION, format.RUN]
     for level in session['levels'] or [None]:
@@ -93,26 +139,21 @@ def materials(session, record, files):
         elif outline in files:
             raise ValueError(f'{file} is required to interpret the saved deck outline. Restore it first.')
         if outline in files:
-            from runner import deck
-            format.shared_material(outline, files[outline])
-            saved = _json(files, outline)
-            slides = saved.get('slides') if isinstance(saved, dict) else None
-            if not isinstance(slides, list) or not slides or any(not isinstance(slide, dict)
-                    or not isinstance(slide.get('id'), str) or not isinstance(slide.get('title'), str)
-                    or not isinstance(slide.get('notes', ''), str) for slide in slides):
-                raise ValueError('The saved deck outline cannot be read losslessly.')
-            if any(not isinstance(slide.get('points', []), list) or any(not isinstance(point, dict)
-                    or not isinstance(point.get('text', ''), str) for point in slide.get('points', [])) for slide in slides):
-                raise ValueError('The saved slide points cannot be read losslessly.')
-            problems = deck.rules(saved, files[file].decode(), delivery=session['settings'].get('delivery', 'reading'))
-            if problems:
-                raise ValueError('The saved deck outline needs attention: ' + ' '.join(problems))
-            required.append(outline)
+            if _outline(files, outline, files[file].decode(),
+                        session['settings'].get('delivery', 'reading')) is None:
+                notes.append(OUTLINE_UNREAD.format(level=_level_words(level)))
+            else:
+                required.append(outline)
     if not retained:
         raise ValueError(EARLY)
     for name, file in names.items():
         base = workspace.split(name)[0].partition(':')[0]
         if base in ('document', 'brief', 'scenario', 'yoodli', 'deck') and file in files:
+            if name not in session['artifacts']:
+                # Written after the plan, and never saved: kept where it is, not opened.
+                notes.append(UNSAVED.format(what=workspace.sentence(workspace.label(name)), file=file))
+                unsaved.append(name)
+                continue
             if base != 'deck':
                 text = files[file].decode()
                 if not text.strip():
@@ -202,8 +243,12 @@ def _read_only(files, said, reason):
             'next': 'copy' if _start_form(files) else 'new'}
 
 
-def classify(files) -> dict:
+def classify(files, unfinished=None) -> dict:
     """What becomes of one saved-flow training, from its files alone (`desk_chat._files`).
+    `unfinished`, where the caller has asked the runner's own survey (`engine.unfinished`),
+    is None for a training the runner calls finished, or the limitations a training marked
+    finished elsewhere was accepted with: such a training is not finished, and opens on the
+    desk like any other saved work with a plan (GitHub issue #547).
 
     - {'outcome': 'migrates', 'session', 'record', 'targets', 'required'}: the explicit
       migration opens it on the desk (the preview may still name a passing blocker: a
@@ -241,10 +286,13 @@ def classify(files) -> dict:
         check_record(raw, 'this training')
     except WorkspaceError as error:
         return _read_only(files, str(error), UNREADABLE)
+    notes, unsaved = [], []
     if session['stage'] == 'done':
-        return {'outcome': 'finished', 'said': FINISHED}
+        if unfinished is None:
+            return {'outcome': 'finished', 'said': FINISHED}
+        notes += [DONE_ELSEWHERE, *(ACCEPTED.format(said=said) for said in unfinished)]
     try:
-        targets, required = materials(session, record, files)
+        targets, required = materials(session, record, files, notes, unsaved)
     except (ValueError, KeyError, TypeError, UnicodeError) as error:
         if str(error) == EARLY:
             # A failure or question before any plan keeps its own refusal sentence.
@@ -255,7 +303,19 @@ def classify(files) -> dict:
         detail = str(error) if 'saved flow' not in str(error) else ''
         return _read_only(files, str(error), (MISSING + ' ' + detail).strip())
     return {'outcome': 'migrates', 'session': session, 'record': record,
-            'targets': targets, 'required': required}
+            'targets': targets, 'required': required, 'notes': notes, 'unsaved': unsaved}
+
+
+def _unfinished(engine, root, files):
+    """`classify`'s `unfinished` for a training in the workspace: asked of the runner only
+    where its session says done."""
+    try:
+        session = json.loads(files[format.SESSION])
+    except (KeyError, TypeError, ValueError, UnicodeError):
+        return None
+    if not isinstance(session, dict) or session.get('stage') != 'done':
+        return None
+    return engine.unfinished(root)
 
 
 def outcome(engine, path) -> dict | None:
@@ -286,17 +346,17 @@ def outcome(engine, path) -> dict | None:
                 pass
         return {'outcome': 'read-only', 'said': str(error), 'reason': UNWALKED,
                 'next': 'copy' if _start_form(small) else 'new'}
-    found = classify(files)
+    found = classify(files, _unfinished(engine, root, files))
     return {key: value for key, value in found.items() if key not in ('session', 'record')}
 
 
-def prepare_migration(record, saved_inputs):
-    blockers, retained, targets, required = [], [], [], []
+def prepare_migration(record, saved_inputs, unfinished=None):
+    blockers, retained, targets, required, notes, unsaved = [], [], [], [], [], []
     try:
         _, original = format.originals(saved_inputs.get(format.SESSION), saved_inputs.get(format.RUN))
         if record != original:
             raise ValueError('The saved run does not match the preview inputs.')
-        found = classify(saved_inputs)
+        found = classify(saved_inputs, unfinished)
         if found['outcome'] != 'migrates':
             raise ValueError(found['said'])
         targets, required = found['targets'], found['required']
@@ -309,11 +369,15 @@ def prepare_migration(record, saved_inputs):
             retained.append(KEPT_FAILURE)
         if record.get('question'):
             retained.append(KEPT_QUESTION)
+        # What it holds that does not open on the desk: kept as it is, and said in History.
+        notes, unsaved = found['notes'], found['unsaved']
+        retained.extend(notes)
     except (ValueError, KeyError, TypeError, UnicodeError) as error:
         blockers.append(str(error))
     return {'blockers': blockers, 'retained': retained + ['Original files, History, source and guidance pins, Google baselines and real decisions'],
             'writes': [] if blockers else [*format.WRITES, WORKSPACE], 'scope': ['part'],
-            'targets': targets, 'required': required}
+            'targets': targets, 'required': required, 'notes': [] if blockers else notes,
+            'unsaved': [] if blockers else unsaved}
 
 
 def _snapshot(engine, path):
@@ -366,20 +430,20 @@ def _snapshot(engine, path):
             raise WorkspaceError('A saved native deck record cannot be read.')
     if session.get('research_contract') and session.get('research'):
         research_contract.read_bundle(root / 'research')
-    shared, dirty = _shared_basis(space, root, session, record, files)
+    shared, dirty = _shared_basis(space, root, session, record, files, _unfinished(engine, root, files))
     guard['shared'] = shared
     blockers.extend(dirty)
     return space, root, record, files, guard, blockers
 
 
-def _shared_basis(space, root, session, record, files):
+def _shared_basis(space, root, session, record, files, unfinished=None):
     """Only a shared workspace needs byte-identical committed common inputs.
 
     Private work/sources/checker files remain local; this does not implicitly commit them.
     """
     if not space.address:
         return None, []
-    prepared = prepare_migration(record, files)
+    prepared = prepare_migration(record, files, unfinished)
     shared = set(prepared['required'])
     if not prepared['blockers']:
         shared.update(format.shared_inputs({'required': prepared['required']}, lambda name: files.get(name)))
@@ -411,10 +475,11 @@ def _said(found) -> dict:
 def migration_preview(engine, path):
     try:
         _, root, record, files, guard, blockers = _snapshot(engine, path)
-        prepared = prepare_migration(record, files)
+        unfinished = _unfinished(engine, root, files)
+        prepared = prepare_migration(record, files, unfinished)
         return {**prepared, 'path': str(root), 'expected': _token(files, guard),
                 'blockers': prepared['blockers'] + blockers, 'consequences': CONSEQUENCES,
-                **_said(classify(files))}
+                **_said(classify(files, unfinished))}
     except (OSError, ValueError, TypeError, KeyError, WorkspaceError) as error:
         try:
             found = outcome(engine, path)
@@ -559,7 +624,7 @@ def migrate(engine, path, expected):
             from runner.desk_chat import show
             return show(engine, root)
         _, current, record, files, guard, blockers = _snapshot(engine, path)
-        prepared = prepare_migration(record, files)
+        prepared = prepare_migration(record, files, _unfinished(engine, root, files))
         if current != root or blockers or prepared['blockers']:
             raise WorkspaceError(' '.join(blockers + prepared['blockers']))
         if not expected or _token(files, guard) != expected:
@@ -567,6 +632,12 @@ def migrate(engine, path, expected):
         session = copy.deepcopy(_json(files, format.SESSION))
         effective = copy.deepcopy(record)
         session['flow'] = 'desk'
+        # A material written but never saved is not made on the desk: its file, as it is
+        # now, reads as not started there until the desk makes that material (#547).
+        names = _material_files(session)
+        unsaved = {name: format.digest(files[names[name]]) for name in prepared['unsaved']}
+        if unsaved:
+            session[workspace.UNSAVED] = unsaved
         effective.update(flow='desk', execution='conversation', conversation_scope=['part'],
                          migration_targets=prepared['targets'], unfinished_migration=True)
         saved_status = {}
@@ -580,6 +651,8 @@ def migrate(engine, path, expected):
             if effective.get(key):
                 saved_status[key] = copy.deepcopy(effective[key])
                 effective[key] = None
+        if prepared['notes']:
+            saved_status['notes'] = list(prepared['notes'])
         if saved_status:
             effective['migration_saved_status'] = saved_status
         origin = format.receipt(files[format.SESSION], files[format.RUN], session['id'], expected, prepared['required'], prepared['targets'],
