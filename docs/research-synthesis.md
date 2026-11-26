@@ -137,6 +137,40 @@ An unconfirmed termination makes `count` null; legacy snapshots without this fie
 show an unavailable count. Neither case claims zero workers. Host execution
 records stay in the existing private, ignored case directory.
 
+### The units doing the work
+
+The snapshot (schema 1; fields are only ever added) also says which unit of work is slow
+and which work is already safe. Each is read from what the run already holds: the host's
+record of its own attempts and what Harness Research's `review-units` commands answer. No
+evidence, preview or review text is added, and no request is made for it.
+
+- `streams[]` and `combining[]` rows carry `attempts`, `seconds` (the latest attempt: how
+  long it took, or has taken so far) and, while one works, `started_at`, so the page times
+  it from its start.
+- `final_brief: {status, attempts, seconds, started_at?}`: the final brief as its own entry
+  (waiting, working, kept, failed or stopped), apart from the section drafts. Present only
+  when sections are combined.
+- `review_units[]: {id, kind: content|final, label, status, attempts, seconds,
+  started_at?}`: each review unit of a check in units, in plan order. `label` is the
+  question of the area it checks, or "the whole research" for the final unit. `kept`
+  means it will not be reviewed again, whether accepted in this check or kept from an
+  earlier one. A check by one reviewer has no `review_units`.
+- `counts: {gather|combine|check: {working, waiting, kept, failed, stopped, total}}`, for
+  each stage with units. `working` is observed (the host's live jobs of that stage), never
+  the configured limit, and `null` while a job's end is unconfirmed.
+- `ended_in: {part: final-brief|review-unit|whole-check, how: failed|timed-out|stopped,
+  label?, kept, total, said}` when the final brief or the check in units ended early.
+  `said` comes from `research_transport.ended_words`, the one sentence every studio shows
+  for it: the final brief names itself and keeps every section draft; a review unit is
+  named and the other parts' checks are kept. Training Studio's and Presentation Studio's
+  job failure, and Training Studio's final-brief timeout, use the same words.
+
+The shared card lists each stage's units one line each (name, state in words, tries, time),
+with what works now and what failed shown and the rest in a collapsed list; the final brief
+and the whole-research check are their own lines. The running stage says its counts in
+words; a stopped run says what it kept. A snapshot saved before these fields draws as it
+did. `tests/test_research_unit_progress.py` and `tests/research_page_check.js` cover it.
+
 | Transition | Screen behavior | Regression coverage |
 | --- | --- | --- |
 | Investigation starts/ends | Live robot count follows observed invocations; current stage has accent fill and `aria-current` | `SessionTests.test_live_agents_follow_actual_invocations_in_every_phase`, shared component checks |
@@ -509,7 +543,8 @@ on with the same dossier and every accepted unit; a check left incomplete by an 
 original reviews that unit and the final again. Review-unit jobs count as their round's
 review in time and cost. A case handed on carries its plan record and receipts, so it still
 verifies. While units run, each active reviewer appears in the progress under its unit as
-its section (the final unit as `final-check`, apart from the final brief's author).
+its section (the final unit as `final-check`, apart from the final brief's author), and
+each unit has its own line (`review_units`, see "The units doing the work").
 
 A supplied document that Harness Research 1.6.0 takes in has the origin `supplied:<name>`;
 earlier cases keep the absolute path of the folder copy they were taken from. Wherever a

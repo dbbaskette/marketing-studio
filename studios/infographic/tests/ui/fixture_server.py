@@ -197,7 +197,8 @@ def main():
                 for original in review['originals']: original['read_original']=True
                 for kind in ('facts','findings','prose'):
                     for item in review[kind]: item.update(verdict='supported',note='Synthetic independent fixture check.')
-                review['assessment']={'coverage':'accurate','usefulness':'adequate','note':'Synthetic scope.'}
+                # A review unit's template asks for the assessment only on the final unit (#378).
+                if 'assessment' in review or 'protocol' not in review: review['assessment']={'coverage':'accurate','usefulness':'adequate','note':'Synthetic scope.'}
                 return review
             engine.assistant.research=synthetic_research
         def native_page(port):

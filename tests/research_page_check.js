@@ -277,5 +277,81 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   assert.match(said,/Reading your documents/);assert.match(said,/100 of 766 documents read, in groups of up to 50/);assert.match(said,/Reading documents 101–150 and 151–200 now\./);
   const after=all(kit.progress({phase:'investigate',streams:[],agents:{count:0,active:[]},reading:{total:766,read:766,of:16,groups:[],unused:12,dropped:3}})).map(n=>n.textContent).join(' ');
   assert.match(after,/All 766 documents were read in groups of up to 50/);assert.match(after,/12 bear on no research area and were not passed on\./);assert.match(after,/3 more were relevant/);}
+ // The units doing the work (#379): each on its own line under its stage, with its state in
+ // words, its tries and its time; the final brief and the whole-research check apart.
+ {const text=n=>n.textContent+n.children.map(text).join(''),ago=seconds=>new Date(Date.now()-seconds*1000).toISOString();
+  const long='Which synthetic deployment pattern keeps every instance reachable while one of them restarts during a rolling change?';
+  const units=[{id:'unit-a',kind:'content',label:long,status:'kept',attempts:2,seconds:3},
+   {id:'unit-b',kind:'content',label:'Synthetic question 2',status:'working',attempts:1,seconds:3,started_at:ago(12)},
+   {id:'unit-c',kind:'content',label:'Synthetic question 3',status:'failed',attempts:1,seconds:40},
+   {id:'unit-d',kind:'content',label:'Synthetic question 4',status:'waiting'},
+   {id:'final',kind:'final',label:'the whole research',status:'waiting'}];
+  const checking={phase:'review',streams:[{id:'a',questions:['Q'],status:'kept',attempts:1,seconds:61}],
+   agents:{count:1,unconfirmed:0,active:[{id:'r1',phase:'review',section:'unit-b',unit:'unit-b',status:'working'}]},
+   review_units:units,counts:{check:{working:1,waiting:2,kept:1,failed:1,stopped:0,total:5}}};
+  const nodes=all(kit.progress(checking)),byKey=k=>nodes.find(n=>n.dataset.key===k);
+  assert.equal(byKey('research-units-check').textContent,'Check sources: 5 parts, 1 working now, 2 waiting, 1 kept, 1 need a retry.','the running stage says its counts in words');
+  const group=byKey('research-review-units'),all_=byKey('research-review-units-all');
+  assert.equal(all_.tagName,'details');assert.ok(!all_.open,'every part is listed, collapsed');
+  assert.equal(byKey('research-review-units-toggle').textContent,'1 of 5 parts of the independent check kept');
+  const lines=all_.children[1];assert.equal(lines.tagName,'ul');assert.equal(lines.children.length,5,'lists are lists: one line a part');
+  assert.deepEqual(lines.children.map(text),[long+' · Checked and kept · try 2 · took 3 seconds','Synthetic question 2 · Checking · 12 seconds so far','Synthetic question 3 · Retry needed · after 40 seconds','Synthetic question 4 · Waiting','Whole-research check · Waits for every part']);
+  assert.equal(lines.children.at(-1).dataset.key,'research-whole-check','the whole-research check is its own line, last');
+  assert.ok(lines.children[1].children.at(-1).dataset.started,'a working part is timed in the page from its start, never less than it was');
+  const now=group.children[0];assert.equal(now.tagName,'ul');
+  assert.deepEqual(now.children.map(text),['Synthetic question 2 · Checking · 12 seconds so far','Synthetic question 3 · Retry needed · after 40 seconds'],'what works now and what failed show without opening the list');
+  assert.ok(nodes.some(n=>n.textContent==='Independent reviewer · Synthetic question 2'),'a reviewer is named by its part');
+  assert.ok(nodes.some(n=>n.textContent.startsWith('Independent reviewers are checking the research in 4 parts')));
+  assert.ok(nodes.some(n=>n.textContent==='Evidence kept'));assert.ok(nodes.some(n=>n.textContent===' · took 1 minute'),'an area says how long it took');
+  assert.equal(nodes.filter(n=>n.role==='status').length,1,'one short status line, never a list that announces');
+  assert.equal(nodes.some(n=>n.style||n['aria-live']),false,'no fixed sizes and nothing that announces every second');
+  // Phone width: names wrap in full inside the card's own lists; nothing is cut or held to a width.
+  assert.ok(lines.children[0].children[0].textContent.startsWith(long),'a long name is shown in full, to wrap');
+  // The final unit at work, and the final brief's author, are different lines.
+  const whole=all(kit.progress({...checking,agents:{count:1,active:[{phase:'review',section:'final-check',unit:'final'}]},review_units:units.map(u=>({...u,status:u.kind==='final'?'working':'kept'})),counts:{check:{working:1,waiting:0,kept:4,failed:0,stopped:0,total:5}}}));
+  assert.ok(whole.some(n=>n.textContent==='Independent reviewer · the whole research'));assert.ok(!whole.some(n=>n.textContent==='Assembling the final brief'));
+  assert.ok(whole.some(n=>n.textContent.startsWith('Every part is checked and kept. One independent reviewer is checking the whole research')));
+  // The final brief: its own line after the section drafts, and the heading names it.
+  const combining={phase:'synthesize',combining:[{id:'s1',questions:['Section one'],status:'kept',attempts:1,seconds:20},{id:'s2',questions:['Section two'],status:'kept',attempts:2,seconds:30}],
+   final_brief:{status:'working',attempts:1,seconds:5,started_at:ago(5)},agents:{count:1,active:[{phase:'synthesize',section:'final'}]},
+   counts:{combine:{working:1,waiting:0,kept:2,failed:0,stopped:0,total:3}}};
+  const brief=all(kit.progress(combining)),briefKey=k=>brief.find(n=>n.dataset.key===k);
+  assert.ok(brief.some(n=>n.textContent==='Assembling the final brief'));
+  assert.equal(text(briefKey('research-final-brief')),'Final brief · Writing · 5 seconds so far');
+  assert.equal(briefKey('research-final-brief').parent.children.indexOf(briefKey('research-final-brief')),2,'after the section drafts');
+  assert.deepEqual(briefKey('research-combining-now').children.map(text),['Final brief · Writing · 5 seconds so far']);
+  assert.equal(briefKey('research-units-combine').textContent,'Combine findings: 3 parts, 1 working now, 2 kept.');
+  assert.ok(brief.some(n=>text(n)==='Section two · Draft kept · try 2 · took 30 seconds'),'a section kept after a retry reads as kept');
+  // A final brief that failed is named, with the section drafts kept, in the server's words.
+  const said='The final brief could not finish. All 2 section drafts are kept; Try again writes only the final brief.';
+  const failed=all(kit.progress({...combining,agents:{count:0,active:[]},final_brief:{status:'failed',attempts:1,seconds:9},ended_in:{part:'final-brief',how:'failed',kept:2,total:2,said}}));
+  {const top=kit.progress({...combining,agents:{count:0,active:[]},final_brief:{status:'failed'},ended_in:{part:'final-brief',how:'failed',said}}).children.map(n=>n.dataset.key);
+   assert.ok(top.indexOf('research-ended')>=0&&top.indexOf('research-ended')<top.indexOf('research-combining'),'where it ended is said before any list');}
+  {const halt=all(kit.progress({phase:'stopped',review_units:units,ended_in:{part:'review-unit',how:'stopped',said:'Research stopped during the independent check of “Synthetic question 2”.'}}));
+   assert.ok(halt.some(n=>n.textContent.startsWith('Next: continue when you are ready.')));assert.ok(!halt.some(n=>n.textContent==='Research needs attention'),'a stop is not a failure');}
+  {const gathering=all(kit.progress({phase:'investigate',streams:[{id:'a',status:'kept'},{id:'b',status:'working',started_at:ago(3)},{id:'c',status:'waiting'}],counts:{gather:{working:1,waiting:1,kept:1,failed:0,stopped:0,total:3}}}));
+   assert.ok(gathering.some(n=>n.textContent==='1 of 3 areas collected · 1 working · 1 waiting'),'gathering says how many wait');
+   assert.ok(gathering.some(n=>n.textContent===' · 3 seconds so far'),'a working area is timed');}
+  assert.ok(failed.some(n=>n.textContent===said));assert.ok(failed.some(n=>n.textContent==='Research needs attention'));
+  assert.ok(!failed.some(n=>n.textContent.startsWith('Combine findings:')),'no running counts once it ended');
+  assert.ok(failed.some(n=>n.className==='research-stage-state'&&n.textContent==='Incomplete'));
+  assert.ok(!failed.some(n=>n.textContent==='Working now'));
+  // A stopped run says what it kept.
+  const stopped=all(kit.progress({phase:'stopped',streams:[{id:'a',status:'kept'}],combining:combining.combining,final_brief:{status:'kept'},review_units:units,
+   counts:{gather:{total:1,kept:1},combine:{total:3,kept:3},check:{total:5,kept:1,waiting:2,failed:1,working:0}}}));
+  assert.ok(stopped.some(n=>n.textContent==='Kept: 1 of 1 research area, 2 of 2 section drafts, the final brief and 1 of 5 parts of the check. Continue when you are ready: only unfinished work runs again.'));
+  // Live numbers that are not known are said to be unknown, never the limit.
+  const unknown=all(kit.progress({...checking,agents:{count:null,unconfirmed:1,active:[{phase:'review',status:'termination-unconfirmed'}]},counts:{check:{working:null,waiting:2,kept:1,failed:1,stopped:0,total:5}}}));
+  assert.equal(unknown.find(n=>n.className==='research-agent-count').textContent,'—');
+  assert.equal(unknown.find(n=>n.dataset.key==='research-units-check').textContent,'Check sources: 5 parts, how many are working now is not known, 2 waiting, 1 kept, 1 need a retry.');
+  // A snapshot saved before this change draws as it did: no parts, no counts, no times.
+  const legacy=all(kit.progress({phase:'review',workstreams:[{id:'w1',questions:['Older question'],status:'accepted'}],combining:[{id:'s1',questions:['Older section'],status:'kept'}]}));
+  assert.ok(!legacy.some(n=>n.dataset.key==='research-review-units'||(n.dataset.key||'').startsWith('research-units-')||n.dataset.key==='research-final-brief'));
+  assert.ok(legacy.some(n=>n.textContent==='Live agent activity is not available for this saved run.'));
+  assert.ok(legacy.some(n=>text(n)==='Older section · Draft kept'));
+  assert.ok(legacy.some(n=>n.textContent==='Evidence kept'));
+  assert.ok(legacy.some(n=>n.textContent==='The independent reviewer is checking the report and brief against the captured sources. Research is not finished until this check passes.'));
+  const older=all(kit.progress({phase:'review',agents:{count:1,active:[{phase:'review',section:'final-check',unit:'final'}]}}));
+  assert.ok(older.some(n=>n.textContent==='Independent reviewer · the whole research'));assert.ok(!older.some(n=>n.textContent==='Assembling the final brief'));}
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});
