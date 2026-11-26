@@ -891,6 +891,77 @@ class CheckRunsToItsReviewTests(Fixture):
         self.assertTrue(shown['operation']['stopped'])
         self.assertEqual(shown['operation']['next'], 'research')
 
+    def test_a_check_left_waiting_at_an_earlier_step_is_said_stopped_and_starts_again(self):
+        # Shaped as the runs 4.20 and 4.21 left on disk: under Step by step the research
+        # plan submitted but never accepted; under Balanced the plan accepted by the review
+        # level and the research never run. Either waits for an approval nobody can give.
+        # Each shows as waiting for approval or as paused.
+        for level, plan, waiting_at, said in (
+            ('step_by_step', {'status': 'draft'}, 'research-plan', 'waiting-for-approval'),
+            # The same, its plan since read as stale (what it was written from changed).
+            ('step_by_step', {'status': 'draft', 'basis': {}}, 'research-plan', 'paused'),
+            (
+                'balanced',
+                {'status': 'approved', 'accepted_by': 'review-policy'},
+                'research',
+                'paused',
+            ),
+        ):
+            with self.subTest(level=level):
+                self.calls.clear()
+                engine = self.start('factual-support', level, research='web-allowed')
+                engine.once(self.ident)
+                directory, record, run = runner.load(self.root, self.ident)
+                row = run['stages']['research-plan']
+                row.pop('accepted_by', None)
+                row.update(plan)
+                if plan['status'] == 'draft':
+                    run.get('approved', {}).pop('research-plan', None)
+                run['stages'].pop('research', None)
+                run.pop('review_events', None)
+                runner.save(self.root, directory, record, run, 'Submitted research-plan')
+                engine.keep_local(self.ident, {'enabled': False, 'status': 'waiting-for-approval'})
+                shown = editor.read(self.root, self.ident)
+                self.assertEqual(
+                    (shown['operation']['status'], shown['operation']['next'], shown['working']),
+                    (said, waiting_at, False),
+                )
+                # Said as a check that stopped at that step, never as a blank start.
+                self.assertTrue(shown['operation']['stopped'])
+                # With the research it was started with, which Start again sends back.
+                self.assertEqual(shown['operation']['research'], 'web-allowed')
+                # Start again really starts it: from its first step, and on to the next.
+                editor.dispatch(
+                    self.root,
+                    'check',
+                    {
+                        'id': self.ident,
+                        'expected': shown['expected'],
+                        'check': 'factual-support',
+                        'research': 'web-allowed',
+                    },
+                )
+                self.calls.clear()
+                engine.once(self.ident)
+                self.assertEqual(self.calls, ['research-plan'])
+                local = engine.local(self.ident)
+                self.assertEqual((local['status'], local['enabled']), ('queued', True))
+                shown = editor.read(self.root, self.ident)
+                self.assertEqual((shown['working'], shown['operation']['stopped']), (True, False))
+                with studio.locked(self.root):
+                    engine.control(self.ident, 'stop')
+
+    def test_a_check_waiting_at_its_review_is_not_a_stop(self):
+        engine = self.start('factual-support', research='web-allowed')
+        for _ in range(3):
+            engine.once(self.ident)
+        shown = editor.read(self.root, self.ident)
+        self.assertEqual(
+            (shown['operation']['status'], shown['operation']['next']),
+            ('waiting-for-approval', 'review'),
+        )
+        self.assertFalse(shown['operation']['stopped'])
+
     def test_a_pause_made_during_a_step_keeps_the_check_after_it(self):
         engine = self.start('factual-support', research='web-allowed')
         worker = engine.worker

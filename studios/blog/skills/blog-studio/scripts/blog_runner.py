@@ -2473,10 +2473,10 @@ class Engine:
                     state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
                 # Every run that goes on is the manuscript editor's check. It goes on through its
                 # stages by itself and stops at its review, which the editor screen reads; a
-                # Pause or Stop made while this step ran keeps it where it is.
-                goes_on = after['next'] is not None and any(
-                    row['stage'] == found['next'] and row['auto_accepted']
-                    for row in after['stages']
+                # Pause or Stop made while this step ran keeps it where it is. Only the review
+                # waits for the person: a step before it never ends the check as waiting.
+                goes_on = (
+                    after['next'] is not None and found['next'] != after['stages'][-1]['stage']
                 )
                 if goes_on and state.get('enabled'):
                     state.update(status='queued', error='')

@@ -356,6 +356,17 @@ async function commentCompletionAndFailure(){
   assert.ok(nodes().some(e=>/stopped before its review, at the research findings\. Nothing more runs/.test(e.textContent||'')));
   assert.ok(nodes().some(e=>e.textContent==='Start again'));
   assert.equal(nodes().some(e=>e.textContent==='This review couldn’t finish'),false,'a stop is not said as a failure');
+  // A check found waiting before its review (as 4.20 and 4.21 left some) is said as stopped at
+  // that step, never as a blank start, and Start again starts the same check, research and all.
+  const sent=[],stuck={...state,expected:'v5',working:false,operation:{status:'waiting-for-approval',error:'',enabled:false,editor_check:'factual-support',next:'research-plan',steps:['research-plan','research','review'],stopped:true,research:'web-allowed'}};
+  const g=fixture((url,options)=>{if(url==='/api/editor-check')sent.push(JSON.parse(options.body));return url==='/api/run-options'?{sources:[]}:stuck;});g.loadRunner();g.run('studio.editorChoices={}');await g.run("sRoute('editor','comments','prepare')");
+  const shown=()=>descendants(g.get('studio-page'));
+  assert.ok(shown().some(e=>e.textContent==='This pass was stopped'),shown().map(e=>e.textContent).join('|'));
+  assert.ok(shown().some(e=>/stopped before its review, at the research plan\. Nothing more runs/.test(e.textContent||'')));
+  assert.equal(shown().find(e=>e.id==='editor-research').value,'web-allowed','Start again keeps the research the check was started with');
+  assert.ok(shown().some(e=>e.textContent==='Start again'));
+  await shown().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  assert.deepEqual([sent[0]?.check,sent[0]?.research],['factual-support','web-allowed'],JSON.stringify(sent));
 }
 
 async function pendingEditorSaves(){
