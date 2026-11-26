@@ -6,6 +6,7 @@ keeps today's behaviour.
 Every route the page answers is walked with the network bridge's header, and each has its
 decision in marketing_studio.page.PHONE, so a route added without one fails here. Disposable
 settings, stand-in launches and lookups only."""
+import fnmatch
 import json
 import os
 from email.message import Message
@@ -13,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from test_brand_data import BrandFolders
-from marketing_studio import catalog, computer, page as home_page, shared, state
+from marketing_studio import bridge_protocol, catalog, computer, page as home_page, shared, state, workspaces
 from marketing_studio.errors import WorkspaceError
 from marketing_studio.page import BRAND_ROUTES, REMOTE_BRANDS
 from studio_core import brand_catalog, brand_data, graphics
@@ -303,36 +304,99 @@ class HomePhoneTests(BrandFolders):
         with mock.patch.object(computer, 'check', return_value=tools):
             self.assertEqual(self.ask('/api/computer', {}, network=False)[0], 200)   # one look taken here
         signature = self.ask('/api/library-existing', {}, network=False)[1]['signature']
-        asked = {
-            '/api/home': None, '/api/computer': {}, '/api/models': {'agent': 'claude'},
-            '/api/shared': {'changes': {'person': {'name': 'Ana'}}, 'seen': {}},
-            '/api/setup': {'done': True}, '/api/open': {'studio': 'blog'}, '/api/connect': {'studio': 'blog'},
-            '/api/paths': {'paths': {'blog': str(install)}}, '/api/graphics': {'models': 'gemini'},
-            '/api/brands': {}, '/api/brands-repository': {}, '/api/research-site': {'site': 'https://example.com'},
-            **{path: {} for path in LIBRARY},
-            '/api/library-upload': {'name': 'note.md', 'content': 'IyBOb3RlCg=='},
-            '/api/library-adopt': {'signature': signature},
-            **{f'/api/brand-{name}': {} for name in BRAND_ROUTES}}
-        self.assertEqual(set(asked), set(home_page.PHONE))
+        asked = [
+            ('/api/home', None), ('/api/computer', {}), ('/api/models', {'agent': 'claude'}),
+            ('/api/shared', {'changes': {'person': {'name': 'Ana'}}, 'seen': {}}),
+            ('/api/setup', {'done': True}), ('/api/setup', {'done': True, 'prepare': True}),
+            ('/api/open', {'studio': 'blog'}), ('/api/connect', {'studio': 'blog'}),
+            ('/api/connect', {'studio': 'training'}),
+            ('/api/paths', {'paths': {'blog': str(install)}}), ('/api/graphics', {'models': 'gemini'}),
+            ('/api/brands', {}), ('/api/brands-repository', {}), ('/api/research-site', {'site': 'https://example.com'}),
+            *((path, {}) for path in LIBRARY),
+            ('/api/library-upload', {'name': 'note.md', 'content': 'IyBOb3RlCg=='}),
+            ('/api/library-adopt', {'signature': signature}),
+            *((f'/api/brand-{name}', {}) for name in BRAND_ROUTES),
+            # Storage changes a phone may make prepare the studios: when to share, with a team
+            # repository the computer saved as a folder, and a repository web address.
+            ('/api/shared', lambda: {'changes': {'share': 'asked' if shared.read()[0].get('share') != 'asked'
+                                                 else 'decision'}, 'seen': shared.read()[0]}),
+            ('/api/shared', lambda: {'changes': {'team': {'repository': 'https://example.com/team.git'}},
+                                     'seen': shared.read()[0]})]
+        self.assertEqual({path for path, _ in asked}, set(home_page.PHONE))
+        state_of = {'connect': 'switched'}
+
+        def described(root, repository=None, branch='main'):
+            return {'root': str(root), 'repository': repository, 'branch': branch}
+
+        def bridge(identifier, root, values, flag, timeout, slow):
+            # What each studio's bridge reports, in the shapes marketing_studio/bridge.py and
+            # studio_core.workspace_setup give them.
+            team = (values.get('team') or {}).get('repository')
+            here = self.root / 'work' / identifier
+            # Blog Studio's earlier workspace is a plain folder; a deck studio's is local Git
+            # joined to a team repository the computer once saved as a folder.
+            before = (described(self.root / 'writing', None, None) if identifier == 'blog'
+                      else described(self.root / 'old' / identifier, str(self.root / 'old-team-repo')))
+            if flag == bridge_protocol.PREPARE:
+                report = {'prepared': True, 'workspace': described(here, team)}
+                if identifier in ('blog', 'training'):
+                    report.update(notice='Synthetic: the layout was not pushed.',
+                                  connect={'from': before,
+                                           'to': {'repository': team, 'root': str(here), 'branch': 'main'},
+                                           'carry': {'blogs': 1}})
+                return report
+            if state_of['connect'] == 'switched':
+                return {'connected': True, 'from': before,
+                        'to': described(here, team), 'carried': {'blogs': 1}, 'left': {}, 'shared': None,
+                        'notice': None}
+            return {'connected': True, 'already': True, 'workspace': described(here, team),
+                    'from': {'root': str(self.root / 'writing')}, 'carried': {'blogs': 1}, 'left': {},
+                    'shared': None, 'notice': None}
+
+        real_remembered = workspaces.remembered
+
+        def remembered(identifier):
+            # One studio remembers a workspace folder that is not there now; another one
+            # joined to the team repository the settings name.
+            if identifier == 'presentation' and state_of['connect'] == 'already':
+                return {'root': str(self.root / 'gone-decks'), 'repository': None, 'branch': 'main'}
+            team = (shared.read()[0].get('team') or {}).get('repository')
+            if identifier == 'training' and team:
+                return {'root': str(self.root / 'work' / 'training'), 'repository': team, 'branch': 'main'}
+            return real_remembered(identifier)
         shown = {}
         with mock.patch.object(computer, 'check', return_value=tools), \
-                mock.patch.object(self.launcher, 'prepare', return_value={}), \
+                mock.patch.object(self.launcher, 'bridge', side_effect=bridge), \
+                mock.patch.object(self.launcher, 'process', return_value=None), \
                 mock.patch.object(self.launcher, 'open', return_value='http://192.168.1.9:1/#token=x'), \
-                mock.patch.object(self.launcher, 'connect', return_value={'connected': True}), \
+                mock.patch.object(workspaces, 'remembered', side_effect=remembered), \
                 mock.patch.object(catalog, 'locate', return_value=install), \
                 mock.patch.object(self.page.models, 'get', return_value={'models': []}), \
                 mock.patch.object(graphics, 'listed', return_value={'provider': 'gemini', 'models': []}), \
                 mock.patch.object(brand_catalog, 'choices', return_value=SKILLS):
-            # Walked twice: with a team repository, then with only a local work folder.
-            for storage in ({}, {'team': {'repository': None}}):
-                if storage:
-                    self.assertEqual(self.save(storage, network=False)[0], 200)
-                for path, sent in asked.items():
+            # Walked twice: with a team repository given as a folder, a plain workspace folder
+            # and a connect that moved work; then with only a local work folder, a remembered
+            # workspace that is gone and a connect that finishes carrying.
+            team = str(self.root / 'team-repo')
+            for storage, connect in (({'repository': team, 'branch': 'main'}, 'switched'),
+                                     ({'repository': team, 'branch': 'main'}, 'already'),
+                                     ({'repository': None}, 'already')):
+                state_of['connect'] = connect
+                self.assertEqual(self.save({'team': storage}, network=False)[0], 200)
+                for path, sent in asked:
                     with self.subTest(path=path, storage=storage):
-                        status, answer = self.ask(path, sent)
+                        status, answer = self.ask(path, sent() if callable(sent) else sent)
                         shown.setdefault(path, set()).update(folders_shown(answer))
         shown = {path: found for path, found in shown.items() if found}
-        self.assertEqual(shown, {path: set(fields) for path, fields in home_page.PHONE_SHOWS.items()})
+        declared = home_page.PHONE_SHOWS
+        for path, found in shown.items():
+            for field in found:
+                self.assertTrue(any(fnmatch.fnmatchcase(field, pattern) for pattern in declared.get(path, ())),
+                                f'{path}: {field} is not in PHONE_SHOWS')
+        for path, patterns in declared.items():
+            for pattern in patterns:
+                self.assertTrue(any(fnmatch.fnmatchcase(field, pattern) for field in shown.get(path, ())),
+                                f'{path}: {pattern} was never shown')
         # Each route's written decision says whether it shows saved folders, and only then.
         for path, why in home_page.PHONE.items():
             self.assertEqual(home_page.SAVED in why, path in home_page.PHONE_SHOWS, path)

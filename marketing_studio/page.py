@@ -56,26 +56,38 @@ PHONE = {
        for name in BRAND_ROUTES},
 }
 # The saved folder values on this computer each route still shows a phone, by where they are
-# in its answer (a list's items as []). Showing them is the owner's separate decision (GitHub
-# issue #539); tests/test_home_phone.py walks every route and keeps this list true. A route
-# not named here shows a phone no folder.
+# in its answer (a list's items as [], any one studio as *). Showing them is the owner's
+# separate decision (GitHub issue #539); tests/test_home_phone.py walks every route, in each
+# state that can name one, and keeps this list complete and true. A route not named here shows
+# a phone no folder. A repository shows one when the computer saved it as a folder.
 SNAPSHOT_SHOWS = (
     'shared.local.root', 'shared.brand.skill', 'shared.brand.brands', 'shared.brand.repository',
-    'shared.team.repository',                       # the saved settings, a repository when a path
-    'setup.paths.blog',                             # the studio installation folders saved here
+    'shared.team.repository',                       # the saved settings
+    'setup.paths.*',                                # the studio installation folders saved here
     'studios[].path', 'studios[].configured_path',  # each installation folder, found and saved
-    'studios[].workspace.workspace.root',           # each studio's workspace folder
+    'studios[].workspace.workspace.root', 'studios[].workspace.workspace.repository',  # its workspace
     'studios[].workspace.to.root', 'studios[].workspace.to.repository',   # where it would join
-    'studios[].workspace.detail',                   # the sentence that names that folder
+    'studios[].workspace.summary', 'studios[].workspace.detail',   # the sentences that name them
     'computer.items[].detail')                      # where Git and the other tools were found
+# Preparing the studios (a storage change, or setup with prepare), each studio's report.
+PREPARED_SHOWS = (
+    'prepared.*.workspace.root', 'prepared.*.workspace.repository',
+    'prepared.*.connect.from.root', 'prepared.*.connect.from.repository',
+    'prepared.*.connect.to.root', 'prepared.*.connect.to.repository')
+# Connecting a studio, its report: where its work was, and where it is now.
+CONNECTED_SHOWS = (
+    'connected.workspace.root', 'connected.workspace.repository', 'connected.from.root',
+    'connected.from.repository', 'connected.to.root', 'connected.to.repository')
 PHONE_SHOWS = {
-    **{route: SNAPSHOT_SHOWS for route in ('/api/home', '/api/shared', '/api/setup', '/api/connect',
-                                           '/api/paths')},
+    '/api/home': SNAPSHOT_SHOWS, '/api/paths': SNAPSHOT_SHOWS,
+    '/api/shared': SNAPSHOT_SHOWS + PREPARED_SHOWS, '/api/setup': SNAPSHOT_SHOWS + PREPARED_SHOWS,
+    '/api/connect': SNAPSHOT_SHOWS + CONNECTED_SHOWS,
     '/api/computer': ('computer.items[].detail',),
     '/api/library': ('location',),                   # the Document Library's folder
     '/api/library-upload': ('location',),
     '/api/library-adopt': ('location',),
-    '/api/library-existing': ('workspaces[].shown',),   # each studio's remembered workspace
+    # Each studio's remembered workspace, and the sentence saying one is not there now.
+    '/api/library-existing': ('workspaces[].shown', 'workspaces[].summary'),
 }
 CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
                            'result was not kept. Review the settings shown now and save again.')
