@@ -51,15 +51,20 @@ def kept_words(part, kept, total=0):
     return 'No other part of the check had finished; evidence and drafts are kept.'
 
 
-def ended_words(part, how, *, label=None, parts=1, kept=0, total=0, detail='', summary=''):
+def ended_words(part, how, *, label=None, parts=1, kept=0, total=0, detail='', summary='', regathers=False):
     """The one sentence every studio shows of research that ended early (#379), computed once
     every peer has ended. `part`: 'final-brief', 'review-unit' (named by `label`, or
     `parts` of them), 'whole-check', or 'research' (anywhere else: a stop or pause, saying
     `summary`, what it keeps). `how`: 'failed', 'timed-out', 'stopped' or 'paused'."""
+    if how == 'invalidated':
+        return ('A selected original changed during research, so the research stopped. Capture and '
+                'approve its new revision; going on then gathers the evidence again.')
     if part == 'research':
         if how == 'paused':
             return 'Research paused. ' + (summary or 'Nothing had finished yet; your sources are kept.')
-        return 'Research stopped. ' + (summary or 'Going on gathers the evidence again; your sources are kept.')
+        if regathers:
+            return 'Research stopped. Going on gathers the evidence again; your sources are kept.'
+        return 'Research stopped. ' + (summary or 'Nothing had finished yet; your sources are kept.')
     said = subject(part, label, parts)
     detail = ' '.join(str(detail or '').split())
     if how in ('stopped', 'paused'):
@@ -70,6 +75,30 @@ def ended_words(part, how, *, label=None, parts=1, kept=0, total=0, detail='', s
         if detail and not said.endswith(('.', '!', '?')):
             said += '.'
     return said + ' ' + kept_words(part, kept, total)
+
+
+def next_words(part, how, regathers=False):
+    """What the research card says to do next after research ended early, from the same
+    ending as its one sentence (ended_words): it never claims more is kept than that says."""
+    if how == 'invalidated':
+        return 'Next: capture and approve the changed original, then go on; the evidence is gathered again.'
+    if regathers:
+        return 'Next: go on when you are ready; the research starts again from your sources.'
+    if how == 'paused':
+        return 'Next: resume when you are ready; what is kept is not done again.'
+    if how == 'stopped':
+        return 'Next: continue when you are ready; what is kept is not done again.'
+    return 'Next: go on when you are ready; what is kept is not done again.'
+
+
+def stopped_words(progress):
+    """The run's one sentence of research that stopped or paused, from its progress, for a
+    studio to show as its stop text; None when research did not end that way."""
+    if not isinstance(progress, dict) or progress.get('phase') not in ('stopped', 'stopping', 'paused', 'pausing'):
+        return None
+    ended = progress.get('ended_in')
+    said = ended.get('said') if isinstance(ended, dict) else None
+    return said if isinstance(said, str) and said else None
 
 
 def job_words(part, label=None, detail=''):

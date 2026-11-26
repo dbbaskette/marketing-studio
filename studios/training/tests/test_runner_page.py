@@ -2073,8 +2073,8 @@ class RunTests(PageCase):
         self.assertIn('no shared repository', said['notice'])
 
 
-STOPPED = ('Stopped. Everything finished before it is kept; the step that was in hand '
-           'starts over on resume.')
+STOPPED = ('Stopped. Finished materials are kept; the step that was in hand starts over '
+           'on resume.')
 
 
 class ListTests(PageCase):

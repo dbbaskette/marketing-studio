@@ -142,6 +142,16 @@ class ResearchJobsTests(Isolated):
         self.assertEqual(state['state'], 'failed', state)
         self.assertNotIn('kept', state)
 
+    def test_a_research_stop_is_said_in_the_run_s_one_sentence(self):
+        # What the research panel shows of the stop is the run's sentence, said once (#379).
+        state = self.run_job(lambda project: self.jobs.control(project['id'], 'stop'))
+        self.assertEqual(state['state'], 'stopped', state)
+        ended = state['progress']['ended_in']
+        self.assertEqual((ended['part'], ended['how']), ('research', 'stopped'))
+        self.assertEqual(state['problem'], ended['said'])
+        self.assertTrue(ended['said'].startswith('Research stopped. '), ended['said'])
+        self.assertTrue(ended['next'].startswith('Next: '))
+
     def test_research_from_the_library_made_for_something_else_is_imported_and_says_so(self):
         from runner import research, sources
         state = self.run_job()

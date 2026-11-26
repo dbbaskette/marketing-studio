@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import threading
+import time
 import unittest
 
 from runner_support import StudioCase, URL
@@ -333,6 +334,32 @@ class UnitNativeTests(StudioCase):
         names = [name for name in self.engine._load(root)['steps'] if contract.job_round(name) == ('review', 1)]
         self.assertEqual(len(names), 4)
         self.assertIn('research:review-1-final', names)
+
+    def test_a_research_stop_is_said_in_the_run_s_one_sentence_and_nothing_else_claims_kept(self):
+        # Stop while an area is gathered: the training's stop text is the run's sentence, and
+        # the generic line that everything finished is kept is not shown with it (#379).
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'source_outline' in payload and not getattr(self, 'stopping', False):
+                self.stopping = True
+                root = self.engine.trainings()[0]
+                threading.Thread(target=self.engine.act, args=(root, 'stop'), daemon=True).start()
+                deadline = time.monotonic() + 10
+                while not self.engine._run(root).stop.is_set() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+            return self.worker(tools, job)
+        self.workers.queued['research-result'][:] = [worker] * 12
+        root = self.start()
+        deadline = time.monotonic() + 10
+        while self.view(root)['state'] != 'stopped' and time.monotonic() < deadline:
+            time.sleep(0.05)
+        view = self.view(root)
+        progress = self.engine._load(root)['research_execution']['progress']
+        said = progress['ended_in']['said']
+        self.assertEqual((progress['ended_in']['part'], progress['ended_in']['how']), ('research', 'stopped'))
+        self.assertTrue(said.startswith('Research stopped. '), said)
+        self.assertEqual((view['state'], view['sentence']), ('stopped', said))
+        self.assertNotIn('finished before it is kept', view['sentence'])
 
     def test_a_part_out_of_time_is_named_with_what_is_kept_and_offers_more_time(self):
         from runner import agents

@@ -451,6 +451,47 @@ class DeskResearchTests(Fixture):
                     self.assertNotIn(place, said, name)
 
 
+    def test_desk_research_stopped_while_gathering_goes_on_from_its_kept_case(self):
+        """A desk start's research stopped while gathering, carried through staging as
+        desk_jobs.research_run carries it (copy_case), goes on and reaches checked research."""
+        from studio_core import research_session
+
+        def run_for():
+            return {'engine': 'claude', 'brief': {'audience': 'New learners', 'goal': 'Explain bounded examples'},
+                    'research_contract': research_contract.capability(Path(RUNTIME)),
+                    'research_execution': research_session.execution(RUNTIME, 3)}
+        payload = {'title': 'Synthetic explanation',
+                   'sources': [{'id': 'notes', 'origin': 'Supplied synthetic notes', 'text': TEXT,
+                                'name': 'Synthetic notes', 'purposes': ['reference'], 'status': 'ready'}],
+                   'documents': {'research-plan': '- **instance-min**: Minimum?'},
+                   'research_from': {'documents': True, 'sites': [], 'web': False}}
+        stop, calls, seen = threading.Event(), [], []
+        answer = self.worker(calls)
+        def stopping(engine, data, guidance, **options):
+            if (data.get('_execution') or {}).get('mode') == 'evidence':
+                stop.set()   # the person presses Stop while the area is gathered
+            return answer(engine, data, guidance, **options)
+        first = self.base / 'stopped-desk-research'
+        first.mkdir()
+        with self.assertRaises(Exception) as raised:
+            synthesis_research.generate(first, run_for(), payload, stopping, seconds=60, stop=stop,
+                                        progress=lambda event: seen.append(event) if event.get('streams') else None)
+        ended = seen[-1]['ended_in']
+        self.assertEqual(ended['said'], 'Research stopped. Going on gathers the evidence again; your sources are kept.')
+        self.assertEqual(str(raised.exception), ended['said'], 'what Blog Studio keeps as the error is the sentence')
+        # Staging keeps the stopped case; the next try copies it into a new folder and goes on.
+        kept = self.base / 'staging'
+        kept.mkdir()
+        research_contract.copy_case(first / research_contract.CASE, kept / research_contract.CASE)
+        again = self.base / 'again'
+        again.mkdir()
+        research_contract.copy_case(kept / research_contract.CASE, again / research_contract.CASE)
+        synthesis_research.generate(again, run_for(), payload, answer, seconds=60, stop=threading.Event())
+        facts, _ = research_contract.read_bundle(again / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(sum(call[0] == 'evidence' for call in calls), 2, 'the evidence is gathered again')
+
+
 class ParallelMeterTests(unittest.TestCase):
     def test_investigator_usage_reaches_stage_meter_without_duplicate_main_usage(self):
         import blog_worker

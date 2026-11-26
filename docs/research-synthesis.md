@@ -162,11 +162,19 @@ evidence, preview or review text is added, and no request is made for it.
   be done again: a correction round rewrites the drafts it names and the final brief, and
   which parts of the check hold is not known until the corrected dossier is planned, so until
   then none is kept. After an incomplete check, the parts a retry reviews again say so too.
-  "Kept" is said and counted only of work that will not be done again as things stand. A stop
-  outside the check stops the collection, and going on gathers the evidence again, so nothing
-  gathered or written from it is called kept; a pause keeps what it has.
-- `ended_in: {part: final-brief|review-unit|whole-check|research, how: failed|timed-out|stopped|paused,
-  label?, kept?, total?, said}` when the run ended early. It is computed once, after every
+  "Kept" is said and counted only of work that will not be done again as things stand.
+- What a stop does today, in every studio (Blog Studio too, since it goes on as the others
+  do): a stop during the independent check stops only the parts of the check at work; the
+  collection, the section drafts, the final brief and every part already checked are kept,
+  and going on checks only what is left, then the whole research. A stop at any other time,
+  or a selected original that changed, stops the collection: going on starts its next
+  generation, which gathers the evidence again and writes the drafts again, so nothing
+  gathered or written from it is called kept, and no correction is under way any more. A
+  stop that reaches a job before the run does (a studio's own Stop ending the job) leaves the
+  collection as it was, and what it accepted is kept. A pause keeps what it has.
+- `ended_in: {part: final-brief|review-unit|whole-check|research, how: failed|timed-out|stopped|paused|invalidated,
+  label?, kept?, total?, regathers?, said, next}` when the run ended early. `next` is what the
+  card says to do next, from the same ending (`research_transport.next_words`). It is computed once, after every
   peer has ended (`research_run.Run.ended`), by `research_transport.ended_words`, and the same
   string becomes the message of the error the run raises, so a studio's stop text, its
   problem, `describe()` and the card say one sentence. A job that ends while its peers work

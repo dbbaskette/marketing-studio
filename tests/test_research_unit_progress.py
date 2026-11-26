@@ -107,7 +107,8 @@ class UnitProgressTests(Borrowed, unittest.TestCase):
         said = ('The independent check of “Synthetic question 2” could not finish: Synthetic reviewer failure. '
                 'The checks of the other 3 parts are kept; only what is left is checked again, then the whole research.')
         self.assertEqual(last['ended_in'], {'part': 'review-unit', 'how': 'failed', 'label': 'Synthetic question 2',
-                                            'kept': 3, 'total': 5, 'said': said})
+                                            'kept': 3, 'total': 5, 'said': said,
+                                            'next': 'Next: go on when you are ready; what is kept is not done again.'})
         self.assertEqual(transport.describe(last), said)
         self.assertEqual(str(raised.exception), said, 'one ending, one sentence')
         # Tried again: the kept units read as kept, not as checked again.

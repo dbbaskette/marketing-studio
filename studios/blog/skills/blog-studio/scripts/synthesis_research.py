@@ -498,6 +498,9 @@ def generate(
                 progress=tell,
                 cancelled=stop.is_set,
                 earlier=earlier,
+                # Research stopped outside its check goes on as in the other studios: its
+                # collection starts its next generation and gathers the evidence again.
+                restart_stopped=True,
             )
         else:
             research_contract.Workflow(runtime).run(directory, task, invoke, sources)

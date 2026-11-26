@@ -182,3 +182,21 @@ class UnitNativeTests(StudioCase):
         names = [name for name in self.engine._load(root)['steps'] if contract.job_round(name) == ('review', 1)]
         self.assertEqual(len(names), 3)
         self.assertIn('research:review-1-final', names)
+
+    def test_a_part_out_of_time_is_named_and_offers_more_time(self):
+        from runner import agents
+        def worker(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            if 'review_template' in payload and payload['review_template']['unit'] != research_units.FINAL \
+                    and not getattr(self, 'timed', False):
+                self.timed = True
+                return agents.Outcome(False, 'timeout', 'Synthetic: the job reached its time limit.', seconds=900)
+            return self.worker(tools, job)
+        self.workers.queued['research-result'][:] = [worker] * 12
+        root = self.start(research=True, research_questions=['Synthetic capacity question?', 'Synthetic health question?'])
+        saved = self.engine._load(root)
+        ended = saved['research_execution']['progress']['ended_in']
+        halted = saved.get('halted') or saved.get('problem') or {}
+        self.assertEqual((ended['part'], ended['how']), ('review-unit', 'timed-out'))
+        self.assertEqual(halted['why'], ended['said'], 'the stop says what the research card says')
+        self.assertEqual(halted['action'], 'more-time')

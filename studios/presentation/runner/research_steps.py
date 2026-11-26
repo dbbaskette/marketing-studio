@@ -42,7 +42,7 @@ from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, documents, marks, stages, worker_tools
 from runner import research as research_cli
-from studio_core import research_sources, research_session, research_transport, research_contract, research_sites, research_view, stops
+from studio_core import research_sources, research_session, research_transport, research_contract, research_sites, research_view, research_sections, stops
 from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
@@ -344,6 +344,11 @@ class Researching:
                         self._problem(root, 'research', 'failed', stops.agent_stopped(
                             self._title(record.get('agent')), outcome, outcome.detail), KEPT,
                             action=stops.agent_action(outcome))
+                    elif outcome.reason == 'timeout' and (getattr(refusal, 'research_ended', None) or {}).get('part') in (
+                            'review-unit', 'whole-check') and research_sections.timeout(self, root, refusal, 'presentation'):
+                        # A part of the check out of time: its sentence and more time, as in
+                        # Training Studio (#379).
+                        pass
                     elif outcome.reason == 'timeout' and getattr(refusal, 'section', None):
                         # The final brief's own sentence already says what is kept (#379).
                         self._problem(root, 'research', 'failed', str(refusal),

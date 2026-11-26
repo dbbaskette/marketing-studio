@@ -14,6 +14,7 @@ from unittest import mock
 import marketing_studio  # noqa: F401
 from studio_core import research_run, research_transport as transport
 from studio_core import research_units as units
+import test_research_session as session_cases
 import test_research_units as unit_cases
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
@@ -91,6 +92,12 @@ class KeptWalkTests(unittest.TestCase):
         if ended['part'] == 'research':
             self.assertEqual(ended['said'], 'Research stopped. ' + (transport.kept_summary(last) or
                              'Going on gathers the evidence again; your sources are kept.'))
+        # What to do next is said from the same ending, never a fixed line (#379).
+        self.assertEqual(ended['next'], transport.next_words(ended['part'], ended['how'], bool(ended.get('regathers'))))
+        if ended.get('regathers'):
+            self.assertNotIn('correction', last, 'no correction is under way once the collection starts again')
+            self.assertFalse([row for row in last['streams'] + (last.get('combining') or []) if row['status'] in ('kept', 'failed')],
+                             'nothing is kept, and a job the stop ended says it was stopped')
         self.cancel.clear()
         # Research goes on as Training Studio, Presentation Studio and Infographic Studio go
         # on after a stop: a stopped collection starts its next generation.
@@ -233,6 +240,34 @@ def _frames():
     while frame:
         yield frame
         frame = frame.f_back
+
+
+@unittest.skipUnless(RUNTIME, 'Pinned helper required.')
+class ChangedOriginalTests(unittest.TestCase):
+    setUp = session_cases.SessionTests.setUp
+    invoke = session_cases.SessionTests.invoke
+    run_session = session_cases.SessionTests.run_session
+
+    def test_a_changed_original_says_the_evidence_is_gathered_again(self):
+        self.task['source_mode'] = 'selected'
+        self.barrier = None
+        original = self.invoke
+        def change(phase, *args):
+            result = original(phase, *args)
+            if phase == 'investigate': self.capture.write_text('Changed source outside a decision')
+            return result
+        self.invoke = change
+        with self.assertRaisesRegex(ValueError, 'selected original changed') as raised:
+            self.run_session([{'file': 'sources/notes.txt', 'text': session_cases.TEXT, 'origin': 'Supplied notes',
+                               'title': 'Notes', 'original_path': self.capture, 'permission': 'selected'}])
+        last = self.states[-1]
+        ended = last['ended_in']
+        self.assertEqual((ended['how'], ended.get('regathers')), ('invalidated', True))
+        self.assertEqual(str(raised.exception), ended['said'], 'the studio shows the same sentence')
+        self.assertNotIn('kept', ended['said'].replace('your sources are kept', ''))
+        self.assertEqual(ended['said'], 'A selected original changed during research, so the research stopped. '
+                         'Capture and approve its new revision; going on then gathers the evidence again.')
+        self.assertFalse([row for row in last['streams'] if row['status'] == 'kept'])
 
 
 class ListingTests(unittest.TestCase):

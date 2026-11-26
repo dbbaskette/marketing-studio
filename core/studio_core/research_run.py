@@ -307,11 +307,17 @@ class Run:
         def by(test):
             return [attempt for attempt in attempts if attempt.get('started_at') and test(attempt)]
         if self.collection_stopped:
-            # Whatever a peer finishes after the stop is gathered or written again later.
+            # Whatever a peer finishes after the stop is gathered or written again later, and
+            # no correction is under way: going on starts the collection's next generation.
             self.redo(streams=[area['id'] for area in tracked['streams']],
                       sections=[row['id'] for row in tracked.get('combining') or ()], final=True)
             if self.final_shown == 'kept':
                 self.final_shown, self.final_again = 'waiting', True
+            tracked.pop('correction', None)
+            if self.cancelled():
+                # A job the stop ended was stopped, not failed.
+                for row in [*tracked['streams'], *(tracked.get('combining') or ())]:
+                    if row.get('status') == 'failed': row['status'] = 'stopped'
         for area in tracked['streams']:
             for key in ('attempts', 'seconds', 'started_at'): area.pop(key, None)
             area.update(clocked(by(lambda a: a['phase'] == 'investigate' and a.get('stream') == area['id']), now))
@@ -454,11 +460,15 @@ class Run:
             return
         stopped = self.stopped_by(error)
         how = ('paused' if not self.cancelled() and not self.allowed() else 'stopped') if stopped \
-            else 'timed-out' if timed_out(error) else 'failed'
+            else 'invalidated' if self.collection_stopped else 'timed-out' if timed_out(error) else 'failed'
         with self.state_lock:
+            if stopped:
+                # A job the stop or pause ended was stopped, not failed.
+                for row in [*self.tracked['streams'], *(self.tracked.get('combining') or ())]:
+                    if row.get('status') == 'failed': row['status'] = 'stopped'
             where = None
             units = list(self.units_shown.values())
-            if stopped and self.collection_stopped:
+            if self.collection_stopped:
                 pass   # nothing gathered or written is kept: said of the research as a whole
             elif self.ended_at == 'check' and units:
                 if stopped:
@@ -474,18 +484,22 @@ class Run:
                 drafts = self.tracked.get('combining') or []
                 where = ('final-brief', {'kept': sum(row.get('status') == 'kept' for row in drafts),
                                          'total': len(drafts)})
-        if where is None and not stopped:
+        if where is None and not stopped and not self.collection_stopped:
             return   # a failure elsewhere keeps its own words
         # Every count final, as the page will show it; a stop or pause is said as one, even
         # where a peer that ended with it reported a failure after it.
         self.report(how if stopped else None)
         with self.state_lock:
             part, facts = where or ('research', {})
-            detail = '' if stopped else getattr(error, 'research_detail', None) or str(error)
-            said = research_transport.ended_words(part, how, detail=detail,
+            detail = '' if stopped or how == 'invalidated' else getattr(error, 'research_detail', None) or str(error)
+            regathers = self.collection_stopped
+            said = research_transport.ended_words(part, how, detail=detail, regathers=regathers,
                                                   summary=research_transport.kept_summary(self.tracked), **facts)
+            # What a page says to do next is taken from the same ending, never a fixed line.
             self.tracked['ended_in'] = {'part': part, 'how': how,
-                **{key: value for key, value in facts.items() if key != 'parts' and value is not None}, 'said': said}
+                **{key: value for key, value in facts.items() if key != 'parts' and value is not None},
+                **({'regathers': True} if regathers else {}), 'said': said,
+                'next': research_transport.next_words(part, how, regathers)}
             ended_in = copy.deepcopy(self.tracked['ended_in'])
         try:
             error.research_ended = ended_in
@@ -874,6 +888,9 @@ class Run:
     def section_progress(self, values):
         """What section synthesis reports of its sections, shown to the page."""
         with self.state_lock:
+            if self.cancelled():
+                # A section the stop ended was stopped, not failed.
+                values = [{**row, 'status': 'stopped'} if row.get('status') == 'failed' else row for row in values]
             self.tracked['combining'] = values
             if any(row.get('preview') for row in values) and 'first_readable_seconds' not in self.tracked:
                 with self.host_lock:   # section workers append attempts

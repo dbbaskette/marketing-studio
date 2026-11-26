@@ -354,7 +354,8 @@ async function recoverActivity(id,owner) {
     await new Promise(resolve=>setTimeout(resolve,2000));
   }
 }
-const stoppedWords='Stopped. Nothing is running for it now, and your saved work is kept.';
+// Said of the infographic: what research keeps is said on its own card (#379).
+const stoppedWords='Stopped. Nothing is running for it now, and your saved infographic is kept.';
 function recoveredNotice(result) {
   if(result?.state==='stopped'){toast(stoppedWords);return;}
   if(result?.state==='interrupted'){error(result.problem+' '+result.next);return;}
