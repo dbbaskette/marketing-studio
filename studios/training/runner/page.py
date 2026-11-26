@@ -394,6 +394,23 @@ def activity_asked(one) -> dict:
     return {'entry': given('entry'), 'job': given('job'), 'since': int(since)}
 
 
+LIBRARY_AWAY = ('The Document Library is not where this computer keeps it. Put it back on '
+                'that computer itself; nothing was kept, and no new library was made.')
+
+
+def library_shown(found):
+    """A Document Library answer as this caller is shown it: through the network bridge,
+    the folder the library is kept in is not named, in its location or in a sentence about
+    it (GitHub issue #539); on this computer, as it is."""
+    if not caller.remote() or not isinstance(found, dict):
+        return found
+    shown = caller.shown(found)
+    if isinstance(shown.get('problem'), str) and isinstance(found.get('location'), str) \
+            and found['location'] and found['location'] in found['problem']:
+        shown['problem'] = LIBRARY_AWAY
+    return shown
+
+
 def described(found: dict) -> dict:
     """The set-up as this caller is shown it (`caller.shown`). Through the network bridge it
     also says `remote`, so the page offers no set-up change a phone would be refused
@@ -1129,7 +1146,8 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path in library_context.ROUTES:
             try:
-                return desk.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'training'))
+                return desk.as_json(HTTPStatus.OK, library_shown(
+                    library_context.answer(path, sent, 'training')))
             except ValueError as error:
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         if path == '/api/research-sources':

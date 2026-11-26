@@ -1126,11 +1126,11 @@ class PhoneSettingsTests(PageCase):
 
 
 class PhoneRouteWalkTests(PageCase):
-    """Fix round of GitHub issue #539: every answer that carries the set-up, the brand or
-    the upkeep report names no folder of this computer to a phone, upkeep included. The
-    page's routes are walked from its own lists, GET and POST, with the header set."""
-
-    DESCRIBED = ('workspace', 'brand', 'upkeep', 'skills')
+    """Fix rounds of GitHub issue #539: no answer to a phone names a folder of this computer,
+    whatever key it is under, upkeep included. Every route the page answers is walked from
+    its own lists, GET and POST, with the bridge header set: a GET with no query and with
+    the training's own folder, a POST with its body below or an empty one. A refusal is
+    checked as an answer is."""
 
     def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
         made = super().headers(token, host, origin, kind)
@@ -1138,23 +1138,19 @@ class PhoneRouteWalkTests(PageCase):
             made['X-Marketing-Studio-Via'] = 'network'
         return made
 
-    def send(self, endpoint: str, sent: dict, remote: bool) -> tuple[int, dict]:
-        status, reply, _ = self.answer('POST', f'/api/{endpoint}', json.dumps(sent).encode(),
-                                       origin=self.origin, kind='application/json',
-                                       remote=remote)
-        return status, reply
-
-    def folders(self, value, inside: bool = False) -> list:
-        """Every string naming a folder here under one of DESCRIBED, anywhere in `value`."""
+    def folders(self, value, allowed=()) -> list:
+        """Every string naming a folder here, anywhere in `value`, but those `allowed`."""
         if isinstance(value, dict):
-            return [found for key, one in value.items()
-                    for found in self.folders(one, inside or key in self.DESCRIBED)]
+            return [found for one in value.values() for found in self.folders(one, allowed)]
         if isinstance(value, list):
-            return [found for one in value for found in self.folders(one, inside)]
+            return [found for one in value for found in self.folders(one, allowed)]
         here = (str(self.base), str(self.base.resolve()), str(Path.home()))
-        return [value] if inside and isinstance(value, str) and value.startswith(here) else []
+        if isinstance(value, str) and value not in allowed and any(
+                place in value for place in here):
+            return [value]
+        return []
 
-    def test_no_answer_describing_set_up_the_brand_or_upkeep_names_a_folder_to_a_phone(self):
+    def test_no_answer_names_a_folder_of_this_computer_to_a_phone(self):
         from runner import brand_source
 
         class Keeping(Keeper):
@@ -1173,34 +1169,54 @@ class PhoneRouteWalkTests(PageCase):
             upgrade = restart = install_brand = lambda self, *given: self.report()
             dismiss = lambda self, key: self.report()
 
+        root = Path(self.started())
         self.engine.upkeep = Keeping(self.base)
         settings.save(replace(settings.load(), brand_repository=str(self.base / 'brand.git')))
+        # Shown to a phone on purpose: the training's own folder, which is how the page names
+        # a training in every request it sends back (as every list and run does). Nothing
+        # else that names a folder here is.
+        allowed = (str(root),)
         bodies = {'/api/brand': {'repository': 'https://example.invalid/brand.git'},
                   '/api/shared': {'seen': True}, '/api/versions': {'dismiss': 'brand'},
-                  '/api/upgrade': {'version': '1.0.0'}, '/api/brand/install': {'commit': 'a' * 40},
-                  '/api/companions': {}, '/api/restart': {}}
-        walked, answered = [], {}
+                  '/api/upgrade': {'version': '1.0.0'}, '/api/brand/install': {'commit': 'a' * 40}}
+        reads = sorted(target for target in self.page.reads if target.startswith('/api/'))
+        writes = sorted(target for target in self.page.writes if target.startswith('/api/'))
+        answered = {}
+        # A look at this computer (POST /api/computer) finds nothing installed, here as a
+        # stand-in: no command is run and nothing is reached.
         with mock.patch.object(brand_source, 'check', lambda address, place: {
-                'repository': address, 'commit': '0' * 40}):
-            for target in sorted(set(page.READS) | set(desk.READS)):
-                status, reply, _ = self.answer('GET', target, remote=True)
-                walked.append(('GET', target))
-                if status == 200:
-                    answered[('GET', target)] = reply
-            for target in sorted(set(page.WRITES)):
-                if target not in bodies:
-                    continue
-                status, reply = self.send(target[len('/api/'):], bodies[target], remote=True)
-                walked.append(('POST', target))
-                self.assertEqual(status, 200, (target, reply))
-                answered[('POST', target)] = reply
-        for asked in (('GET', '/api/setup'), ('GET', '/api/status'), ('POST', '/api/brand'),
-                      ('POST', '/api/companions'), ('POST', '/api/brand/install')):
+                'repository': address, 'commit': '0' * 40}), \
+                mock.patch.object(computer, 'run', lambda command: {
+                    'found': False, 'ok': False, 'output': ''}), \
+                mock.patch.object(computer, 'reach', lambda host: 'not reached in a test'):
+            for target in reads:
+                for query in ('', '?' + urlencode({'path': str(root)})):
+                    status, reply, _ = self.answer('GET', target + query, remote=True)
+                    answered[('GET', target + query, status)] = reply
+            for target in writes:
+                status, reply, _ = self.answer('POST', target,
+                                               json.dumps(bodies.get(target, {})).encode(),
+                                               origin=self.origin, kind='application/json',
+                                               remote=True)
+                answered[('POST', target, status)] = reply
+        self.assertEqual(len([one for one in answered if one[0] == 'POST']), len(writes))
+        for asked in (('GET', '/api/setup', 200), ('GET', '/api/status', 200),
+                      ('POST', '/api/brand', 200), ('POST', '/api/companions', 200),
+                      ('POST', '/api/brand/install', 200)):
             self.assertIn(asked, answered)
-        self.assertIn('upkeep', answered[('GET', '/api/status')])
+        self.assertIn('upkeep', answered[('GET', '/api/status', 200)])
         for asked, reply in answered.items():
             with self.subTest(asked=asked):
-                self.assertEqual(self.folders(reply), [])
+                self.assertEqual(self.folders(reply, allowed), [])
+        # A library that is not where it was saved is said without its folder too.
+        from studio_core.document_library import store as library_store
+        away = {'available': False, 'location': str(self.base / 'library'),
+                'problem': library_store.gone(str(self.base / 'library'))}
+        with mock.patch.object(page.library_context, 'answer', lambda *given: dict(away)):
+            status, reply, _ = self.answer('POST', '/api/library', b'{}', origin=self.origin,
+                                           kind='application/json', remote=True)
+        self.assertEqual((status, reply['problem'], self.folders(reply)),
+                         (200, page.LIBRARY_AWAY, []))
         # On this computer the same answers keep their folders.
         status, reply, _ = self.answer('GET', '/api/status', remote=False)
         self.assertEqual(reply['upkeep']['links'][0]['path'],
