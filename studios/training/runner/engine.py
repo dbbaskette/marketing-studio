@@ -1909,11 +1909,12 @@ class Engine(Reviewing):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
                     if step.kind == 'done' and not self._resting(record):
                         moved = self._held_back(root, found) or moved
-                    if moved:
-                        # Desk work's own end (issue #549): the run has come to rest with
-                        # nothing for it to do until the person acts on the desk, so what it
-                        # did is shared now, as the earlier flow shared after its last step.
-                        self._last(root)
+                        if moved:
+                            # Desk work's own end (issue #549): everything the run can draft
+                            # is drafted, so what it did is shared now, as the earlier flow
+                            # shared after its last step. Never at a pause, a Stop, a failure,
+                            # a wait or a worker's question: the earlier flow shared at none.
+                            self._last(root)
                     return
                 # Asked to finish one level and then wait: work for another level waits.
                 # What has no level of its own, such as the index, is not another level.
