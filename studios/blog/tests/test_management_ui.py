@@ -28,3 +28,22 @@ class ManagementUITests(unittest.TestCase):
             narrow,
             r'\.menu-list\{left:0;right:auto;min-width:0;width:min\(20rem,100%\);box-sizing:border-box\}',
         )
+
+    def test_the_desk_band_wraps_the_move_under_the_arc_rather_than_squeeze_the_arc(self):
+        # At a pane about 800px wide the band's grid gave the move its width and left the arc
+        # about 200px, its labels one letter a line. The band wraps instead, the arc keeping
+        # room for its four phases, in the quiet band and the ordinary one alike; nothing
+        # gives either band a grid again.
+        import re
+
+        repo = Path(__file__).resolve().parents[1]
+        css = re.sub(
+            r'/\*.*?\*/',
+            '',
+            (repo / 'skills/blog-studio/assets/management/blog.css').read_text(),
+            flags=re.S,
+        )
+        self.assertRegex(css, r'(^|\n)\.workbench-head\{display:flex;flex-wrap:wrap;')
+        self.assertRegex(css, r'\.workbench-head>\.track-arc\{flex:1 1 28rem;min-width:0\}')
+        self.assertRegex(css, r'\.workbench-head>\.move-card\{flex:0 1 24rem;')
+        self.assertNotRegex(css, r'workbench-head\{[^}]*grid-template-columns')
