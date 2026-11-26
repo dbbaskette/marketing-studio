@@ -90,25 +90,21 @@ def reviewed_bundle(case):
 
 
 class ResearchCase(RunnerCase):
-    # Runner code the manuscript editor's own runs still use: its runs are marked as the
-    # editor's (RunnerCase.EDITOR), the only saved runs the runner goes on with.
-    EDITOR = 'revise'
+    # Runner code the manuscript editor's own runs use, on the runs its checks really make.
 
     def research_run(self):
-        """A page run whose next stage is reviewed research, its plan approved."""
+        """The editor's check of a manuscript's facts against a selected source, on a blog
+        whose run it made before: reviewed research after its plan, which the check went
+        past by itself."""
         source = self.source('A fictional gateway routes synthetic requests.')
+        ident = self.article()
+        self.editor_check(ident, 'proofread')
         with patch.object(runner.research_contract, 'snapshot', return_value=dict(CONTRACT)):
-            found = self.create(page=True, research='supplied-only', sources=[source['id']])
-        # A saved supplied-only synthesis run from before claims maps keeps its pipeline.
-        directory, record, run = runner.load(self.root, found['id'])
-        run['pipeline'] = ['research-plan', 'research'] + [
-            name for name in run['pipeline'] if name != 'claims-map'
-        ]
-        studio = __import__('studio')
-        studio.write_json(directory / runner.STATE, run)
-        found = runner.survey(self.root, found['id'])
+            found = self.editor_check(
+                ident, 'factual-support', research='supplied-only', sources=[source['id']]
+            )
         self.assertEqual(found['next'], 'research-plan')
-        found = self.approve(self.submit(found, page=True), page=True)
+        found = self.submit(found)
         self.assertEqual(found['next'], 'research')
         return found
 
@@ -181,8 +177,9 @@ class RefusedResearchTests(ResearchCase):
             engine._once(found['id'])
         self.assertEqual(seen, [STATE])
         shown = engine.describe(found['id'])
-        self.assertEqual(shown['status'], 'waiting-for-approval', shown['error'])
-        self.assertEqual(shown['next'], 'research')
+        # Accepted research is saved and the check goes on to its review.
+        self.assertEqual(shown['status'], 'queued', shown['error'])
+        self.assertEqual(shown['next'], 'review')
         self.assertFalse(kept.exists(), 'a finished research needs no kept draft')
         self.assertIsNone(shown['research'] and shown['research']['refusal'])
         research_contract.read_bundle(directory / 'research')
@@ -511,13 +508,17 @@ class StageMeterTests(ResearchCase):
     def test_every_stage_job_is_metered(self):
         for agent, dollars in (('claude', 0.42), ('codex', None)):
             with self.subTest(agent=agent):
-                found = self.create(page=True, stop='draft', engine=agent, title='Metered ' + agent)
+                from studio_core import studios_config
+
+                studios_config.update({'assistant': {'agent': agent}})
+                found = self.editor_run('revise')
+                self.assertEqual(found['engine'], agent)
                 engine = runner.Engine(self.root, worker=blog_worker.generate)
                 self.addCleanup(engine.close)
                 engine.control(found['id'], 'resume')
                 engine._once(found['id'])
                 job = engine.local(found['id'])['jobs'][-1]
-                self.assertEqual((job['stage'], job['dollars']), ('outline', dollars))
+                self.assertEqual((job['stage'], job['dollars']), ('draft', dollars))
                 self.assertGreater(job['seconds'], 0)
                 ahead = engine.describe(found['id'])['ahead']
                 self.assertEqual(ahead['jobs'], 1)
@@ -882,7 +883,7 @@ class RunFailureTests(ResearchCase):
         return worker
 
     def test_a_cli_failure_keeps_what_the_assistant_said_on_this_computer_only(self):
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = self.engine()
         engine.worker = self.failing(
             blog_worker.WorkerFailure(
@@ -904,7 +905,7 @@ class RunFailureTests(ResearchCase):
         kept = self.root / '.blog-runs' / 'diagnostics' / 'cli' / (found['id'] + '.json')
         self.assertEqual(kept.stat().st_mode & 0o777, 0o600)
         self.assertEqual(kept.parent.stat().st_mode & 0o777, 0o700)
-        self.assertEqual(json.loads(kept.read_text())['stage'], 'outline')
+        self.assertEqual(json.loads(kept.read_text())['stage'], 'draft')
         directory = Path(shown['directory'])
         self.assertFalse(
             [
@@ -934,7 +935,7 @@ class RunFailureTests(ResearchCase):
         self.assertFalse(kept.exists())
 
     def test_deleting_the_blog_removes_what_the_assistant_said(self):
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = self.engine()
         runner.ENGINES[str(self.root)] = engine
         engine.worker = self.failing(
@@ -953,7 +954,7 @@ class RunFailureTests(ResearchCase):
         self.assertFalse(kept.exists())
 
     def test_a_step_out_of_time_says_the_limit_this_blog_has(self):
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = self.engine()
         engine.worker = self.failing(
             blog_worker.WorkerFailure(
@@ -1065,7 +1066,7 @@ class MissingAssistantTests(MeteredWorkerTests):
 
 class MissingAssistantRunTests(ResearchCase):
     def test_the_run_offers_status_for_an_assistant_that_is_not_installed(self):
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker=blog_worker.generate)
         self.addCleanup(engine.close)
         engine.control(found['id'], 'resume')
@@ -1133,7 +1134,7 @@ class SaidTests(MeteredWorkerTests):
 
 class KeptSaidTests(ResearchCase):
     def run_failing(self, failure):
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = self.engine()
 
         def worker(*args, **kwargs):
@@ -1218,7 +1219,7 @@ class DraftTieTests(ResearchCase):
         shown = runner.survey(self.root, ident)
         shown = runner.submit(self.root, ident, 'research', result, shown['expected'], page=True)
         self.assertFalse((directory / DRAFT).exists(), 'a saved research lets the draft go')
-        shown = runner.decide(self.root, ident, shown['expected'], 'approve', page=True)
+        self.assertEqual(shown['next'], 'review', 'the check goes on past its research')
         shown = runner.decide(
             self.root, ident, shown['expected'], 'changes', 'Tighten it.', True, 'research'
         )
@@ -1244,12 +1245,11 @@ class DraftTieTests(ResearchCase):
                         }
                     )
                 runner.save(self.root, directory, record, run, 'Synthetic change: ' + change)
-                # New inputs bring the approved research plan back for review first.
+                # New inputs bring the research plan the check went past back first.
                 shown = engine.describe(ident)
                 self.assertEqual(shown['next'], 'research-plan')
                 self.assertFalse(shown['research']['kept'])
-                # The saved plan brought back for review as it stands (what the page's old
-                # Review saved version submitted).
+                # The saved plan submitted again as it stands; the check goes on past it.
                 shown = runner.submit(
                     self.root,
                     ident,
@@ -1258,7 +1258,6 @@ class DraftTieTests(ResearchCase):
                     shown['expected'],
                     page=True,
                 )
-                shown = self.approve(shown, page=True)
                 self.assertEqual(shown['next'], 'research')
                 self.assertTrue((directory / DRAFT).exists(), 'still on disk until research runs')
                 state, _ = self.resumed_from(engine, ident)
@@ -1350,13 +1349,17 @@ class MinorReviewTests(ResearchCase):
         )
 
     def test_the_run_says_whether_finish_has_a_draft_to_keep(self):
-        found = self.create(page=True, stop='draft')
-        self.assertFalse(runner.survey(self.root, found['id'])['keeps_draft'])
-        found = self.approve(self.submit(found, page=True), page=True)
-        found = self.submit(found, '# Draft\nSynthetic writing.', page=True)
+        import saved_fixtures
+        import studio
+
+        found = self.editor_run('revise')
         self.assertTrue(runner.survey(self.root, found['id'])['keeps_draft'])
-        ideas = self.create(page=True, mode='ideas')
-        self.assertFalse(runner.survey(self.root, ideas['id'])['keeps_draft'])
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        (directory / 'DRAFT.md').write_text('  \n')
+        self.assertFalse(runner.survey(self.root, found['id'])['keeps_draft'], 'nothing to keep')
+        # Three ideas the earlier flow saved finish with no draft to keep.
+        ideas = saved_fixtures.load(self.root, 'finished-ideas')
+        self.assertFalse(runner.survey(self.root, ideas)['keeps_draft'])
 
 
 if __name__ == '__main__':

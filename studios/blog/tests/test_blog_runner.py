@@ -19,6 +19,37 @@ import blog_worker
 import management
 
 
+def manuscript(root, text, title='Gateway guide'):
+    """A saved manuscript with no run, registered as a draft brought in by chat is: what the
+    manuscript editor's check works on."""
+    args = studio.parser().parse_args(
+        ['--root', str(root), 'article', 'create', '--title', title, '--mode', 'first-draft']
+    )
+    article = studio.article_command(root, args)
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / 'draft.md'
+        path.write_text(text)
+        args = studio.parser().parse_args(
+            ['--root', str(root), 'article', 'save', '--id', article['id']]
+            + ['--kind', 'draft', '--file', str(path)]
+        )
+        studio.article_command(root, args)
+    return article['id']
+
+
+def editor_check(root, ident, check='revise', **values):
+    """The manuscript editor's check on a saved manuscript, as Edit manuscript starts it: the
+    run it makes (or, on a blog with one, makes again), before its worker runs."""
+    import manuscript_editor
+
+    shown = manuscript_editor.read(root, ident)
+    with patch.object(runner.Engine, 'control', return_value={}):
+        manuscript_editor.dispatch(
+            root, 'check', {'id': ident, 'expected': shown['expected'], 'check': check, **values}
+        )
+    return runner.survey(root, ident)
+
+
 class RunnerCase(Fixture):
     """A disposable workspace with the runner helpers every test uses."""
 
@@ -39,35 +70,47 @@ class RunnerCase(Fixture):
         studios_config.update({'review': {'level': 'step_by_step'}})
         self.addCleanup(lambda: runner.ENGINES.pop(str(self.root), None))
 
-    # The earlier flow continues no saved run but the manuscript editor's own. A class whose
-    # tests are of the runner code those runs still use (the worker, its stage jobs, failures,
-    # research) names the editor's check here, and each run it makes is marked with it, as
-    # the editor's own check marks a run it continues (`editors`).
-    EDITOR = None
+    # The earlier flow continues no saved run but the manuscript editor's own, so the runner
+    # code those runs use (the worker, its stage jobs, failures, research) is tested on the
+    # runs the editor's check really makes: Edit manuscript on a saved manuscript.
+    MANUSCRIPT = 'Clients send requests to a gateway. The gateway calls the service.'
 
-    def create(self, page=False, **extra):
-        found = runner.create(
-            self.root,
-            {
-                'title': 'Synthetic gateway guide',
-                'audience': 'New authors',
-                'goal': 'Explain a fictional gateway',
-                'research': 'none',
-                **extra,
-            },
-            'page' if page else 'conversation',
+    def editor_check(self, ident, check='revise', **values):
+        return editor_check(self.root, ident, check, **values)
+
+    def editor_run(self, check='revise', text=None, **values):
+        """A saved manuscript and the run the editor's `check` makes for it: revise has a
+        draft and its review; any other check its review alone; research comes first."""
+        return self.editor_check(self.article(text or self.MANUSCRIPT), check, **values)
+
+    def review_of(self, ident):
+        """A located editing review of the blog's saved manuscript, as the worker returns it."""
+        directory, _ = studio.item(self.root, 'articles', ident)
+        line = next(
+            part.strip()
+            for part in (directory / 'DRAFT.md').read_text().splitlines()
+            if part.strip().strip('#').strip()
         )
-        return self.editors(found) if self.EDITOR else found
+        return json.dumps(
+            {
+                'summary': 'Synthetic review; editorial assessment only.',
+                'findings': [
+                    {
+                        'id': 'first',
+                        'kind': 'comment',
+                        'before': line,
+                        'reason': 'Synthetic note.',
+                        'evidence': 'Editorial judgment',
+                        'verdict': 'editorial',
+                    }
+                ],
+            }
+        )
 
-    def editors(self, found, check=None):
-        """The run marked as the manuscript editor's (its `editor_check`), so the runner goes
-        on with it; nothing else about the run changes."""
-        directory, _, run = runner.load(self.root, found['id'])
-        run['editor_check'] = check or self.EDITOR or 'revise'
-        studio.write_json(directory / runner.STATE, run)
-        return runner.survey(self.root, found['id'])
-
-    def submit(self, found, content=None, page=False):
+    def submit(self, found, content=None, page=None):
+        page = found.get('approval') == 'page' if page is None else page
+        if content is None and found['next'] == 'review' and found.get('editor_check'):
+            content = self.review_of(found['id'])
         if content is None and found['next'] == 'claims-map':
             directory, record, run = runner.load(self.root, found['id'])
             source = runner.inputs(self.root, record, run)['sources'][0]
@@ -86,7 +129,8 @@ class RunnerCase(Fixture):
             page=page,
         )
 
-    def approve(self, found, page=False):
+    def approve(self, found, page=None):
+        page = found.get('approval') == 'page' if page is None else page
         return runner.decide(self.root, found['id'], found['expected'], 'approve', page=page)
 
     DESK_DRAFT = 'An opening paragraph.\n\n## First part\n\nFirst text.\n'
@@ -142,13 +186,10 @@ class RunnerCase(Fixture):
 
 class BlogRunnerTests(RunnerCase):
     def test_profiles_are_saved_and_background_worker_gets_the_saved_kind(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         from studio_core import studios_config
 
         self.profiles()
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         studios_config.update(
             {'models': {'profiles': {kind: {'model': 'later'} for kind in ('research', 'writing')}}}
         )
@@ -156,7 +197,7 @@ class BlogRunnerTests(RunnerCase):
 
         def worker(*args, **kwargs):
             calls.append(kwargs)
-            return {'content': '# Synthetic outline', 'notes': 'Fake worker only.'}
+            return {'content': '# Synthetic draft', 'notes': 'Fake worker only.'}
 
         engine = runner.Engine(self.root, worker=worker)
         self.addCleanup(engine.close)
@@ -167,21 +208,20 @@ class BlogRunnerTests(RunnerCase):
         self.assertIn(kind, ('research', 'writing'))
         self.assertEqual(calls[0]['model_selection']['model'], kind + '-model')
         self.assertIsNone(run['model_jobs'][0]['actual_model'])
-        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        # The revision's draft is saved and the check goes on to its review.
+        self.assertEqual(engine.describe(found['id'])['status'], 'queued')
 
     def test_review_return_to_draft_uses_fixing_without_routing_from_request_text(self):
         self.profiles()
-        found = self.create()
-        for _ in range(2):
-            found = self.approve(self.submit(found))
+        found = self.submit(self.submit(self.editor_run('revise')))  # its draft, then its review
         self.assertEqual(found['next'], 'review')
-        found = self.submit(found)
         found = runner.decide(
             self.root,
             found['id'],
             found['expected'],
             'changes',
             'Synthetic review correction',
+            page=True,
             target='draft',
         )
         choice = runner.job(self.root, found['id'])[0]['model_selection']
@@ -198,85 +238,89 @@ class BlogRunnerTests(RunnerCase):
             options = source_curator.shared_options(agent, task='source-classification')
             self.assertEqual(options[options.index('--model') + 1], 'quick-model')
 
-    def test_conversation_pipeline_enforces_gates_and_stop(self):
-        found = self.create(stop='draft')
+    def test_the_pipeline_enforces_its_gates(self):
+        found = self.editor_run('revise')
         with self.assertRaisesRegex(ValueError, 'current submitted'):
             self.approve(found)
         with self.assertRaisesRegex(ValueError, 'current stage'):
             runner.submit(
                 self.root,
                 found['id'],
-                'draft',
-                {'content': 'Early', 'notes': ''},
+                'review',
+                {'content': self.review_of(found['id']), 'notes': ''},
                 found['expected'],
+                page=True,
             )
-        for stage in ('outline', 'draft'):
+        for stage in ('draft', 'review'):
             self.assertEqual(found['next'], stage)
             found = self.submit(found)
-            found = self.approve(found)
+        found = self.approve(found)
         self.assertTrue(found['complete'])
-        self.assertEqual([row['stage'] for row in found['stages']], ['outline', 'draft'])
+        self.assertEqual([row['stage'] for row in found['stages']], ['draft', 'review'])
 
     def test_page_approval_is_unavailable_from_cli_and_worker_schema(self):
-        found = self.create(page=True)
-        found = self.submit(found, page=True)
+        found = self.submit(self.editor_run('proofread'))
         with self.assertRaisesRegex(ValueError, 'decided on the page'):
-            self.approve(found)
+            self.approve(found, page=False)
         with self.assertRaises(ValueError):
             blog_worker.validate({'content': 'A draft', 'notes': '', 'approve': True})
-        found = self.approve(found, page=True)
-        self.assertEqual(found['next'], 'draft')
+        self.assertTrue(self.approve(found, page=True)['complete'])
 
     def test_old_page_decision_and_manual_edit_do_not_renew_approval(self):
-        found = self.submit(self.create())
+        found = self.submit(self.editor_run('proofread'))
         old = found['expected']
         directory, _, _ = runner.load(self.root, found['id'])
-        (directory / 'OUTLINE.md').write_text('My local edit')
+        (directory / 'DRAFT.md').write_text('My local edit')
         with self.assertRaisesRegex(ValueError, 'changed'):
-            runner.decide(self.root, found['id'], old, 'approve')
+            runner.decide(self.root, found['id'], old, 'approve', page=True)
         latest = runner.survey(self.root, found['id'])
         self.assertEqual(latest['stages'][0]['status'], 'stale')
 
-    def test_downstream_stages_are_invalidated_after_outline_changes(self):
-        found = self.create()
-        for _ in range(4):
-            found = self.approve(self.submit(found))
+    def test_downstream_stages_are_invalidated_after_the_draft_changes(self):
+        found = self.approve(self.submit(self.submit(self.editor_run('revise'))))
+        self.assertTrue(found['complete'])
         found = runner.decide(
             self.root,
             found['id'],
             found['expected'],
             'changes',
             'Change the thesis',
-            target='outline',
+            page=True,
+            target='draft',
         )
-        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['next'], 'draft')
         self.assertEqual(found['stages'][1]['status'], 'pending')
         found = self.submit(found, 'New thesis')
         self.assertIn('Change the thesis', found['stages'][0]['request'])
-        self.assertEqual(found['stages'][0]['status'], 'draft')
+        self.assertEqual(found['stages'][0]['status'], 'approved', 'the check goes on past it')
 
     def test_change_request_is_an_instruction_for_a_minimal_edit(self):
         draft = '# Draft\nThe first fictional paragraph.\n\nThe second fictional paragraph.'
-        found = self.approve(self.submit(self.create()))
-        found = self.submit(found, draft)
+        found = self.submit(self.editor_run('revise'), draft)
         found = runner.decide(
-            self.root, found['id'], found['expected'], 'changes', 'Shorten the second paragraph.'
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Shorten the second paragraph.',
+            page=True,
+            target='draft',
         )
         _, payload, guidance = runner.job(self.root, found['id'])
         self.assertIn('Shorten the second paragraph.', guidance)
         self.assertIn('minimal edit, not a rewrite', guidance)
         self.assertIn('verbatim', guidance)
-        self.assertNotIn('Write the blog from the approved outline', guidance)
+        self.assertNotIn('Revise the supplied manuscript', guidance)
         self.assertEqual(payload['documents']['draft'], draft)
         # A review that sends the draft back is an edit of that draft too.
-        found = self.approve(self.submit(found, draft))
-        found = self.submit(found)
+        found = self.submit(self.submit(found, draft))
         found = runner.decide(
             self.root,
             found['id'],
             found['expected'],
             'changes',
             'Fix the review finding about the title.',
+            page=True,
             target='draft',
         )
         guidance = runner.job(self.root, found['id'])[2]
@@ -284,27 +328,19 @@ class BlogRunnerTests(RunnerCase):
         self.assertIn('minimal edit, not a rewrite', guidance)
 
     def test_revising_a_manuscript_does_not_ask_for_an_outline_based_draft(self):
-        found = self.create(mode='revise', id=self.article(), stop='draft')
-        guidance = runner.job(self.root, found['id'])[2]
+        found = self.editor_run('revise')
+        _, payload, guidance = runner.job(self.root, found['id'])
         self.assertNotIn('approved outline', guidance)
-        self.assertIn('Revise the supplied manuscript', guidance)
-
-    def test_research_questions_and_findings_each_wait_for_approval(self):
-        source = self.source('A fictional gateway routes synthetic requests.')
-        found = self.create(research='web-allowed', stop='outline', sources=[source['id']])
-        self.assertEqual(
-            [row['stage'] for row in found['stages']], ['research-plan', 'research', 'outline']
-        )
-        for stage in ('research-plan', 'research', 'outline'):
-            self.assertEqual(found['next'], stage)
-            found = self.approve(self.submit(found))
-        self.assertTrue(found['complete'])
+        # The editor's revision is the author's request applied to their own manuscript.
+        self.assertIn('Edit the saved draft in documents.draft', guidance)
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertEqual(payload['documents']['draft'], self.MANUSCRIPT)
 
     def test_imported_draft_starts_at_review_and_is_not_rewritten(self):
         ident = self.article('A fictional manuscript written by Avery.')
         directory, _ = studio.item(self.root, 'articles', ident)
         original = (directory / 'DRAFT.md').read_bytes()
-        found = self.create(id=ident)
+        found = self.editor_check(ident, 'shape')
         self.assertEqual(found['next'], 'review')
         found = self.submit(found)
         self.assertEqual((directory / 'DRAFT.md').read_bytes(), original)
@@ -312,36 +348,14 @@ class BlogRunnerTests(RunnerCase):
             'A fictional manuscript', runner.job(self.root, ident)[1]['documents']['manuscript']
         )
 
-    def test_supplied_only_research_without_sources_is_no_research(self):
-        for research in ('supplied-only', None):
-            with self.subTest(research=research):
-                data = {
-                    'title': 'Synthetic gateway guide',
-                    'audience': 'New authors',
-                    'goal': 'Explain a fictional gateway',
-                }
-                if research:
-                    data['research'] = research
-                found = runner.create(self.root, data)
-                self.assertEqual(
-                    [row['stage'] for row in found['stages']],
-                    ['outline', 'draft', 'review', 'package'],
-                )
-                _, record, run = runner.load(self.root, found['id'])
-                self.assertNotIn('research_contract', run)
-                self.assertEqual(record['research_policy'], 'supplied-only')
-
     def test_polling_reads_selected_context_once_per_run(self):
         source = self.source('A fictional gateway routes synthetic requests.')
         ids = []
+        # A list describes runs that still go on, the manuscript editor's (a saved run of the
+        # earlier flow lists from its small records).
         for _ in range(3):
-            found = self.approve(self.submit(self.create(sources=[source['id']])))
-            found = self.approve(self.submit(found))
-            ids.append(self.submit(found)['id'])
-        # A list describes only runs that still go on, the manuscript editor's: these runs are
-        # marked as the editor's (a saved run of the earlier flow lists from its small records).
-        for ident in ids:
-            self.editors({'id': ident}, 'shape')
+            found = self.editor_run('revise', sources=[source['id']])
+            ids.append(self.submit(self.submit(found))['id'])
         with patch.object(runner, 'inputs', wraps=runner.inputs) as counted:
             detail = runner.survey(self.root, ids[0])
         self.assertEqual(counted.call_count, 1)
@@ -356,10 +370,8 @@ class BlogRunnerTests(RunnerCase):
         self.assertIsNone(runner.survey(self.root, ids[0], listing=True)['expected'])
 
     def test_list_and_detail_views_agree_when_inputs_change(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.approve(self.submit(self.create()))
+        found = self.submit(self.editor_run('revise'))  # its draft, continued to the review
+        self.assertEqual(found['stages'][0]['status'], 'approved')
         directory, record = studio.item(self.root, 'articles', found['id'])
         record['title'] = 'A changed synthetic title'
         studio.persist(directory, 'articles', record)
@@ -370,7 +382,7 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(listed['stages'], detail['stages'])
 
     def test_input_pins_keep_their_saved_format(self):
-        found = self.approve(self.submit(self.create()))
+        found = self.submit(self.editor_run('revise'))
         directory, record, run = runner.load(self.root, found['id'])
         context = runner.inputs(self.root, record, run)
         original = studio.artifact_fingerprint(directory, 'ORIGINAL.md')
@@ -378,10 +390,11 @@ class BlogRunnerTests(RunnerCase):
         def pin(previous):
             return studio.digest(json.dumps([context, previous, original], sort_keys=True).encode())
 
-        self.assertEqual(run['stages']['outline']['basis'], pin({}))
-        outline = studio.artifact_fingerprint(directory, 'OUTLINE.md')
+        self.assertEqual(run['stages']['draft']['basis'], pin({}))
+        draft = studio.artifact_fingerprint(directory, 'DRAFT.md')
         self.assertEqual(
-            runner.basis(self.root, directory, record, run, 'draft'), pin({'outline': outline})
+            runner.basis(self.root, directory, record, run, 'review'),
+            pin({'draft': draft, 'manuscript': draft}),
         )
 
     def test_marking_a_pinned_source_as_a_sample_keeps_its_runs_open(self):
@@ -389,7 +402,7 @@ class BlogRunnerTests(RunnerCase):
         import management
 
         source = self.source('A fictional gateway routes synthetic requests.')
-        found = self.approve(self.submit(self.create(sources=[source['id']])))
+        found = self.submit(self.editor_run('factual-support', sources=[source['id']]))
         before = runner.survey(self.root, found['id'])
         _, payload, _ = runner.job(self.root, found['id'])
         for purpose in ('voice-sample', 'style-sample'):
@@ -418,7 +431,7 @@ class BlogRunnerTests(RunnerCase):
         import management
 
         source = self.source('A fictional gateway routes synthetic requests.')
-        found = self.approve(self.submit(self.create(sources=[source['id']])))
+        found = self.submit(self.editor_run('factual-support', sources=[source['id']]))
         management.dispatch(
             self.root,
             'tool-action',
@@ -429,162 +442,107 @@ class BlogRunnerTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'selected source changed'):
             runner.survey(self.root, found['id'])
 
-    def test_only_steps_that_use_evidence_receive_sources(self):
-        source = self.source('A fictional gateway routes synthetic requests.')
-        found = self.create(sources=[source['id']])
-        while found['next'] != 'package':
-            self.assertEqual(len(runner.job(self.root, found['id'])[1]['sources']), 1)
-            found = self.approve(self.submit(found))
-        _, payload, _ = runner.job(self.root, found['id'])
-        self.assertEqual(payload['sources'], [])
-        self.assertIn('review', payload['documents'])
-
-    def test_balanced_combines_research_and_outline_then_final_package(self):
-        import studios_config
-
-        studios_config.update({'review': {'level': 'balanced'}})
-        source = self.source('A fictional gateway routes synthetic requests.')
-        found = self.create(page=True, research='supplied-only', sources=[source['id']])
-        ident = found['id']
-        while found['next'] != 'outline':
-            found = self.submit(found, page=True)
-        found = self.submit(found, page=True)
-        self.assertEqual(found['next'], 'outline')
-        self.assertEqual(found['review_level'], 'balanced')
-        shown = runner.document(self.root, ident, 'outline')
-        self.assertEqual([item['stage'] for item in shown['bundle']], ['claims-map'])
-        found = self.approve(found, page=True)
-        while found['next'] != 'package':
-            found = self.submit(found, page=True)
-        found = self.submit(found, page=True)
-        self.assertEqual(found['next'], 'package')
-        self.assertIn(
-            'draft',
-            [item['stage'] for item in runner.document(self.root, ident, 'package')['bundle']],
-        )
-        self.assertTrue(self.approve(found, page=True)['complete'])
-        _, _, saved = runner.load(self.root, ident)
-        self.assertEqual(saved['stages']['draft']['accepted_by'], 'review-policy')
-
     def test_status_says_whether_a_step_was_accepted_or_awaits_a_decision(self):
-        import studios_config
-
-        studios_config.update({'review': {'level': 'balanced'}})
-        found = self.create()
-        self.assertEqual(found['awaits'], 'submission')
+        found = self.editor_run('factual-support', research='web-allowed')
+        self.assertEqual((found['next'], found['awaits']), ('research-plan', 'submission'))
         found = self.submit(found)
-        self.assertEqual((found['next'], found['awaits']), ('outline', 'decision'))
-        found = self.approve(found)
-        self.assertFalse(found['stages'][0]['auto_accepted'])
-        found = self.submit(found)
-        # Balanced accepts the draft; nothing waits for the person, so approve is refused.
-        self.assertEqual((found['next'], found['awaits']), ('review', 'submission'))
-        self.assertTrue(found['stages'][1]['auto_accepted'])
+        # The check goes on past its research plan: nothing waits for the person, so approve
+        # is refused.
+        self.assertEqual((found['next'], found['awaits']), ('research', 'submission'))
+        self.assertTrue(found['stages'][0]['auto_accepted'])
         with self.assertRaisesRegex(ValueError, 'need no approval'):
             self.approve(found)
         status = runner.engine(self.root).describe(found['id'])
         self.assertEqual(status['awaits'], 'submission')
-        self.assertTrue(status['stages'][1]['auto_accepted'])
-        found = self.submit(self.submit(found))
-        self.assertEqual((found['next'], found['awaits']), ('package', 'decision'))
+        self.assertTrue(status['stages'][0]['auto_accepted'])
+        found = self.submit(self.submit(found, '# Research\nSynthetic findings.'))
+        self.assertEqual((found['next'], found['awaits']), ('review', 'decision'))
+        self.assertFalse(found['stages'][2]['auto_accepted'])
         found = self.approve(found)
         self.assertIsNone(found['awaits'])
 
     def test_late_worker_result_cannot_overwrite_local_edit(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         directory, _ = studio.item(self.root, 'articles', found['id'])
 
         def worker(*args, **kwargs):
-            (directory / 'OUTLINE.md').write_text('My newer outline')
-            return {'content': 'Late model outline', 'notes': ''}
+            (directory / 'DRAFT.md').write_text('My newer draft')
+            return {'content': 'Late model draft', 'notes': ''}
 
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
         engine.once(found['id'])
-        self.assertEqual((directory / 'OUTLINE.md').read_text(), 'My newer outline')
+        self.assertEqual((directory / 'DRAFT.md').read_text(), 'My newer draft')
         self.assertEqual(engine.describe(found['id'])['status'], 'failed')
 
-    def test_worker_saves_one_stage_and_never_crosses_gate(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
+    def test_worker_saves_each_step_and_stops_at_the_review(self):
         calls = []
+        found = self.editor_run('revise')
 
-        def worker(*args, **kwargs):
+        def worker(engine_name, payload, guidance, **kwargs):
             calls.append(kwargs)
-            return {'content': '# Outline\nA fictional outline.', 'notes': 'Synthetic.'}
+            if payload.get('response_kind') == 'editing-review':
+                return {'content': self.review_of(found['id']), 'notes': 'Synthetic.'}
+            return {'content': '# Draft\nA fictional draft.', 'notes': 'Synthetic.'}
 
-        found = self.create(page=True, stop='draft')
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
-        engine.once(found['id'])
         engine.once(found['id'])
         self.assertEqual(len(calls), 1)
         self.assertFalse(calls[0]['web'])
-        found = engine.describe(found['id'])
-        self.assertEqual(found['status'], 'waiting-for-approval')
-        self.assertEqual(found['next'], 'outline')
-        found = self.approve(found, page=True)
-        # The editor's runs stop after each step; it starts the next one.
-        engine.control(found['id'], 'resume')
+        # The draft is saved and the check goes on by itself to its review.
         self.assertEqual(engine.describe(found['id'])['status'], 'queued')
         engine.once(found['id'])
-        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        engine.once(found['id'])
         self.assertEqual(len(calls), 2)
+        found = engine.describe(found['id'])
+        self.assertEqual((found['status'], found['next']), ('waiting-for-approval', 'review'))
+        self.assertFalse(found['enabled'])
 
     def test_background_runner_does_not_regenerate_a_manual_edit(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         calls = []
 
         def worker(*args, **kwargs):
             calls.append(True)
-            return {'content': 'Generated outline', 'notes': ''}
+            return {'content': 'Generated draft', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
         engine.once(found['id'])
         directory, _ = studio.item(self.root, 'articles', found['id'])
-        (directory / 'OUTLINE.md').write_text('My edited outline')
-        # The editor's runs stop after each step; resumed, the run meets the edit.
-        engine.control(found['id'], 'resume')
+        # Edited outside the runner between the check's steps: it meets the edit and stops.
+        (directory / 'DRAFT.md').write_text('My edited draft')
         engine.once(found['id'])
         self.assertEqual(len(calls), 1)
-        self.assertEqual((directory / 'OUTLINE.md').read_text(), 'My edited outline')
-        self.assertEqual(engine.describe(found['id'])['status'], 'needs-attention')
+        self.assertEqual((directory / 'DRAFT.md').read_text(), 'My edited draft')
+        shown = engine.describe(found['id'])
+        self.assertEqual((shown['status'], shown['error']), ('failed', runner.STALE_CHECK))
 
     def test_restart_only_resumes_explicitly_started_local_runs(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True)
+        found = self.editor_run('proofread')
         one = runner.Engine(self.root)
         self.assertFalse(one.local(found['id'])['enabled'])
         one.control(found['id'], 'resume')
         two = runner.Engine(
-            self.root, lambda *a, **kw: {'content': 'Recovered outline', 'notes': ''}
+            self.root,
+            lambda *a, **kw: {'content': self.review_of(found['id']), 'notes': ''},
         )
         two.once(found['id'])
         self.assertEqual(two.describe(found['id'])['status'], 'waiting-for-approval')
         self.assertEqual(one.local(found['id'])['status'], 'waiting-for-approval')
 
     def test_stop_cancels_worker_without_a_late_save(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         entered, release = threading.Event(), threading.Event()
 
         def worker(*args, **kwargs):
             entered.set()
             release.wait(3)
-            return {'content': 'A late outline', 'notes': ''}
+            return {'content': 'A late draft', 'notes': ''}
 
-        found = self.create(page=True)
+        found = self.editor_run('revise')
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        before = (directory / 'DRAFT.md').read_text()
         engine = runner.Engine(self.root, worker)
         engine.control(found['id'], 'resume')
         thread = threading.Thread(target=engine.once, args=(found['id'],))
@@ -597,8 +555,7 @@ class BlogRunnerTests(RunnerCase):
             thread.join(3)
             self.assertFalse(thread.is_alive())
             self.assertEqual(engine.describe(found['id'])['status'], 'stopped')
-            directory, _ = studio.item(self.root, 'articles', found['id'])
-            self.assertFalse((directory / 'OUTLINE.md').exists())
+            self.assertEqual((directory / 'DRAFT.md').read_text(), before)
         finally:
             release.set()
             thread.join(3)
@@ -611,7 +568,7 @@ class BlogRunnerTests(RunnerCase):
     def test_context_does_not_silently_truncate_sources(self):
         # An oversized source is excerpted to the budget, and the run says so by name.
         source = self.source('Synthetic evidence ' * 20_000)
-        found = self.create(sources=[source['id']])
+        found = self.editor_run('factual-support', sources=[source['id']])
         self.assertEqual(
             runner.engine(self.root).describe(found['id'])['excerpted'], ['Specification']
         )
@@ -671,78 +628,93 @@ class BlogRunnerTests(RunnerCase):
         (self.root / '.blog-run-settings.json').write_text(json.dumps({'defaults': saved}))
         self.assertNotIn('stop', runner.settings(self.root)['defaults'])
 
-    def test_writing_modes_select_real_pipelines(self):
-        source = self.source('# A supplied manuscript\nA fictional gateway routes requests.')
-        for mode, expected in (
-            ('write', ['outline', 'draft', 'review', 'package']),
-            ('outline', ['outline']),
-            ('revise', ['draft', 'review', 'package']),
-            ('review', ['review']),
-        ):
+    def test_create_makes_only_the_editors_review(self):
+        ident = self.article()
+        directory, _ = studio.item(self.root, 'articles', ident)
+        before = sorted(path.relative_to(self.root) for path in self.root.rglob('*'))
+        asked = {
+            'id': ident,
+            'goal': 'Edit the saved manuscript',
+            'audience': 'Readers',
+            'research': 'none',
+            'stop': 'review',
+        }
+        for mode in ('write', 'outline', 'from-outline', 'ideas', 'revise', 'from-files', None):
             with self.subTest(mode=mode):
-                extra = {'manuscript': source['id']} if mode in ('revise', 'review') else {}
-                found = self.create(mode=mode, **extra)
-                self.assertEqual([row['stage'] for row in found['stages']], expected)
-                self.assertEqual(found['mode'], mode)
-                if extra:
-                    directory, _ = studio.item(self.root, 'articles', found['id'])
-                    original = (directory / 'ORIGINAL.md').read_text()
-                    found = self.submit(found, '# Revised\nA clearer fictional explanation.')
-                    self.assertEqual((directory / 'ORIGINAL.md').read_text(), original)
-                    if mode == 'review':
-                        self.assertEqual((directory / 'DRAFT.md').read_text(), original)
-
-    def test_revision_mode_can_stop_at_draft(self):
-        found = self.create(mode='revise', id=self.article(), stop='draft')
-        self.assertEqual([row['stage'] for row in found['stages']], ['draft'])
-        found = self.approve(self.submit(found))
-        self.assertTrue(found['complete'])
+                data = {**asked, 'mode': mode} if mode else asked
+                with self.assertRaises(ValueError) as refused:
+                    runner.create(self.root, data, 'page')
+                self.assertEqual(str(refused.exception), runner.EDITOR_ONLY)
+        # A new blog (no saved manuscript named) and a stop other than the review are refused.
+        for data in (
+            {key: value for key, value in asked.items() if key != 'id'},
+            {**asked, 'stop': 'draft'},
+        ):
+            with self.subTest(data=data), self.assertRaises(ValueError) as refused:
+                runner.create(self.root, {**data, 'mode': 'review'}, 'page')
+            self.assertEqual(str(refused.exception), runner.EDITOR_ONLY)
+        for field, value in (
+            ('title', 'A new blog'),
+            ('outline_text', '# An outline'),
+            ('author', 'Avery'),
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'Unknown'):
+                runner.create(self.root, {**asked, 'mode': 'review', field: value}, 'page')
+        self.assertEqual(
+            sorted(path.relative_to(self.root) for path in self.root.rglob('*')), before
+        )
+        self.assertEqual(runner.MODES, ('review',))
+        # The editor's own: its review of the saved manuscript.
+        found = runner.create(self.root, {**asked, 'mode': 'review'}, 'page')
+        self.assertEqual(
+            (found['mode'], [row['stage'] for row in found['stages']]), ('review', ['review'])
+        )
+        # It keeps no author and no length: nothing reads either from the editor's run.
+        _, _, run = runner.load(self.root, ident)
+        self.assertNotIn('author', run)
+        self.assertNotIn('length', run)
 
     def test_completed_page_revision_returns_to_a_resumable_stage(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True, stop='outline')
-        engine = runner.engine(self.root)
-        engine.control(found['id'], 'resume')
-        found = self.approve(self.submit(found, page=True), page=True)
-        engine.once(found['id'])
+        found = self.editor_run('proofread')
+        found = self.approve(self.submit(found))
+        self.assertTrue(found['complete'])
         found = runner.dispatch(
             self.root,
             'changes',
             {
                 'id': found['id'],
                 'expected': found['expected'],
-                'stage': 'outline',
+                'stage': 'review',
                 'request': 'Clarify the fictional argument',
             },
         )
         self.assertFalse(found['complete'])
-        self.assertEqual(found['next'], 'outline')
+        self.assertEqual(found['next'], 'review')
         self.assertEqual(found['status'], 'paused')
         self.assertFalse(found['enabled'])
 
-    def test_modes_reject_missing_or_competing_manuscripts_before_writing(self):
-        with self.assertRaisesRegex(ValueError, 'upload a draft'):
-            self.create(mode='review')
-        source = self.source('A synthetic original')
-        with self.assertRaisesRegex(ValueError, 'Choose revise or review'):
-            self.create(mode='write', manuscript=source['id'])
-        with self.assertRaisesRegex(ValueError, 'revision starts at draft'):
-            self.create(mode='revise', manuscript=source['id'], stop='outline')
+    def test_the_editors_run_needs_a_saved_manuscript_and_no_run(self):
         ident = self.article()
         directory, _ = studio.item(self.root, 'articles', ident)
-        before = (directory / 'DRAFT.md').read_bytes()
-        with self.assertRaisesRegex(ValueError, 'not both'):
-            self.create(mode='revise', id=ident, manuscript=source['id'])
-        self.assertEqual((directory / 'DRAFT.md').read_bytes(), before)
+        asked = {
+            'id': ident,
+            'mode': 'review',
+            'goal': 'Edit the saved manuscript',
+            'audience': 'Readers',
+            'research': 'none',
+        }
+        draft = (directory / 'DRAFT.md').read_bytes()
         (directory / 'DRAFT.md').unlink()
         with self.assertRaisesRegex(ValueError, 'no saved manuscript'):
-            self.create(mode='review', id=ident)
+            runner.create(self.root, asked, 'page')
         self.assertFalse((directory / runner.STATE).exists())
+        (directory / 'DRAFT.md').write_bytes(draft)
+        runner.create(self.root, asked, 'page')
+        with self.assertRaisesRegex(ValueError, 'already has a guided run'):
+            runner.create(self.root, asked, 'page')
 
     def test_settings_are_local_defaults_and_do_not_change_existing_runs(self):
-        found = self.create()
+        found = self.editor_run('proofread')
         defaults = dict(runner.DEFAULTS, engine='claude', seconds=120, author='Avery')
         with patch.object(
             management,
@@ -759,59 +731,64 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(runner.settings(self.root)['defaults'], defaults)
 
     def test_review_document_compares_against_last_approved_version(self):
-        found = self.approve(self.submit(self.create(), '# Outline\nThe first argument.'))
+        found = self.editor_run('shape')
+        first = self.review_of(found['id'])
+        found = self.approve(self.submit(found, first))
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        before = (directory / 'derived/blog-review.md').read_text()
         found = runner.decide(
             self.root,
             found['id'],
             found['expected'],
             'changes',
             'Clarify the argument',
-            target='outline',
+            page=True,
+            target='review',
         )
-        found = self.submit(found, '# Outline\nA clearer argument.')
-        shown = runner.document(self.root, found['id'], 'outline')
-        self.assertEqual(shown['previous'], '# Outline\nThe first argument.')
-        self.assertIn('-The first argument.', shown['diff'])
-        self.assertIn('+A clearer argument.', shown['diff'])
+        found = self.submit(found, first.replace('Synthetic note.', 'A clearer note.'))
+        shown = runner.document(self.root, found['id'], 'review')
+        self.assertEqual(shown['previous'], before)
+        self.assertIn('-Synthetic note.', shown['diff'])
+        self.assertIn('+A clearer note.', shown['diff'])
         self.assertEqual(shown['expected'], found['expected'])
-        self.assertTrue(all(check['passed'] for check in shown['checks']))
-        directory, _ = studio.item(self.root, 'articles', found['id'])
-        (directory / 'OUTLINE.md').write_text('A local change outside the runner')
-        shown = runner.document(self.root, found['id'], 'outline')
+        (directory / 'derived/blog-review.md').write_text('A local change outside the runner')
+        shown = runner.document(self.root, found['id'], 'review')
         self.assertEqual(shown['status'], 'stale')
-        history = next((directory / 'history').glob('derived-blog-approved-outline-*.md'))
+        history = next((directory / 'history').glob('derived-blog-approved-review-*.md'))
         history.write_text('Changed outside the runner')
-        self.assertIsNone(runner.document(self.root, found['id'], 'outline')['previous'])
+        self.assertIsNone(runner.document(self.root, found['id'], 'review')['previous'])
 
     def test_pause_keeps_current_stage_but_prevents_next_job(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root)
         engine.control(found['id'], 'resume')
+        calls = []
 
         def worker(*args, **kwargs):
+            calls.append(True)
             engine.control(found['id'], 'pause')
             return {'content': 'Finished current job', 'notes': ''}
 
         engine.worker = worker
         engine.once(found['id'])
+        engine.once(found['id'])
         found = engine.describe(found['id'])
-        self.assertEqual(found['status'], 'waiting-for-approval')
+        # The draft the step was making is kept; the review never starts.
+        self.assertEqual((found['status'], found['next']), ('paused', 'review'))
         self.assertFalse(found['enabled'])
-        found = self.approve(found, page=True)
-        self.assertFalse(engine.local(found['id'])['enabled'])
+        self.assertEqual(found['stages'][0]['status'], 'approved')
+        self.assertEqual(len(calls), 1)
 
     def test_imported_draft_can_be_revised_after_review(self):
         ident = self.article('My original synthetic draft')
-        found = self.submit(self.create(id=ident))
+        found = self.submit(self.editor_check(ident, 'proofread'))
         found = runner.decide(
             self.root,
             ident,
             found['expected'],
             'changes',
             'Clarify the introduction',
+            page=True,
             target='draft',
         )
         self.assertEqual(found['next'], 'draft')
@@ -820,8 +797,8 @@ class BlogRunnerTests(RunnerCase):
         self.assertIn('minimal edit, not a rewrite', guidance)
         self.assertIn('Clarify the introduction', guidance)
         found = self.submit(found, 'My revised synthetic draft')
-        self.assertEqual(found['stages'][0]['status'], 'draft')
-        found = self.approve(found)
+        # The check goes on past the revised draft to its review.
+        self.assertEqual(found['stages'][0]['status'], 'approved')
         self.assertEqual(found['next'], 'review')
 
 
@@ -1063,35 +1040,29 @@ class RunnerHubTests(Fixture):
         with patch.object(
             hub_workspace, 'active', side_effect=lambda root: wa if root == self.root else wb
         ):
-            found = runner.create(
-                self.root,
-                {
-                    'title': 'A synthetic shared blog',
-                    'audience': 'Authors',
-                    'goal': 'Explain a fixture',
-                    'research': 'none',
-                    'sources': [source['id']],
-                    'profile': profile['id'],
-                },
-            )
+            # A saved manuscript written as Avery, and the run the editor's revision makes.
+            ident = self.article()
+            self.command('article', 'voice', '--id', ident, '--profile', profile['id'])
+            found = editor_check(self.root, ident, 'revise', sources=[source['id']])
             found = runner.submit(
                 self.root,
                 found['id'],
-                'outline',
-                {'content': '# Outline\nSynthetic argument.', 'notes': ''},
+                'draft',
+                {'content': '# Draft\nSynthetic argument.', 'notes': ''},
                 found['expected'],
+                page=True,
             )
-            found = runner.decide(self.root, found['id'], found['expected'], 'approve')
             shared = wa.publish_selected({'articles': [found['id']]})['items'][0]
             wb.hub.refresh()
             local_id = wb.checkout_selected({'articles': [shared['item']]})['items'][0]['local_id']
             resumed = runner.engine(other).describe(local_id)
             self.assertEqual(resumed['stages'][0]['status'], 'approved')
-            self.assertEqual(resumed['next'], 'draft')
+            self.assertEqual(resumed['stages'][0]['accepted_by'], runner.EDITOR_CHECK)
+            self.assertEqual(resumed['next'], 'review')
             self.assertFalse(resumed['enabled'])
-            self.assertEqual(resumed['approval'], 'conversation')
-            previous = runner.document(other, local_id, 'outline')['previous']
-            self.assertEqual(previous, '# Outline\nSynthetic argument.')
+            self.assertEqual(resumed['approval'], 'page')
+            previous = runner.document(other, local_id, 'draft')['previous']
+            self.assertEqual(previous, '# Draft\nSynthetic argument.')
             runner.ENGINES.pop(str(other), None)
 
     def test_a_tone_nudge_travels_with_the_voice_and_older_projections_hold(self):
@@ -1123,16 +1094,17 @@ class RunnerHubTests(Fixture):
         ):
             shared = {}
             for tone in ('Warm', ''):
-                found = runner.create(
-                    self.root,
-                    {
-                        'title': 'Tone ' + (tone or 'none'),
-                        'audience': 'Authors',
-                        'goal': 'Explain a fixture',
-                        'research': 'none',
-                        'profile': profile['id'],
-                        'tone': tone,
-                    },
+                # A blog registered in chat with the voice, and a tone nudge or none.
+                found = self.command(
+                    'article',
+                    'create',
+                    '--title',
+                    'Tone ' + (tone or 'none'),
+                    '--mode',
+                    'first-draft',
+                    '--profile',
+                    profile['id'],
+                    *(['--tone', tone] if tone else []),
                 )
                 shared[tone] = wa.publish_selected({'articles': [found['id']]})['items'][0]
             revisions = wa.hub.graph()['revisions']
@@ -1175,61 +1147,102 @@ class SharedPatternTests(RunnerCase):
         import studios_config
 
         studios_config.update({'review': {'level': 'balanced'}})
-        found = self.create(page=True)
-        self.assertEqual(found['ahead']['steps_left'], 4)
-        self.assertEqual(found['ahead']['next_stop'], 'Outline')
-        self.assertEqual(found['ahead']['next_gate'], 'outline')
-        found = self.approve(self.submit(found, page=True), page=True)
+        found = self.editor_run('factual-support', research='web-allowed')
         self.assertEqual(found['ahead']['steps_left'], 3)
-        self.assertEqual(found['ahead']['next_gate'], 'package', 'Balanced reads the handoff next')
-        self.assertEqual(found['ahead']['next_stop'], runner.STAGES['package'][0])
+        # The check stops only at its review, which the view names as its next stop.
+        self.assertEqual(found['ahead']['next_gate'], 'review')
+        self.assertEqual(found['ahead']['next_stop'], runner.STAGES['review'][0])
+        found = self.submit(found)
+        self.assertEqual(found['ahead']['steps_left'], 2)
+        self.assertEqual(found['ahead']['next_gate'], 'review')
         # A saved run with no jobs recorded says nothing of what it spent.
         engine = runner.Engine(self.root, worker=self.worker())
         self.addCleanup(engine.close)
         shown = engine.describe(found['id'])['ahead']
         self.assertEqual((shown['jobs'], shown['spent']), (0, None))
 
+    def test_each_step_the_editor_check_accepts_is_recorded_and_names_no_level(self):
+        import studios_config
+        from studio_core import review_policy
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.editor_run('revise', research='supplied-only')
+        # The view names no review level and stops only at the review, never at the draft
+        # Balanced would stop at.
+        self.assertIsNone(found['review_level'])
+        self.assertEqual(found['ahead']['next_gate'], 'review')
+        accepted = []
+        while found['next'] != 'review':
+            stage = found['next']
+            found = self.submit(found)
+            accepted.append(stage)
+            self.assertEqual(found['ahead']['next_gate'], 'review')
+        _, _, run = runner.load(self.root, found['id'])
+        events = run['review_events']
+        self.assertEqual([event['gate'] for event in events], accepted)
+        self.assertIn('draft', accepted)
+        for event in events:
+            # Where and as the review level's own acceptance is recorded, but said as the
+            # check's, with the saved level kept and marked as not applied.
+            self.assertEqual(
+                set(event),
+                {'gate', 'by', 'level', 'level_applied', 'evidence', 'at', 'decision'},
+            )
+            self.assertEqual(event['by'], 'editor-check')
+            self.assertEqual(event['level'], 'balanced')
+            self.assertIs(event['level_applied'], False)
+            self.assertEqual(event['decision'], 'continued-automatically')
+            self.assertEqual(
+                event['evidence'], review_policy.fingerprint(run['stages'][event['gate']])
+            )
+        # The review, the check's one stop, is submitted for the person, not accepted.
+        found = self.submit(found)
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(len(run['review_events']), len(accepted))
+
     def test_redo_says_what_a_change_draws_again(self):
-        found = self.create(page=True, stop='package')
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker=self.worker())
         self.addCleanup(engine.close)
         redo = engine.describe(found['id'])['redo']
-        self.assertEqual(redo['draft']['stages'], ['draft', 'review', 'package'])
+        self.assertEqual(redo['draft']['stages'], ['draft', 'review'])
         self.assertEqual(
             redo['draft']['says'],
             (
-                'Drawn again: the draft and every step after it, 3 steps; this computer has no '
+                'Drawn again: the draft and every step after it, 2 steps; this computer has no '
                 'record of what they cost.'
             ),
         )
         state = engine.local(found['id'])
         state['jobs'] = [
             {'stage': stage, 'seconds': 300, 'tokens': None, 'dollars': 0.5}
-            for stage in ('outline', 'draft', 'review', 'package')
+            for stage in ('draft', 'review')
         ]
         engine.keep_local(found['id'], state)
         redo = engine.describe(found['id'])['redo']
         self.assertEqual(
-            redo['review']['says'],
+            redo['draft']['says'],
             (
-                'Drawn again: the review and every step after it, 2 steps. Last time they took '
+                'Drawn again: the draft and every step after it, 2 steps. Last time they took '
                 '10 minutes and about $1.00.'
             ),
         )
+        self.assertEqual(
+            redo['review']['says'],
+            'Drawn again: the review. Last time it took 5 minutes and about $0.50.',
+        )
 
     def test_stage_labels(self):
-        self.assertEqual(runner.STAGES['package'][0], 'Handoff')
-        found = self.create(page=True)
-        self.assertEqual(found['stages'][-1]['label'], 'Handoff')
-        with self.assertRaisesRegex(ValueError, 'or the handoff'):
-            self.create(page=True, title='Stopped nowhere', stop='angles')
+        self.assertEqual(runner.STAGES['package'][0], 'Handoff')  # Read in saved runs.
+        found = self.editor_run('revise')
+        self.assertEqual([row['label'] for row in found['stages']], ['Draft', 'Review'])
 
-    def test_an_unreadable_shared_file_still_starts_a_blog_step_by_step(self):
+    def test_an_unreadable_shared_file_still_starts_a_check_step_by_step(self):
         import studios_config
         from studio_core import review_policy
 
         studios_config.path().write_text('{', encoding='utf-8')
-        found = self.create(page=True, title='No level chosen')
+        found = self.editor_run('proofread')
         _, _, run = runner.load(self.root, found['id'])
         self.assertEqual(review_policy.level(run), 'step_by_step', 'never more autonomy')
         self.assertEqual(studios_config.path().read_text(), '{')
@@ -1246,10 +1259,7 @@ class SharedPatternTests(RunnerCase):
         self.assertEqual(studios_config.read()[0], before)
 
     def test_the_worker_records_when_it_started_and_the_page_reads_it(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
-        found = self.create(page=True, stop='draft')
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker=self.worker())
         self.addCleanup(engine.close)
         seen = []
@@ -1287,13 +1297,11 @@ class SharedPatternTests(RunnerCase):
 
 
 class FinishTests(RunnerCase):
-    def test_the_final_stop_carries_the_approved_draft_beside_the_package(self):
-        found = self.create(page=True)
-        for _ in range(3):
-            found = self.approve(self.submit(found, page=True), page=True)
-        self.assertEqual(found['next'], 'package')
-        found = self.submit(found, content='# Handoff', page=True)
-        shown = runner.document(self.root, found['id'], 'package')
+    def test_the_final_stop_carries_the_approved_draft_beside_the_review(self):
+        found = self.submit(self.editor_run('revise'), '# Draft\nSynthetic writing.')
+        self.assertEqual(found['next'], 'review')
+        found = self.submit(found)
+        shown = runner.document(self.root, found['id'], 'review')
         self.assertEqual([item['stage'] for item in shown['bundle']], ['draft'])
         self.assertIn('Synthetic writing', shown['bundle'][0]['content'])
         # Step by step reviews each stage alone; only the final stop opens the draft again.
@@ -1658,50 +1666,43 @@ class DeleteTests(RunnerCase):
 class StyleTests(RunnerCase):
     """A run pins a style beside its voice, and the writing job reads that revision."""
 
+    def styled(self, style):
+        """A saved manuscript pinned to a kind of post, as one written with it was."""
+        ident = self.article()
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = studio.style_pin(self.root, style)
+        studio.persist(directory, 'articles', record)
+        return ident
+
     def test_a_run_pins_its_style_and_the_job_carries_it(self):
         self.assertIn(
             'product-announcement', [row['id'] for row in runner.options(self.root)['styles']]
         )
-        found = self.create(page=True, style='product-announcement')
-        _, record = studio.item(self.root, 'articles', found['id'])
+        ident = self.styled('product-announcement')
+        found = self.editor_check(ident, 'shape')
+        _, record = studio.item(self.root, 'articles', ident)
         self.assertEqual(record['style'], {'style_id': 'product-announcement', 'revision': 1})
         self.assertEqual((found['style_name'], found['voice_name']), ('Product announcement', None))
-        _, payload, guidance = runner.job(self.root, found['id'])
+        _, payload, guidance = runner.job(self.root, ident)
         self.assertEqual(payload['style']['name'], 'Product announcement')
         self.assertIn('The news is in the first sentence.', payload['style']['guide'])
         self.assertIn('the style wins', guidance)
         self.assertIn('the style wins', blog_worker.POLICY)
-        directory, _, run = runner.load(self.root, found['id'])
+        # Only feedback on the shape reads the kind of post; a polish keeps to its own scope.
         for check, carried in (('polish', False), ('shape', True)):
-            studio.write_json(
-                studio.inside(directory, runner.STATE), {**run, 'editor_check': check}
-            )
-            _, checked, guidance = runner.job(self.root, found['id'])
+            self.editor_check(ident, check)
+            _, checked, guidance = runner.job(self.root, ident)
             self.assertEqual('SELECTED STYLE' in guidance, carried)
             self.assertEqual(checked['style'] is not None, carried, check)
             self.assertEqual('Product announcement' in guidance.split('\n', 1)[0], carried)
-        studio.write_json(studio.inside(directory, runner.STATE), run)
         guide = self.base / 'style.md'
         guide.write_text('Changed later.')
         self.command('style', 'save', '--id', 'product-announcement', '--guide-file', str(guide))
-        _, payload, _ = runner.job(self.root, found['id'])
+        _, payload, _ = runner.job(self.root, ident)
         self.assertNotIn(
             'Changed later.', payload['style']['guide'], 'a later save does not move the pin'
         )
-        self.command(
-            'style',
-            'retire',
-            '--id',
-            'product-announcement',
-            '--expected-revision',
-            '2',
-            '--confirmed',
-        )
-        with self.assertRaisesRegex(ValueError, 'retired'):
-            self.create(page=True, style='product-announcement')
-        with self.assertRaisesRegex(ValueError, 'Unknown styles'):
-            self.create(page=True, style='no-such-style')
-        plain = self.create(page=True)
+        plain = self.editor_run('shape')
         self.assertNotIn('style', studio.item(self.root, 'articles', plain['id'])[1])
         self.assertIsNone(runner.job(self.root, plain['id'])[1]['style'])
         _, record, run = runner.load(self.root, plain['id'])
@@ -1711,11 +1712,16 @@ class StyleTests(RunnerCase):
         self.assertIsNone(plain['style_name'])
 
     def test_a_minimal_edit_keeps_to_its_request_without_the_style(self):
-        found = self.approve(self.submit(self.create(page=True, style='how-to'), page=True), True)
+        found = self.submit(self.editor_check(self.styled('how-to'), 'shape'))
         self.assertIsNotNone(runner.job(self.root, found['id'])[1]['style'])
-        found = self.submit(found, '# Draft\nA fictional paragraph.', page=True)
         found = runner.decide(
-            self.root, found['id'], found['expected'], 'changes', 'Shorten it.', page=True
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Shorten it.',
+            page=True,
+            target='draft',
         )
         _, payload, guidance = runner.job(self.root, found['id'])
         self.assertIn('minimal edit, not a rewrite', guidance)
@@ -1728,24 +1734,10 @@ class StyleTests(RunnerCase):
         directory, record = studio.item(self.root, 'articles', ident)
         record['style'] = {'style_id': 'how-to', 'revision': 1}
         studio.persist(directory, 'articles', record)
-        found = self.create(page=True, id=ident, style='', mode='review', stop='review')
+        found = self.editor_check(ident, 'proofread')
         _, record = studio.item(self.root, 'articles', found['id'])
         self.assertEqual(record['style'], {'style_id': 'how-to', 'revision': 1})
         self.assertEqual(found['style_name'], 'How-to and tutorial')
-
-    def test_a_refused_run_leaves_no_copied_starter(self):
-        with self.assertRaises(ValueError):
-            self.create(page=True, style='how-to', sources=['no-such-source'])
-        large = self.source('Synthetic gateway detail. ' * 12_000)  # over one job's context
-        # Sources are excerpted to their budget on every path; a larger one lets this source
-        # through whole, so the job's context check refuses it after the style was checked.
-        with (
-            patch.object(runner, 'SOURCE_BUDGET', 400_000),
-            self.assertRaisesRegex(ValueError, 'too large'),
-        ):
-            self.create(page=True, style='how-to', sources=[large['id']])
-        self.assertFalse((self.root / 'styles' / 'how-to').exists())
-        self.assertEqual(runner.catalog(self.root)['items'], [])
 
     def test_a_listing_names_a_style_from_its_current_record_or_starter(self):
         import styles
@@ -1790,31 +1782,20 @@ class VoiceChoiceTests(RunnerCase):
             if path.is_file()
         }
 
-    def test_the_default_voice_applies_unless_the_person_chose_another(self):
-        self.assertEqual(
-            self.voice_of(self.create(page=True, tone='Warm')), {'mode': 'tone', 'tone': 'Warm'}
+    def voiced(self, *words, title='Gateway guide'):
+        """A saved manuscript registered in chat with the voice the words give it."""
+        found = self.command('article', 'create', '--title', title, '--mode', 'first-draft', *words)
+        self.file.write_text(self.MANUSCRIPT)
+        self.command(
+            'article', 'save', '--id', found['id'], '--kind', 'draft', '--file', str(self.file)
         )
-        mine, other = self.voice(), self.voice('Blake', 'Long, careful sentences.')
-        self.default(mine)
-        absent = self.voice_of(self.create(page=True))
-        self.assertEqual(
-            (absent['mode'], absent['profile_id'], absent['revision']), ('profile', mine['id'], 1)
-        )
-        nudged = self.voice_of(self.create(page=True, tone='Warm'))
-        self.assertEqual((nudged['mode'], nudged['profile_id']), ('profile', mine['id']))
-        self.assertEqual(
-            self.voice_of(self.create(page=True, profile='', tone='Warm')),
-            {'mode': 'tone', 'tone': 'Warm'},
-            'No particular voice uses the described tone',
-        )
-        chosen = self.voice_of(self.create(page=True, profile=other['id']))
-        self.assertEqual((chosen['mode'], chosen['profile_id']), ('profile', other['id']))
+        return found['id']
 
     def test_a_tone_beside_a_voice_is_kept_as_a_nudge(self):
         import writing_defaults
 
         mine = self.voice()
-        found = self.create(page=True, profile=mine['id'], tone='Warm')
+        found = self.editor_check(self.voiced('--profile', mine['id'], '--tone', 'Warm'), 'shape')
         pinned = {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1}
         self.assertEqual(self.voice_of(found), {**pinned, 'tone': 'Warm'})
         _, record, run = runner.load(self.root, found['id'])
@@ -1827,31 +1808,18 @@ class VoiceChoiceTests(RunnerCase):
             resolved['values']['voice']['value'], {'profile_id': mine['id'], 'revision': 1}
         )
         self.assertEqual(
-            self.voice_of(self.create(page=True, profile=mine['id'])),
+            self.voice_of(self.editor_check(self.voiced('--profile', mine['id']), 'shape')),
             pinned,
             'without a tone the voice has no tone key, so earlier pins hold',
         )
-        self.default(mine)
-        self.assertEqual(
-            self.voice_of(self.create(page=True, tone='Warm')), {**pinned, 'tone': 'Warm'}
-        )
-        chat = self.command(
-            'article',
-            'create',
-            '--title',
-            'Chat',
-            '--mode',
-            'first-draft',
-            '--profile',
-            mine['id'],
-            '--tone',
-            'Warm',
-        )
-        self.assertEqual(chat['voice'], {**pinned, 'tone': 'Warm'})
 
     def test_the_worker_brief_names_the_voice_style_and_tone(self):
         mine = self.voice()
-        found = self.create(page=True, profile=mine['id'], tone='Warm', style='how-to')
+        ident = self.voiced('--profile', mine['id'], '--tone', 'Warm')
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = studio.style_pin(self.root, 'how-to')
+        studio.persist(directory, 'articles', record)
+        found = self.editor_check(ident, 'shape')  # Feedback on the shape reads the style.
         _, record, run = runner.load(self.root, found['id'])
         pins = runner.inputs(self.root, record, run)
         guidance = runner.job(self.root, found['id'])[2]
@@ -1882,19 +1850,19 @@ class VoiceChoiceTests(RunnerCase):
             ),
             'the pinned revision is named, not the latest',
         )
-        plain = self.create(page=True, profile='', tone='Warm')
+        plain = self.editor_check(self.voiced('--voice', 'tone', '--tone', 'Warm'), 'shape')
         self.assertTrue(
             runner.job(self.root, plain['id'])[2].startswith(
                 'No author voice is pinned; follow voice.tone.\n\n'
             )
         )
-        bare_tone = self.create(page=True, profile='', tone='')
+        bare_tone = self.editor_check(self.voiced('--voice', 'tone'), 'shape')
         self.assertTrue(
             runner.job(self.root, bare_tone['id'])[2].startswith(
                 'No author voice is pinned; write plainly in the house style.\n\n'
             )
         )
-        bare = self.create(page=True, profile=mine['id'])
+        bare = self.editor_check(self.voiced('--profile', mine['id']), 'shape')
         self.assertTrue(
             runner.job(self.root, bare['id'])[2].startswith(
                 'Write as Avery Later (voice guide revision 2, provisional).\n\n'
@@ -1965,41 +1933,33 @@ class VoiceChoiceTests(RunnerCase):
     def test_a_manuscript_keeps_its_own_voice_unless_the_person_picks_one(self):
         mine = self.voice()
         self.default(mine)
-        draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
-        found = self.create(page=True, mode='review', manuscript=draft['id'], tone='Warm')
-        self.assertEqual(self.voice_of(found)['mode'], 'preserve')
-        self.assertTrue(
-            runner.job(self.root, found['id'])[2].startswith(
-                'No author voice is pinned; keep the manuscript’s own voice. Tone nudge: Warm.\n\n'
-            )
-        )
         existing = self.command(
             'article', 'create', '--title', 'Imported', '--mode', 'existing', '--voice', 'preserve'
         )
         self.file.write_text('# Imported\n\nAn original sentence.')
-        self.command(
-            'article',
-            'save',
-            '--id',
-            existing['id'],
-            '--kind',
-            'original',
-            '--file',
-            str(self.file),
-        )
-        found = self.create(page=True, id=existing['id'], mode='review')
+        for kind in ('original', 'draft'):
+            self.command(
+                'article', 'save', '--id', existing['id'], '--kind', kind, '--file', str(self.file)
+            )
+        found = self.editor_check(existing['id'], 'shape')
         self.assertEqual(self.voice_of(found)['mode'], 'preserve')
         self.assertTrue(
             runner.job(self.root, found['id'])[2].startswith(
                 'No author voice is pinned; keep the manuscript’s own voice.\n\n'
             )
         )
-        picked = self.create(page=True, mode='review', manuscript=draft['id'], profile=mine['id'])
+        nudged = self.editor_check(self.voiced('--voice', 'preserve', '--tone', 'Warm'), 'shape')
+        self.assertTrue(
+            runner.job(self.root, nudged['id'])[2].startswith(
+                'No author voice is pinned; keep the manuscript’s own voice. Tone nudge: Warm.\n\n'
+            )
+        )
+        picked = self.editor_check(self.voiced('--profile', mine['id']), 'shape')
         self.assertEqual(self.voice_of(picked)['profile_id'], mine['id'])
 
     def test_a_run_says_how_its_voice_was_chosen(self):
         mine = self.voice()
-        pinned = self.create(page=True, profile=mine['id'])
+        pinned = self.editor_check(self.voiced('--profile', mine['id']), 'shape')
         self.assertEqual(
             (
                 pinned['voice_mode'],
@@ -2009,30 +1969,14 @@ class VoiceChoiceTests(RunnerCase):
             ),
             ('profile', mine['id'], mine['revision'], 'Avery'),
         )
-        toned = self.create(page=True, profile='', tone='Warm')
+        toned = self.editor_check(self.voiced('--voice', 'tone', '--tone', 'Warm'), 'shape')
         self.assertEqual(
             (toned['voice_mode'], toned['voice_profile'], toned['voice_revision']),
             ('tone', None, None),
         )
-        draft = self.source('# A synthetic draft\n\nThe gateway routes requests.')
-        kept = self.create(page=True, mode='review', manuscript=draft['id'])
+        kept = self.editor_check(self.voiced('--voice', 'preserve'), 'shape')
         self.assertEqual((kept['voice_mode'], kept['voice_profile']), ('preserve', None))
         self.assertEqual(runner.engine(self.root).describe(kept['id'])['voice_mode'], 'preserve')
-
-    def test_the_settings_default_tone_is_no_nudge(self):
-        mine = self.voice()
-        usual = runner.settings(self.root)['defaults']['tone']
-        self.assertNotIn(
-            'tone', self.voice_of(self.create(page=True, profile=mine['id'], tone=usual))
-        )
-        self.assertEqual(
-            self.voice_of(self.create(page=True, profile='', tone=usual)),
-            {'mode': 'tone', 'tone': usual},
-            'without a voice the tone is the description',
-        )
-        self.default(mine)
-        self.assertNotIn('tone', self.voice_of(self.create(page=True, tone=usual)))
-        self.assertEqual(self.voice_of(self.create(page=True, tone='Warm'))['tone'], 'Warm')
 
     def test_options_read_a_team_default_voice_without_checking_it_out(self):
         from types import SimpleNamespace
@@ -2083,17 +2027,7 @@ class VoiceChoiceTests(RunnerCase):
 
 
 class FilesCase(RunnerCase):
-    """Uploaded material and a from-files run, for the tests below."""
-
-    ANGLES = (
-        '# Three angles\n\n'
-        '## Retries are a budget\n\n'
-        'Platform engineers · Retries cost more than they save without a budget · Leans on notes.md\n\n'
-        '## The gateway is a contract\n\n'
-        'API authors · Treat the gateway as the public contract · Leans on notes.md, plain.txt\n\n'
-        '## Fewer hops, fewer surprises\n\n'
-        'Team leads · Every hop is a failure mode · Leans on plain.txt\n'
-    )
+    """Uploaded material, for the tests below."""
 
     def material(self, *files, keep=False):
         import base64
@@ -2116,85 +2050,17 @@ class FilesCase(RunnerCase):
             )
         return [row['source']['id'] for row in result['files']]
 
-    def from_files(self, page=True, **extra):
-        sources = extra.pop(
-            'sources',
-            self.material(
-                ('notes.md', 'Retries cost money. ' * 40), ('plain.txt', 'Hops add latency. ' * 40)
-            ),
-        )
-        return runner.create(
-            self.root,
-            {'mode': 'from-files', 'sources': sources, 'goal': 'A post for the team blog', **extra},
-            'page' if page else 'conversation',
-        )
 
-
-class FromFilesTests(FilesCase):
-    """Write from my files: uploaded material, three angles, then the normal run."""
-
-    def test_from_files_starts_with_the_angles_step(self):
-        found = self.from_files()
-        self.assertEqual([row['stage'] for row in found['stages']], ['angles'])
-        self.assertEqual(found['mode'], 'from-files')
-        self.assertEqual(found['next'], 'angles')
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(record['research_policy'], 'supplied-only')
-        self.assertNotIn('research_contract', run)
-        self.assertEqual(run['after_angles'], {'research': 'none', 'stop': 'package'})
-        self.assertEqual(len(record['sources']), 2)
-        self.assertEqual(record['title'], 'From my files')
-        self.assertEqual(run['brief']['goal'], 'A post for the team blog')
-        # The files, not the empty brief, are what the worker reads.
-        found, payload, guidance = runner.job(self.root, found['id'])
-        self.assertEqual([source['name'] for source in payload['sources']], ['notes', 'plain'])
-        self.assertIn('## ', guidance)
-        self.assertIn('three', guidance.lower())
-        self.assertIn('Leans on', guidance)
-        with self.assertRaisesRegex(ValueError, 'file'):
-            self.from_files(sources=[])
-        pending = self.material(('scan.pdf', '%PDF-fixture'))
-        with self.assertRaisesRegex(ValueError, 'text'):
-            self.from_files(sources=pending)
-        web = self.from_files(research='web-allowed', stop='draft')
-        _, _, run = runner.load(self.root, web['id'])
-        self.assertEqual(run['after_angles'], {'research': 'web-allowed', 'stop': 'draft'})
-        self.assertEqual([row['stage'] for row in web['stages']], ['angles'])
-
-    def test_the_angles_always_wait_for_the_person(self):
-        import studios_config
-
-        studios_config.update({'review': {'level': 'automatic'}})
-        found = self.from_files()
-        found = self.submit(found, self.ANGLES, page=True)
-        self.assertEqual(found['awaits'], 'decision')
-        self.assertEqual(found['stages'][0]['status'], 'draft')
-        self.assertFalse(found['stages'][0]['auto_accepted'])
-
-    def test_none_of_these_asks_for_three_different_angles(self):
-        found = self.submit(self.from_files(), self.ANGLES, page=True)
-        found = runner.decide(
-            self.root,
-            found['id'],
-            found['expected'],
-            'changes',
-            'Closer to the on-call experience.',
-            page=True,
-            target='angles',
-        )
-        self.assertEqual(found['next'], 'angles')
-        _, payload, guidance = runner.job(self.root, found['id'])
-        self.assertEqual(payload['documents']['angles'], self.ANGLES)
-        self.assertIn('three different angles', guidance)
-        self.assertNotIn('minimal edit', guidance)
-        self.assertIn('Closer to the on-call experience.', guidance)
+class FilesTests(FilesCase):
+    """Uploaded files a run reads: excerpted to its budget and named, never refused."""
 
     def test_oversized_files_are_excerpted_and_named_instead_of_refused(self):
         big = 'Retries cost money. ' * 16_000  # 320,000 characters
         sources = self.material(('big.md', big), ('small.txt', 'Hops add latency.'))
-        found = self.from_files(sources=sources)
+        found = self.editor_run('factual-support', sources=sources)
         self.assertEqual(found['excerpted'], ['big'])
         _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(record['material'], sources)
         payload = runner.inputs(self.root, record, run)
         self.assertLess(len(json.dumps(payload)), 300_000)
         big_source = next(source for source in payload['sources'] if source['name'] == 'big')
@@ -2205,33 +2071,26 @@ class FromFilesTests(FilesCase):
         small = next(source for source in payload['sources'] if source['name'] == 'small')
         self.assertNotIn('excerpted', small)
         self.assertEqual(small['text'], 'Hops add latency.')
-        self.assertIn('big', runner.engine(self.root).describe(found['id'])['excerpted'])
-        # A blog from a brief reads the same files, excerpted the same way and pinned to it.
-        found = self.create(sources=sources)
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(record['material'], sources)
-        payload = runner.inputs(self.root, record, run)
-        self.assertLess(len(json.dumps(payload)), 300_000)
-        self.assertTrue(
-            next(source for source in payload['sources'] if source['name'] == 'big')['excerpted']
-        )
         self.assertEqual(runner.engine(self.root).describe(found['id'])['excerpted'], ['big'])
 
 
 class FromFilesReviewTests(FilesCase):
-    """The angles gate keeps its decision, and a deleted blog takes its files with it."""
+    """What a saved run's excerpts follow, and a deleted blog takes its files with it."""
 
     def test_excerpts_follow_the_persons_words_not_the_defaults(self):
-        found = self.from_files(goal='')
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertEqual(runner.run_terms(record, run), [])
-        found = self.from_files(goal='Why the gateway retries matter for our team')
-        _, record, run = runner.load(self.root, found['id'])
-        words = runner.run_terms(record, run)
+        # A run from files the earlier flow saved keeps the note the person wrote about them.
+        self.assertEqual(runner.run_terms({}, {'files_note': '', 'brief': {'goal': ''}}), [])
+        words = runner.run_terms(
+            {}, {'files_note': 'Why the gateway retries matter for our team', 'brief': {}}
+        )
         self.assertIn('gateway', words)
         self.assertIn('retries', words)
         for common in ('why', 'the', 'for', 'our', 'with', 'from', 'files', 'uploaded'):
             self.assertNotIn(common, words)
+        # The editor's run keeps to its own brief.
+        found = self.editor_run('factual-support')
+        _, record, run = runner.load(self.root, found['id'])
+        self.assertEqual(runner.run_terms(record, run), ['edit', 'saved', 'manuscript'])
 
     def test_deleting_a_blog_keeps_its_files_with_it_and_restore_brings_them_back(self):
         import base64
@@ -2307,7 +2166,7 @@ class ExampleTests(FilesCase):
         big = 'We shipped the gateway in March. ' * 10_000  # 330,000 characters
         facts = self.material(('small.txt', 'Hops add latency.'))
         examples = self.example(('big.md', big))
-        found = self.from_files(sources=facts + examples)
+        found = self.editor_run('factual-support', sources=facts + examples)
         self.assertEqual(found['excerpted'], ['big'])
         _, record, run = runner.load(self.root, found['id'])
         payload = runner.inputs(self.root, record, run)
@@ -2337,88 +2196,6 @@ class ExampleTests(FilesCase):
         self.assertFalse(
             synthesis_research.offered({'purposes': ['material'], 'status': 'pending'})
         )
-
-
-class PointTests(FilesCase):
-    """I know the point: a blog from files that starts at the outline, with no angles."""
-
-    def point(self, page=True, **extra):
-        return self.from_files(
-            page=page,
-            **{
-                'point': True,
-                'title': 'Announcing the gateway',
-                'goal': 'The gateway is generally available and retries are budgeted.',
-                'audience': 'Platform engineers',
-                **extra,
-            },
-        )
-
-    def test_the_point_builds_the_usual_pipeline_without_angles(self):
-        found = self.point()
-        self.assertEqual(
-            [row['stage'] for row in found['stages']], ['outline', 'draft', 'review', 'package']
-        )
-        self.assertEqual(found['mode'], 'from-files')
-        self.assertEqual(found['next'], 'outline')
-        self.assertEqual(found['title'], 'Announcing the gateway')
-        _, record, run = runner.load(self.root, found['id'])
-        self.assertIs(run['angles'], False)
-        self.assertNotIn('after_angles', run)
-        self.assertEqual(
-            run['brief']['goal'], 'The gateway is generally available and retries are budgeted.'
-        )
-        self.assertEqual(run['brief']['audience'], 'Platform engineers')
-        self.assertEqual(len(record['material']), 2)
-        self.assertEqual(record['stop_point'], 'package')
-        _, payload, guidance = runner.job(self.root, found['id'])
-        self.assertEqual([source['name'] for source in payload['sources']], ['notes', 'plain'])
-        self.assertNotIn('three', guidance.lower())
-        # The person's title and point steer which passages of a large file are kept.
-        self.assertIn('gateway', runner.run_terms(record, run))
-        web = self.point(research='web-allowed', stop='draft')
-        self.assertEqual(
-            [row['stage'] for row in web['stages']],
-            ['research-plan', 'research', 'outline', 'draft'],
-        )
-        _, record, run = runner.load(self.root, web['id'])
-        self.assertEqual(record['research_policy'], 'web-allowed')
-        # An angles run says it has angles.
-        _, _, run = runner.load(self.root, self.from_files()['id'])
-        self.assertIs(run['angles'], True)
-
-    def test_the_point_needs_a_title_a_point_and_a_reader(self):
-        for missing in ('title', 'goal', 'audience'):
-            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, missing):
-                self.point(**{missing: ''})
-        with self.assertRaisesRegex(ValueError, 'from files'):
-            self.create(point=True)
-        with self.assertRaisesRegex(ValueError, 'point'):
-            self.from_files(point='yes')
-
-    def test_balanced_reads_the_draft_when_a_run_has_no_outline_stage(self):
-        import studios_config
-
-        studios_config.update({'review': {'level': 'balanced'}})
-        found = self.create(mode='from-outline', outline_text='## Supplied outline', page=True)
-        self.assertEqual([row['stage'] for row in found['stages']], ['draft', 'review', 'package'])
-        found = self.submit(found, page=True)
-        self.assertEqual(found['awaits'], 'decision')
-        self.assertFalse(found['stages'][0]['auto_accepted'])
-        found = self.submit(self.approve(found, page=True), page=True)  # the review
-        self.assertEqual(found['awaits'], 'submission')
-        self.assertTrue(found['stages'][1]['auto_accepted'])
-        found = self.submit(found, page=True)  # the package
-        self.assertEqual(found['awaits'], 'decision')
-        # A run with an outline still reads the outline and continues through the draft.
-        found = self.submit(self.create(page=True), page=True)
-        self.assertEqual(found['awaits'], 'decision')
-        found = self.submit(self.approve(found, page=True), page=True)
-        self.assertEqual(found['awaits'], 'submission')
-        self.assertTrue(found['stages'][1]['auto_accepted'])
-        # The point from files has an outline, so Balanced stops there and at the end.
-        found = self.submit(self.point(), page=True)
-        self.assertEqual(found['awaits'], 'decision')
 
 
 class WriteAsTests(RunnerCase):
@@ -2463,18 +2240,6 @@ class WriteAsTests(RunnerCase):
             },
         )
         self.assertEqual([p['status'] for p in found['profiles']], ['provisional'])
-        # Me writes with the pinned revision; an unknown or malformed one is refused.
-        pinned = self.create(profile=profile['id'], revision=1)
-        _, record, _ = runner.load(self.root, pinned['id'])
-        self.assertEqual(
-            record['voice'], {'mode': 'profile', 'profile_id': profile['id'], 'revision': 1}
-        )
-        with self.assertRaisesRegex(ValueError, 'revision'):
-            self.create(profile=profile['id'], revision=99)
-        with self.assertRaisesRegex(ValueError, 'revision'):
-            self.create(profile=profile['id'], revision='1')
-        with self.assertRaisesRegex(ValueError, 'profile'):
-            self.create(revision=1)
         # A default that no longer resolves is simply no default.
         import shutil
 
@@ -2484,9 +2249,10 @@ class WriteAsTests(RunnerCase):
 
 class ResearchAccountTests(RunnerCase):
     def research_run(self):
-        found = self.create(research='web-allowed')
+        """The editor's check of the facts with research: its plan and research saved, the
+        check gone on past both to its review."""
+        found = self.editor_run('factual-support', research='web-allowed')
         found = self.submit(found, '- **instance-min**: Minimum?')
-        found = self.approve(found)
         return self.submit(found, '# Synthetic research')
 
     def test_the_research_stage_view_carries_the_account(self):
@@ -2537,10 +2303,7 @@ class ResearchAccountTests(RunnerCase):
         self.assertNotIn('retained in research/', found['notes'])
 
     def test_a_research_change_is_priced(self):
-        found = self.research_run()
-        for _ in range(2):
-            found = self.approve(found)
-            found = self.submit(found)
+        found = self.submit(self.research_run())  # its review, after the research
         directory, record, run = runner.load(self.root, found['id'])
         run['research_contract'] = {'schema': 2}
         studio.write_json(directory / runner.STATE, run)
@@ -2557,7 +2320,7 @@ class ResearchAccountTests(RunnerCase):
         )
         words = runner.survey(self.root, found['id'])['research_price']['words']
         self.assertIn('48 minutes and $9.80', words)
-        self.assertTrue(words.endswith('Then it makes again: the outline and the draft.'))
+        self.assertTrue(words.endswith('Then it makes again: the review.'), words)
         runner.engine(self.root).keep_local(
             found['id'],
             {
@@ -2581,11 +2344,7 @@ class RefreshResearchTests(RunnerCase):
     def test_a_change_request_may_bring_the_research_up_to_date(self):
         import synthesis_research
 
-        found = self.create(research='web-allowed', page=True)
-        directory, record, run = runner.load(self.root, found['id'])
-        run['pipeline'] = [stage for stage in run['pipeline'] if stage != 'research-plan']
-        studio.write_json(directory / runner.STATE, run)
-        found = runner.survey(self.root, found['id'])
+        found = self.submit(self.editor_run('factual-support', research='web-allowed'))
         self.assertEqual(found['next'], 'research')
         found = runner.decide(
             self.root,
@@ -2652,14 +2411,14 @@ class RefreshResearchTests(RunnerCase):
                 'changes',
                 'Shorter.',
                 page=True,
-                target='outline',
+                target='review',
                 refresh=True,
             )
 
 
 class ResearchPlanningTests(RunnerCase):
     def test_the_research_plan_job_uses_its_own_module(self):
-        found = self.create(research='web-allowed')
+        found = self.editor_run('factual-support', research='web-allowed')
         _, payload, guidance = runner.job(self.root, found['id'])
         self.assertEqual(runner.GUIDES['research-plan'], 'modules/blog-research-plan.md')
         self.assertIn('You have no tools.', guidance)
@@ -2705,14 +2464,18 @@ class ClaimsMapTests(RunnerCase):
         ]:
             with self.subTest(role=role, status=status):
                 ident = self.role_source(role, status)
-                found = self.create(title=role + status, research='supplied-only', sources=[ident])
+                found = self.editor_run(
+                    'factual-support', research='supplied-only', sources=[ident]
+                )
                 self.assertNotIn('claims-map', [row['stage'] for row in found['stages']])
 
     def test_only_factual_material_reaches_the_map_and_direct_validation(self):
         fact = self.role_source('reference')
         voice = self.role_source('voice-sample')
         example = self.role_source('inspiration')
-        found = self.create(research='supplied-only', sources=[fact, voice, example])
+        found = self.editor_run(
+            'factual-support', research='supplied-only', sources=[fact, voice, example]
+        )
         directory, record, run = runner.load(self.root, found['id'])
         all_sources = runner.inputs(self.root, record, run)['sources']
         sample = next(source for source in all_sources if source['purposes'] == ['voice-sample'])
@@ -2725,11 +2488,9 @@ class ClaimsMapTests(RunnerCase):
         self.submit(found, self.line(payload['sources'][0]))
 
     def test_a_worker_cannot_make_a_voice_sample_into_claims(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         fact, voice = self.role_source('reference'), self.role_source('voice-sample')
-        found = self.create(page=True, research='supplied-only', sources=[fact, voice])
+        found = self.editor_run('factual-support', research='supplied-only', sources=[fact, voice])
+        self.assertEqual(found['next'], 'claims-map')
         directory, record, run = runner.load(self.root, found['id'])
         sample = next(
             source
@@ -2755,9 +2516,10 @@ class ClaimsMapTests(RunnerCase):
             )
         )
 
-    def mapped(self, page=False, **extra):
+    def mapped(self):
+        """The editor's check of the facts against supplied material: it maps their claims."""
         source = self.source(self.PASSAGE)
-        found = self.create(page=page, research='supplied-only', sources=[source['id']], **extra)
+        found = self.editor_run('factual-support', research='supplied-only', sources=[source['id']])
         directory, record, run = runner.load(self.root, found['id'])
         offered = runner.inputs(self.root, record, run)['sources'][0]
         return found, {**offered, 'selected_id': source['id']}
@@ -2773,13 +2535,12 @@ class ClaimsMapTests(RunnerCase):
 
     def test_supplied_only_research_maps_claims_instead(self):
         found, source = self.mapped()
-        self.assertEqual(
-            [s['stage'] for s in found['stages']],
-            ['claims-map', 'outline', 'draft', 'review', 'package'],
+        self.assertEqual([s['stage'] for s in found['stages']], ['claims-map', 'review'])
+        web = self.editor_run(
+            'factual-support', research='web-allowed', sources=[source['selected_id']]
         )
-        web = self.create(research='web-allowed', sources=[source['selected_id']])
         self.assertEqual([s['stage'] for s in web['stages']][:2], ['research-plan', 'research'])
-        empty = self.create(research='supplied-only')
+        empty = self.editor_run('factual-support', research='supplied-only')
         self.assertNotIn('claims-map', [s['stage'] for s in empty['stages']])
 
     def test_a_claims_map_passage_must_be_in_its_source(self):
@@ -2818,11 +2579,8 @@ class ClaimsMapTests(RunnerCase):
         )
 
     def test_a_claims_map_gets_one_correction(self):
-        # Runner code the editor's own runs still use: this run is marked as the
-        # manuscript editor's (RunnerCase.EDITOR), the only saved runs it goes on with.
-        self.EDITOR = 'revise'
         for corrected in (True, False):
-            found, source = self.mapped(page=True, title='Correction ' + str(corrected))
+            found, source = self.mapped()
             calls = []
 
             def worker(
@@ -2851,29 +2609,29 @@ class ClaimsMapTests(RunnerCase):
             self.assertEqual(len(calls), 2)
             self.assertIn('validation_error', calls[1])
             if corrected:
-                self.assertEqual(shown['status'], 'waiting-for-approval')
+                # The corrected map is saved and the check goes on to its review.
+                self.assertEqual((shown['status'], shown['next']), ('queued', 'review'))
             else:
                 self.assertEqual(shown['status'], 'failed')
                 self.assertIn(
                     'The claims map quoted passages that are not in your material: ', shown['error']
                 )
 
-    def test_balanced_continues_past_the_claims_map(self):
+    def test_the_check_continues_past_the_claims_map_at_every_level(self):
         import studios_config
 
-        # A new blog stops where new work stops, the shared level when it starts.
-        studios_config.update({'review': {'level': 'balanced'}})
-        found, source = self.mapped()
-        found = self.submit(found, self.line(source))
-        self.assertEqual(found['next'], 'outline')
-        self.assertEqual(found['stages'][0]['accepted_by'], 'review-policy')
-        studios_config.update({'review': {'level': 'step_by_step'}})
-        strict, source = self.mapped()
-        self.assertEqual(self.submit(strict, self.line(source))['next'], 'claims-map')
+        # The editor's check goes on to its review whatever the saved review level.
+        for level in ('balanced', 'step_by_step'):
+            with self.subTest(level=level):
+                studios_config.update({'review': {'level': level}})
+                found, source = self.mapped()
+                found = self.submit(found, self.line(source))
+                self.assertEqual(found['next'], 'review')
+                self.assertEqual(found['stages'][0]['accepted_by'], runner.EDITOR_CHECK)
 
     def test_later_stages_receive_the_claims_map(self):
         found, source = self.mapped()
-        found = self.approve(self.submit(found, self.line(source)))
+        found = self.submit(found, self.line(source))
         _, payload, _ = runner.job(self.root, found['id'])
         self.assertEqual(payload['documents']['claims-map'], self.line(source))
         self.assertIn('claims-map', blog_worker.POLICY)
@@ -2891,9 +2649,12 @@ class ClaimsMapTests(RunnerCase):
 
 
 class GateCheckTests(RunnerCase):
-    def drafted(self, text='# Draft\n\nSynthetic writing.', **settings):
-        found = self.approve(self.submit(self.create(page=True, **settings), page=True), page=True)
-        return self.submit(found, text, page=True)
+    def drafted(self, text='# Draft\n\nSynthetic writing.', profile=None):
+        """The editor's revision with its draft saved, gone on to its review."""
+        ident = self.article()
+        if profile:
+            self.command('article', 'voice', '--id', ident, '--profile', profile)
+        return self.submit(self.editor_check(ident, 'revise'), text)
 
     def test_checks_show_what_lint_found(self):
         guide, rules = self.base / 'voice.md', self.base / 'rules.json'
@@ -2920,6 +2681,8 @@ class GateCheckTests(RunnerCase):
     def test_old_preservation_notes_are_read_as_a_check(self):
         found = self.drafted()
         directory, record, run = runner.load(self.root, found['id'])
+        # An older run kept its preservation check in its notes, not beside them.
+        run['stages']['draft'].pop('preservation', None)
         run['stages']['draft']['notes'] = 'Useful note.\nPreservation check: ' + json.dumps(
             {'needs_review': True, 'changes': {'numbers': {'before': ['12'], 'after': ['13']}}}
         )
@@ -2931,7 +2694,7 @@ class GateCheckTests(RunnerCase):
         )
 
     def test_preservation_is_data_and_survives_into_the_review(self):
-        found = self.approve(self.drafted('# Draft\n\nKeep 12 units.'), page=True)
+        found = self.drafted('# Draft\n\nKeep 12 units.')
         found = runner.decide(
             self.root,
             found['id'],
@@ -2945,18 +2708,19 @@ class GateCheckTests(RunnerCase):
         _, _, run = runner.load(self.root, found['id'])
         self.assertTrue(run['stages']['draft']['preservation']['needs_review'])
         self.assertNotIn('Preservation check:', run['stages']['draft']['notes'])
-        found = self.submit(self.approve(found, page=True), page=True)
+        found = self.submit(found)  # its review
         rows = runner.document(self.root, found['id'], 'review')['checks']
         self.assertTrue(any(row['label'] == 'Numbers, links or quotations changed' for row in rows))
 
     def test_no_always_true_rows(self):
-        found = self.submit(self.create(page=True), page=True)
+        found = self.submit(self.editor_run('factual-support', research='web-allowed'))
         labels = [
-            row['label'] for row in runner.document(self.root, found['id'], 'outline')['checks']
+            row['label']
+            for row in runner.document(self.root, found['id'], 'research-plan')['checks']
         ]
         self.assertNotIn('Saved document contains readable text', labels)
         self.assertNotIn('Document matches its submitted version and selected inputs', labels)
-        self.assertEqual(labels, ['No automatic checks apply to Outline.'])
+        self.assertEqual(labels, ['No automatic checks apply to Research questions.'])
 
 
 class MessagingTests(FilesCase):
@@ -2991,12 +2755,12 @@ class MessagingTests(FilesCase):
     def test_the_stance_reaches_the_payload_only_with_messaging(self):
         facts = self.material(('notes.md', 'Retries cost money. ' * 40))
         brief = self.messaging(('launch-brief.md', self.BRIEF))
-        found = self.create(sources=facts + brief, research='none')
+        found = self.editor_run('factual-support', sources=facts + brief)
         _, record, run = runner.load(self.root, found['id'])
         stances = {s['name']: s['stance'] for s in runner.inputs(self.root, record, run)['sources']}
         self.assertEqual(stances, {'notes': 'evidence', 'launch-brief': 'messaging'})
         # Without messaging, no source carries a stance, so saved pins hold byte for byte.
-        plain = self.create(sources=facts, research='none', title='Plain')
+        plain = self.editor_run('factual-support', sources=facts)
         _, record, run = runner.load(self.root, plain['id'])
         self.assertTrue(
             all('stance' not in s for s in runner.inputs(self.root, record, run)['sources'])
@@ -3005,19 +2769,19 @@ class MessagingTests(FilesCase):
     def test_the_writer_is_told_what_messaging_means(self):
         self.assertIn("stance 'messaging'", blog_worker.POLICY)
         self.assertIn('without attribution hedges', blog_worker.POLICY)
-        found = self.create(
-            sources=self.messaging(('launch-brief.md', self.BRIEF)), research='none'
-        )
-        found = self.approve(self.submit(found))  # outline
+        # The editor's revision writes its draft with the messaging among its sources.
+        found = self.editor_run('revise', sources=self.messaging(('launch-brief.md', self.BRIEF)))
+        self.assertEqual(found['next'], 'draft')
         _, payload, guidance = runner.job(self.root, found['id'])
         self.assertEqual(payload['sources'][0]['stance'], 'messaging')
-        self.assertIn('| Approved messaging |', guidance)
         self.assertIn('dates, versions and entitlements', guidance)
-        self.assertIn('claim the messaging makes', guidance)
+        self.assertIn("the messaging's other claims are the product's own", guidance)
 
     def test_the_claims_map_reads_messaging_as_the_products_own_claims(self):
-        found = self.create(
-            sources=self.messaging(('launch-brief.md', self.BRIEF)), research='supplied-only'
+        found = self.editor_run(
+            'factual-support',
+            research='supplied-only',
+            sources=self.messaging(('launch-brief.md', self.BRIEF)),
         )
         self.assertEqual(found['next'], 'claims-map')
         _, payload, guidance = runner.job(self.root, found['id'])
@@ -3033,8 +2797,9 @@ class ReaderFacingNotesTests(RunnerCase):
     ]
     GAPS = ['The confirmed release version and date.']
 
-    def at_draft(self, page=False):
-        found = self.approve(self.submit(self.create(page=page), page=page), page=page)
+    def at_draft(self):
+        """The editor's revision, its draft step next."""
+        found = self.editor_run('revise')
         self.assertEqual(found['next'], 'draft')
         return found
 
@@ -3116,7 +2881,13 @@ class ReaderFacingNotesTests(RunnerCase):
         # The review and the handoff check the draft too, and a clean draft passes.
         found = self.submit(
             runner.decide(
-                self.root, found['id'], found['expected'], 'changes', 'Clean it.', target='draft'
+                self.root,
+                found['id'],
+                found['expected'],
+                'changes',
+                'Clean it.',
+                page=True,
+                target='draft',
             ),
             '# Draft\n\nIt retries twice.\n',
         )
@@ -3186,106 +2957,61 @@ class ReaderFacingNotesTests(RunnerCase):
 
 
 class LengthAndQualificationTests(RunnerCase):
-    """Qualify once, and write to the depth asked for."""
+    """Qualify once, and a length is for new writing only."""
 
-    def guidance_at(self, stage, **extra):
-        found = self.create(**extra)
-        while found['next'] != stage:
-            found = self.approve(self.submit(found))
-        return runner.load(self.root, found['id'])[2], runner.job(self.root, found['id'])[2]
+    def test_a_revision_is_written_to_no_length(self):
+        # A run the earlier flow saved with a length keeps it in its record, and the editor's
+        # check makes its run again over that record: its revision is an edit, never resized.
+        ident = self.article()
+        self.editor_check(ident, 'proofread')
+        directory, _, run = runner.load(self.root, ident)
+        studio.write_json(directory / runner.STATE, {**run, 'length': 'deep'})
+        found = self.editor_check(ident, 'revise')
+        self.assertEqual(runner.load(self.root, found['id'])[2]['length'], 'deep')
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertNotIn(runner.LENGTHS['deep'], guidance)
+        self.assertIn('minimal edit, not a rewrite', guidance)
 
-    def test_length_is_chosen_pinned_and_written_to(self):
-        run, guidance = self.guidance_at('draft')
-        self.assertEqual(run['length'], 'style')
-        self.assertNotIn('about twice', guidance)
-        self.assertNotIn('about half', guidance)
-        run, guidance = self.guidance_at('draft', length='deep', title='Deep')
-        self.assertEqual(run['length'], 'deep')
-        self.assertIn('about twice', guidance)
-        self.assertIn('one worked example or proof point', guidance)
-        _, outline = self.guidance_at('outline', length='short', title='Short')
-        self.assertIn('about half', outline)
-        with self.assertRaisesRegex(ValueError, 'length'):
-            self.create(length='long', title='Refused')
-        args = studio.parser().parse_args(
-            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
-            + ['--title', 'Chat', '--research', 'none', '--length', 'deep']
-        )
-        with self.assertRaisesRegex(ValueError, 'desk create --input'):
-            runner.command(self.root, args)
-        chat = runner.create(
-            self.root,
-            {'title': 'Chat', 'audience': 'A', 'goal': 'G', 'research': 'none', 'length': 'deep'},
-        )
-        self.assertEqual(runner.load(self.root, chat['id'])[2]['length'], 'deep')
+    def test_a_revision_is_only_ever_an_edit_of_the_saved_manuscript(self):
+        found = self.editor_run('revise')
+        self.assertEqual(found['next'], 'draft')
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertNotIn('Revise the supplied manuscript', guidance)
+        # With no manuscript text to edit, there is nothing to revise: no draft is written
+        # from a writing guide instead.
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        (directory / 'DRAFT.md').write_text('\n')
+        with self.assertRaisesRegex(ValueError, 'Save a manuscript before revising it.'):
+            runner.job(self.root, found['id'])
+        self.assertNotIn('draft', runner.GUIDES)
 
-    def test_length_names_only_what_applies(self):
-        # No kind of post is chosen here: the guidance names no style and no capability.
-        _, guidance = self.guidance_at('draft', length='deep', title='Deep')
-        self.assertIn('about twice the usual length for this kind of post', guidance)
-        self.assertIn('for each main point', guidance)
-        line = next(p for p in guidance.split('\n') if p.startswith('Length:'))
-        self.assertNotIn('style', line)
-        self.assertNotIn('capabilit', line)
-        _, outline = self.guidance_at('outline', length='short', title='Short')
-        line = next(p for p in outline.split('\n') if p.startswith('Length:'))
-        self.assertIn('about half the usual length for this kind of post', line)
-        self.assertNotIn('capabilit', line)
-
-    def test_length_is_refused_where_it_has_no_effect(self):
-        # A review, a revision and three ideas write no new outline or draft to a length.
-        source = self.source('# A supplied manuscript\nA fictional gateway routes requests.')
-        for mode, extra in (
-            ('review', {'manuscript': source['id']}),
-            ('revise', {'manuscript': source['id']}),
-            ('ideas', {}),
-        ):
-            with self.subTest(mode=mode):
-                before = sorted((self.root / 'articles').iterdir())
-                with self.assertRaisesRegex(
-                    ValueError,
-                    r'^Length is for new writing, so a review, a revision or three ideas '
-                    r'takes none\. Nothing was started\.$',
-                ):
-                    self.create(mode=mode, length='deep', title='No ' + mode, **extra)
-                self.assertEqual(sorted((self.root / 'articles').iterdir()), before)
-                # The usual length is accepted, as the page sends nothing for it.
-                self.create(mode=mode, length='style', title='Usual ' + mode, **extra)
-        args = studio.parser().parse_args(
-            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
-            + ['--title', 'Ideas', '--mode', 'ideas', '--length', 'short']
-        )
-        with self.assertRaisesRegex(ValueError, 'desk create --input'):
-            runner.command(self.root, args)
-
-    def test_the_writer_qualifies_once_and_builds_each_capability(self):
-        _, guidance = self.guidance_at('draft')
-        self.assertIn('State a limitation once', guidance)
-        self.assertIn('what it does, how it works', guidance)
-        self.assertIn('"is described as"', guidance)
-        _, outline = self.guidance_at('outline', title='Outline')
-        self.assertIn('State a limitation once', outline)
-        _, review = self.guidance_at('review', title='Review')
-        self.assertIn('repeated in three or more sections', review)
+    def test_the_review_checks_a_limitation_is_qualified_once(self):
+        guidance = runner.job(self.root, self.editor_run('shape')['id'])[2]
+        self.assertIn('repeated in three or more sections', guidance)
 
     def test_the_point_is_the_angle_and_the_style_sets_the_register(self):
-        _, plan = self.guidance_at(
-            'research-plan', research='web-allowed', sources=[self.source()['id']], title='Plan'
+        plan = self.editor_run(
+            'factual-support', research='web-allowed', sources=[self.source()['id']]
         )
-        self.assertIn('Read the point to make as the angle', plan)
-        _, draft = self.guidance_at('draft', style='product-announcement', title='Styled')
-        self.assertIn('the house guide still decides mechanics', draft)
+        self.assertEqual(plan['next'], 'research-plan')
+        self.assertIn('Read the point to make as the angle', runner.job(self.root, plan['id'])[2])
+        ident = self.article()
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = studio.style_pin(self.root, 'product-announcement')
+        studio.persist(directory, 'articles', record)
+        review = runner.job(self.root, self.editor_check(ident, 'shape')['id'])[2]
+        self.assertIn('the house guide still decides mechanics', review)
 
 
 class ReviewFixTests(RunnerCase):
-    """Final review: notes survive edits, reach the review, and the handoff is checked."""
+    """Final review: notes survive edits, reach the review, and a saved handoff is checked."""
 
     EVIDENCE, GAPS = ReaderFacingNotesTests.EVIDENCE, ReaderFacingNotesTests.GAPS
-    at_draft = ReaderFacingNotesTests.at_draft
 
-    def drafted(self, page=False, **extra):
-        found = self.create(page=page, **extra)
-        found = self.approve(self.submit(found, page=page), page=page)
+    def drafted(self, **extra):
+        """The editor's revision with a draft saved beside its notes, gone on to its review."""
+        found = self.editor_run('revise', **extra)
         return runner.submit(
             self.root,
             found['id'],
@@ -3297,29 +3023,33 @@ class ReviewFixTests(RunnerCase):
                 'gaps': self.GAPS,
             },
             found['expected'],
-            page=page,
+            page=True,
         )
 
     def test_the_review_reads_the_drafts_evidence(self):
-        found = self.approve(self.drafted(sources=[self.source()['id']]))
+        source = self.source()['id']
+        found = self.drafted(sources=[source])
+        self.assertEqual(found['next'], 'review')
+        # A check of the facts on the revised blog reads the claims its draft noted.
+        found = self.editor_check(found['id'], 'factual-support', sources=[source])
         self.assertEqual(found['next'], 'review')
         _, payload, guidance = runner.job(self.root, found['id'])
         self.assertEqual(payload['evidence'], self.EVIDENCE)
         self.assertIn('evidence lists', guidance)
 
-    def test_the_handoff_is_checked_for_notes_outside_its_gaps(self):
-        found = self.approve(self.submit(self.approve(self.drafted())))
-        self.assertEqual(found['next'], 'package')
-        _, payload, guidance = runner.job(self.root, found['id'])
-        self.assertIn('evidence stays empty', guidance)
-        found = self.submit(
-            found,
+    def test_a_saved_handoff_is_checked_for_notes_outside_its_gaps(self):
+        import saved_fixtures
+
+        # A handoff the earlier flow saved is still read with its checks.
+        ident = saved_fixtures.load(self.root, 'handoff-gate')
+        directory, _ = studio.item(self.root, 'articles', ident)
+        (directory / 'derived/blog-package.md').write_text(
             '# Handoff\n\nDescription: Retries twice [source-abc123].\n\n'
-            '## Needs you before publishing\n\n- [Editorial placeholder: the date]\n',
+            '## Needs you before publishing\n\n- [Editorial placeholder: the date]\n'
         )
         row = next(
             c
-            for c in runner.document(self.root, found['id'], 'package')['checks']
+            for c in runner.document(self.root, ident, 'package')['checks']
             if 'handoff' in c['label']
         )
         self.assertEqual(
@@ -3345,63 +3075,39 @@ class ReviewFixTests(RunnerCase):
 
 
 class SharedGuidanceTests(RunnerCase):
-    """The writing desk reads the same house guide, style rule and length as a run's steps;
-    pulling them into helpers left a run's guidance exactly as it was."""
+    """The writing desk reads the same house guide and style rule as a run's steps; pulling
+    them into helpers left a run's guidance exactly as it was."""
 
-    def test_a_styled_runs_outline_guidance_is_unchanged(self):
-        found = self.create(style='how-to', length='deep', tone='Warm and direct')
-        _, payload, guidance = runner.job(self.root, found['id'])
+    def test_a_styled_runs_review_guidance_is_unchanged(self):
+        ident = self.article()
+        self.command('article', 'voice', '--id', ident, '--voice', 'tone', '--tone', 'Warm')
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = studio.style_pin(self.root, 'how-to')
+        studio.persist(directory, 'articles', record)
+        found = self.editor_check(ident, 'shape')  # Feedback on the shape reads the style.
         references = Path(runner.__file__).resolve().parents[1] / 'references'
-        expected_tail = (
+        _, payload, guidance = runner.job(self.root, found['id'])
+        tail = (
             '\n\n'
             + (references / 'style/house.md').read_text()
             + '\n\nSELECTED STYLE: '
             + payload['style']['name']
-            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
-            'structure, moves, length, headings and register. The selected voice says how its '
-            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
-            'on structure, the style wins. Neither invents facts, experience or sources. Where '
-            'the style’s register differs from the house guide’s tone defaults, the style wins; '
-            'the house guide still decides mechanics.' + '\n\n' + runner.LENGTHS['deep']
+            + '. Its guide is in style.guide. The style says the shape of this kind of '
+            'writing: structure, moves, length, headings and register. The selected voice '
+            'says how its author sounds. Where they conflict on wording, the voice wins; '
+            'where they conflict on structure, the style wins. Neither invents facts, '
+            'experience or sources. Where the style’s register differs from the house '
+            'guide’s tone defaults, the style wins; the house guide still decides mechanics.'
         )
-        self.assertEqual(guidance.count(expected_tail), 1)
+        self.assertEqual(guidance.count(tail), 1)
         self.assertEqual(
-            guidance.split(expected_tail)[0],
+            guidance.split(tail)[0],
             runner.brief_line(self.root, runner.load(self.root, found['id'])[1], payload)
             + '\n\n'
-            + runner.STAGES['outline'][2]
+            + runner.STAGES['review'][2]
             + '\n\n'
-            + (references / runner.GUIDES['outline']).read_text(),
+            + (references / runner.GUIDES['review']).read_text(),
         )
-
-    def test_a_styled_runs_draft_review_and_package_guidance_is_unchanged(self):
-        found = self.create(style='how-to', length='deep', tone='Warm and direct', page=True)
-        references = Path(runner.__file__).resolve().parents[1] / 'references'
-        house = (references / 'style/house.md').read_text()
-        seen = []
-        for _ in range(4):
-            found = runner.survey(self.root, found['id'])
-            if found['complete']:
-                break
-            _, payload, guidance = runner.job(self.root, found['id'])
-            stage = found['next']
-            seen.append(stage)
-            style = (
-                '\n\nSELECTED STYLE: '
-                + payload['style']['name']
-                + '. Its guide is in style.guide. The style says the shape of this kind of '
-                'writing: structure, moves, length, headings and register. The selected voice '
-                'says how its author sounds. Where they conflict on wording, the voice wins; '
-                'where they conflict on structure, the style wins. Neither invents facts, '
-                'experience or sources. Where the style’s register differs from the house '
-                'guide’s tone defaults, the style wins; the house guide still decides mechanics.'
-            )
-            tail = '\n\n' + house + style
-            if stage in ('outline', 'draft'):
-                tail += '\n\n' + runner.LENGTHS['deep']
-            else:
-                self.assertNotIn(runner.LENGTHS['deep'], guidance)
-            self.assertEqual(guidance.count(tail), 1, stage)
-            self.submit(found, page=True)
-            self.approve(runner.survey(self.root, found['id']), page=True)
-        self.assertEqual(seen, ['outline', 'draft', 'review', 'package'])
+        for length in runner.LENGTHS.values():
+            if length:
+                self.assertNotIn(length, guidance)

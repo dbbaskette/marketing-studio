@@ -431,24 +431,6 @@ class DraftJobTests(WritingJobCase):
         self.assertIn('part.brief says what this section must do', saved['guidance'])
         self.assertEqual(saved['payload']['part']['brief'], 'Retry from the last checkpoint.')
 
-    def test_a_run_from_an_outline_keeps_its_own_guidance(self):
-        found = blog_runner.create(
-            self.root,
-            {
-                'title': 'A run',
-                'goal': 'Explain.',
-                'audience': 'Readers',
-                'mode': 'from-outline',
-                'outline_text': OUTLINE,
-                'research': 'none',
-            },
-            approval='page',
-        )
-        _, _, guidance = blog_runner.job(self.root, found['id'])
-        self.assertIn('\n' + blog_runner.FROM_OUTLINE, guidance)
-        self.assertIn('\n' + blog_runner.WRITING_NOTES, guidance)
-        self.assertIn('\n' + blog_runner.GAPS_OPEN, guidance)
-
 
 class ChainCase(RouteCase):
     """A start runs on its own, step after step, through the single tool worker."""

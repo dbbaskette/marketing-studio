@@ -1,5 +1,6 @@
 """One blog pipeline shared by conversation guidance and the local browser runner."""
 
+import argparse
 import json
 import difflib
 import os
@@ -9,7 +10,6 @@ import shutil
 import threading
 import tempfile
 import time
-from types import SimpleNamespace
 import uuid
 
 import studio
@@ -83,13 +83,14 @@ STAGES = {
         'description, links to check and unresolved review findings. Do not publish anything.',
     ),
 }
+# What each stage's job reads. A draft has none: it is only ever an edit of the saved
+# manuscript (job), which reads the minimal-edits guide.
 GUIDES = {
     'angles': 'modules/blog-argument-outline.md',
     'claims-map': 'modules/blog-claims-map.md',
     'research-plan': 'modules/blog-research-plan.md',
     'research': 'modules/blog-deep-research.md',
     'outline': 'modules/blog-argument-outline.md',
-    'draft': 'modules/blog-write.md',
     'review': 'modules/copy-editing.md',
     'package': 'modules/blog-repurpose.md',
 }
@@ -103,9 +104,13 @@ DEFAULTS = {
     'tone': 'Clear, conversational and specific',
     'author': '',
 }
-MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review', 'from-files')
+# The one mode create() makes: the manuscript editor's review of a saved manuscript. Saved
+# runs keep the modes the earlier flow wrote (write, outline, from-outline, ideas, revise,
+# from-files), which are read, never made.
+MODES = ('review',)
 # How long new writing runs, beside its kind of post: the usual length by default. It names
-# no style and no capability, so it reads true for any kind of post, chosen or not.
+# no style and no capability, so it reads true for any kind of post, chosen or not. The desk
+# offers it; a saved run keeps the one it started with.
 LENGTHS = {
     'style': '',
     'short': 'Length: about half the usual length for this kind of post. Keep each main '
@@ -114,11 +119,6 @@ LENGTHS = {
     'example or proof point from the material for each main point. Develop; do not pad or '
     'invent.',
 }
-# Length takes effect only where an outline or a draft is written new.
-NO_LENGTH = (
-    'Length is for new writing, so a review, a revision or three ideas takes none. '
-    'Nothing was started.'
-)
 MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
@@ -129,6 +129,11 @@ MATERIAL_ELSEWHERE = (
 SAVED_FLOW = (
     'The earlier step-by-step flow no longer continues this blog: open it on the desk, or '
     'start new work from it.'
+)
+# A step the manuscript editor's check already went past changed before its next step ran.
+STALE_CHECK = (
+    'The blog or what this check reads changed while the check ran, so it stopped. Your '
+    'manuscript is unchanged; start the check again.'
 )
 
 
@@ -996,22 +1001,27 @@ def survey(root, ident, listing=False):
                 'path': STAGES[name][1],
                 'notes': saved.get('notes', ''),
                 'accepted_by': saved.get('accepted_by'),
-                # Accepted by the saved review level, not the person; it needs no approval.
-                'auto_accepted': status == 'approved'
-                and saved.get('accepted_by') == 'review-policy',
+                # Continued by the editor's check or the saved review level, not the person;
+                # it needs no approval.
+                'auto_accepted': status == 'approved' and saved.get('accepted_by') in CONTINUED,
                 'request': saved.get('request', ''),
             }
         )
     # What is left: the stages not yet approved, and the first of them that stops for the
     # person under this run's own level. The angles always do: the person picks one.
     left = [row['stage'] for row in rows if row['status'] != 'approved']
-    stops_ahead = review_policy.ahead(
-        run,
-        'blog',
-        [stage for stage in left if stage != 'angles'],
-        last=run['pipeline'][-1],
-        first='outline' if 'outline' in run['pipeline'] else 'draft',
-    )
+    if run.get('editor_check'):
+        # The manuscript editor's check accepts its own steps and stops only at its review,
+        # whatever the saved review level says.
+        stops_ahead = [run['pipeline'][-1]] if left else []
+    else:
+        stops_ahead = review_policy.ahead(
+            run,
+            'blog',
+            [stage for stage in left if stage != 'angles'],
+            last=run['pipeline'][-1],
+            first='outline' if 'outline' in run['pipeline'] else 'draft',
+        )
     next_gate = 'angles' if 'angles' in left else (stops_ahead[0] if stops_ahead else None)
     ahead = {
         'steps_left': len(left),
@@ -1058,7 +1068,9 @@ def survey(root, ident, listing=False):
         'approval': run['approval'],
         'engine': run['engine'],
         'model_mode': (run.get('model_profiles') or {}).get('mode', 'single'),
-        'review_level': review_policy.level(run),
+        # A run the manuscript editor's check made never applied the saved level: the check
+        # accepted its own steps, so the view names no level for it.
+        'review_level': None if run.get('editor_check') else review_policy.level(run),
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
@@ -1201,147 +1213,67 @@ def research_says(value):
     return 'Research ' + research_sites.summary(value) + '.' if value else 'No research.'
 
 
-def chosen_research(data, mode):
-    """(research, chosen): the research policy word this blog starts with, and where its
-    research may look in the shared shape before documents are counted, or None for no
-    research. A form sends research_from; the older research words are still read."""
-    if 'research_from' in data:
-        if 'research' in data:
-            raise ValueError('Choose where research may look, or no research, not both.')
-        chosen = research_sites.choice(data['research_from'])
-        return ('web-allowed' if research_sites.fetches(chosen) else 'supplied-only'), chosen
-    research = data.get(
-        'research', 'none' if mode in ('revise', 'review', 'ideas') else 'supplied-only'
-    )
+def chosen_research(data):
+    """(research, chosen): the research word the editor's check asked for (none, your
+    documents, or your documents and the public web), and where its research may look in
+    the shared shape before documents are counted, or None for no research."""
+    research = data.get('research', 'none')
     if research not in OLD_RESEARCH:
         raise ValueError('Choose supplied sources, public research, or no research.')
-    if mode == 'from-files' and research == 'none':
-        research = 'supplied-only'  # The files are the sources; the web is the only option.
     return research, research_sites.legacy(research)
 
 
+# What the manuscript editor's check asks create() for, its only caller: a review of a saved
+# manuscript with no run yet (Edit manuscript; manuscript_editor.dispatch, `check`). A revise
+# check then puts a draft step before the review. New work starts on the desk.
+EDITOR_FIELDS = {
+    'id',
+    'mode',
+    'goal',
+    'audience',
+    'research',
+    'stop',
+    'sources',
+    'engine',
+    'brand',
+    'variant',
+}
+EDITOR_ONLY = (
+    'A step-by-step run is made only by the manuscript editor’s check of a saved manuscript. '
+    'New Blog Studio work starts on the desk.'
+)
+
+
 def create(root, data, approval='conversation'):
+    """The run the manuscript editor's check makes for a saved manuscript that has none: its
+    review, after the research the check asked for. Every other mode is refused, before
+    anything is read or written."""
     data = dict(data)
+    if data.get('mode') not in MODES or not isinstance(data.get('id'), str):
+        raise ValueError(EDITOR_ONLY)
     defaults = settings(root)['defaults']
     data.setdefault('engine', defaults['engine'])
-    data.setdefault('author', defaults['author'])
     if 'brand' not in data:
         import brand_skill
 
         for key, value in brand_skill.defaults().items():
             data.setdefault(key, value)
-    allowed = {
-        'id',
-        'title',
-        'author',
-        'audience',
-        'goal',
-        'tone',
-        'profile',
-        'style',
-        'sources',
-        'research',
-        'stop',
-        'engine',
-        'seconds',
-        'mode',
-        'manuscript',
-        'outline_text',
-        'brand',
-        'variant',
-        'point',
-        'revision',
-        'library',
-        'length',
-        'research_from',
-    }
-    if set(data) - allowed:
+    if set(data) - EDITOR_FIELDS:
         raise ValueError('Unknown new-blog field.')
-    mode = data.get('mode', 'write')
-    if mode not in MODES:
-        raise ValueError(
-            'Choose write, outline, from-outline, ideas, revise, review or from-files.'
-        )
-    # I know the point: a blog from files that starts at the outline instead of three angles.
-    point = data.get('point', False)
-    if point not in (True, False):
-        raise ValueError('Say whether you know the point: true or false.')
-    if point and mode != 'from-files':
-        raise ValueError('The point you know starts a blog from files.')
-    outline_text = text(
-        data.get('outline_text', ''), 'outline', 200_000, required=mode == 'from-outline'
-    )
-    manuscript = None
-    if data.get('manuscript'):
-        if mode not in ('revise', 'review'):
-            raise ValueError('Choose revise or review to start from a manuscript.')
-        if data.get('id'):
-            raise ValueError('Choose a saved blog or a supplied manuscript, not both.')
-        folder, source = studio.item(root, 'sources', data['manuscript'])
-        path = studio.inside(folder, 'content.md')
-        if source['status'] != 'ready' or not path.is_file() or not path.read_text().strip():
-            raise ValueError('Choose a draft with readable text.')
-        manuscript = path.read_text()
-        if len(manuscript) > 200_000:
-            raise ValueError('Use a manuscript up to 200,000 characters.')
-    if mode in ('revise', 'review') and not (data.get('id') or manuscript):
-        raise ValueError('Choose an existing blog or upload a draft first.')
-    engine = data.get('engine', 'codex')
+    if data.get('stop', 'review') != 'review':
+        raise ValueError(EDITOR_ONLY)
+    engine = data['engine']
     if engine not in ('codex', 'claude'):
         raise ValueError('Choose Codex or Claude.')
-    seconds = data.get('seconds', 900)
-    if type(seconds) is not int or not 30 <= seconds <= 3600:
-        raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
-    research, chosen = chosen_research(data, mode)
-    stop = data.get('stop', 'package')
-    if mode in ('outline', 'ideas'):
-        stop = 'outline'
-    elif mode == 'review':
-        stop = 'review'
-    elif mode == 'revise' and stop == 'outline':
-        raise ValueError('A revision starts at draft. Choose draft, review or the handoff.')
-    if stop not in ('outline', 'draft', 'review', 'package'):
-        raise ValueError('Choose outline, draft, review or the handoff.')
-    length = data.get('length', 'style')
-    if length not in LENGTHS:
-        raise ValueError('Choose a length: the usual length, short or in depth.')
-    if length != 'style' and (mode in ('revise', 'review', 'ideas') or manuscript):
-        raise ValueError(NO_LENGTH)
-    from_files = mode == 'from-files'
-    angles_first = from_files and not point
+    research, chosen = chosen_research(data)
     brief = {
-        'goal': text(data.get('goal', ''), 'goal', required=not angles_first)
-        or 'Write a blog from the uploaded files.',
-        'audience': text(data.get('audience', ''), 'audience', 500, required=not angles_first)
-        or 'To be chosen with the angle.',
+        'goal': text(data.get('goal', ''), 'goal', required=True),
+        'audience': text(data.get('audience', ''), 'audience', 500, required=True),
     }
     import brand_skill
 
     if not isinstance(data.get('brand', ''), str) or not isinstance(data.get('variant', ''), str):
         raise ValueError('Choose a listed brand and variant.')
-    title = text(
-        data.get('title', ''), 'title', 500, required=not data.get('id') and not angles_first
-    )
-    if from_files:
-        title = title or 'From my files'
-        if data.get('id') or manuscript or outline_text:
-            raise ValueError('Write from my files starts a new blog from uploaded files.')
-    profile = data.get('profile') or None
-    revision = data.get('revision')
-    if revision is not None and (type(revision) is not int or revision < 1):
-        raise ValueError('Choose a saved revision of the voice profile.')
-    if profile:
-        studio.voice_pin(root, profile, revision)
-    elif revision is not None:
-        raise ValueError('A voice revision needs its profile.')
-    tone = text(data.get('tone', ''), 'tone')
-    # Beside a voice, the tone is a nudge only when the person changed the usual one.
-    nudge = '' if tone == defaults.get('tone') else tone
-    style = data.get('style') or None
-    if style:
-        # Refused here if retired or unknown. Checking writes nothing: a starter is copied
-        # into the workspace only once the whole request has passed, below.
-        studio.style_check(root, style)
     sources = data.get('sources', [])
     if (
         not isinstance(sources, list)
@@ -1351,83 +1283,24 @@ def create(root, data, approval='conversation'):
         raise ValueError('Select at most %d different sources.' % MOST_SOURCES)
     for source in sources:
         studio.item(root, 'sources', source)
-    # Library items read with a role for this blog only; the library record is not changed.
-    picked = library_picks(root, data.get('library', []), sources)
-    if from_files:
-        readable = [
-            source
-            for source in sources + list(picked)
-            if studio.item(root, 'sources', source)[1]['status'] == 'ready'
-        ]
-        if not readable:
-            raise ValueError('Upload at least one file with text first.')
-    existing = bool(data.get('id') or manuscript)
-    if data.get('id'):
-        directory, record = studio.item(root, 'articles', data['id'])
-        if studio.inside(directory, STATE).exists():
-            raise ValueError('This blog already has a guided run. Open that run instead.')
-        existing = (directory / 'DRAFT.md').is_file() or (directory / 'ORIGINAL.md').is_file()
-        if mode in ('revise', 'review') and not existing:
-            raise ValueError('This blog has no saved manuscript to revise or review.')
-        if existing and stop in ('outline', 'draft') and mode != 'revise':
-            raise ValueError('An existing draft starts at review. Choose review or the handoff.')
-        if existing and length != 'style':
-            raise ValueError(NO_LENGTH)
-    else:
-        # No profile key: the default voice applies. An empty one is "No particular voice":
-        # the described tone. An ID pins that voice.
-        chose = 'profile' in data
-        args = SimpleNamespace(
-            action='create',
-            id=None,
-            title=title,
-            mode='existing'
-            if manuscript
-            else 'outline-only'
-            if stop == 'outline'
-            else 'first-draft',
-            profile=profile,
-            author=text(data.get('author', ''), 'author', 200) or None,
-            voice='tone' if chose else None,
-            tone=(nudge if profile else tone) if chose else None,
-            audience=brief['audience'],
-            blog_type=None,
-            review_folder=None,
-            stop='outline' if stop == 'outline' else 'review',
-            research='supplied-only' if research == 'none' else research,
-        )
-        ident = studio.new_id(title)
-        record = studio.article_record(root, args, ident)
-        if not chose and record['voice']['mode'] == 'preserve' and manuscript:
-            # A revise or review keeps the manuscript's own voice unless one is picked.
-            record['voice'] = {'mode': 'preserve', 'tone': nudge}
-        elif not chose and record['voice']['mode'] != 'profile':
-            record['voice'] = {'mode': 'tone', 'tone': tone}  # No default voice to apply.
-        elif not chose and nudge:
-            record['voice']['tone'] = nudge  # A nudge on top of the default voice.
-        directory = studio.inside(root, 'articles', ident)
-    if data.get('id') and mode == 'from-outline' and not existing:
-        record['mode'] = 'from-outline'
-        record['stop_point'] = stop
-    for source in sources + list(picked):
+    directory, record = studio.item(root, 'articles', data['id'])
+    if studio.inside(directory, STATE).exists():
+        raise ValueError('This blog already has a guided run. Open that run instead.')
+    if not ((directory / 'DRAFT.md').is_file() or (directory / 'ORIGINAL.md').is_file()):
+        raise ValueError('This blog has no saved manuscript to revise or review.')
+    for source in sources:
         _, source_record = studio.item(root, 'sources', source)
         record['sources'] = [s for s in record['sources'] if s['source_id'] != source] + [
             {
                 'source_id': source,
                 'revision': source_record['revision'],
-                'purposes': picked.get(source, source_record['purposes']),
+                'purposes': source_record['purposes'],
             }
         ]
-    if profile:
-        record['voice'] = {'mode': 'profile', **studio.voice_pin(root, profile, revision)}
-        if nudge:
-            record['voice']['tone'] = nudge
-    if style:
-        record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research
     record.pop('research_from', None)
-    # Your documents count only when there are some: the files, or readable selected facts.
-    given = from_files or bool(
+    # Your documents count only when there are some: readable selected facts.
+    given = bool(
         chosen
         and chosen['documents']
         and claims_map.material(inputs(root, record, {'brief': brief})['sources'])
@@ -1435,8 +1308,6 @@ def create(root, data, approval='conversation'):
     found = research_sites.effective(chosen, given) if chosen else None
     if found and not (found['documents'] or found['sites'] or found['web']):
         found = None  # Only your documents, and none were given: no research, as before.
-    if found and found['sites'] and not found['web'] and research_contract.snapshot() is None:
-        raise ValueError(NEEDS_HARNESS_RESEARCH)
     research = (
         'none'
         if found is None
@@ -1448,49 +1319,24 @@ def create(root, data, approval='conversation'):
     # The run's choice, with the exact list of sites it uses: a later change to the shared
     # list never changes a blog that has started.
     record['research_from'] = found
-    if from_files and research == 'supplied-only':
-        research = 'none'  # The files are read at every step; only the web adds research stages.
     pipeline = (
         []
         if research == 'none'
         else ['claims-map']
         if research == 'supplied-only'
         else ['research-plan', 'research']
-    )
-    pipeline += (
-        (['draft', 'review', 'package'] if mode == 'revise' else ['review', 'package'])
-        if existing
-        else ['draft', 'review', 'package']
-        if mode == 'from-outline'
-        else ['outline', 'draft', 'review', 'package']
-    )
-    pipeline = pipeline[: pipeline.index(stop) + 1]
-    if from_files:
-        record['stop_point'] = stop
-        record['mode'] = 'from-files'
-    if angles_first:
-        # Three angles first: a from-files run waited for the person to choose one.
-        pipeline = ['angles']
+    ) + ['review']
     run = {
         'schema': 1,
         'approval': approval,
         'engine': engine,
-        'seconds': seconds,
+        'seconds': 900,
         'brief': brief,
-        'existing': existing,
-        'mode': mode,
+        'existing': True,
+        'mode': 'review',
         'pipeline': pipeline,
         'stages': {},
-        'length': length,
     }
-    if from_files:
-        run['angles'] = angles_first
-        if angles_first:
-            run['after_angles'] = {'research': research, 'stop': stop}
-        # What the person said about the files: their note, or the title and point they know.
-        run['files_note'] = (
-            text(data.get('goal', ''), 'goal') if angles_first else title + '\n' + brief['goal']
-        )
     # The uploaded files this blog pinned; a deletion keeps them with it.
     record['material'] = [
         entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
@@ -1524,8 +1370,8 @@ def create(root, data, approval='conversation'):
         assistant.get('model') if same_agent else None,
         assistant.get('effort') if same_agent else None,
     )
-    # The brand writes the run's author voice beside its own naming rules: the voice the form
-    # chose or the default one, once it is settled. A tone-only or preserved voice gives none.
+    # The brand writes the run's author voice beside its own naming rules: the voice the blog
+    # pins. A tone-only or preserved voice gives none.
     pinned = record.get('voice') or {}
     handoff = (
         studio.voice_handoff(root, pinned['profile_id'], pinned.get('revision'))
@@ -1535,17 +1381,7 @@ def create(root, data, approval='conversation'):
     selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''), handoff)
     if selected_brand:
         run['brand'] = selected_brand
-    inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
-    if style:
-        record['style'] = studio.style_pin(root, style, record['style']['revision'])
-    if not data.get('id'):
-        directory.mkdir()
-        studio.write_json(studio.inside(root, '.active-article.json'), {'id': record['id']})
-    if outline_text:
-        studio.save_artifact(directory, 'outline', outline_text, record, 'author supplied outline')
-    if manuscript:
-        studio.save_artifact(directory, 'original', manuscript, record, 'supplied manuscript')
-        studio.save_artifact(directory, 'draft', manuscript, record, 'supplied manuscript')
+    inputs(root, record, run)  # Refuse unusable context before writing the run.
     save(root, directory, record, run, 'Created from ' + approval)
     return survey(root, record['id'])
 
@@ -1609,8 +1445,6 @@ def submit(root, ident, stage, result, expected, page=False):
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
     result = blog_worker.validate(result)
-    if stage == 'angles' and len(angles(result['content'])) != 3:
-        raise ValueError('Return exactly three angles, each under its own ## heading.')
     directory, record, run = load(root, ident)
     if stage == 'research' and run.get('research_contract'):
         research_contract.read_bundle(directory / 'research')
@@ -1637,7 +1471,7 @@ def submit(root, ident, stage, result, expected, page=False):
         from text_checks import preserve
 
         preservation = preserve((directory / 'DRAFT.md').read_text(), result['content'])
-    if stage in ('outline', 'draft'):
+    if stage == 'draft':
         studio.save_artifact(directory, stage, result['content'], record, 'guided run')
     else:
         path = studio.inside(directory, filename)
@@ -1667,24 +1501,24 @@ def submit(root, ident, stage, result, expected, page=False):
         'model_purpose': previous.get('model_purpose', stage),
         **({'preservation': preservation} if preservation is not None else {}),
     }
-    if stage != 'angles' and review_policy.automatic(
-        run,
-        'blog',
-        stage,
-        run['pipeline'][-1],
-        first='outline' if 'outline' in run['pipeline'] else 'draft',
-    ):
-        _accept(directory, run, stage, 'review-policy')
-        review_policy.receipt(run, stage, run['stages'][stage], studio.now())
+    continued = bool(run.get('editor_check')) and stage != run['pipeline'][-1]
+    if continued:
+        # The manuscript editor's check goes on through its stages to its review by itself:
+        # nobody approves a step before the review, so the step is recorded as continued by
+        # the check, never as approved by a person.
+        _accept(directory, run, stage, EDITOR_CHECK)
+        editor_receipt(run, stage, studio.now())
     if stage == 'research':
         # Saved research, from the page, chat or a handover, replaces any kept draft.
         shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
-    save(root, directory, record, run, 'Submitted ' + stage)
+    save(root, directory, record, run, 'Submitted ' + stage + (' · continued' if continued else ''))
     return survey(root, ident)
 
 
 # A draft's and a handoff's notes for the author, saved beside the stage: each claim's source
-# and passage, and what the author must supply before publishing. Never in the writing.
+# and passage, and what the author must supply before publishing. Never in the writing. Only
+# a draft is written now (the editor's revision); a handoff the earlier flow saved keeps its
+# notes, which its stage document still reads (document, gaps).
 NOTED = ('draft', 'package')
 
 
@@ -1718,6 +1552,30 @@ def gaps(directory, stage):
     if stage == 'package':
         found += [gap for gap in stage_notes(directory, 'draft')['gaps'] if gap not in found]
     return found
+
+
+# Who accepted a step that no person approved: the manuscript editor's check going on to its
+# review (EDITOR_CHECK), or, in runs the earlier flow saved, the saved review level.
+EDITOR_CHECK = 'editor-check'
+CONTINUED = (EDITOR_CHECK, 'review-policy')
+
+
+def editor_receipt(run, stage, at):
+    """Record that the manuscript editor's check accepted `stage`, where and as the review
+    level's own acceptance is recorded (review_policy.receipt), bound to the same evidence.
+    The saved review level is kept for the record but marked as not applied: the check
+    accepts its own steps whatever the level says."""
+    run.setdefault('review_events', []).append(
+        {
+            'gate': stage,
+            'by': EDITOR_CHECK,
+            'level': review_policy.level(run),
+            'level_applied': False,
+            'evidence': review_policy.fingerprint(run['stages'][stage]),
+            'at': at,
+            'decision': 'continued-automatically',
+        }
+    )
 
 
 def _accept(directory, run, stage, by):
@@ -2001,13 +1859,11 @@ def job(root, ident):
         payload['research_policy'] = 'none'  # The job payload is not hashed; pins hold.
         payload.pop('research_from', None)
     evidence = payload['sources']  # What the carried-over check may still allow below.
-    # The package works from the saved writing, and only evidence checks review against
-    # sources. inputs() above still refuses a changed source pin for every step.
+    # Only evidence checks review against sources. inputs() above still refuses a changed
+    # source pin for every step.
     check = run.get('editor_check')
-    if stage == 'package' or (stage == 'review' and check and check not in studio.SOURCE_CHECKS):
+    if stage == 'review' and check and check not in studio.SOURCE_CHECKS:
         payload['sources'] = []
-    if stage == 'package':
-        payload['examples'] = []
     if (
         run.get('research_contract')
         and stage not in ('research-plan', 'research')
@@ -2036,8 +1892,6 @@ def job(root, ident):
             from manuscript_preview import text_only
 
             payload['documents']['manuscript'] = text_only(payload['documents']['manuscript'])
-    if run.get('mode') == 'from-outline':
-        payload['documents']['outline'] = (directory / 'OUTLINE.md').read_text()
     saved = run['stages'].get(stage, {})
     request = saved.get('request', '') or run.get('editor_request', '')
     # A note for this step is kept beside the run, outside its versioned state, so leaving
@@ -2049,8 +1903,8 @@ def job(root, ident):
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     # A request against a version the author has already seen, or their own manuscript,
-    # edits it. Otherwise (a developed idea, a first attempt) it directs a new document.
-    edit = stage != 'angles' and bool(
+    # edits it. Otherwise (a first attempt) it directs a new document.
+    edit = bool(
         request
         and payload['documents'].get(stage, '').strip()
         and not (stage == 'review' and run.get('editor_check'))
@@ -2058,6 +1912,11 @@ def job(root, ident):
             saved.get('hash') or saved.get('apply_review') or (stage == 'draft' and run['existing'])
         )
     )
+    if stage == 'draft' and not edit:
+        # Only the editor's revise check writes a draft, and always as an edit of the saved
+        # manuscript: it asks with its own request, or Ask for changes' words. With no text
+        # to edit there is nothing to revise.
+        raise ValueError('Save a manuscript before revising it.')
     # A focused edit or a single editor check other than shape keeps to its own scope, so
     # it gets no style. The job payload is not hashed; stage pins come from inputs().
     if edit or run.get('editor_check') not in (None, 'shape'):
@@ -2069,12 +1928,6 @@ def job(root, ident):
             'edit, not a rewrite: apply the author’s request at the end of this guidance and '
             'keep everything else verbatim.\n\n' + (references / 'minimal-edits.md').read_text()
         )
-    elif stage == 'draft' and run['existing']:
-        guidance = (
-            'Revise the supplied manuscript in the scope of its brief. Preserve its stance, '
-            'meaningful qualifiers and author voice; retain unsupported claims as questions '
-            'rather than inventing support.\n\n' + (references / GUIDES[stage]).read_text()
-        )
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()
     guidance = brief_line(root, record, payload) + '\n\n' + guidance
@@ -2085,10 +1938,8 @@ def job(root, ident):
             'needs evidence they lack as unresolved.'
         )
     guidance += '\n\n' + house_guide()
-    if payload['style'] and stage in ('outline', 'draft', 'review', 'package'):
+    if payload['style'] and stage in ('draft', 'review'):
         guidance += '\n\n' + style_rule(payload['style']['name'])
-    if LENGTHS.get(run.get('length')) and stage in ('outline', 'draft') and not edit:
-        guidance += '\n\n' + LENGTHS[run['length']]
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
         guides = ['modules/blog-voice-check.md', 'style/software.md']
@@ -2125,34 +1976,13 @@ def job(root, ident):
         guidance += (
             '\n\n' + (references / 'blogforge/voice/assets/ai-tells/patterns.md').read_text()
         )
-    if stage == 'angles':
-        if payload['sources']:
-            guidance += '\nThe uploaded files are in sources, with their names; name them in each angle’s Leans on line.'
-        if request and payload['documents'].get('angles', '').strip():
-            guidance += (
-                '\nThe author set aside the saved angles in documents.angles. Propose three '
-                'different angles that honor the author’s request; do not repeat the earlier ones.'
-            )
-    if payload.get('examples') and stage in ('outline', 'draft'):
+    if payload.get('examples') and stage == 'draft':
         guidance += '\nThe documents in examples show the kind of post wanted; take their shape, not their facts.'
-    if run.get('mode') == 'ideas' and stage == 'outline':
-        guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
-    if run.get('mode') == 'from-outline':
-        guidance += '\n' + FROM_OUTLINE
-    if stage in NOTED:
+    if stage == 'draft':
         payload['response_kind'] = 'writing-with-notes'
         guidance += '\n' + WRITING_NOTES
-    if stage in NOTED:
         payload['gaps'] = gaps(directory, stage)
-        if stage == 'draft':
-            guidance += '\n' + GAPS_OPEN
-    if stage == 'package':
-        guidance += (
-            '\nList the gaps (in gaps) and any new ones under a '
-            '`## Needs you before publishing` heading. The titles, excerpt and description are '
-            'reader-facing: no source IDs or placeholders. With no sources here, evidence stays '
-            'empty at the handoff.'
-        )
+        guidance += '\n' + GAPS_OPEN
     if stage == 'review' and payload['sources']:
         found_evidence = stage_notes(directory, 'draft')['evidence']
         if found_evidence:
@@ -2444,10 +2274,6 @@ class Engine:
             found = survey(self.root, ident)
             if not continues(found):
                 return
-            if found['complete']:
-                local.update(enabled=False, status='complete')
-                self.keep_local(ident, local)
-                return
             if found['approval'] != 'page' or any(
                 row['stage'] == found['next'] and row['status'] == 'draft'
                 for row in found['stages']
@@ -2457,10 +2283,14 @@ class Engine:
                 row['stage'] == found['next'] and row['status'] == 'stale'
                 for row in found['stages']
             ):
+                # A step the editor's check already went past changed under it (the blog's
+                # writing or what it reads): the check stops, said as a failure on the editor
+                # screen, and starting it again begins from its first step.
                 local.update(
                     enabled=False,
-                    status='needs-attention',
-                    error='Saved writing or its inputs changed. Review the saved version or ask for changes before running it again.',
+                    status='failed',
+                    error=STALE_CHECK,
+                    reason=None,
                 )
                 self.keep_local(ident, local)
                 return
@@ -2631,15 +2461,30 @@ class Engine:
                     import shared_library
 
                     shared_library.keep_research(self.root, directory, ident)
-                submit(self.root, ident, found['next'], result, found['expected'], page=True)
+                after = submit(
+                    self.root, ident, found['next'], result, found['expected'], page=True
+                )
                 state = self.local(ident)
-                state.update(status='waiting-for-approval', error='')
                 if pending:
                     # submit() let any kept draft go: the accepted research replaces it.
                     state.setdefault('research', {}).update(refusal=None, round=None, phase=None)
-                # Every run that goes on is the manuscript editor's: it stops after each step
-                # for the editor (only the earlier flow went on to the next step by itself).
-                state['enabled'] = False
+                # Every run that goes on is the manuscript editor's check. It goes on through its
+                # stages by itself and stops at its review, which the editor screen reads; a
+                # Pause or Stop made while this step ran keeps it where it is. Only the review
+                # waits for the person: a step before it never ends the check as waiting.
+                goes_on = (
+                    after['next'] is not None and found['next'] != after['stages'][-1]['stage']
+                )
+                if goes_on and state.get('enabled'):
+                    state.update(status='queued', error='')
+                    self.wake.set()
+                elif goes_on:
+                    held = state.get('status')
+                    state.update(
+                        status=held if held in ('paused', 'stopped') else 'paused', error=''
+                    )
+                else:
+                    state.update(status='waiting-for-approval', error='', enabled=False)
                 self.keep_local(ident, state)
                 self.activity.checkpoint(blog_activity.blog(ident), 'output-saved', found['next'])
                 self.activity.checkpoint(blog_activity.blog(ident), 'ready', found['next'])
@@ -2748,7 +2593,7 @@ class Engine:
         worker of this process runs is a step a stopped process left. Nothing takes such a run
         up again, and the repository's running-step check would read it as busy for good, so
         it is settled as stopped in this computer's runner record under .blog-runs only, as
-        is one whose blog's session record cannot be read or whose folder is gone.
+        is one whose blog's session or run record cannot be read or whose folder is gone.
         Nothing in the blog's own folder changes and no work starts. A run the manuscript
         editor's check made keeps its own recovery: the loop takes its step up again."""
         import desk_migration
@@ -2762,12 +2607,14 @@ class Engine:
                 state = self.local(ident)
                 if not isinstance(state, dict) or state.get('status') != 'working':
                     continue
-                # Read without the blog's session record: one that cannot be read, or a blog
-                # whose folder is gone, leaves nothing that could run the step either.
+                # Read without the blog's session record: one that cannot be read, a run record
+                # that cannot be read or is missing (so which flow made it is unknown, and
+                # nothing continues it), or a blog whose folder is gone, leaves nothing that
+                # could run the step either.
                 directory = studio.inside(self.root, 'articles', studio.identifier(ident))
                 if os.path.lexists(directory):
                     run = desk_migration.saved_run(directory)
-                    if not isinstance(run, dict) or continues(run):
+                    if isinstance(run, dict) and continues(run):
                         continue
             except (ValueError, OSError):
                 continue
@@ -3288,7 +3135,7 @@ def document(root, ident, stage):
             and item['stage'] != stage
             and item['status'] == 'approved'
             and (
-                found['review_level'] != 'step_by_step'
+                review_policy.level(run) != 'step_by_step'
                 or item['stage'] == 'draft'
                 and stage == run['pipeline'][-1]
             )
@@ -3355,89 +3202,16 @@ def dispatch(root, action, data):
     return {**result, **runner.describe(ident)}
 
 
-def angles(content):
-    """The saved angles: each `## Title` heading with the line beneath it."""
-    found = []
-    lines = str(content or '').splitlines()
-    for index, line in enumerate(lines):
-        match = re.fullmatch(r'##\s+(.+?)\s*#*\s*', line)
-        if not match:
-            continue
-        says = ''
-        for later in lines[index + 1 :]:
-            if later.startswith('#'):
-                break
-            if later.strip():
-                says = re.sub(r'^[-*]\s+', '', later.strip())
-                break
-        title = re.sub(r'^\d+[.)]\s*', '', match.group(1)).replace('**', '').strip()
-        found.append({'title': title, 'says': says})
-    return found
-
-
 def add_parser(groups):
     commands = groups.add_parser('run', help='Saved step-by-step Blog Studio work').add_subparsers(
         dest='action', required=True
     )
-    create_cmd = commands.add_parser('create')
-    for name in (
-        'title',
-        'author',
-        'audience',
-        'goal',
-        'tone',
-        'profile',
-        'style',
-        'id',
-        'brand',
-        'variant',
-    ):
-        create_cmd.add_argument('--' + name)
-    create_cmd.add_argument(
-        '--research',
-        choices=OLD_RESEARCH,
-        default=None,
-        help='Older words: none, supplied-only (your documents) or web-allowed (your '
-        'documents and the public web)',
+    # Kept only to say where new work starts: whatever is given after it, it refuses. A blog
+    # named with --id is checked by the saved-record guard first, as every command is.
+    create_cmd = commands.add_parser(
+        'create', help='Refuses: new Blog Studio work starts on the desk (desk create)'
     )
-    create_cmd.add_argument(
-        '--research-from',
-        default=None,
-        help='Where research may look: documents, sites and/or web, comma separated',
-    )
-    create_cmd.add_argument(
-        '--site',
-        action='append',
-        default=[],
-        help='A site for this blog only (repeatable); with sites, replaces the shared list',
-    )
-    create_cmd.add_argument(
-        '--stop', choices=('outline', 'draft', 'review', 'package'), default='package'
-    )
-    create_cmd.add_argument('--length', choices=tuple(LENGTHS), default=None)
-    create_cmd.add_argument('--engine', choices=('codex', 'claude'))
-    create_cmd.add_argument('--seconds', type=int, default=600)
-    create_cmd.add_argument('--source', action='append', default=[])
-    create_cmd.add_argument(
-        '--example',
-        action='append',
-        default=[],
-        help='A library item read as an example of the kind of post for this blog only',
-    )
-    create_cmd.add_argument(
-        '--messaging',
-        action='append',
-        default=[],
-        help='A library item read as the product’s approved messaging for this blog only',
-    )
-    create_cmd.add_argument('--mode', choices=MODES, default='write')
-    create_cmd.add_argument('--manuscript')
-    create_cmd.add_argument('--outline-text')
-    create_cmd.add_argument(
-        '--point',
-        action='store_true',
-        help='With --mode from-files: start at the outline from the title, goal and audience',
-    )
+    create_cmd.add_argument('--id', help=argparse.SUPPRESS)
     commands.add_parser('list')
     status = commands.add_parser('status')
     status.add_argument('--id', required=True)

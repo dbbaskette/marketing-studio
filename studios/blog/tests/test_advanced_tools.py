@@ -576,22 +576,6 @@ class ContextJobTests(Fixture):
         self.assertTrue(current['outline_content'])
         folder, _ = studio.item(self.root, 'articles', current['id'])
         self.assertFalse((folder / 'DRAFT.md').exists())
-        run = blog_runner.create(
-            self.root,
-            {
-                'id': current['id'],
-                'mode': 'from-outline',
-                'outline_text': current['outline_content'],
-                'goal': 'Explain the synthetic gateway',
-                'audience': 'Developers',
-                'stop': 'draft',
-                'research': 'none',
-            },
-        )
-        self.assertEqual(run['id'], current['id'])
-        self.assertEqual(
-            studio.item(self.root, 'articles', current['id'])[1]['stop_point'], 'draft'
-        )
 
 
 class AdvisoryAndOutcomeTests(Fixture):
@@ -863,40 +847,34 @@ class VoiceApplyTests(Fixture):
         )
 
     def test_a_guided_run_records_the_change_and_keeps_its_style_and_tone(self):
+        from test_blog_runner import editor_check
+
         avery, blake = self.voice('Avery'), self.voice('Blake')
-        found = blog_runner.create(
-            self.root,
-            {
-                'title': 'Synthetic gateway guide',
-                'audience': 'New authors',
-                'goal': 'Explain a fictional gateway',
-                'research': 'none',
-                'profile': avery['id'],
-                'tone': 'Warm',
-                'style': 'how-to',
-            },
-            'page',
-        )
-        ident = found['id']
-        # Only the manuscript editor's own runs still go on: this run is marked as its revise.
-        directory = self.root / 'articles' / ident
-        run = studio.read_json(directory / blog_runner.STATE)
-        run['editor_check'] = 'revise'
-        studio.write_json(directory / blog_runner.STATE, run)
-        empty = self.apply(ident, blake['id'])
-        self.assertEqual(empty['run']['voice_name'], 'Blake', 'no writing yet: no confirmation')
+        # A saved manuscript written as Avery with a tone nudge and a kind of post, and the run
+        # the manuscript editor's revision makes for it (the only saved runs that go on).
+        ident = self.article()
+        self.command('article', 'voice', '--id', ident, '--profile', avery['id'], '--tone', 'Warm')
+        directory, record = studio.item(self.root, 'articles', ident)
+        record['style'] = {'style_id': 'how-to', 'revision': 1}
+        studio.persist(directory, 'articles', record)
+        editor_check(self.root, ident, 'revise')
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.apply(ident, blake['id'])  # The blog has a saved draft.
+        changed = self.apply(ident, blake['id'], confirmed=True)
+        self.assertEqual(changed['run']['voice_name'], 'Blake')
         found = blog_runner.submit(
             self.root,
             ident,
-            'outline',
-            {'content': '# Outline\nSynthetic argument.', 'notes': ''},
-            empty['run']['expected'],
+            'draft',
+            {'content': '# Draft\nSynthetic argument.', 'notes': ''},
+            changed['run']['expected'],
             page=True,
         )
-        found = blog_runner.decide(self.root, ident, found['expected'], 'approve', page=True)
         self.assertEqual(found['stages'][0]['status'], 'approved')
         same = self.apply(ident, blake['id'])
-        self.assertEqual(same['run']['decisions'][-1]['event'], 'approve outline', 'the same pin')
+        self.assertEqual(
+            same['run']['decisions'][-1]['event'], 'Submitted draft · continued', 'the same pin'
+        )
         with self.assertRaisesRegex(ValueError, 'Confirm'):
             self.apply(ident, avery['id'])
         result = self.apply(ident, avery['id'], confirmed=True)
@@ -909,11 +887,10 @@ class VoiceApplyTests(Fixture):
         self.assertEqual(result['run']['style_name'], 'How-to and tutorial')
         events = [row['event'] for row in result['run']['decisions']]
         self.assertEqual(
-            events[-4:],
+            events[-3:],
             [
                 'Voice changed to Blake (revision 1)',
-                'Submitted outline',
-                'approve outline',
+                'Submitted draft · continued',
                 'Voice changed to Avery (revision 1)',
             ],
         )

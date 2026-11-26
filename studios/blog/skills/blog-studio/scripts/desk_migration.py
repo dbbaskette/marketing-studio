@@ -438,6 +438,7 @@ def _tool_state(job, name):
         'applied',
         'saved_content',
         'settled_at',
+        'discarded_at',  # A ready result the person discarded (tool_jobs.discard).
         'angles',
         'checks',
     }
@@ -469,7 +470,7 @@ def _tool_state(job, name):
         and not isinstance(job['result'], dict)
         or any(
             not isinstance(job[key], str) or not job[key]
-            for key in ('started_at', 'finished_at', 'settled_at')
+            for key in ('started_at', 'finished_at', 'settled_at', 'discarded_at')
             if key in job
         )
         or any(
