@@ -638,6 +638,7 @@ async function sDeskGo(held){
   if(turn!==studio.turn)return;
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
   if(made.keep_problem)sToast(made.keep_problem);
+  if(made.share_problem)sToast(made.share_problem);
   // Check spelling and grammar lands in Review mode; every other start on the full desk.
   // Review for AI search opens Finishing at the GEO review, where its proposals will wait.
   studio.desk={id:made.id,view:made,session:operationId(),...(held.have==='draft'&&held.first_pass==='geo'&&!made.first_pass_problem?{openTool:'geo'}:{})};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
@@ -1710,7 +1711,7 @@ function sDeskRepurposeCard(held,p){
   if(job&&job.status==='ready'){
     if(p.content===null)p.content=job.result?.content||'';
     if(!p.title)p.title=held.view.title+' ('+((DESK_FORMATS.find(([key])=>key===job.metadata?.format)||[])[1]||'copy')+')';
-    const make=sButton('Make it a new blog',async button=>{await busy(button,'Making…',async()=>{try{const shown=await api('desk-repurpose',{id:held.id,job:job.id,title:p.title.trim(),content:p.content});p.made=shown.made;p.copyProblem='';held.view=shown;sToast('Made a new blog on the desk. Nothing was posted.');}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');make.disabled=!sDeskCan(held);
+    const make=sButton('Make it a new blog',async button=>{await busy(button,'Making…',async()=>{try{const shown=await api('desk-repurpose',{id:held.id,job:job.id,title:p.title.trim(),content:p.content});p.made=shown.made;p.copyProblem='';held.view=shown;sToast('Made a new blog on the desk. Nothing was posted.'+(shown.made?.share_problem?' '+shown.made.share_problem:''));}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');make.disabled=!sDeskCan(held);
     sAdd(card,sField('desk-copy','The prepared copy',p,'content',{long:true,max:200000}),sField('desk-copy-title','Title for the new blog',p,'title',{max:500}),job.result?.notes?sNode('p','quiet',job.result.notes):null,sAdd(sNode('div','bar'),make,sButton('Discard',()=>{Object.assign(p,{job:null,content:null,title:''});sDeskPanelShow(held);})));
     return card;
   }

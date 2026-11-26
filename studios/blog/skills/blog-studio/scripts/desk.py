@@ -263,13 +263,20 @@ def _attach(root, data, record):
     ]
 
 
-def create(root, data):
-    """A new desk blog (`_make`), shared with a selected Team Hub as soon as it is made,
-    whichever way it was asked for: the page's New blog, a conversation, a repurposed copy
-    or a GEO report's desk copy. Every new desk blog is made here."""
+def create(root, data, settle=None):
+    """A new desk blog (`_make`), shared with a selected Team Hub when it is made, whichever
+    way it was asked for: the page's New blog, a conversation, a repurposed copy or a GEO
+    report's desk copy. Every new desk blog is made here.
+
+    `settle(made)` is the caller's own part, run before the blog is shared: what makes asking
+    again safe (the page's operation record, a repurpose job's receipt) and the rest of the
+    blog's record (its library sources, a conversation's scope), so the Team Hub gets the
+    record as it is saved here. Sharing comes last and never fails or repeats the making: a
+    share that did not happen is said in `share_problem` (None when shared or no Team Hub)."""
     made = _make(root, data)
-    _share_new(root, made['id'])
-    return made
+    if settle is not None:
+        settle(made)
+    return {**made, 'share_problem': _share_new(root, made['id'])}
 
 
 def _make(root, data):
@@ -1541,18 +1548,34 @@ UNSHARED = (
 FINISH_FIRST = ('copyedit', 'feedback', 'geo')
 
 
+NOT_SHARED = (
+    'This blog is saved on this computer but is not shared with the Team Hub yet. '
+    'Retry Hub sync to share it.'
+)
+
+
 def _share_new(root, ident):
     """A new blog is shared with a selected Team Hub when it is made, as the step-by-step
-    flow shared one (blog_runner.save), with a receipt. Sharing never fails the blog: a
-    share that did not get through is said in its receipt as saved here. With no Team Hub
-    selected nothing is shared and no receipt is kept."""
-    from hub_workspace import active
-    from management import receipt, share
+    flow shared one (blog_runner.save), with a receipt. Sharing never fails the blog, whatever
+    goes wrong, even finding the Team Hub: what did not happen is said in a sentence, NOT_SHARED,
+    as a share the Team Hub did not take is said in its receipt (Retry Hub sync). None when it
+    was shared, or when no Team Hub is selected (nothing is shared and no receipt is kept)."""
+    import management
 
-    if not active(root):
-        return
-    _, record = studio.item(root, 'articles', ident)
-    receipt(root, 'New blog', share(root, 'article', record), 'article')
+    try:
+        from hub_workspace import active
+
+        if not active(root):
+            return None
+        _, record = studio.item(root, 'articles', ident)
+        result = management.share(root, 'article', record)
+        management.receipt(root, 'New blog', result, 'article')
+    except Exception as error:  # noqa: BLE001 - the blog is made either way.
+        management.note_unexpected(error)
+        return NOT_SHARED
+    if (result.get('hub_sync') or {}).get('status') == 'local-saved-not-shared':
+        return NOT_SHARED
+    return None
 
 
 def _create(root, data):
@@ -1603,9 +1626,15 @@ def _create(root, data):
         if prior['fingerprint'] != fingerprint:
             raise ValueError('This creation request changed. Open a new form.')
         return desk_jobs.view(root, prior['id'])
-    made = create(root, data)
-    studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
-    keep_problem = keep_in_library(root, made['id'], kept)
+    kept_said = {}
+
+    def settle(made):
+        # Recorded first, so asking again returns this blog, then its library sources.
+        studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
+        kept_said['problem'] = keep_in_library(root, made['id'], kept)
+
+    made = create(root, data, settle)
+    keep_problem, share_problem = kept_said['problem'], made['share_problem']
     try:
         desk_jobs.prune_angles(root)
         if picked:
@@ -1620,6 +1649,7 @@ def _create(root, data):
             **desk_jobs.view(root, made['id']),
             'first_pass_problem': None,
             'keep_problem': keep_problem,
+            'share_problem': share_problem,
         }
     try:
         if choice == 'copyedit':
@@ -1637,6 +1667,7 @@ def _create(root, data):
         **desk_jobs.view(root, made['id']),
         'first_pass_problem': problem,
         'keep_problem': keep_problem,
+        'share_problem': share_problem,
     }
 
 

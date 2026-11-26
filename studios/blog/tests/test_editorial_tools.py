@@ -2804,6 +2804,90 @@ class HubMaterialTests(Fixture):
         )
         self.shared_on_making(shown['made']['id'], 'A feed copy')
 
+    def hub_record(self, ident):
+        item = self.workspace.state['items']['articles/' + ident]['item']
+        graph = self.hub.graph()
+        (head,) = graph['heads'][item]
+        return graph['revisions'][head]['data']['studio']
+
+    def blogs(self):
+        return sorted(path.parent.name for path in (self.root / 'articles').glob('*/session.json'))
+
+    def test_the_team_hub_gets_each_new_blog_s_record_as_it_is_saved_here(self):
+        import blog_runner
+        import desk_chat
+
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        # The page: sources the person kept in the library are references by the time it is shared.
+        ident = self.material()
+        found = desk_blog(self.root, sources=[ident], keep=[ident])
+        _, record = studio.item(self.root, 'articles', found['id'])
+        shared = self.hub_record(found['id'])
+        self.assertEqual(record['material'], [])
+        self.assertEqual(shared.get('material'), record['material'])
+        # A conversation: its scope is in the record the Team Hub gets.
+        made = desk_chat.create(
+            self.root, {'title': 'A chat post', 'manuscript': 'An opening.\n\n## One\n\nWords.\n'}
+        )
+        shared = self.hub_record(made['id'])
+        self.assertEqual((shared.get('execution'), shared.get('conversation_scope')), ('conversation', 'draft'))
+
+    def repurpose_job(self, article):
+        import secrets
+        import tool_jobs
+
+        job = tool_jobs.create(
+            self.root,
+            secrets.token_hex(16),
+            'repurpose',
+            {'source': 'x'},
+            'g',
+            basis=None,
+            metadata={'article': article, 'format': 'linkedin'},
+        )
+        job = tool_jobs.read(self.root, job['id'])
+        job.update(status='ready', result={'content': 'Copy for a feed.', 'notes': ''})
+        tool_jobs.write(self.root, job)
+        return job['id']
+
+    def test_a_share_that_raises_never_fails_or_repeats_the_making(self):
+        import uuid
+        import blog_runner
+        import desk
+        import desk_chat
+
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        broken = patch.object(management, 'share', side_effect=RuntimeError('Synthetic Hub failure'))
+        noted = patch.object(management, 'note_unexpected')
+        # The page's New blog, asked again with the same operation.
+        operation = uuid.uuid4().hex
+        asked = {'operation': operation, 'title': 'A team post', 'manuscript': 'An opening.\n\n## One\n\nWords.\n'}
+        before = self.blogs()
+        with broken, noted:
+            first = management.dispatch(self.root, 'desk-create', dict(asked))
+            again = management.dispatch(self.root, 'desk-create', dict(asked))
+        self.assertEqual(first['share_problem'], desk.NOT_SHARED)
+        self.assertEqual(again['id'], first['id'])
+        self.assertEqual(len(self.blogs()), len(before) + 1)
+        # A conversation: made once, and said not shared.
+        before = self.blogs()
+        with broken, noted:
+            made = desk_chat.create(
+                self.root, {'title': 'A chat post', 'manuscript': 'An opening.\n\n## One\n\nWords.\n'}
+            )
+        self.assertEqual(made['share_problem'], desk.NOT_SHARED)
+        self.assertEqual(len(self.blogs()), len(before) + 1)
+        # A repurposed copy, asked again for the same job.
+        job = self.repurpose_job(first['id'])
+        before = self.blogs()
+        request = {'id': first['id'], 'job': job, 'title': 'A feed copy', 'content': 'Copy for a feed.'}
+        with broken, noted:
+            copy = management.dispatch(self.root, 'desk-repurpose', dict(request))
+            twice = management.dispatch(self.root, 'desk-repurpose', dict(request))
+        self.assertEqual(copy['made']['share_problem'], desk.NOT_SHARED)
+        self.assertEqual(twice['made']['id'], copy['made']['id'])
+        self.assertEqual(len(self.blogs()), len(before) + 1)
+
     def test_a_missing_material_file_does_not_stop_its_blog_being_shared(self):
         import shutil
         import blog_runner
