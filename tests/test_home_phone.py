@@ -236,6 +236,29 @@ class HomePhoneTests(BrandFolders):
             with self.assertRaises(PermissionError):
                 self.ask('/api/brands-repository', {}, network=False)
 
+    def test_a_phone_gives_only_a_web_address_of_another_computer(self):
+        # Review item 4: one rule for a phone's repository address (studio_core.repository_address).
+        for address in ('http://127.0.0.1:8000/x.git', 'https://localhost/a', 'ssh://localhost/Users/x/repo',
+                        'me@localhost:/Users/x/repo', 'http://example.com/org/brands.git'):
+            for group, key in (('brand', 'brands'), ('brand', 'repository'), ('team', 'repository')):
+                with self.subTest(address=address, setting=(group, key)):
+                    status, answer = self.save({group: {key: address}})
+                    self.assertEqual(status, 409)
+                    self.assertIn('only an https or ssh address of another computer', answer['error'])
+                    self.assertIsNone((shared.read()[0].get(group) or {}).get(key))
+        for address in ('https://example.com/org/brands.git', 'git@example.com:org/brands.git',
+                        'ssh://git@192.168.1.5/brands.git'):
+            with self.subTest(address=address):
+                self.assertEqual(self.save({'brand': {'brands': address}})[0], 200)
+                self.assertEqual(shared.read()[0]['brand']['brands'], address)
+        # A local address saved on the computer is sent back unchanged, or emptied only there.
+        self.assertEqual(self.save({'brand': {'brands': 'me@localhost:/x/brands'}}, network=False)[0], 200)
+        self.assertEqual(self.save({'brand': {'brands': 'me@localhost:/x/brands'}, 'person': {'name': 'Ana'}})[0], 200)
+        self.assertEqual(self.save({'brand': {'brands': None}})[0], 409)
+        # A web address may be emptied from a phone.
+        self.assertEqual(self.save({'brand': {'brands': 'https://example.com/b.git'}})[0], 200)
+        self.assertEqual(self.save({'brand': {'brands': None}})[0], 200)
+
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},
                                'brand': {'skill': str(self.root / 'skill')}}, network=False)

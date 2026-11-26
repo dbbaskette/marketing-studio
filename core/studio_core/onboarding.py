@@ -3,12 +3,11 @@
 The host retains its token, loopback and origin protections. No content, provider
 jobs, installers or update actions are exposed by this page.
 """
-import re
 import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import graphics, preferences, brand_catalog, brand_data, research_sites, runtime
+from studio_core import graphics, preferences, brand_catalog, brand_data, repository_address, research_sites, runtime
 from studio_core.model_catalog import Catalog
 from studio_core.server import for_product
 from studio_core.studios_config import for_product as config_for
@@ -24,13 +23,12 @@ ASSETS = {'/onboarding/': ('index.html', 'text/html; charset=utf-8'),
 # neither send nor strip it. Read here, not through the deck studios' shared runner, because
 # every studio serves this page, Blog Studio and Infographic Studio included.
 VIA_HEADER = 'X-Marketing-Studio-Via'
-# The shared settings that hold a folder on this computer: always, or when given as a path
-# rather than a repository address.
-FOLDERS = (('local', 'root'), ('brand', 'skill'), ('brand', 'brands'), ('brand', 'repository'),
-           ('team', 'repository'))
+# The shared settings that hold a folder on this computer: the folders, always; the
+# repositories when not given as a web address of another computer (repository_address).
+FOLDERS = (('local', 'root'), ('brand', 'skill'))
+REPOSITORIES = (('brand', 'brands'), ('brand', 'repository'), ('team', 'repository'))
 # Said to a phone in place of a failure whose text may name a folder on this computer.
 REMOTE_FAILED = 'That could not be done here. See why on the computer the studios run on.'
-_ADDRESS = re.compile(r'^(?:https?://|ssh://|[\w.-]+@[\w.-]+:)', re.I)
 
 
 # What a phone may do with each route of this page, decided route by route; a route added
@@ -62,8 +60,8 @@ def _leaf(values, group, key):
     return part.get(key) if isinstance(part, dict) else None
 
 
-def _folder(value) -> bool:
-    return isinstance(value, str) and bool(value) and not _ADDRESS.match(value)
+def _set(value) -> bool:
+    return value not in (None, '')
 
 
 def folders_refused(changes, held):
@@ -72,26 +70,47 @@ def folders_refused(changes, held):
     settings file holds, read under its lock (for_phone). A setting passes when the save would
     write exactly the value held, character for character, so the other settings of the same
     form can be saved; the save's own check of an outdated form still decides the rest. A
-    repository given as a web address may replace a folder; emptying a folder setting changes
-    it, and is refused."""
+    folder setting cannot be changed at all, emptied included. A repository can be changed to
+    a web address of another computer (repository_address.web_repository), or emptied when it
+    held one; any other value, a folder or an address of this computer, is refused."""
     if not isinstance(changes, dict):
         return None
-    found = []
-    for group, key in FOLDERS:
+    folders, addresses = [], []
+    for group, key in (*FOLDERS, *REPOSITORIES):
         part = changes.get(group)
         if not isinstance(part, dict) or key not in part:
             continue
         wanted, before = _leaf(changes, group, key), _leaf(held, group, key)
-        if wanted != before and (_folder(wanted) or (_folder(before) and not wanted)):
-            found.append(f'“{preferences.label((group, key))}”')
-    if not found:
+        if wanted == before:
+            continue
+        named = f'“{preferences.label((group, key))}”'
+        if (group, key) in FOLDERS:
+            if _set(wanted) or _set(before):
+                folders.append(named)
+        elif _set(wanted) and not repository_address.web_repository(wanted):
+            addresses.append(named)        # a folder, or an address of this computer
+        elif not _set(wanted) and _set(before) and not repository_address.web_repository(before):
+            addresses.append(named)        # emptying one that holds such a value
+    if not folders and not addresses:
         return None
-    if len(found) == 1:
-        return (f'{found[0]} names a folder on the computer the studios run on, so it is changed '
-                'only on that computer. Put it back as it was to save your other changes here.')
-    named = ', '.join(found[:-1]) + ' and ' + found[-1]
-    return (f'{named} name folders on the computer the studios run on, so they are changed only '
-            'on that computer. Put them back as they were to save your other changes here.')
+    said = []
+    if folders:
+        said.append(f'{_listed(folders)} {"names a folder" if len(folders) == 1 else "name folders"} on '
+                    'the computer the studios run on, so '
+                    f'{"it is" if len(folders) == 1 else "they are"} changed only on that computer.')
+    if addresses:
+        said.append(f'From the private network link, {_listed(addresses)} '
+                    f'{"takes" if len(addresses) == 1 else "take"} only an https or ssh address of '
+                    'another computer; a folder, or an address of the computer the studios run on, '
+                    'is set only on that computer.')
+    one = len(folders) + len(addresses) == 1
+    said.append(f'Put {"it" if one else "them"} back as {"it was" if one else "they were"} to save '
+                'your other changes here.')
+    return ' '.join(said)
+
+
+def _listed(names):
+    return names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
 
 
 class for_phone:
