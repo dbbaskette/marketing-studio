@@ -115,7 +115,11 @@ async function sRoute(screen,id=null,stage=null,replace=false){if(studio.screen=
 function sLibraryWaiting(){try{const held=JSON.parse(sessionStorage.getItem('blog-studio-library-start')||'null');sessionStorage.removeItem('blog-studio-library-start');return held&&typeof held==='object'?held:null;}catch(_){return null;}}
 // A route waits for the page's scripts (S_SCRIPTS, app.js): a screen it draws may be desk.js's.
 // A script of the page that did not load leaves its screens undefined: said as that, with Reload.
-function sPartMissing(error){return error?.name==='ReferenceError';}
+// Only then: any other error, an ordinary reference error among them, is said as itself.
+function sPartMissing(error){return error?.name==='ReferenceError'&&typeof S_SCRIPTS!=='undefined'&&(S_SCRIPTS.failed||[]).length>0;}
+function sPartMissingCard(){return sCard('Part of this page did not load',sNode('p','problem','Blog Studio could not load all of its page, so this view cannot be shown. Reload the page to load it again; your work is kept.'),sButton('Reload the page',()=>location.reload(),'filled'));}
+// A start-up step that stopped: a script that did not load as the card above, anything else as before.
+function sStartFailed(error){if(sPartMissing(error))sPage(sPartMissingCard());else notice(error.message,true);}
 async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
   if(!S_SCRIPTS.ran)await S_SCRIPTS.wait;
   if(screen==='home'&&studio.settings?.configured){const waiting=sLibraryWaiting();if(waiting&&typeof sDeskFromLibrary==='function')return sDeskFromLibrary(waiting);}
@@ -139,7 +143,7 @@ async function studioNavigate(screen,id=null,stage=null,intakeSaved=false){
     else if(screen==='geo-report'){await sGeoReport(id);}
     else if(screen==='run'||screen==='gate'){const found=await api('run?id='+encodeURIComponent(id));if(turn!==studio.turn)return;studio.found=found;if(found.saved_record){if(screen!=='run')await sRoute('run',found.id,null,true);else sSavedRecord(found);return;}if(found.on_desk&&!found.stages){await sRoute('desk',found.id,null,true);return;}if(found.on_desk){if(screen!=='run')await sRoute('run',found.id,null,true);else sRun(found);return;}if(sEditingRun(found)&&!found.complete){await sRoute('editor',found.id,null,true);return;}if(screen==='gate')await sReadGate(stage||found.next);else sRun(found);}
     if(turn===studio.turn&&screen==='editor')$('title').focus({preventScroll:true});
-  }catch(error){if(turn===studio.turn)sPage(sPartMissing(error)?sCard('Part of this page did not load',sNode('p','problem','Blog Studio could not load all of its page, so this view cannot be shown. Reload the page to load it again; your work is kept.'),sButton('Reload the page',()=>location.reload(),'filled')):sCard('This view could not be read',sNode('p','problem',error.message),sButton('Try again',()=>studioNavigate(screen,id,stage))));}
+  }catch(error){if(turn===studio.turn)sPage(sPartMissing(error)?sPartMissingCard():sCard('This view could not be read',sNode('p','problem',error.message),sButton('Try again',()=>studioNavigate(screen,id,stage))));}
   finally{if(turn===studio.turn)$('studio-page').removeAttribute('aria-busy');}
 }
 async function sReadList(turn=studio.turn){const results=await Promise.all([api('runs'),api('board?limit=20'),api('run-options'),api('team'),api('geo-reports')]);if(turn!==studio.turn)return false;studio.reports=results[4]?.items||[];studio.listing=results[0].items;studio.deleted=results[0].deleted||[];const guided=new Set(studio.listing.map(row=>row.id));studio.ordinary=results[1].items.filter(row=>!guided.has(row.id));studio.total=results[1].total;studio.options=results[2];studio.settings=results[2].settings;studio.brand=results[2].brand;studio.team=results[3];return true;}
@@ -1490,7 +1494,7 @@ window.addEventListener('popstate',()=>{const query=new URLSearchParams(location
 document.addEventListener('keydown',event=>{if(!studio.sheet)return;if(event.key==='Escape'){event.preventDefault();sCloseSheet();return;}if(event.key==='Tab'){const nodes=[...$('sheet').querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(node=>!node.disabled);if(!nodes.length){event.preventDefault();return;}const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===$('sheet'))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 document.addEventListener('visibilitychange',sVisibilityChanged);
 setInterval(sPoll,3000);
-sStart().catch(error=>notice(error.message,true));
+sStart().catch(sStartFailed);
 
 
 window.addEventListener('beforeunload',event=>{if(studio.deskStart&&(studio.deskStart._dirty||studio.deskStart._saving||studio.intake?.pending||studio.intake?.writing)){event.preventDefault();event.returnValue='';}if(Object.values(studio.editorDrafts||{}).some(draft=>draft.content!==draft.baseContent)){event.preventDefault();event.returnValue='';}});

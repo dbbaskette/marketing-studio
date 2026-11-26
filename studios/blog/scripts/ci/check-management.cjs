@@ -3128,7 +3128,7 @@ function firstRouteFixture(responder,hash,ran=PAGE_SCRIPTS.slice(0,3)){
   const f=fixture(responder||(url=>{
     if(url.startsWith('/api/desk?'))return deskView({id:'fresh'});
     return {items:[],total:0};}),hash);
-  f.run("document.readyState='interactive';document.addEventListener=(type,fn)=>{if(type==='DOMContentLoaded')window.scriptsRan=fn;};S_SCRIPTS=sScriptsWatched(document)");
+  f.run("document.readyState='interactive';document.addEventListener=(type,fn)=>{if(type==='DOMContentLoaded')window.scriptsRan=fn;if(type==='error')window.scriptFailed=fn;};S_SCRIPTS=sScriptsWatched(document)");
   for(const name of ran)f.run(fs.readFileSync('skills/blog-studio/assets/management/'+name,'utf8').split('// Keep initialization below this marker')[0]);
   assert.equal(f.run('typeof sDesk'),'undefined','desk.js has not run yet');
   assert.equal(typeof f.run('window.scriptsRan'),'function','app.js listens for DOMContentLoaded when it runs');
@@ -3171,13 +3171,34 @@ async function firstRouteWaitsForScripts(){
   await going;
   assert.equal(f.run('studio.screen'),'desk');
   assert.ok(!/could not be read|is not defined|did not load/.test(said()),'the desk is drawn: '+said());
-  // desk.js never arrives: DOMContentLoaded still fires, and the view says the page did not load.
+  // desk.js never arrives: its script element's error is heard, DOMContentLoaded still fires, and
+  // the view says the page did not load.
   const missing=firstRouteFixture();
   const stuck=missing.f.run("studioNavigate('desk','fresh')");
-  missing.f.run('window.scriptsRan()');
+  missing.f.run("window.scriptFailed({target:{tagName:'SCRIPT',src:'/desk.js'}});window.scriptsRan()");
   await stuck;
   assert.match(missing.said(),/Part of this page did not load\|Blog Studio could not load all of its page, so this view cannot be shown\. Reload the page to load it again; your work is kept\.\|Reload the page/);
   assert.ok(!/is not defined/.test(missing.said()));
+  // Every script loaded and a name is still not defined: an ordinary error, said as itself.
+  const bug=firstRouteFixture();
+  const failing=bug.f.run("studioNavigate('desk','fresh')");
+  bug.f.run("window.scriptFailed({target:{tagName:'IMG',src:'/x.png'}});window.scriptsRan()");
+  await failing;
+  assert.match(bug.said(),/This view could not be read\|sDesk is not defined\|Try again/);
+  assert.ok(!/did not load/.test(bug.said()));
+  // A start-up step that stops the same ways: a library= address whose desk.js did not load.
+  const start=firstRouteFixture(url=>url==='/api/run-settings'?{configured:true,defaults:{},features:{}}:url==='/api/capabilities'?{status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}:{items:[],total:0},'#fixture&library=synthetic-brief@1');
+  const starting=start.f.run('sStart().catch(sStartFailed)');
+  start.f.run("window.scriptFailed({target:{tagName:'SCRIPT',src:'/desk.js'}});window.scriptsRan()");
+  await starting;for(let n=0;n<20;n++)await new Promise(r=>setImmediate(r));
+  assert.match(start.said(),/Part of this page did not load/);
+  assert.ok(!/is not defined/.test(start.said()),start.said());
+  const plain=firstRouteFixture(url=>url==='/api/run-settings'?{configured:true,defaults:{},features:{}}:url==='/api/capabilities'?{status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}:{items:[],total:0},'#fixture&library=synthetic-brief@1');
+  const plainly=plain.f.run('sStart().catch(sStartFailed)');
+  plain.f.run('window.scriptsRan()');
+  await plainly;for(let n=0;n<20;n++)await new Promise(r=>setImmediate(r));
+  assert.match(plain.said(),/sDeskFromLibrary is not defined/);
+  assert.ok(!/did not load/.test(plain.said()));
 }
 
 async function deskOpenFromLists(){

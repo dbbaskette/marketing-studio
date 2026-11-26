@@ -818,8 +818,13 @@ async function saveMemory(submit){
 // every one of them has run or failed to load. app.js runs first, so it listens for that moment
 // here, and every start-up step that calls into a later script (appStart, runner.js's sStart,
 // studioNavigate and its poll) waits for it.
-function sScriptsWatched(page){const held={ran:true,wait:null};
-  if(!page||typeof page.addEventListener!=='function'||page.readyState==='complete')return held;
+// A script that did not load fires an error event at its own element, which a listener on the
+// document hears as it passes (capture): `failed` lists them, so a screen that is missing for that
+// reason is said as such (runner.js sPartMissing), and any other error as itself.
+function sScriptsWatched(page){const held={ran:true,wait:null,failed:[]};
+  if(!page||typeof page.addEventListener!=='function')return held;
+  page.addEventListener('error',event=>{const node=event&&event.target;if(node&&String(node.tagName||'').toUpperCase()==='SCRIPT')held.failed.push(String(node.src||''));},true);
+  if(page.readyState==='complete')return held;
   held.ran=false;held.wait=new Promise(resolve=>page.addEventListener('DOMContentLoaded',()=>{held.ran=true;resolve();},{once:true}));return held;}
 let S_SCRIPTS=sScriptsWatched(typeof document==='undefined'?null:document);
 // This page's own start once its capabilities are known: the editorial view, then the desk start
@@ -859,4 +864,4 @@ $('import-reload').addEventListener('click',async()=>{if(importBusy||!importStat
 
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
-applyCapabilities();loadCapabilities().then(appStart).catch(e=>notice(e.message,true));
+applyCapabilities();loadCapabilities().then(appStart).catch(e=>typeof sStartFailed==='function'?sStartFailed(e):notice(e.message,true));
