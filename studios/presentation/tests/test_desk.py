@@ -916,6 +916,21 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, shots['settings']['text'])
         self.assertEqual(self.posts(result), [])
 
+    def test_settings_read_sensibly_on_a_phone_with_no_folder_named(self):
+        # GitHub issue #539: through the network bridge the set-up names no folder here.
+        from studio_core.shared_runner import caller
+        described = self.get('setup')
+        phone = {**described, 'workspace': {**described['workspace'], 'path': None},
+                 'brand': {**described['brand'], 'repository': caller.FOLDER_HERE}}
+        result = self.run_page(self.answers(**{'GET /api/setup': [ok(phone)]}),
+                               [{'click': 'Settings'}, {'snapshot': 'settings'}], narrow=True)
+        shot = result['snapshots']['settings']
+        lines = shot['text'].split('\n')
+        at = lines.index('Folder on this computer')
+        self.assertEqual(lines[at + 1], 'Shown on that computer itself')
+        self.assertNotIn(str(self.base), shot['text'])
+        self.assertLayout(shot)
+
     def test_search_and_jump_finds_a_deck_by_name_and_opens_it(self):
         path = self.started(title='Capacity planning')
         self.started(title='Rolling restarts')

@@ -20,6 +20,7 @@ What a caller needs to know
     team.fetch_tags(space); team.send_tags(space)  # with the shared repository
 
     team.unacceptable(folder)                # why a folder cannot be brought in, or None
+    team.overlaps(folder, root)              # 'inside', 'holds' or None, folder by folder
     team.copy_in(folder, target)             # the copy; the folder itself is only read
 
 - A driver is kept in an item's run record as {'name', 'computer', 'since'}: the git
@@ -43,6 +44,12 @@ What a caller needs to know
   its own below the top, or a file larger than LARGEST is refused, because the workspace
   would not take it. The top folder's own `.git`, lock files and the guidance caches are
   not copied.
+- `overlaps(folder, root)` compares folders, not spellings (only the folders' own identity
+  is read, never what they hold): 'inside'
+  when the folder is `root` or lies inside it, 'holds' when `root` lies inside the folder,
+  None when they are apart. A studio refuses to bring in a folder that overlaps its
+  workspace, and `copy_in` refuses a target inside the folder copied (or the folder
+  itself), which would copy the folder into itself until its names grew too long.
 """
 from __future__ import annotations
 
@@ -376,8 +383,38 @@ def unacceptable(top: Path) -> str | None:
     return None
 
 
+def _same(one: Path, other: Path) -> bool:
+    """Whether two paths name one folder: by the folder itself (device and inode) where
+    both exist, so letter case on a disk that ignores it, and a link, make no difference;
+    by the resolved path where either does not exist yet."""
+    try:
+        return os.path.samefile(one, other)
+    except (OSError, ValueError):
+        return os.path.normcase(str(one)) == os.path.normcase(str(other))
+
+
+def overlaps(folder, root) -> str | None:
+    """'inside' when `folder` is `root` or lies inside it, 'holds' when `root` lies inside
+    `folder`, else None. Folders are compared as folders, not as spellings (`_same`): a path
+    in another letter case on a disk that ignores case is the same folder. A path that
+    cannot be resolved counts as inside."""
+    try:
+        there, here = Path(folder).resolve(), Path(root).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return 'inside'
+    if any(_same(one, here) for one in (there, *there.parents)):
+        return 'inside'
+    return 'holds' if any(_same(one, there) for one in here.parents) else None
+
+
+INTO_ITSELF = 'A folder cannot be copied into itself.'
+
+
 def copy_in(top: Path, target: Path) -> None:
-    """Copy a folder into place whole, or leave nothing. The folder is only read."""
+    """Copy a folder into place whole, or leave nothing. The folder is only read. A target
+    that is the folder or lies inside it is refused before anything is copied."""
+    if overlaps(target, top) == 'inside':
+        raise WorkspaceError(INTO_ITSELF)
     def ignore(folder: str, names: list[str]) -> list[str]:
         return [name for name in names if _left_out(top, Path(folder) / name)]
 

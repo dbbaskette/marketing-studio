@@ -45,6 +45,9 @@ NOT_HERE = ('The deck it started from is not on this computer, so this deck can 
             'the desk only on the computer that holds it.')
 UNREADABLE_DECK = 'The deck it started from cannot be read.'
 UNREADABLE_DRAWING = 'A saved record of its drawing cannot be read.'
+RESEARCH_MISSING = 'The pinned research bundle is missing.'
+RESEARCH_UNREAD = 'A file of the pinned research bundle is missing or cannot be read.'
+UNREADABLE_FILE = 'A file this deck needs cannot be read on this computer.'
 USE_DESK = 'Use this deck’s existing desk or finished Open on the desk action.'
 METADATA = 'This deck already has desk metadata or pending recovery.'
 # A pause, a stop and a failure are each kept in History; none is resumed on the desk.
@@ -167,7 +170,7 @@ def materials(record, files):
     # Existing research's consumer validates complete captured bundles on the bounded copy.
     if record.get('research_contract') and (record['steps'].get('research-report') or {}).get('done') \
             and 'research/output.json' not in files:
-        raise ValueError('The pinned research bundle is missing.')
+        raise ValueError(RESEARCH_MISSING)
     for name in ('work/build/state.json', 'work/patch-plan.json', 'brand/contract.json'):
         if name in files and not isinstance(_json(files, name), dict):
             raise Kept(UNREADABLE_DRAWING)
@@ -273,7 +276,14 @@ def _snapshot(engine, path):
     record = _json(files, 'run.json', True)
     if format.supported(record) and record.get('research_contract') \
             and (record['steps'].get('research-report') or {}).get('done'):
-        research_contract.read_bundle(root / 'research')
+        # The operating system's own words name a path on this computer: the preview says
+        # what is missing in a sentence instead (GitHub issue #544).
+        if not (root / 'research' / 'output.json').is_file():
+            raise ValueError(RESEARCH_MISSING)
+        try:
+            research_contract.read_bundle(root / 'research')
+        except OSError:
+            raise ValueError(RESEARCH_UNREAD) from None
     identity_path = home.data_root() / 'computer.json'
     identity = identity_path.read_bytes() if identity_path.is_file() and not identity_path.is_symlink() else None
     state = engine._runs.get(str(root))
@@ -387,8 +397,10 @@ def migration_preview(engine, path):
         return {**prepared, 'path': str(root), 'expected': _token(files, guard),
                 'blockers': prepared['blockers'] + blockers, 'consequences': CONSEQUENCES}
     except (OSError, ValueError, TypeError, WorkspaceError) as error:
+        # An operating-system error names a path on this computer; the person reads a sentence.
+        said = UNREADABLE_FILE if isinstance(error, OSError) else str(error)
         return {'path': str(path), 'expected': '', 'scope': ['part'], 'retained': [],
-                'writes': [], 'blockers': [str(error)], 'consequences': CONSEQUENCES}
+                'writes': [], 'blockers': [said], 'consequences': CONSEQUENCES}
 
 
 def _write(path, data):

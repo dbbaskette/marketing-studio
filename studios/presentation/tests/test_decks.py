@@ -35,6 +35,19 @@ UPLOAD = {'kind': 'upload', 'name': 'a.pptx'}
 SITES = ['https://blog.example.com/platform', 'https://docs.example.com']
 
 
+class SavedRecordWordsTests(unittest.TestCase):
+    """GitHub issue #544: what the code says of a deck not on the desk is what it is now, a
+    saved record (GitHub issue #542), not a deck that keeps the gated flow."""
+
+    def test_a_deck_off_the_desk_is_called_a_saved_record(self):
+        said = ' '.join(decks.on_desk.__doc__.split())
+        self.assertIn('saved record of the earlier step-by-step flow', said)
+        self.assertNotIn('gated flow', said)
+        page = (helpers.REPO / 'skills/presentation-studio/scripts/desk/app.js').read_text()
+        self.assertNotIn('whose record the runner cannot read, is a read-only', page)
+        self.assertIn('is a saved record, whatever its state', page)
+
+
 class FormTests(unittest.TestCase):
     def test_notes_are_kept_and_limited(self):
         self.assertEqual(decks.check_form(form(notes='  Cover rollback first.  '), BRANDS)['notes'], 'Cover rollback first.')

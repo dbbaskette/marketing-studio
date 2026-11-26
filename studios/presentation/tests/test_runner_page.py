@@ -760,6 +760,189 @@ class FirstDraftTests(PageCase):
         self.assertEqual(checked['initial_review_source'], 'form')
 
 
+class PhoneSettingsTests(PageCase):
+    """GitHub issue #539, the owner's ruling: a phone on the private link (a request the
+    network bridge carried, X-Marketing-Studio-Via: network) is refused set-up, and gives the
+    brand skill's repository only as a web address. The tests set the header themselves."""
+
+    def send(self, endpoint: str, sent: dict, remote: bool) -> tuple[int, dict]:
+        status, _, data, _ = self.raw('POST', f'/api/{endpoint}', json.dumps(sent).encode(),
+                                      origin=self.origin, kind='application/json',
+                                      remote=remote)
+        return status, json.loads(data)
+
+    def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
+        made = super().headers(token, host, origin, kind)
+        if remote:
+            made['X-Marketing-Studio-Via'] = 'network'
+        return made
+
+    def test_set_up_is_refused_to_a_phone_and_says_nothing_of_any_folder(self):
+        from studio_core.shared_runner import caller
+        before = self.get('setup')
+        here = self.base / 'phone-asked'
+        here.mkdir()
+        for endpoint in ('setup/check', 'setup'):
+            for sent in ({'path': str(here)}, {'path': str(self.base / 'not-yet')},
+                         {'path': str(self.space.repo)}, {'repository': str(self.base)},
+                         {'repository': 'https://example.invalid/team.git'}, {}):
+                with self.subTest(endpoint=endpoint, sent=sent):
+                    self.assertEqual(self.send(endpoint, sent, remote=True),
+                                     (403, {'error': caller.SETUP_HERE}))
+        self.assertFalse((self.base / 'not-yet').exists())
+        self.assertEqual(list(here.iterdir()), [])
+        self.assertEqual(self.get('setup'), before)
+        # On this computer the same check answers about the folder, as before.
+        status, found = self.send('setup/check', {'path': str(here)}, remote=False)
+        self.assertEqual(status, 200, found)
+        self.assertIn('checks', found)
+
+    def test_a_phone_gives_the_brand_repository_only_as_a_web_address(self):
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        bare = self.base / 'brand.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(bare)], check=True,
+                       capture_output=True)
+        for given in (str(bare), str(self.base), '~/brand', './brand', '../brand',
+                      'file://' + str(bare), 'host:brand.git', '/srv/brand.git', '',
+                      'https://', 'http://example.invalid/brand.git',
+                      '-u@example.invalid:brand.git', 'ext::sh -c touch% /tmp/x',
+                      'git@example.invalid:owner/brand.git extra'):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('brand', {'repository': given}, remote=True),
+                                 (403, {'error': caller.BRAND_ADDRESS}))
+        self.assertIsNone(settings.load().brand_repository)
+        # A web address is checked as it always is (here by a stand-in: no network).
+        looked = []
+
+        def check(address, place):
+            looked.append(address)
+            return {'repository': address, 'commit': '0' * 40}
+        with mock.patch.object(brand_source, 'check', check):
+            for given in ('https://example.invalid/owner/brand.git',
+                          'ssh://git@example.invalid/owner/brand.git',
+                          'git@example.invalid:owner/brand.git'):
+                with self.subTest(given=given):
+                    status, made = self.send('brand', {'repository': given}, remote=True)
+                    self.assertEqual((status, made['brand']['repository']), (200, given))
+        self.assertEqual(len(looked), 3)
+        # On this computer a folder is still read as a repository, as before.
+        status, said = self.send('brand', {'repository': str(self.base / 'nowhere.git')},
+                                 remote=False)
+        self.assertEqual(status, 400, said)
+        self.assertTrue(said['error'].startswith("The brand skill's repository could not be "
+                                                 'read.'), said)
+
+    def test_a_phone_may_not_name_this_computer_as_the_brand_repository_host(self):
+        # The planner's ruling on #539: over ssh, git reads a folder here through this
+        # computer's own host; and git's reason, which names hosts and ports, is kept from a
+        # phone. Hosts on the local network stay allowed.
+        import socket
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        own = socket.gethostname()
+        for given in ('git@localhost:/Users/someone/repo', 'ssh://u@127.0.0.1/path',
+                      'https://127.0.0.1:8080/brand.git', 'https://LOCALHOST./brand.git',
+                      'ssh://git@[::1]/brand.git', 'git@127.1:brand.git',
+                      'https://2130706433/brand.git', 'https://0.0.0.0/brand.git',
+                      'https://[::ffff:127.0.0.1]/brand.git', 'git@shop.localhost:brand.git',
+                      f'git@{own}:brand.git', f"ssh://git@{own.split('.')[0]}.local/brand.git",
+                      # A user or host that ssh would read as an option (review item 6).
+                      'ssh://-oProxyCommand=x/r', 'ssh://-oProxyCommand=x@example.invalid/r',
+                      'https://-example.invalid/brand.git', '-git@example.invalid:brand.git',
+                      'git@-example.invalid:brand.git', 'ssh://git@exa=mple.invalid/r'):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('brand', {'repository': given}, remote=True),
+                                 (403, {'error': caller.BRAND_ADDRESS}))
+        said = ("The brand skill's repository could not be read. ssh: connect to host "
+                '10.0.0.5 port 22: Connection refused.')
+
+        def check(address, place):
+            if address.startswith('git@10.'):
+                raise brand_source.Unreadable(said)
+            return {'repository': address, 'commit': '0' * 40}
+        lan = 'https://192.168.1.20/team/brand.git'
+        with mock.patch.object(brand_source, 'check', check):
+            status, made = self.send('brand', {'repository': lan}, remote=True)
+            self.assertEqual((status, made['brand']['repository']), (200, lan))
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=True), (400, {'error': caller.BRAND_UNREAD}))
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=False), (400, {'error': said}))
+
+    def get_as(self, endpoint: str, remote: bool) -> dict:
+        status, _, data, _ = self.raw('GET', f'/api/{endpoint}', origin=self.origin,
+                                      remote=remote)
+        self.assertEqual(status, 200, data)
+        return json.loads(data)
+
+    def test_a_phone_is_shown_no_folder_of_this_computer_in_set_up_or_the_brand(self):
+        # The planner's ruling on #539 (a): the workspace's folder is left out, and a brand
+        # repository saved as a folder is said only as a folder on this computer.
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        folder = str(self.base / 'brand.git')
+        settings.save(replace(settings.load(), brand_repository=folder))
+        here = self.get_as('setup', remote=False)
+        self.assertEqual(here['workspace']['path'], str(self.space.repo))
+        self.assertEqual(here['brand']['repository'], folder)
+        phone = self.get_as('setup', remote=True)
+        self.assertIsNone(phone['workspace']['path'])
+        self.assertEqual(phone['brand']['repository'], caller.FOLDER_HERE)
+        self.assertNotIn(str(self.base), json.dumps(phone))
+        self.assertNotIn(str(self.base.resolve()), json.dumps(phone))
+        # Everything else is as this computer has it.
+        self.assertEqual({key: value for key, value in phone.items()
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep')},
+                         {key: value for key, value in here.items()
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep')})
+        # The answers of the brand route and of the shared notice are shown the same way.
+        with mock.patch.object(brand_source, 'check', lambda address, place: {
+                'repository': address, 'commit': '0' * 40}):
+            status, made = self.send('brand', {'repository': 'https://example.invalid/b.git'},
+                                     remote=True)
+        self.assertEqual((status, made['brand']['repository']), (200, 'https://example.invalid/b.git'))
+        self.assertIsNone(made['workspace']['path'])
+        self.assertNotIn(str(self.base.resolve()), json.dumps(made))
+        status, seen = self.send('shared', {'seen': True}, remote=True)
+        self.assertEqual(status, 200, seen)
+        self.assertNotIn(str(self.base.resolve()), json.dumps(seen))
+
+    def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
+        # The planner's ruling on #539 (b): the same sentence whatever the folder holds.
+        from studio_core.shared_runner import caller
+        path = Path(self.started())
+        known = self.base / 'outside' / 'restarts'
+        shutil.copytree(path, known, ignore=shutil.ignore_patterns('work', 'sources'))
+        home.remember(known, 'Rolling restarts')
+        before = sorted(one.name for one in self.space.root.iterdir())
+        for given in (str(known), str(self.base / 'nothing-there'), str(self.space.root), '~/x'):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('bring', {'path': given}, remote=True),
+                                 (403, {'error': caller.BRING_HERE}))
+        self.assertEqual(sorted(one.name for one in self.space.root.iterdir()), before)
+        self.assertEqual(self.send('bring', {'path': str(self.base / 'nothing-there')},
+                                   remote=False),
+                         (403, {'error': 'That folder is not a deck this computer knows.'}))
+        status, made = self.send('bring', {'path': str(known)}, remote=False)
+        self.assertEqual((status, made['id']), (200, 'rolling-restarts-2'))
+
+    def test_the_shared_decision_answers_only_a_remote_caller_and_only_its_routes(self):
+        from studio_core.shared_runner import caller
+        phone = Message()
+        phone['X-Marketing-Studio-Via'] = 'network'
+        with caller.answering(phone):
+            self.assertEqual(caller.settings_refused('/api/setup', {}), caller.SETUP_HERE)
+            self.assertEqual(caller.settings_refused('/api/setup/check', {}), caller.SETUP_HERE)
+            self.assertEqual(caller.settings_refused('/api/brand', {'repository': '/x'}),
+                             caller.BRAND_ADDRESS)
+            self.assertIsNone(caller.settings_refused(
+                '/api/brand', {'repository': 'https://example.invalid/brand.git'}))
+            self.assertIsNone(caller.settings_refused('/api/decks', {'path': '/x'}))
+        for route in (*caller.SETUP_ROUTES, caller.BRAND_ROUTE):
+            self.assertIsNone(caller.settings_refused(route, {'repository': '/x', 'path': '/x'}))
+
+
 class BringTests(PageCase):
     def test_remembered_decks_list_omits_current_workspace(self):
         path = Path(self.started())

@@ -190,6 +190,24 @@ class CommandWalkTests(SavedDecks):
 
 
 class SavedDeckDefectTests(SavedDecks):
+    def test_every_refusal_of_the_gate_answers_409_with_the_gates_own_sentence(self):
+        # GitHub issue #544: the gate answers 409 for every refusal, as Training Studio's
+        # saved-record guard does; the page shows a 409 and a 400 alike, as the sentence.
+        found = self.decks()
+        for name, root in found.items():
+            state = RouteWalkTests.STATES[name]
+            for path in (*pages.DESK, '/api/run', '/api/decide', '/api/answer'):
+                sent = {**body(path), 'path': str(root)}
+                decision = pages.SAVED_ROUTES[path]
+                if decision == saved_gate.WORKSPACE or saved_gate.allowed(decision, state, sent):
+                    continue
+                with self.subTest(deck=name, route=path):
+                    status, said = self.call(path, sent)
+                    self.assertEqual(status, 409, said)
+                    # An unreadable record says the runner's own reason first.
+                    self.assertTrue(said.endswith(saved_gate.UNREAD_NEXT) if state == 'unreadable'
+                                    else said == saved_gate.SAID[state], said)
+
     def test_a_saved_deck_not_delivered_is_not_published(self):
         found = self.decks()
         for name in ('opens', 'read-only'):
@@ -243,6 +261,32 @@ class SavedLockTests(runner_support.DeskCase):
                 # Lock files only: everything else in the folder is as it was.
                 self.assertEqual({path.relative_to(root).as_posix(): path.read_bytes()
                                   for path in root.rglob('*') if path.is_file()}, kept)
+
+    def test_start_up_looks_into_a_bounded_number_of_folders(self):
+        # GitHub issue #544: the walk of work/ and sources/ stops at a bound; a lock in a
+        # folder beyond it is left where it is. One chain of folders, so the order the disk
+        # lists them in does not matter: at most three folders are looked into.
+        from unittest import mock
+        root = self.load_saved('research-plan', title='Many folders')
+        near, far = root / 'work/.studio-research/lock', root / 'work/a/b/c/.studio-research/lock'
+        for lock in (near, far):
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            lock.write_text('x\n')
+        with mock.patch.object(engines, 'UNMARK_FOLDERS', 3):
+            self.engine.resume()
+        self.assertFalse(near.exists())
+        self.assertTrue(far.exists())
+
+    def test_start_up_walks_as_the_running_step_check_does(self):
+        # Review of #544: the same walk as `sync_guard.worker_in_progress`, `.git` left out,
+        # so a lock there, which that check never counts, is not touched either.
+        root = self.load_saved('research-plan', title='Its own repository')
+        kept = root / 'work/.git/x/.studio-research/lock'
+        kept.parent.mkdir(parents=True)
+        kept.write_text('x\n')
+        self.assertFalse(sync_guard.worker_in_progress(self.space.repo))
+        self.engine.resume()
+        self.assertTrue(kept.exists())
 
     def test_a_lock_of_a_step_this_process_runs_is_kept(self):
         root = self.load_saved('build', title='Running')
