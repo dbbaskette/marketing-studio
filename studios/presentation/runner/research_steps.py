@@ -227,7 +227,8 @@ class Researching:
                      'unknown': '\n'.join(b['text'] for b in f['gaps']),
                      'left_out': f['id'] in ((record.get('research') or {}).get('left_out') or []),
                      'sources': [{'title': next(s['title'] for s in facts['sources'] if s['id'] == c['source']),
-                                  'origin': next(s['origin'] for s in facts['sources'] if s['id'] == c['source']),
+                                  # A supplied document is said to be one, never a folder (#550).
+                                  'origin': research_contract.shown_origin(next(s['origin'] for s in facts['sources'] if s['id'] == c['source'])),
                                   'quote': c['quote']} for fact in facts['facts']
                                  if fact['id'] in f['support'] + f['counter']
                                  for c in fact['citations']]} for f in facts['findings']]
@@ -250,7 +251,7 @@ class Researching:
                 'unknown': '' if known else marks.first_sentence(limits),
                 'left_out': ident in left,
                 'sources': [{'title': str(passage.get('title') or ''),
-                             'origin': str(passage.get('origin') or ''),
+                             'origin': research_contract.shown_origin(str(passage.get('origin') or '')),
                              'quote': str(passage.get('quote') or '')}
                             for passage in (evidence if isinstance(evidence, list) else ())
                             if isinstance(passage, dict)]})
