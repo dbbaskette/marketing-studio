@@ -59,6 +59,26 @@ class WebRepositoryTests(unittest.TestCase):
         # Another computer whose name only begins like this one's.
         self.assertTrue(web_repository('https://synthetic-mac-2.local/r'))
 
+    def test_a_host_holds_only_name_characters_and_no_user_starts_with_a_dash(self):
+        # Second review, item 1: Git decodes a percent-encoded host into another one.
+        for address in ('ssh://git@%6c%6fcalhost/x', 'ssh://%31%32%37.0.0.1/srv/x.git',
+                        'https://%65xample.com/r.git', 'https://example.com%2f@localhost/r',
+                        'git@%6c%6fcalhost:x', 'git@exa%6dple.com:x', 'https://exa_mple.com/r',
+                        'https://example.com:/r', 'https://example.com:http/r', 'https://[::1%25lo]/r',
+                        'https://[g::1]/r', 'https://[::1]x/r',
+                        # A user name that starts with a dash, in every form.
+                        'ssh://-oProxyCommand=x@example.com/r', 'https://-user@example.com/r',
+                        '-user@example.com:x', 'ssh://@example.com/r', '@example.com:x',
+                        # An IPv6 address carrying a loopback or unspecified IPv4 address.
+                        'https://[::127.0.0.1]/r', 'ssh://[0:0:0:0:0:0:7f00:1]/x', 'ssh://[::ffff:7f00:1]/r', 'https://[2002:7f00:1::]/r',
+                        'https://[64:ff9b::7f00:1]/r', 'https://[::0.0.0.0]/r', 'https://[2002::]/r'):
+            with self.subTest(address=address):
+                self.assertFalse(web_repository(address))
+        for address in ('https://[2001:db8::1]/r', 'https://[fe80::1%en0]/r', 'ssh://git@example.com:22/r',
+                        'https://user@example.com/r', 'git@a-b.example.com:x'):
+            with self.subTest(address=address):
+                self.assertTrue(web_repository(address))
+
     def test_a_host_name_without_local_is_compared_with_and_without_it(self):
         with mock.patch.object(repository_address.socket, 'gethostname', return_value='build-box'):
             self.assertFalse(web_repository('https://build-box.local/r'))

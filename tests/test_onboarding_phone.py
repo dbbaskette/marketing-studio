@@ -191,7 +191,12 @@ class OnboardingPhoneTests(BrandFolders):
     def test_a_phone_gives_only_a_web_address_of_another_computer(self):
         # Review item 4: one rule for a phone's repository address (studio_core.repository_address).
         for address in ('http://127.0.0.1:8000/x.git', 'https://localhost/a', 'ssh://localhost/Users/x/repo',
-                        'me@localhost:/Users/x/repo', 'http://example.com/org/brands.git'):
+                        'me@localhost:/Users/x/repo', 'http://example.com/org/brands.git',
+                        # Second review, item 1: an encoded host, a user that starts with a dash,
+                        # and an IPv6 address carrying a loopback.
+                        'ssh://git@%6c%6fcalhost/x', 'ssh://%31%32%37.0.0.1/srv/x.git',
+                        'ssh://-oProxyCommand=x@example.com/r', 'ssh://-user@example.com/x',
+                        'ssh://[0:0:0:0:0:0:7f00:1]/x'):   # ::127.0.0.1, written without ::
             for group, key in (('brand', 'brands'), ('brand', 'repository'), ('team', 'repository')):
                 with self.subTest(address=address, setting=(group, key)):
                     status, answer = self.save({group: {key: address}})
