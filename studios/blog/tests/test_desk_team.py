@@ -792,6 +792,38 @@ class DeskPublishTests(TeamCase):
         self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
         self.assertTrue(published)
 
+    def test_a_finished_run_opened_on_the_desk_is_published_as_before(self):
+        import saved_fixtures
+
+        tree = saved_fixtures.FIXTURES / 'finished-page'
+        (ident,) = [path.name for path in (tree / 'articles').iterdir()]
+        for path in sorted(tree.rglob('*')):
+            if path.is_file():
+                relative = path.relative_to(tree)
+                if relative.parts[0] == 'articles':
+                    relative = Path(*relative.parts[1:])
+                target = self.root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(path.read_bytes())
+        support.git(self.found.repo, 'add', '-A')
+        support.git(self.found.repo, 'commit', '-qm', 'A finished blog of the earlier flow')
+        support.git(self.found.repo, 'push', '-q', 'origin', 'HEAD:main')
+        management.dispatch(
+            self.root,
+            'team-take',
+            {
+                'id': ident,
+                'expected': blog_runner.survey(self.root, ident)['expected'],
+                'confirmed': True,
+            },
+        )
+        management.dispatch(self.root, 'desk-open', {'id': ident})
+        self.assertTrue(blog_runner.engine(self.root).describe(ident)['on_desk'])
+        self.assertTrue(blog_runner.survey(self.root, ident)['complete'])
+        # Not marked as published on the desk: its complete run lets it be published.
+        self.publish(ident)
+        self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
+
     def test_a_blog_moved_to_the_desk_is_judged_as_desk_work(self):
         import desk_chat
         import saved_fixtures

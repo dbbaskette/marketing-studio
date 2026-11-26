@@ -892,18 +892,22 @@ DESK_UNPUBLISHED = (
 
 def publish_left(root, ident):
     """What is left before a blog may be published to the team, in a sentence; None when
-    nothing is. A blog on the desk, including one moved there that keeps its run, is judged as
-    the desk judges it finished (desk_jobs.published); a run as its stages stand."""
+    nothing is. A blog whose run is complete may be published, as before, on the desk or not
+    (a finished run opened on the desk keeps its run). Any other blog on the desk, such as
+    one made there or one moved there unfinished, is judged as the desk judges it finished
+    (desk_jobs.published); a run off the desk as its stages stand."""
+    import blog_runner
     import desk
     import desk_jobs
 
     directory, info = studio.item(root, 'articles', ident)
-    if desk.on_desk(directory):
-        if desk_jobs.under_way(root, ident):
-            return DESK_WORKING
-        return None if desk_jobs.published(info, 0) else DESK_UNPUBLISHED
-    import blog_runner
-
-    if blog_runner.survey(root, ident)['complete']:
+    if not desk.on_desk(directory):
+        if blog_runner.survey(root, ident)['complete']:
+            return None
+        return 'Approve every planned stage before publishing a revision.'
+    working = desk_jobs.under_way(root, ident)
+    if desk_jobs.published(info, working):
         return None
-    return 'Approve every planned stage before publishing a revision.'
+    if (directory / blog_runner.STATE).is_file() and blog_runner.survey(root, ident)['complete']:
+        return None
+    return DESK_WORKING if working else DESK_UNPUBLISHED
