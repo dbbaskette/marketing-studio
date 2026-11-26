@@ -84,9 +84,8 @@ the studios read that mark:
   cannot change **Workspace folder** or **Installed skill folder**, nor a studio
   installation folder. Presentation Studio and Training Studio refuse their own set-up
   (moving or joining a workspace) from a phone with a sentence to do it on the computer.
-  Training Studio's Settings says so in place of **Change the set-up**; Presentation
-  Studio's Settings still offers the button, and pressing it from a phone is refused with
-  that sentence. A form whose other settings changed is still saved from a phone, as
+  Their Settings say "The set-up is changed on the computer that runs …" in place of
+  **Change the set-up**. A form whose other settings changed is still saved from a phone, as
   long as each folder setting is sent back exactly as it is saved.
 - **A repository is given only as a web address of another computer.** From a phone,
   **Brands folder or repository**, **Brand skill Git repository**, the team repository and
@@ -100,12 +99,12 @@ the studios read that mark:
   studios' Settings name no brand skill's folder to a phone. A skill folder a phone names
   is refused unread, except the one already saved, sent exactly as saved. Brands
   authoring stays on the computer.
-- **No failure sentence names a folder.** In Marketing Studio and each studio's setup
-  page, where the reason would name one, a phone is told "That could not be done here.
-  See why on the computer the studios run on." The studios' own refusals and advice
-  reach a phone as they are. In the deck studios' upkeep report a phone is given no skill
-  link's folder, and no folder the brand skill is installed from; the sentence that says
-  a skill link is broken can still name one (not done yet).
+- **No sentence names a folder.** In Marketing Studio and each studio's setup page,
+  where the reason would name one, a phone is told "That could not be done here. See why
+  on the computer the studios run on." The studios' own refusals and advice reach a phone
+  as they are. In what Presentation Studio and Training Studio show a phone of set-up,
+  the brand and the skills' upkeep report, a folder is left out, and a sentence that
+  names one, such as the one saying a skill link is broken, is said as "The reason names a folder on this computer, so it can be seen only on that computer itself."
 - **Bring in and folder sources stay on the computer.** Presentation Studio and Training
   Studio refuse **Bring in** from a phone before any folder is read. A studio's source
   picker refuses a folder on the computer; a Google Drive folder link and uploads are
