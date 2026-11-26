@@ -142,6 +142,35 @@ class Held:
         return self.local.stack.pop().__exit__(*args)
 
 
+def sync_lock(workspace):
+    """The lock a sync holds by default: Blog Studio's own repository lock, which takes the
+    shared settings lock first. A caller that already holds it in this thread is let in."""
+    return Held(workspace.repo / '.git/blog-studio.lock')
+
+
+def place(kept, marker):
+    """How Blog Studio reads its remembered workspace: the branch and the repository from
+    the folder's hub.json, after the older local settings are moved into the shared ones,
+    and when to share from the shared settings. None when the folder has no hub.json."""
+    import studios_config
+
+    root = Path(kept['repo']) / kept['folder']
+    studios_config.migrate(root)
+    described = marker(root.parent, root.name)
+    if not described:
+        return None
+    shared, _ = studios_config.read()
+    share = shared.get('share') if shared.get('share') in ('decision', 'asked') else 'decision'
+    return described['branch'], described.get('repository'), share
+
+
+def keep_share(when):
+    """How Blog Studio writes when to share: into the shared settings, every time asked."""
+    import studios_config
+
+    studios_config.update({'share': when})
+
+
 class GitError(WorkspaceError):
     """git failed; the message is the line of its output that says why."""
 

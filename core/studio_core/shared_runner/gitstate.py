@@ -94,6 +94,17 @@ WorkspaceError = workspace.WorkspaceError
 # every studio shares. SYNC_LOCKS names the other lock files, in the repository's own git
 # folder, that a sync in a shared repository holds after the shared settings lock, in order:
 # each studio that writes there from a process of its own names its file.
+#
+# A studio that keeps its workspace its own way passes, each in place of the shared way:
+#   IGNORED      every entry of a new workspace's ignore file, in order
+#   REMEMBERED   which of name, repo, folder, branch and address `remember` keeps
+#   PLACE        PLACE(kept, marker) -> (branch, address, share), or None for no workspace:
+#                how `current` reads what the remembered record does not hold
+#   KEEP_SHARE   KEEP_SHARE(when): how `share_when` writes when to share
+#   SET_UP_KEEPS_SHARE  False: setting up never writes when to share, and the workspace it
+#                gives shares as asked, else as the same clone did, else `decision`
+#   HELD         HELD(workspace): the lock a sync holds by default, in place of the shared
+#                settings lock (a studio whose callers already hold it passes its own)
 PRODUCT = globals().get('PRODUCT', 'the studio')
 TOOL = globals().get('TOOL', 'studio')
 FOLDER = globals().get('FOLDER', 'work')
@@ -103,13 +114,19 @@ README = globals().get('README', '')
 studios_config = globals().get('studios_config')
 REQUIRE_WORKSPACE_MARKER = globals().get('REQUIRE_WORKSPACE_MARKER', False)
 SYNC_LOCKS = tuple(globals().get('SYNC_LOCKS', ()))
+REMEMBERED = tuple(globals().get('REMEMBERED', ('name', 'repo', 'folder', 'branch', 'address')))
+PLACE = globals().get('PLACE')
+KEEP_SHARE = globals().get('KEEP_SHARE')
+SET_UP_KEEPS_SHARE = globals().get('SET_UP_KEEPS_SHARE', True)
+HELD = globals().get('HELD')
 
 SCHEMA = 1
 MARKER = 'hub.json'
 SHARE = ('decision', 'asked')   # when to share; the first is the default
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
-IGNORED = ('work/', 'sources/', '**/.harness-research/guidance/',
-           '**/.harness-slides/guidance/', '*.lock', f'**/.{TOOL}/lock')
+IGNORED = tuple(globals().get('IGNORED', (
+    'work/', 'sources/', '**/.harness-research/guidance/', '**/.harness-slides/guidance/',
+    '*.lock', f'**/.{TOOL}/lock')))
 ASKING = threading.Lock()       # one fetch or push at a time in this process
 # ssh is never let ask, so a host it has not met is refused until a person trusts it.
 TRUST = ('This computer has not been told to trust that host yet. Run git ls-remote with the '
@@ -165,11 +182,12 @@ def clones() -> Path:
 
 
 def remember(workspace: Workspace) -> Workspace:
-    """Make this the computer's workspace. When to share is not kept here."""
-    home.write_json(settings_path(), {
-        'schema': SCHEMA, 'name': workspace.name, 'repo': str(workspace.repo),
-        'folder': workspace.folder, 'branch': workspace.branch,
-        'address': workspace.address})
+    """Make this the computer's workspace, with the parts of it REMEMBERED. When to share
+    is not kept here."""
+    record = {'name': workspace.name, 'repo': str(workspace.repo), 'folder': workspace.folder,
+              'branch': workspace.branch, 'address': workspace.address}
+    home.write_json(settings_path(), {'schema': SCHEMA, **{
+        name: value for name, value in record.items() if name in REMEMBERED}})
     return workspace
 
 
@@ -190,8 +208,15 @@ def current() -> Workspace | None:
     if kept is None:
         return None
     try:
-        found = Workspace(str(kept['name']), Path(kept['repo']), str(kept['folder']),
-                          str(kept['branch']), kept.get('address'), shared_share())
+        if PLACE is None:
+            found = Workspace(str(kept['name']), Path(kept['repo']), str(kept['folder']),
+                              str(kept['branch']), kept.get('address'), shared_share())
+        else:
+            placed = PLACE(kept, marker)
+            if placed is None:
+                return None
+            found = Workspace(str(kept['name']), Path(kept['repo']), str(kept['folder']),
+                              *placed)
     except (KeyError, TypeError):
         return None
     return found if (found.root / MARKER).is_file() else None
@@ -229,7 +254,7 @@ def share_when(when: str) -> Workspace:
         raise WorkspaceError('Sharing is one of: ' + ', '.join(SHARE) + '.')
     if current() is None:
         raise WorkspaceError('No workspace is set up on this computer yet.')
-    _keep_share(when)
+    (KEEP_SHARE or _keep_share)(when)
     return current()
 
 
@@ -380,8 +405,10 @@ def lay_out(repo: Path, folder: str, described: dict | None) -> list[str]:
 
 
 def set_up(repo: Path, label: str, address: str | None, folder: str | None,
-           branch: str | None, share: str | None) -> Workspace:
-    """Adopt or lay out the runner's folder in a repository, and remember the workspace."""
+           branch: str | None, share: str | None,
+           remember_workspace: bool = True) -> Workspace:
+    """Adopt or lay out the runner's folder in a repository, and remember the workspace
+    unless `remember_workspace` is false."""
     if share not in (None, *SHARE):
         raise WorkspaceError('Sharing is one of: ' + ', '.join(SHARE) + '.')
     identity(repo)
@@ -402,14 +429,22 @@ def set_up(repo: Path, label: str, address: str | None, folder: str | None,
     written = lay_out(repo, where, described)
     if written:
         _commit(repo, f'Set up the {PRODUCT} workspace in {where}/', written)
-    if share is not None and address is not None:
-        _keep_share(share)
-    return remember(Workspace(str((found or described)['name']), repo, where,
-                              on_branch(repo), address, shared_share()))
+    if SET_UP_KEEPS_SHARE:
+        if share is not None and address is not None:
+            _keep_share(share)
+        made = Workspace(str((found or described)['name']), repo, where, on_branch(repo),
+                         address, shared_share())
+    else:
+        before = current()
+        kept = before.share if before and before.repo == repo else SHARE[0]
+        made = Workspace(str((found or described)['name']), repo, where, on_branch(repo),
+                         address, share or kept)
+    return remember(made) if remember_workspace else made
 
 
 def join(address: str, folder: str | None = None, branch: str | None = None,
-         name: str | None = None, share: str | None = None) -> Workspace:
+         name: str | None = None, share: str | None = None,
+         remember_workspace: bool = True) -> Workspace:
     """Set the workspace up from a repository's address, in a clone of the runner's own."""
     need_git()
     if hub.ADDRESS_WITH_SECRET.match(address):
@@ -424,7 +459,7 @@ def join(address: str, folder: str | None = None, branch: str | None = None,
         raise WorkspaceError(f'A workspace called "{label}" is already kept on this computer '
                              'for a different repository. Give this one another name.')
     try:
-        return set_up(repo, label, address, folder, branch, share)
+        return set_up(repo, label, address, folder, branch, share, remember_workspace)
     except WorkspaceError:
         if fresh:  # a first set-up that was refused leaves nothing behind
             shutil.rmtree(repo, ignore_errors=True)
@@ -447,9 +482,15 @@ def _clone(address: str, repo: Path) -> None:
 
 
 def local(path: Path, folder: str | None = None, branch: str | None = None,
-          name: str | None = None) -> Workspace:
+          name: str | None = None, **given) -> Workspace:
     """Set the workspace up in a folder on this computer that has no remote, and so nowhere
-    to share to. The folder is made a repository if it is not one."""
+    to share to. The folder is made a repository if it is not one. Only a studio whose
+    set-up keeps no sharing (SET_UP_KEEPS_SHARE false) may give `share`: the sharing the
+    workspace given back says. Nothing is written for it."""
+    unknown = [key for key in given if key != 'share' or SET_UP_KEEPS_SHARE]
+    if unknown:
+        raise TypeError(f"local() got an unexpected keyword argument '{unknown[0]}'")
+    share = given.get('share')
     need_git()
     repo = Path(path).expanduser().resolve()
     skill = workspace.SKILL_DIR
@@ -467,7 +508,7 @@ def local(path: Path, folder: str | None = None, branch: str | None = None,
             "workspace up from the repository's address instead: the runner keeps a copy of "
             'its own, so it never changes yours.')
     label = check_name(name or hub.name_from(repo.name), 'A workspace name')
-    return set_up(repo, label, None, folder, branch, None)
+    return set_up(repo, label, None, folder, branch, share)
 
 
 # --- committing --------------------------------------------------------------------------
@@ -788,8 +829,8 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
     pushed as it stood when the push began; a commit made while it was on its way waits
     for the next share.
     """
-    held = held or ProcessRLock(lambda: workspace_lock_path(workspace.repo, home.data_root()),
-                                refusal=WorkspaceError)
+    held = held or (HELD(workspace) if HELD is not None else ProcessRLock(
+        lambda: workspace_lock_path(workspace.repo, home.data_root()), refusal=WorkspaceError))
     repo, branch = workspace.repo, workspace.branch
     others = _also_held(repo)
     report = {'shared': False, 'reached': True, 'received': 0, 'unshared': 0, 'conflict': [],

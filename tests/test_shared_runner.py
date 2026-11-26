@@ -549,6 +549,74 @@ class WholeModuleTests(unittest.TestCase):
         self.assertIs(made.WorkspaceError, self.workspace.WorkspaceError)
 
 
+class WorkspaceValuesTests(WholeModuleTests):
+    """What a studio that keeps its workspace its own way passes, and what the others get."""
+
+    def setUp(self):
+        super().setUp()
+        self.written = {}
+        self.home.write_json = lambda path, value: self.written.__setitem__(Path(path), value)
+        self.home.read_json = lambda path, default=None: self.written.get(Path(path), default)
+
+    def test_a_studio_passing_nothing_keeps_the_shared_ways(self):
+        made = self.gitstate()
+        self.assertEqual(made.IGNORED, ('work/', 'sources/', '**/.harness-research/guidance/',
+                                        '**/.harness-slides/guidance/', '*.lock',
+                                        '**/.studio/lock'))
+        self.assertEqual(made.REMEMBERED, ('name', 'repo', 'folder', 'branch', 'address'))
+        self.assertEqual((made.PLACE, made.KEEP_SHARE, made.HELD), (None, None, None))
+        self.assertTrue(made.SET_UP_KEEPS_SHARE)
+        space = made.Workspace('Example', self.folder / 'repo', 'pieces', 'main', 'address')
+        made.remember(space)
+        self.assertEqual(self.written[made.settings_path()],
+                         {'schema': 1, 'name': 'Example', 'repo': str(self.folder / 'repo'),
+                          'folder': 'pieces', 'branch': 'main', 'address': 'address'})
+
+    def test_a_studio_s_own_record_and_reader(self):
+        asked = []
+
+        def place(kept, marker):
+            asked.append((dict(kept), marker))
+            return 'trunk', 'from-marker', 'asked'
+
+        made = self.gitstate(REMEMBERED=('name', 'repo', 'folder'), PLACE=place,
+                             IGNORED=('one/', 'two/'))
+        self.assertEqual(made.IGNORED, ('one/', 'two/'))
+        root = self.folder / 'repo' / 'pieces'
+        root.mkdir(parents=True)
+        (root / 'hub.json').write_text('{}')
+        made.remember(made.Workspace('Example', self.folder / 'repo', 'pieces', 'main', 'x'))
+        record = {'schema': 1, 'name': 'Example', 'repo': str(self.folder / 'repo'),
+                  'folder': 'pieces'}
+        self.assertEqual(self.written[made.settings_path()], record)
+        self.assertEqual(made.current(), made.Workspace('Example', self.folder / 'repo',
+                                                        'pieces', 'trunk', 'from-marker',
+                                                        'asked'))
+        self.assertEqual(asked, [(record, made.marker)])
+        asked.clear()
+        made.PLACE = lambda kept, marker: None
+        self.assertIsNone(made.current())
+
+    def test_a_studio_s_own_lock_for_a_sync(self):
+        held = []
+
+        class Lock:
+            def __enter__(self):
+                held.append('in')
+
+            def __exit__(self, *exc):
+                held.append('out')
+
+        made = self.gitstate(HELD=lambda space: Lock())
+        space = made.Workspace('Example', self.folder / 'repo', 'pieces', 'main', None)
+        self.assertIsNone(made.sync(space)['reached'])   # no remote: nothing is held
+        made.hub.run = lambda *args, **kwargs: types.SimpleNamespace(returncode=1, stderr='')
+        made.worker_in_progress = lambda repo, refusal: True
+        space = made.Workspace('Example', self.folder / 'repo', 'pieces', 'main', 'address')
+        self.assertEqual(made.sync(space)['notice'], made.SYNC_WAIT)
+        self.assertEqual(held, ['in', 'out'])
+
+
 class DeckSyncLockTests(unittest.TestCase):
     def test_each_deck_studio_s_sync_also_holds_blog_studio_s_lock(self):
         # A deck studio's sync in a shared repository never runs while Blog Studio writes
