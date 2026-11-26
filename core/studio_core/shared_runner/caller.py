@@ -12,6 +12,9 @@ What a caller needs to know
                                           # brand repository that is not a web address; None
                                           # for anything else (GitHub issue #539)
     caller.web_repository(address)        # an https://, ssh:// or user@host:path address
+                                          # on another computer
+    caller.unread_said(said)              # why a brand repository could not be read, as a
+                                          # remote caller is told it
 
 The bridge adds `X-Marketing-Studio-Via: network` to every request it carries to a studio,
 building its upstream headers from a fixed allow-list, so a network caller can neither send
@@ -27,14 +30,22 @@ folders, allow addresses). For a remote caller, `settings_refused` refuses the t
 routes whatever they were sent (SETUP_ROUTES: `/api/setup`, `/api/setup/check`), so a phone
 learns nothing about any folder here; and the brand skill's repository route (BRAND_ROUTE,
 `/api/brand`) unless `repository` is a web repository address: `https://` with a host,
-`ssh://` with a host, or the `user@host:path` form, which git reads as a remote. Anything
-git may read as a path on this computer (a folder, `file://`, `host:path` without a user,
-an empty address) is refused. A caller on this computer is never refused here: what it
+`ssh://` with a host, or the `user@host:path` form, which git reads as a remote, on a host
+that is not this computer. Anything git may read as a path on this computer (a folder,
+`file://`, `host:path` without a user, an empty address) is refused, and so is an address
+whose host is this computer (`localhost` and any name under it, a loopback or unspecified
+address in any spelling, this computer's own host name): over ssh that reads a folder here.
+Hosts on the local network stay allowed: a team's own git server is a web address. Only
+the address's text is read: no name is looked up. When such an address cannot be read,
+`unread_said` gives a remote caller a sentence with none of git's own words, which can
+name hosts and ports; a caller on this computer keeps git's reason. A caller on this computer is never refused here: what it
 may do is as before. Every other route answers None.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 import threading
 from contextlib import contextmanager
 from urllib.parse import urlsplit
@@ -104,22 +115,72 @@ BRAND_ADDRESS = ("From a phone, give the brand skill's repository as a web addre
 _SCP = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.+-]*@[A-Za-z0-9][A-Za-z0-9.-]*:[^\s]+')
 
 
+BRAND_UNREAD = ("The brand skill's repository could not be read from here. The reason is "
+                'shown when it is given on this computer itself.')
+
+
+def _numbers(host: str):
+    """The address a host written as numbers stands for, in any spelling git and ssh take
+    (`127.1` and `2130706433` are 127.0.0.1), or None for a name."""
+    plain = host.strip('[]').split('%', 1)[0]
+    try:
+        found = ipaddress.ip_address(plain)
+    except ValueError:
+        try:
+            found = ipaddress.IPv4Address(socket.inet_aton(plain))
+        except (OSError, ValueError):
+            return None
+    mapped = getattr(found, 'ipv4_mapped', None)
+    return mapped or found
+
+
+def _own_names() -> set[str]:
+    """This computer's own host name, its short form and its local-network form."""
+    try:
+        name = socket.gethostname().strip().rstrip('.').casefold()
+    except OSError:
+        return set()
+    short = name.split('.', 1)[0]
+    return {one for one in (name, short, short + '.local') if one}
+
+
+def this_computer(host) -> bool:
+    """Whether a host names this computer: localhost or a name under it, a loopback or
+    unspecified address, or this computer's own host name. Nothing is looked up."""
+    if not isinstance(host, str) or not host.strip():
+        return True
+    name = host.strip().rstrip('.').casefold()
+    if name == 'localhost' or name.endswith('.localhost'):
+        return True
+    found = _numbers(name)
+    if found is not None:
+        return found.is_loopback or found.is_unspecified
+    return name in _own_names()
+
+
 def web_repository(address) -> bool:
-    """Whether a repository address is one git reads as a remote, never a path here: an
-    https:// or ssh:// address with a host, or user@host:path. Read from its shape alone."""
+    """Whether a repository address is one git reads as a remote on another computer,
+    never a path here: an https:// or ssh:// address, or user@host:path, whose host is not
+    this computer. Read from its text alone."""
     if not isinstance(address, str):
         return False
     value = address.strip()
     if not value or any(character.isspace() or ord(character) < 32 for character in value):
         return False
     if _SCP.fullmatch(value):
-        return True
+        return not this_computer(value.split('@', 1)[1].split(':', 1)[0])
     try:
         parts = urlsplit(value)
         host = parts.hostname
     except ValueError:
         return False
-    return parts.scheme.lower() in ('https', 'ssh') and bool(host)
+    return parts.scheme.lower() in ('https', 'ssh') and bool(host) and not this_computer(host)
+
+
+def unread_said(said: str) -> str:
+    """Why a brand repository could not be read, as this caller is told it: git's own
+    reason on this computer, a plain sentence (BRAND_UNREAD) through the network bridge."""
+    return BRAND_UNREAD if remote() else said
 
 
 def settings_refused(route, sent) -> str | None:

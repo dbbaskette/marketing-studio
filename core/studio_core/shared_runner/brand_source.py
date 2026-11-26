@@ -6,6 +6,7 @@ What a caller needs to know
     found = brand_source.check(address, place)          # refuses in a sentence
     found['chosen']                 # {'tag': 'main', 'version': None, 'commit'}: what to install
     commit = brand_source.head(address, place)          # the commit main is at, or a refusal
+    brand_source.Unreadable          # the refusal when git could not read it (a WorkspaceError)
     folder, how = brand_source.fetch(address, commit, into, stop)
     brand_source.version_of(folder)                     # the version main holds
     brings = brand_source.bootstraps(folder)            # {'harness-slides': '0.15.1'}
@@ -93,12 +94,17 @@ def plain(reason: str) -> str:
             'is online, then try again.')
 
 
+class Unreadable(WorkspaceError):
+    """The repository could not be read with this person's git access. Its sentence carries
+    git's own reason, which a page may keep from a caller on the network bridge."""
+
+
 def head(address: str, place: Path, seconds: float = LOOK_SECONDS) -> str:
     """The commit the repository's main branch is at. Refuses in a sentence when it cannot
     be read with this person's own git access, or has no main branch."""
     done = hub.run(place, 'ls-remote', '--', address, 'refs/heads/' + BRANCH, timeout=seconds)
     if done.returncode != 0:
-        raise WorkspaceError(f"The brand skill's repository could not be read. "
+        raise Unreadable(f"The brand skill's repository could not be read. "
                              f'{plain(hub.reason(done))}')
     found = (done.stdout.split() or [''])[0]
     if not COMMIT.match(found):

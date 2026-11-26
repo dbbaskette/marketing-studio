@@ -833,6 +833,39 @@ class PhoneSettingsTests(PageCase):
         self.assertTrue(said['error'].startswith("The brand skill's repository could not be "
                                                  'read.'), said)
 
+    def test_a_phone_may_not_name_this_computer_as_the_brand_repository_host(self):
+        # The planner's ruling on #539: over ssh, git reads a folder here through this
+        # computer's own host; and git's reason, which names hosts and ports, is kept from a
+        # phone. Hosts on the local network stay allowed.
+        import socket
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        own = socket.gethostname()
+        for given in ('git@localhost:/Users/someone/repo', 'ssh://u@127.0.0.1/path',
+                      'https://127.0.0.1:8080/brand.git', 'https://LOCALHOST./brand.git',
+                      'ssh://git@[::1]/brand.git', 'git@127.1:brand.git',
+                      'https://2130706433/brand.git', 'https://0.0.0.0/brand.git',
+                      'https://[::ffff:127.0.0.1]/brand.git', 'git@shop.localhost:brand.git',
+                      f'git@{own}:brand.git', f"ssh://git@{own.split('.')[0]}.local/brand.git"):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('brand', {'repository': given}, remote=True),
+                                 (403, {'error': caller.BRAND_ADDRESS}))
+        said = ("The brand skill's repository could not be read. ssh: connect to host "
+                '10.0.0.5 port 22: Connection refused.')
+
+        def check(address, place):
+            if address.startswith('git@10.'):
+                raise brand_source.Unreadable(said)
+            return {'repository': address, 'commit': '0' * 40}
+        lan = 'https://192.168.1.20/team/brand.git'
+        with mock.patch.object(brand_source, 'check', check):
+            status, made = self.send('brand', {'repository': lan}, remote=True)
+            self.assertEqual((status, made['brand']['repository']), (200, lan))
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=True), (400, {'error': caller.BRAND_UNREAD}))
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=False), (400, {'error': said}))
+
     def test_the_shared_decision_answers_only_a_remote_caller_and_only_its_routes(self):
         from studio_core.shared_runner import caller
         phone = Message()
