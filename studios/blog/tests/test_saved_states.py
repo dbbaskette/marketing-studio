@@ -10,7 +10,7 @@ run view), and every way that flow continued a blog is refused with the two exit
 desk and new work from it. Only the manuscript editor's own runs still go on.
 """
 
-import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import isolation  # (first: keeps every test off this computer's own settings)
 from contextlib import contextmanager
 import json
 import re
@@ -575,6 +575,35 @@ class KeptStopTests(SavedStateCase):
         )
         with self.assertRaisesRegex(ValueError, 'no saved step-by-step run'):
             desk_chat.migrate(self.root, ident, shown['expected'] or 'bm1.' + 'x' * 43)
+
+    def test_desk_migrate_refuses_a_registered_manuscript_with_no_run_in_its_sentence(self):
+        import subprocess
+        import sys
+
+        ident = self.article(MANUSCRIPT)
+        before = self.tree()
+        done = subprocess.run(
+            [
+                sys.executable,
+                str(isolation.SCRIPTS / 'studio.py'),
+                '--root',
+                str(self.root),
+                'desk',
+                'migrate',
+                '--article',
+                ident,
+                '--expected',
+                'bm1.' + 'x' * 43,
+            ],
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(desk_migration.NO_RUN, done.stdout + done.stderr)
+        self.assertNotIn('KeyError', done.stdout + done.stderr)
+        self.assertNotIn('Traceback', done.stdout + done.stderr)
+        self.assertEqual(self.tree(), before)
 
 
 class InterruptedStepTests(SavedStateCase):
