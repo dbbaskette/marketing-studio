@@ -51,8 +51,11 @@ folder on this computer, and is not shown folder paths). `shown` is applied to e
 that describes set-up or the brand: a value under a `path` key that names a folder on this
 computer is left out (None), and any other value that names one (a brand skill's
 repository, or a team repository, saved as a folder) is said only as FOLDER_HERE. A folder
-is told by its shape alone: it starts with `/`, `~` or `file:`. A caller on this computer
-is shown everything as before. `bring_refused` refuses a remote caller's Bring in of a
+is told by its shape alone: it starts with `/`, `~` or `file:`. A sentence that names one
+anywhere in it (`brand_data.names_a_folder`, the test Marketing Studio's page and the setup
+pages use), such as the upkeep report's sentence for a broken skill link, is said only as
+FOLDER_SAID, wherever it sits in the description. A caller on this computer is shown
+everything as before. `bring_refused` refuses a remote caller's Bring in of a
 folder before anything about the folder is read, so its refusals cannot tell a phone what
 is there. Deck pages still name each deck by its folder; that is not covered here.
 """
@@ -62,7 +65,7 @@ import re
 import threading
 from contextlib import contextmanager
 
-from studio_core import repository_address, source_folders, source_intake
+from studio_core import brand_data, repository_address, source_folders, source_intake
 
 VIA_HEADER = 'X-Marketing-Studio-Via'
 NETWORK = 'network'
@@ -160,6 +163,10 @@ def settings_refused(route, sent) -> str | None:
 
 
 FOLDER_HERE = 'a folder on this computer'
+# Said to a remote caller in place of a sentence that names a folder on this computer, such as
+# the upkeep report's sentence for a broken skill link (GitHub issue #539).
+FOLDER_SAID = ('The reason names a folder on this computer, so it can be seen only on that '
+               'computer itself.')
 BRING_HERE = ('Bring work in from a folder on this computer itself: from a phone, folders '
               'here are not read.')
 
@@ -175,9 +182,18 @@ def _hidden(value, key=None):
         return {name: _hidden(one, name) for name, one in value.items()}
     if isinstance(value, list):
         return [_hidden(one, key) for one in value]
-    if _a_folder(value):
+    if _a_folder(value) and not _a_sentence(value):
         return None if key == 'path' else FOLDER_HERE
+    if isinstance(value, str) and brand_data.names_a_folder(value):
+        return FOLDER_SAID          # a sentence naming one, as Marketing Studio's page says it
     return value
+
+
+def _a_sentence(value) -> bool:
+    """Whether a value that starts with a folder goes on as a sentence ("/x is not the link
+    the installer placed, ... there."): words after it, and a full stop at its end."""
+    text = value.strip()
+    return text.endswith('.') and ' ' in text
 
 
 def shown(described):
