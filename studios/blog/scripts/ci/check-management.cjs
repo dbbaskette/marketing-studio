@@ -6041,6 +6041,9 @@ async function savedRecordStates(){
     if(url.startsWith('/api/desk?'))return deskView({id:'saved',execution:'conversation',run:true,unfinished_migration:true,sections:[],opening:'',kept_notes:'Unstructured saved notes.'});
     if(url.startsWith('/api/desk-images?'))return {id:'saved',images:[]};
     if(url.startsWith('/api/saved-file?'))return {id:'saved',name:'DRAFT.md',text:'Saved words.',truncated:false};
+    const task={id:'b'.repeat(32),kind:'repurpose',status:'ready',attempts:1,error:'',metadata:{article:'saved',format:'linkedin',words:150},result:{content:'Synthetic channel copy.',notes:''}};
+    if(url.startsWith('/api/tool-job?'))return task;
+    if(url==='/api/tool-action'&&data.action==='job-discard')return {...task,status:'cancelled',result:null,discarded_at:'2026-11-26T00:00:00Z'};
     return null;
   });
   const filled=()=>descendants(t.f.get('actions')).concat(t.nodes()).filter(n=>n.tagName==='button'&&n.className.split(' ').includes('button-filled'));
@@ -6099,9 +6102,24 @@ async function savedRecordStates(){
   shown=waiting('A saved job is under way or waiting to land.','job',{saved:{job:{id:'b'.repeat(32),kind:'repurpose',status:'ready'}}});
   await t.f.run("sRoute('run','saved')");
   assert.deepEqual(filled().map(n=>n.textContent),['Open the waiting repurpose task']);
-  assert.ok(t.nodes().some(n=>/Its repurpose task is ready for you/.test(n.textContent)));
+  assert.ok(t.nodes().some(n=>/Its repurpose task is ready, and its result cannot be saved to this blog\. Open it to copy what you want, then discard the result/.test(n.textContent)));
   await t.click('Open the waiting repurpose task');
   assert.ok(t.requests.some(r=>r.url==='/api/tool-job?job='+'b'.repeat(32)),'the task is read from where the blog\u2019s Tools list it');
+  // Its result cannot be saved to the saved blog: no save is offered, and Discard, the one way
+  // on, says what it lets go of before anything is sent.
+  const sheetButtons=()=>t.sheet().filter(n=>n.tagName==='button').map(n=>n.textContent);
+  assert.ok(t.sheet().some(n=>/cannot be saved to it\. Copy or download what you want, then discard it/.test(n.textContent)));
+  assert.equal(sheetButtons().includes('Save named copy'),false,'a refused save is not offered');
+  assert.ok(t.sheet().some(n=>n.textContent==='Discard this result'&&n.className.includes('button-filled')));
+  await t.click('Discard this result');
+  assert.equal(t.requests.some(r=>r.url==='/api/tool-action'),false,'nothing is discarded before it is confirmed');
+  assert.ok(t.sheet().some(n=>/The prepared repurpose text this task made is let go, and nothing is saved from it/.test(n.textContent)));
+  assert.ok(t.sheet().some(n=>/This saved blog then opens on the desk or stays read-only/.test(n.textContent)));
+  shown={id:'saved',title:'Synthetic saved blog',status:'migrates',sentence:'Saved by the earlier flow.',saved_record:{...files,outcome:'migrates',why:'Its saved outline or draft can be opened on the writing desk.',retained:preview.retained,held:preview.held}};
+  await t.click('Discard result');
+  assert.deepEqual(t.requests.find(r=>r.url==='/api/tool-action').data,{action:'job-discard',job:'b'.repeat(32)});
+  assert.equal(t.f.get('sheet').hidden,true);
+  assert.deepEqual(filled().map(n=>n.textContent),['Open on the desk'],'the record is read again: it opens on the desk');
   shown=waiting('This workspace is connected to an older Team Hub.',null,{saved:{next:'copy',start:{title:'Synthetic saved blog'}}});
   await t.f.run("sRoute('run','saved')");
   assert.deepEqual(filled().map(n=>n.textContent),['Start new work from this']);

@@ -31,7 +31,8 @@ classification the migration preview gives (`outcome`, `reason`):
   audience; nothing it researched or made is carried over.
 - **Waiting** (only a blog that would open on the desk): a step running now (Stop it),
   another computer driving it or an identity to record (Take it), a tool task waiting
-  for the person (open it where it is finished), an interrupted opening (Finish opening
+  for the person (cancel it, or discard a ready result, which cannot be saved to the
+  blog, when the person asks), an interrupted opening (Finish opening
   on the desk), or a workspace or computer condition the record names and says how to
   clear, with new work from it meanwhile. A marker the earlier flow left that no runner
   picks up again keeps nothing waiting.

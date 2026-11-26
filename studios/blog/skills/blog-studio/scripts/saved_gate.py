@@ -100,6 +100,10 @@ PAGE = {
     **dict.fromkeys(
         ('desk-migrate', 'blog-delete', 'blog-restore', 'tool-action:job-control'), ANY
     ),
+    # Discarding a ready task's result that was never saved (tool_jobs.discard, which
+    # refuses anything else): an unfinished saved blog's task can be neither applied nor
+    # cancelled, so this is its one way out. It writes only the task's own record.
+    'tool-action:job-discard': ANY,
     # A finished one: what its Done card offered.
     **dict.fromkeys(
         (

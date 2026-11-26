@@ -746,7 +746,7 @@ what becomes of it, with one main action:
 | --- | --- | --- |
 | Saved an outline, a draft, a review or a handoff | It continues on the writing desk | **Open on the desk**, which shows what stays with it before anything changes |
 | Finished | It is edited on the desk from here on | **Open on the desk** in its Done card, beside copy, download, a Google Doc, pre-publish and repurposing |
-| Would open on the desk but waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), the waiting tool task, **Finish opening on the desk**, or new work from it while nothing here clears it |
+| Would open on the desk but waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), the waiting tool task (cancel it, or **Discard this result** once it is ready: a result cannot be saved to a saved blog), **Finish opening on the desk**, or new work from it while nothing here clears it |
 | Stopped before an outline or draft, or cannot be read | Why it is read-only | **Start new work from this**: a new blog from its title, point and audience; nothing it researched is carried |
 
 Each record lists its saved files to read in place. **Blogs** and Home say only that a blog
