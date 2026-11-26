@@ -489,8 +489,11 @@ class RunnerPage(server.Page):
             if refused:
                 raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
             # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`),
-            # always as 409, as Training Studio's saved-record guard answers; the page shows
-            # a 409 and a 400 alike, as the sentence (GitHub issue #544).
+            # always as 409, as Training Studio's saved-record guard answers (GitHub issue
+            # #544). The page shows such a refusal as its sentence, as it does a 400. Only
+            # its slide-text draft reads a 409 otherwise, as changed in another window with
+            # Reload and no sentence (drafting.js), and that draft is used only for desk
+            # decks (deck-desk.js), which this gate never refuses.
             decision = SAVED_ROUTES.get(path, saved_gate.NEVER)
             if decision != saved_gate.WORKSPACE:
                 try:
