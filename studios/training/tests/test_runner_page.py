@@ -1655,6 +1655,30 @@ class RunTests(PageCase):
             'id': 'research-plan', 'label': 'Draft the research plan', 'kind': 'agent',
             'status': 'done', 'attempts': 1, 'seconds': 1.5, 'dollars': 0.5, 'error': None})
 
+    def test_the_workspace_is_not_moved_while_a_paused_trainings_step_finishes(self):
+        # GitHub issue #549, seen once: paused from inside its research-plan job, the
+        # training is not working, so set-up moved the workspace; the step then ended
+        # outside it and the runner was refused "step.lock is outside trainings/".
+        said, before = [], self.space.repo
+
+        def inside(tools, job):
+            self.engine.act(self.engine.space().training('rolling-restarts'), 'pause')
+            said.append(self.post('setup', {'path': str(self.base / 'elsewhere')}, 409))
+            said.append(self.post('setup', {'limits': {'parallel': 3}}))  # nothing moves
+            return self.workers.research_plan(tools, job)
+
+        self.workers.then('research-plan', inside)
+        root = Path(self.started())
+        self.assertEqual(said[0], {'error': setup.FINISHING})
+        self.assertEqual(said[1]['workspace']['path'], str(before))
+        self.assertEqual(self.engine.space().repo, before)
+        self.assertFalse((root / engines.IN_HAND).exists(), 'the step ended in its workspace')
+        self.assertEqual(self.view(root)['state'], 'paused')
+        self.assertFalse((self.base / 'elsewhere').exists())
+        # Once the step has ended, the workspace may move.
+        self.assertEqual(self.post('setup', {'path': str(self.base / 'elsewhere')})
+                         ['workspace']['path'], str(self.base / 'elsewhere'))
+
     def test_a_question_and_a_problem_are_described_field_for_field(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
         asking = self.get('run', path=self.started())

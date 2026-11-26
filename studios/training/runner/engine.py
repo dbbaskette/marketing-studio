@@ -1834,6 +1834,15 @@ class Engine(Reviewing):
         """True while a run may start nothing: halted, failed, or waiting for an answer."""
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
 
+    def in_hand(self, path) -> bool:
+        """Whether this computer is in the middle of a step of a training: a run is busy
+        with it, or a step's marker is held, as it is while a paused training's step
+        finishes."""
+        root = Path(path)
+        with self._lock:
+            run = self._runs.get(str(root))
+        return bool((run is not None and run.busy) or str(root) in self._active_steps)
+
     def _step_marker(self, root: Path, step: str | None = None) -> None:
         with self.files:
             if drafts.in_conversation(self._load(root)):
