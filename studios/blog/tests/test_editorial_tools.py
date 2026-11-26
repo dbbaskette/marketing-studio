@@ -2128,8 +2128,7 @@ class ManagementTests(Fixture):
 def desk_blog(root, decided=False, **extra):
     """A blog started on the writing desk through the page route, as a person starts one
     now: its ID, title and the version its detail shows. With `decided`, an editorial
-    decision (its owner) is saved for it too, which is when a desk blog is shared with a
-    selected Team Hub."""
+    decision (its owner) is saved for it too. A selected Team Hub has it from creation."""
     import uuid
 
     made = management.dispatch(
@@ -2743,6 +2742,21 @@ class HubMaterialTests(Fixture):
         graph = self.hub.graph()
         self.assertEqual(len(graph['heads'][item]), 1)
         self.assertNotEqual(graph['revisions'][graph['heads'][item][0]]['status'], 'tombstone')
+        self.assert_unshared()
+
+    def test_a_new_desk_blog_is_shared_when_it_is_made(self):
+        import blog_runner
+
+        ident = self.material()
+        found = desk_blog(self.root, sources=[ident])  # No decision yet.
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        item = self.workspace.state['items']['articles/' + found['id']]['item']
+        graph = self.hub.graph()
+        (head,) = graph['heads'][item]
+        self.assertEqual(graph['revisions'][head]['kind'], 'article')
+        self.assertEqual(graph['revisions'][head]['title'], 'A team post')
+        receipts = management.receipts(self.root)
+        self.assertIn('New blog', [entry.get('label') for entry in receipts['items']])
         self.assert_unshared()
 
     def test_a_missing_material_file_does_not_stop_its_blog_being_shared(self):

@@ -1527,6 +1527,20 @@ UNSHARED = (
 FINISH_FIRST = ('copyedit', 'feedback', 'geo')
 
 
+def _share_new(root, ident):
+    """A new blog is shared with a selected Team Hub when it is made, as the step-by-step
+    flow shared one (blog_runner.save), with a receipt. Sharing never fails the blog: a
+    share that did not get through is said in its receipt as saved here. With no Team Hub
+    selected nothing is shared and no receipt is kept."""
+    from hub_workspace import active
+    from management import receipt, share
+
+    if not active(root):
+        return
+    _, record = studio.item(root, 'articles', ident)
+    receipt(root, 'New blog', share(root, 'article', record), 'article')
+
+
 def _create(root, data):
     """Create once per page operation: the same request again returns the same blog."""
     import desk_jobs
@@ -1578,6 +1592,7 @@ def _create(root, data):
     made = create(root, data)
     studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
     keep_problem = keep_in_library(root, made['id'], kept)
+    _share_new(root, made['id'])
     try:
         desk_jobs.prune_angles(root)
         if picked:
