@@ -328,8 +328,10 @@ class Run:
         return first + (f' (and {more} more area{"" if more == 1 else "s"})' if more else '')
 
     def unit_seen(self, action, value, result):
-        """What one review-units command said of the units, shown on the page."""
+        """What one review-units command said of the units, shown on the page when it
+        changed what the page shows."""
         with self.state_lock:
+            before = copy.deepcopy(self.units_shown)
             listed = result.get('units') if isinstance(result, dict) else None
             if isinstance(listed, list) and listed and all(isinstance(u, dict) and u.get('id') for u in listed):
                 # A status or plan lists every unit of the plan: shown in its order.
@@ -356,7 +358,9 @@ class Run:
                 elif action == 'stop':
                     for unit in self.units_shown.values():
                         if unit['status'] == 'working': unit['status'] = 'stopped'
-        self.report()
+            changed = self.units_shown != before
+        if changed:
+            self.report()
 
     def final_progress(self, state, error=None):
         """What section combining says of the final brief: waiting, working, kept, or ended
