@@ -1088,6 +1088,33 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
         self.assertIn(engines.BRING_ON_COMPUTER, shot['text'])
         self.assert_no_continuing(shot, result)
 
+    def test_an_open_conversation_record_is_not_read_again_on_a_timer(self):
+        """GitHub issue #547: deciding a conversation's record reads its whole folder, so the
+        open record is decided once; the page's own refresh asks for it again only when its
+        small records, as the list says them, change."""
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.root = top
+        path = str(top)
+        listing = self.get('trainings')
+        detail = self.get('training', path=path)
+        changed = json.loads(json.dumps(listing))
+        for item in changed['trainings']:
+            if item['path'] == path:
+                item['touched_at'] = '2099-01-01T00:00:00+00:00'
+        answers = {'GET /api/capabilities': [RUNNER], 'GET /api/setup': [ok(SET_UP)],
+                   'GET /api/trainings': [ok(listing), ok(listing), ok(listing), ok(changed)],
+                   'GET /api/training': [ok(detail)],
+                   'GET /api/computer': [ok({'items': []})], 'GET /api/agents': [ok(AGENTS_FOUND)],
+                   **MODELS}
+        result = self.run_page(answers, [{'snapshot': 'open'}, {'poll': True}, {'poll': True},
+                                         {'snapshot': 'polled'}, {'poll': True},
+                                         {'snapshot': 'changed'}],
+                               state={'screen': 'training', 'path': path})
+        asked = [r for r in result['requests'] if r['address'].startswith('/api/training?')]
+        self.assertIn('Read teaching plan', result['snapshots']['polled']['buttons'])
+        # Opened once, then asked again only after the list said its records changed.
+        self.assertEqual(len(asked), 2, [r['address'] for r in asked])
+
     def test_bring_in_over_the_page_never_fails_raw(self):
         """GitHub issue #547: `/api/adopt` of a conversation's training with a file it cannot
         read, and of one whose copy fails half-way, answers one plain sentence, with no path

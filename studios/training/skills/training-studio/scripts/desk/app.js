@@ -2583,9 +2583,21 @@ async function drawTraining(fresh) {
     place({ title: 'Opening', back: true }, [make('p', 'quiet', 'Reading the training.')],
       true);
   }
+  // A saved record (a conversation's training) runs nothing: what it is was decided when it
+  // was opened, which reads its whole folder. It is decided again only when the person asks
+  // (opening it again) or its small records change, as the list says them; never on a
+  // timer (#547), as the runner's own saved records.
+  const record = recordOf(listed(view.path));
+  if (!fresh && view.training && view.training.saved_record && view.training.path === view.path
+      && record) {
+    // Opened before the list had come: what the list says now is what was opened.
+    if (!view.recorded) view.recorded = record;
+    if (record === view.recorded) return;
+  }
   try {
     const training = await ask('training', { path: view.path });
     if (turn !== view.turn) return;
+    view.recorded = record;
     const signature = JSON.stringify(training);
     if (!fresh && signature === view.drawn) return;
     view.training = training;
