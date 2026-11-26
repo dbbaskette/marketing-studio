@@ -198,8 +198,10 @@ verified on the installed helper through its stable `current` address (see the e
 this page); nothing asks for an earlier version to be restored. Fresh
 conversation workflows can explicitly import a complete synthesis case:
 
-- Training Studio: `training.py research-import --case CASE`, then its normal
-  research review. A page-driven training cannot be modified through this command.
+- Training Studio: `studio desk submit` with kind `research` and the case, then the
+  person marks the research Ready on the desk. The helper's `training.py
+  research-import` no longer imports anything: it says this desk way instead (since
+  Marketing Studio 4.22.0).
 - Blog Studio: `studio.py research import --id ID --case CASE`, then read the
   returned report and brief. This respects the blog's saved source policy.
 - Presentation Studio: use the shared helper's `research_contract.py --case CASE

@@ -79,14 +79,23 @@ provider job or reads this computer's studio settings:
 | Training Studio, drafts to review | `python3 studios/training/tests/ui/training_plan_fixture.py --desk` |
 | Training Studio, drafts to review with Yoodli scenarios, whose layouts wait for the brief to be marked ready | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --yoodli` |
 | Training Studio, a deck that stopped | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --stopped-deck` |
+| Training Studio, a training made in a conversation, as a saved record: one kept outside the workspace at its blueprint, to bring in; one whose record cannot be read; the same blueprint kept inside the workspace's repository, which Bring in refuses | `python3 studios/training/tests/ui/training_plan_fixture.py --desk --conversation`, `--desk --unreadable-conversation` or `--desk --kept-conversation` |
 | A deck's slides, in either deck studio | `python3 tests/slide_review_fixture.py training --rendered` or `presentation` |
 | Presentation Studio, an empty workspace | `python3 studios/presentation/tests/ui/intake_fixture.py` |
 | Presentation Studio, a deck the earlier flow saved, as a saved record: one that opens on the desk, one with a worker's question kept for History, one whose record cannot be read, one delivered, one with nothing made | `python3 studios/presentation/tests/ui/intake_fixture.py --saved`, `--saved-question`, `--saved-read-only`, `--saved-delivered` or `--saved-nothing` |
 | Presentation Studio, saved decks that wait: an interrupted opening beside another deck, decks a stopped step left marked and then recovered at start-up, a desk deck starting a step 20 seconds after the page is served, a deck another person runs and this one takes over | `python3 studios/presentation/tests/ui/intake_fixture.py --saved-interrupted`, `--saved-restarted`, `--saved-desk-working` or `--saved-taken` |
 | Presentation Studio, a Selected changes deck on the desk, to upgrade to Redesign, keep content and start its priced step with stand-in jobs | `python3 studios/presentation/tests/ui/intake_fixture.py --selected`, or `--selected-again` after one deck has been upgraded and redrawn, so the priced step says how long it took |
 | Blog Studio, a draft on the desk | `python3 tests/blog_browsing_fixture.py` |
-| Blog Studio, blogs the earlier flow saved, as saved records: each kind (opens on the desk, finished, a waiting tool task, read-only), an older Team Hub workspace, a team workspace with an unreadable identity, a finished blog in a team repository | `python3 studios/blog/tests/ui/saved_fixture.py`, or with `conditions`, `team` or `team-finished` |
+| Blog Studio, blogs the earlier flow saved, as saved records: each kind (opens on the desk, finished, a waiting tool task whose ready result can be discarded, read-only), an older Team Hub workspace, a team workspace with an unreadable identity, a finished blog in a team repository | `python3 studios/blog/tests/ui/saved_fixture.py`, or with `conditions`, `team` or `team-finished` |
 | Infographic Studio | `python3 studios/infographic/tests/ui/fixture_server.py --renderer <headless renderer>` |
+
+The Training Studio conversation fixtures place trees stored under
+`studios/training/tests/fixtures/saved/conversation/`; the trees under
+`studios/training/tests/fixtures/saved/flow/`, which tests place in place of the helper's
+retired commands, are stored beside them. Both are history: the helper commands, the
+capture script and the recording switch that made them are gone, so they cannot be
+captured or recorded again. A test that asks for a tree that was never stored fails and
+says to reach that state from a stored tree or with desk work.
 
 `studios/training/tests/ui/outline_fixture.py` and
 `studios/presentation/tests/ui/story_fixture.py` also need `STUDIO_TEST_RESEARCH_RUNTIME`.

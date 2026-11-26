@@ -2358,32 +2358,6 @@ body[data-product="Training Studio"]:has(#sheet:not([hidden])) {
     max-height: calc(100vh - 6.5rem);
     overflow-y: auto;
   }
-
-  /* Two documents side by side take the whole width, so the review goes above them. */
-  .gate-pair {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .gate-pair > .aside {
-    grid-area: 1 / 1 / 2 / 3;
-    position: static;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-    align-items: start;
-    max-height: none;
-    overflow-y: visible;
-  }
-
-  .gate-pair > .reading {
-    grid-area: 2 / 1;
-  }
-
-  .gate-pair > .beside {
-    grid-area: 2 / 2;
-  }
-
-  .gate-pair .doc {
-    padding: clamp(1.1rem, 2.4vw, 1.8rem);
-  }
 }
 
 /* --- a narrow window: the sidebar becomes a bar along the foot ----------------------- */
