@@ -766,6 +766,10 @@ def migration_preview(root, ident):
         shown['blockers'] = [str(error) or 'Restore the missing saved records first.']
         failure = error
     shown.update(_verdict(root, ident, shown, failure))
+    if shown['reason'] in (UNREAD_SESSION, UNREAD_RUN):
+        # A record that cannot be read is said in its plain sentence, never in the JSON
+        # reader's own words or with a path.
+        shown['blockers'] = [shown['reason']]
     return shown
 
 

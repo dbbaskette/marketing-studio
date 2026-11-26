@@ -13,6 +13,7 @@ desk and new work from it. Only the manuscript editor's own runs still go on.
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 from contextlib import contextmanager
 import json
+import re
 from unittest.mock import patch
 
 import blog_runner as runner
@@ -533,13 +534,20 @@ class KeptStopTests(SavedStateCase):
                 found = self.saved('draft-gate-chat')
                 directory = studio.inside(self.root, 'articles', found['id'])
                 (directory / name).write_text('{not json')
-                # The preview says the record cannot be read (today in the JSON reader's
-                # own words) and offers no token; nothing can drive or move it until restored.
+                # The preview says the record cannot be read, in the same plain sentence as
+                # its reason, and offers no token; nothing can drive or move it until restored.
                 said = {
                     runner.STATE: ('read-only', 'run record cannot be read', 'copy'),
                     'session.json': ('read-only', 'blog record cannot be read', 'new'),
                 }[name]
-                shown = self.refused(found['id'], 'line 1', said)
+                plain = {
+                    runner.STATE: desk_migration.UNREAD_RUN,
+                    'session.json': desk_migration.UNREAD_SESSION,
+                }[name]
+                shown = self.refused(found['id'], '^' + re.escape(plain) + '$', said)
+                self.assertEqual(shown['blockers'], [plain])
+                self.assertNotIn('line 1', ' '.join(shown['blockers']))
+                self.assertNotIn(str(self.root), ' '.join(shown['blockers']))
                 self.assertEqual(shown['expected'], '')
                 self.record(found['id'], 'read-only', said[2])
                 self.assertEqual((directory / 'DRAFT.md').read_text(), MANUSCRIPT)
