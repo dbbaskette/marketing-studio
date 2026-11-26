@@ -166,6 +166,32 @@ class SavedWorkTests(StudioCase):
         self.assertTrue(any(entry['path'] == str(self.space.root / gitstate.MARKER)
                             for entry in said['issues']))
 
+    def test_an_interrupted_opening_waits_to_be_opened(self):
+        """A saved training whose opening on the desk was interrupted is reported as waiting
+        to open, from a stored tree, and nothing about it is changed by asking."""
+        from unittest import mock
+        from runner import desk_chat, desk_migration
+        root = self.stored('blueprint-gate')
+        shown = desk_chat.migration_preview(self.engine, root)
+        pending = root / desk_migration.format.PENDING
+        real = Path.unlink
+
+        def interrupted(path, *args, **kwargs):
+            if path == pending:
+                raise OSError('Interrupted by the test.')
+            return real(path, *args, **kwargs)
+        with mock.patch.object(Path, 'unlink', interrupted), self.assertRaises(OSError):
+            desk_chat.migrate(self.engine, root, shown['expected'])
+        self.assertTrue(pending.is_file())
+        before = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'waiting-to-open'),
+                         {str(root): self.engine.SAVED_WHY['waiting-to-open']})
+        for kind in ('opens-on-desk', 'finished-earlier', 'read-only-record', 'bring-in-first'):
+            self.assertNotIn(str(root), self.needed(said, kind))
+        self.assertEqual({path: path.read_bytes() for path in root.rglob('*') if path.is_file()},
+                         before)
+
     def test_a_conversation_training_is_brought_in_first(self):
         root = self.chat()
         said = self.engine.saved_work()
