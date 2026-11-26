@@ -6120,6 +6120,13 @@ async function savedRecordStates(){
   assert.deepEqual(t.requests.find(r=>r.url==='/api/tool-action').data,{action:'job-discard',job:'b'.repeat(32)});
   assert.equal(t.f.get('sheet').hidden,true);
   assert.deepEqual(filled().map(n=>n.textContent),['Open on the desk'],'the record is read again: it opens on the desk');
+  // Any other ready task, opened from a blog's Tools or a voice, keeps its usual sheet: no Discard.
+  for(const task of [{id:'e'.repeat(32),kind:'repurpose',status:'ready',attempts:1,error:'',metadata:{article:'desk-blog',format:'linkedin',words:150},result:{content:'Copy.',notes:''}},{id:'f'.repeat(32),kind:'voice-learn',status:'ready',attempts:1,error:'',metadata:{name:'Avery'},result:{content:'# Voice',notes:''}}]){
+    t.f.set('task',task);await t.f.run('sToolJob(task)');
+    assert.equal(t.sheet().some(n=>n.tagName==='button'&&/Discard/.test(n.textContent)),false,task.kind+' offers no Discard');
+    assert.equal(t.sheet().some(n=>/cannot be saved to it/.test(n.textContent)),false);
+    t.f.run('sCloseSheet()');
+  }
   shown=waiting('This workspace is connected to an older Team Hub.',null,{saved:{next:'copy',start:{title:'Synthetic saved blog'}}});
   await t.f.run("sRoute('run','saved')");
   assert.deepEqual(filled().map(n=>n.textContent),['Start new work from this']);

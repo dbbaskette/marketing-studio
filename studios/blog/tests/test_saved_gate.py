@@ -656,6 +656,19 @@ class DefectTests(WalkCase):
                     tool_jobs.discard(self.root, 'd' * 32)
                 self.assertEqual(task.read_bytes(), kept)
 
+    def test_a_ready_task_of_a_blog_that_is_not_a_saved_record_is_not_discarded(self):
+        import tool_jobs
+
+        # A saved manuscript (the editor's), whose ready task is saved or kept as before.
+        ident = self.article('A synthetic manuscript.')
+        task = self.ready_task(ident)
+        kept = task.read_bytes()
+        with self.assertRaisesRegex(ValueError, tool_jobs.NOT_WAITED_ON):
+            management.dispatch(
+                self.root, 'tool-action', {'action': 'job-discard', 'job': 'c' * 32}
+            )
+        self.assertEqual(task.read_bytes(), kept)
+
     def test_a_ready_task_of_any_other_saved_blog_is_not_discarded(self):
         shown = self.load_all()
         for name in ('nothing-made', 'finished', 'unreadable'):

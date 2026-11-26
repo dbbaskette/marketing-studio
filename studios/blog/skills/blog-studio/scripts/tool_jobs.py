@@ -202,6 +202,10 @@ NOT_DISCARDED = 'Only a ready result that was not saved can be discarded.'
 # only ones a discard lets go of. Every other kind, an import among them, is refused.
 DISCARDABLE = ('repurpose', 'interview-question', 'interview-outline')
 NOT_DISCARDABLE = 'This kind of task cannot be discarded here.'
+NOT_WAITED_ON = (
+    'Only a ready task that a saved blog of the earlier flow waits on can be discarded. '
+    'Save or keep this one where it is.'
+)
 
 
 def discard(root, ident):
@@ -219,6 +223,17 @@ def discard(root, ident):
         guard(root, saved['metadata']['article'])
     if saved['status'] != 'ready' or saved.get('applied'):
         raise ValueError(NOT_DISCARDED)
+    import saved_gate
+
+    article = saved['metadata'].get('article')
+    # Only for a saved blog of the earlier flow that waits on this ready task; every other
+    # blog's task is saved or left as it always was.
+    if not (
+        isinstance(article, str)
+        and saved_gate.state(root, article) == 'unfinished'
+        and saved_gate.waits_on_ready_task(root, article, ident)
+    ):
+        raise ValueError(NOT_WAITED_ON)
     saved.update(status='cancelled', result=None, error='', discarded_at=studio.now())
     write(root, saved)
     return public(saved)
