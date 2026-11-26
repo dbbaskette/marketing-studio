@@ -83,13 +83,14 @@ STAGES = {
         'description, links to check and unresolved review findings. Do not publish anything.',
     ),
 }
+# What each stage's job reads. A draft has none: it is only ever an edit of the saved
+# manuscript (job), which reads the minimal-edits guide.
 GUIDES = {
     'angles': 'modules/blog-argument-outline.md',
     'claims-map': 'modules/blog-claims-map.md',
     'research-plan': 'modules/blog-research-plan.md',
     'research': 'modules/blog-deep-research.md',
     'outline': 'modules/blog-argument-outline.md',
-    'draft': 'modules/blog-write.md',
     'review': 'modules/copy-editing.md',
     'package': 'modules/blog-repurpose.md',
 }
@@ -1234,7 +1235,6 @@ EDITOR_FIELDS = {
     'stop',
     'sources',
     'engine',
-    'author',
     'brand',
     'variant',
 }
@@ -1253,7 +1253,6 @@ def create(root, data, approval='conversation'):
         raise ValueError(EDITOR_ONLY)
     defaults = settings(root)['defaults']
     data.setdefault('engine', defaults['engine'])
-    data.setdefault('author', defaults['author'])
     if 'brand' not in data:
         import brand_skill
 
@@ -1337,7 +1336,6 @@ def create(root, data, approval='conversation'):
         'mode': 'review',
         'pipeline': pipeline,
         'stages': {},
-        'length': 'style',
     }
     # The uploaded files this blog pinned; a deletion keeps them with it.
     record['material'] = [
@@ -1914,6 +1912,11 @@ def job(root, ident):
             saved.get('hash') or saved.get('apply_review') or (stage == 'draft' and run['existing'])
         )
     )
+    if stage == 'draft' and not edit:
+        # Only the editor's revise check writes a draft, and always as an edit of the saved
+        # manuscript: it asks with its own request, or Ask for changes' words. With no text
+        # to edit there is nothing to revise.
+        raise ValueError('Save a manuscript before revising it.')
     # A focused edit or a single editor check other than shape keeps to its own scope, so
     # it gets no style. The job payload is not hashed; stage pins come from inputs().
     if edit or run.get('editor_check') not in (None, 'shape'):
@@ -1924,12 +1927,6 @@ def job(root, ident):
             f'Edit the saved {STAGES[stage][0].lower()} in documents.{stage}. This is a minimal '
             'edit, not a rewrite: apply the author’s request at the end of this guidance and '
             'keep everything else verbatim.\n\n' + (references / 'minimal-edits.md').read_text()
-        )
-    elif stage == 'draft' and run['existing']:
-        guidance = (
-            'Revise the supplied manuscript in the scope of its brief. Preserve its stance, '
-            'meaningful qualifiers and author voice; retain unsupported claims as questions '
-            'rather than inventing support.\n\n' + (references / GUIDES[stage]).read_text()
         )
     else:
         guidance = STAGES[stage][2] + '\n\n' + (references / GUIDES[stage]).read_text()

@@ -653,7 +653,11 @@ class BlogRunnerTests(RunnerCase):
             with self.subTest(data=data), self.assertRaises(ValueError) as refused:
                 runner.create(self.root, {**data, 'mode': 'review'}, 'page')
             self.assertEqual(str(refused.exception), runner.EDITOR_ONLY)
-        for field, value in (('title', 'A new blog'), ('outline_text', '# An outline')):
+        for field, value in (
+            ('title', 'A new blog'),
+            ('outline_text', '# An outline'),
+            ('author', 'Avery'),
+        ):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'Unknown'):
                 runner.create(self.root, {**asked, 'mode': 'review', field: value}, 'page')
         self.assertEqual(
@@ -665,6 +669,10 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(
             (found['mode'], [row['stage'] for row in found['stages']]), ('review', ['review'])
         )
+        # It keeps no author and no length: nothing reads either from the editor's run.
+        _, _, run = runner.load(self.root, ident)
+        self.assertNotIn('author', run)
+        self.assertNotIn('length', run)
 
     def test_completed_page_revision_returns_to_a_resumable_stage(self):
         found = self.editor_run('proofread')
@@ -2963,6 +2971,20 @@ class LengthAndQualificationTests(RunnerCase):
         guidance = runner.job(self.root, found['id'])[2]
         self.assertNotIn(runner.LENGTHS['deep'], guidance)
         self.assertIn('minimal edit, not a rewrite', guidance)
+
+    def test_a_revision_is_only_ever_an_edit_of_the_saved_manuscript(self):
+        found = self.editor_run('revise')
+        self.assertEqual(found['next'], 'draft')
+        guidance = runner.job(self.root, found['id'])[2]
+        self.assertIn('minimal edit, not a rewrite', guidance)
+        self.assertNotIn('Revise the supplied manuscript', guidance)
+        # With no manuscript text to edit, there is nothing to revise: no draft is written
+        # from a writing guide instead.
+        directory, _ = studio.item(self.root, 'articles', found['id'])
+        (directory / 'DRAFT.md').write_text('\n')
+        with self.assertRaisesRegex(ValueError, 'Save a manuscript before revising it.'):
+            runner.job(self.root, found['id'])
+        self.assertNotIn('draft', runner.GUIDES)
 
     def test_the_review_checks_a_limitation_is_qualified_once(self):
         guidance = runner.job(self.root, self.editor_run('shape')['id'])[2]
