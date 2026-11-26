@@ -1354,6 +1354,20 @@ class SharingTests(StudioCase):
                          'Rolling restarts: write the index; the training is finished')
         self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
 
+    def test_a_desk_run_that_comes_to_rest_shares_its_last_commit(self):
+        # Issue #549: the earlier flow shared after the runner's last step. A desk run that
+        # has written everything and waits for Mark ready shares what it made, unasked.
+        root = self.start()
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(self.shared()[0], self.log()[-1])
+        self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
+
+    def test_a_desk_run_that_comes_to_rest_shares_nothing_when_sharing_is_asked_for(self):
+        self.gitstate.share_when('asked')
+        root = self.start()
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')
+
     def test_a_repository_that_cannot_be_reached_never_holds_a_run_up(self):
         root = self.start()
         self.remote.rename(self.base / 'moved-away.git')

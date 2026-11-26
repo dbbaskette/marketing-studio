@@ -300,8 +300,12 @@ class DriverTests(Team):
         taken = self.drive(self.blake, root)
         self.assertEqual((taken['mine'], taken['driver']['name'], taken['driver']['here']),
                          (True, 'Blake', True))
-        self.assertEqual(self.shared()[0],
-                         'Rolling restarts: Blake takes this training over from Alex')
+        # Blake's run carries on from the takeover and shares what it did when it comes to
+        # rest (issue #549), so the takeover is shared and is not always the last commit.
+        self.assertIn('Rolling restarts: Blake takes this training over from Alex',
+                      self.shared())
+        blakes = self.git('rev-parse', 'main', repo=self.remote)
+        self.assertEqual(blakes, self.head(self.blake))
         self.assertNotIn(marked, self.ready(self.theirs(self.blake, root)),
                          "Blake's runner carried on from what was shared")
 
@@ -336,8 +340,7 @@ class DriverTests(Team):
             self.alex.engine.resume()
             self.assertEqual(self.alex.engine.share()['shared'], True)
         self.assertEqual(len(self.workers.jobs), jobs, 'it works on it no more')
-        self.assertEqual(self.shared()[0],
-                         'Rolling restarts: Blake takes this training over from Alex',
+        self.assertEqual(self.git('rev-parse', 'main', repo=self.remote), blakes,
                          "nothing of Alex's was put on top of Blake's")
         self.assertEqual(self.as_(self.alex, team.taken, root)['by'], 'Blake',
                          'and it is remembered on this computer')
@@ -796,9 +799,10 @@ class SlowRemoteTests(Team):
                 go.set()
 
     def test_a_decision_is_not_held_up_by_a_slow_push_or_fetch(self):
-        root = self.desk_started()
         with self.be(self.alex):
-            gitstate.share_when('asked')    # so the decision itself sends nothing
+            # So neither the run coming to rest nor the decision sends anything itself.
+            gitstate.share_when('asked')
+        root = self.desk_started()
         for name, sharing in (('push', self.engine.share), ('fetch', self.engine.fetch)):
             with self.subTest(name), self.be(self.alex), self.held_up(name) as (reached, go):
                 behind = threading.Thread(target=sharing, daemon=True)
@@ -848,6 +852,8 @@ class SlowRemoteTests(Team):
         with self.be(self.alex), asked() as ran:
             self.engine.fetch()
         self.assertNotIn('merge-base', ran, 'nothing came in, so there is nothing to learn')
+        with self.be(self.blake):
+            gitstate.share_when('asked')    # so only the claim that starts it is sent
         self.desk_started(self.blake, title='Blue green')
         with self.be(self.alex), asked() as ran:
             self.assertEqual(self.engine.fetch()['received'], 1)
@@ -1073,6 +1079,9 @@ class PageTests(Team):
     """The appendix, field for field, through the page's own addresses."""
 
     def test_driving_a_training_on_the_page(self):
+        with self.be(self.alex):
+            # Alex's work stays on Alex's computer, so a takeover has something to keep.
+            gitstate.share_when('asked')
         root = self.desk_started()
         path = str(root)
         run = self.ask(self.alex, 'run', path=path)

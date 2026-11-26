@@ -1844,6 +1844,7 @@ class Engine(Reviewing):
         if run.busy:  # woken from inside its own step: that step's end looks again anyway
             return
         held, last, run.busy = False, None, True
+        moved = False   # whether this pass did anything: a job, a step or a desk receipt
         try:
             while not self._closing:
                 record = self._load(root)
@@ -1865,6 +1866,7 @@ class Engine(Reviewing):
                         continue
                     if not self._may_go(root):
                         return
+                    moved = True
                     try:
                         self._draft_job(root, run, pending)
                     except _Gone:
@@ -1881,6 +1883,7 @@ class Engine(Reviewing):
                         and not deck_content.checkpoint(record, step.step.id):
                     with self.files:
                         self._edits_first(root)
+                    moved = True
                     self._desk_gate(root, found)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
@@ -1890,6 +1893,11 @@ class Engine(Reviewing):
                             getattr(step.step, 'id', '') if step.step else '')
                     if record.get('halt_after') is not None and not self._resting(record):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
+                    if moved:
+                        # Desk work's own end (issue #549): the run has come to rest with
+                        # nothing for it to do until the person acts on the desk, so what it
+                        # did is shared now, as the earlier flow shared after its last step.
+                        self._last(root)
                     return
                 # Asked to finish one level and then wait: work for another level waits.
                 # What has no level of its own, such as the index, is not another level.
@@ -1919,6 +1927,7 @@ class Engine(Reviewing):
                 with self.files:   # what was typed on the desk is committed before a job
                     self._edits_first(root)
                 self._step_marker(root, step.step.id)
+                moved = True
                 with companion.stopping(run.stop):  # a command a step runs ends on Stop
                     self._do(root, run, found, step)
                 self._step_marker(root)

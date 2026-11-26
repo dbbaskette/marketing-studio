@@ -348,6 +348,7 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
 
     def test_a_teammates_training_cannot_be_deleted_here(self):
         root = self.desk_started()
+        before = self.shared()[0]   # what Alex's run shared when it came to rest
         self.fetch(self.blake)
         theirs = self.theirs(self.blake, root)
         with self.be(self.blake):
@@ -359,7 +360,7 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
             with self.assertRaisesRegex(engines.Elsewhere, 'Take it over first'):
                 self.deleted(theirs, self.blake.engine)
         self.assertTrue((theirs / '.training-studio' / 'run.json').is_file())
-        self.assertEqual(self.shared()[0], STARTED)
+        self.assertEqual(self.shared()[0], before, 'nothing was shared by the refusal')
 
     def test_a_training_handed_over_before_it_finished_is_taken_before_it_is_deleted(self):
         root = self.desk_started()
