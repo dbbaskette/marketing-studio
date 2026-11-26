@@ -2891,9 +2891,7 @@ def catalog(root):
                 draft = studio.read_json(on_desk)
                 busy = working.get(ident, 0)
                 # Marked as published: finished, out of In progress.
-                published = (studio.item(root, 'articles', ident)[1].get('editorial') or {}).get(
-                    'stage'
-                ) == 'published' and not busy
+                published = desk_jobs.published(studio.item(root, 'articles', ident)[1], busy)
                 # A start that stopped (a failed research, a Stop) needs the person.
                 stopped = (
                     '' if busy else desk_jobs.stalled(root, ident, desk.read_start(root, ident))

@@ -307,6 +307,13 @@ def prepare_migration(record, saved_inputs):
             }
         session = copy.deepcopy(record)
         session.update(flow='desk', execution='conversation', conversation_scope=scope)
+        if 'DRAFT.md' in files:
+            # The desk took its draft from this DRAFT.md as it is, hand edits and all: that
+            # text is what the desk last wrote (google_handoff refuses only a later change).
+            session['artifact_hashes'] = {
+                **(session.get('artifact_hashes') or {}),
+                'draft': _hash(files['DRAFT.md']),
+            }
         writes['desk/migration.json'] = {
             'schema': 1,
             'product': 'Blog Studio',
@@ -766,6 +773,10 @@ def migration_preview(root, ident):
         shown['blockers'] = [str(error) or 'Restore the missing saved records first.']
         failure = error
     shown.update(_verdict(root, ident, shown, failure))
+    if shown['reason'] in (UNREAD_SESSION, UNREAD_RUN):
+        # A record that cannot be read is said in its plain sentence, never in the JSON
+        # reader's own words or with a path.
+        shown['blockers'] = [shown['reason']]
     return shown
 
 

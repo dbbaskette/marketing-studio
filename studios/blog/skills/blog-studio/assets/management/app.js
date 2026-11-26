@@ -812,6 +812,29 @@ async function saveMemory(submit){
   finally{submit.disabled=false;}
 }
 
+// The page's scripts are deferred, desk.js last, and a reply (a fresh key's first one, say) can
+// come before a later script has run, so what it defines is not there yet. readyState cannot
+// tell: it is already 'interactive' while deferred scripts run. DOMContentLoaded fires once
+// every one of them has run or failed to load. app.js runs first, so it listens for that moment
+// here, and every start-up step that calls into a later script (appStart, runner.js's sStart,
+// studioNavigate and its poll) waits for it.
+// A script that did not load fires an error event at its own element, which a listener on the
+// document hears as it passes (capture): `failed` lists them, so a screen that is missing for that
+// reason is said as such (runner.js sPartMissing), and any other error as itself.
+function sScriptsWatched(page){const held={ran:true,wait:null,failed:[]};
+  if(!page||typeof page.addEventListener!=='function')return held;
+  page.addEventListener('error',event=>{const node=event&&event.target;if(node&&String(node.tagName||'').toUpperCase()==='SCRIPT')held.failed.push(String(node.src||''));},true);
+  if(page.readyState==='complete')return held;
+  held.ran=false;held.wait=new Promise(resolve=>page.addEventListener('DOMContentLoaded',()=>{held.ran=true;resolve();},{once:true}));return held;}
+let S_SCRIPTS=sScriptsWatched(typeof document==='undefined'?null:document);
+// This page's own start once its capabilities are known: the editorial view, then the desk start
+// or a blog the address asks to resume (runner.js's sRoute, desk.js's screens) once every script ran.
+async function appStart(){
+  await load();if(libraryStart)return;
+  if(!S_SCRIPTS.ran)await S_SCRIPTS.wait;
+  if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}
+  const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});
+}
 for(const b of document.querySelectorAll('[data-view]'))b.addEventListener('click',()=>{view=b.dataset.view;offset=0;$('query').value='';document.querySelectorAll('[data-view]').forEach(e=>e.removeAttribute('aria-current'));b.setAttribute('aria-current','page');load().catch(e=>notice(e.message,true));});
 for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('click',()=>b.closest('dialog').close());
 $('search-go').addEventListener('click',()=>{offset=0;load().catch(e=>notice(e.message,true));});
@@ -841,4 +864,4 @@ $('import-reload').addEventListener('click',async()=>{if(importBusy||!importStat
 
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
-applyCapabilities();loadCapabilities().then(async()=>{await load();if(libraryStart)return;if(new URLSearchParams(location.hash.slice(1)).get('resume-intake')==='1'){await sRoute('desk-start');return;}const id=resumeBlogId;if(id&&/^[a-f0-9]{32}$/.test(id))await showBlog({id,location:'local'});}).catch(e=>notice(e.message,true));
+applyCapabilities();loadCapabilities().then(appStart).catch(e=>typeof sStartFailed==='function'?sStartFailed(e):notice(e.message,true));

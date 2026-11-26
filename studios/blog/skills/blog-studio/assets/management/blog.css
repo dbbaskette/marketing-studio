@@ -113,7 +113,7 @@
 .desk-image>figcaption{font-size:.8rem;overflow-wrap:anywhere}
 .desk-thumb-missing{display:grid;place-items:center;width:10rem;height:6rem;box-sizing:border-box;padding:.5rem;border:1px dashed var(--hair);border-radius:8px;background:var(--paper);color:var(--late);font-size:.85rem;text-align:center}
 /* Desk starts: three angle cards side by side where they fit, the picked one marked as a
-   choice is; the Outline tab's cards. All opaque. The desk's own parts are ui-kit's. */
+   choice is; the Outline's cards. All opaque. The desk's own parts are ui-kit's. */
 .desk-angles{display:grid;gap:1.1rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))}
 .desk-angle{display:grid;gap:.6rem;align-content:start}
 .desk-angle-picked{border-color:var(--focus);box-shadow:inset 0 0 0 1px var(--focus)}
@@ -278,9 +278,15 @@
 .geo-pointer-waits{border-color:var(--yours-fill);background:var(--yours-wash)}
 .geo-pointer-waits>.geo-pointer-says{font-weight:650}
 
+/* The desk's band: the arc keeps room for its four phases (about 28rem). Where the move does not
+   fit beside it, the move wraps under it, never squeezing the arc's labels to a letter a line,
+   whatever the width of the pane. The move is up to 24rem wide, as the shared band has it. */
+.workbench-head{display:flex;flex-wrap:wrap;align-items:center;gap:1rem 2rem}
+.workbench-head>.track-arc{flex:1 1 28rem;min-width:0}
+.workbench-head>.move-card{flex:0 1 24rem;min-width:min(100%,15rem)}
 /* A draft to read and no pressing move: the band is one quiet row, so the writing starts higher. */
-.workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr) auto;gap:.4rem 1.2rem}
-@media (max-width:52rem){.workbench-quiet .workbench-head{grid-template-columns:minmax(0,1fr)}}
+.workbench-quiet .workbench-head{gap:.4rem 1.2rem}
+.workbench-quiet .workbench-head>.move-card{flex:0 1 auto;min-width:0}
 .workbench-quiet .workbench-head>.move-card{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .8rem;padding:.4rem .8rem}
 .workbench-quiet .move-card>p:not(.move-label){display:none}
 .workbench-quiet .move-card .move-title{font-size:1rem;margin:0}

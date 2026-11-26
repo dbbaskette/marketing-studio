@@ -1,4 +1,5 @@
 """Synthetic network boundary checks; never expose a real workspace or LAN port."""
+import ast
 import contextlib
 import http.client
 import io
@@ -397,23 +398,31 @@ class BridgeLimitTests(unittest.TestCase):
         self.assertIn('a file of at most about 9 MB', network.too_large(12_000_000))
         self.assertIn('a file of at most about 750 KB', network.too_large(1_000_000))
 
-    def test_blog_studios_long_routes_wait_as_long_as_their_google_and_link_work(self):
+    def test_blog_studios_google_and_library_routes_take_the_ordinary_time_limit(self):
+        # GitHub issue #539: Blog Studio answers each of these at once with a background job
+        # the page follows (its import_jobs.ROUTES), so none waits on Google or a link fetch.
+        source = (Path(__file__).resolve().parents[1]
+                  / 'studios/blog/skills/blog-studio/scripts/import_jobs.py').read_text()
+        tree = ast.parse(source)
+        routes = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+                      and any(getattr(target, 'id', None) == 'ROUTES' for target in node.targets))
+        jobs = {'/api/' + route for route in routes}
+        self.assertLessEqual({'/api/desk-google-send', '/api/editor-google-send', '/api/google-preview',
+                              '/api/google-start', '/api/library-add', '/api/library-add-preview',
+                              '/api/desk-google-plan', '/api/desk-google-compare', '/api/desk-google-take'}, jobs)
+        for path in sorted(jobs - {'/api/research-sources'}):
+            self.assertEqual(network.upstream_timeout('blog', 'POST', path), network.UPSTREAM_TIMEOUT, path)
+        self.assertFalse(hasattr(network, 'BLOG_REMOTE'))
+        # Through the bridge, a send that keeps the connection waiting is cut at the ordinary limit.
         upstream = Upstream(delay=0.4)
         self.addCleanup(upstream.close)
         bridge, token = self.bridge('blog', upstream)
-        with mock.patch.object(network, 'UPSTREAM_TIMEOUT', 0.1), \
-                mock.patch.object(network, 'BLOG_REMOTE_TIMEOUT', 5):
-            for path in ('/api/desk-google-send', '/api/google-preview', '/api/library-add'):
+        with mock.patch.object(network, 'UPSTREAM_TIMEOUT', 0.1):
+            for path in ('/api/desk-google-send', '/api/desk-save'):
                 with self.subTest(path=path):
-                    self.assertEqual(self.post(bridge, token, 'blog', path, 2), (200, {'read': 2}))
-            status, answer = self.post(bridge, token, 'blog', '/api/desk-save', 2)
-            self.assertEqual(status, 504)
-            self.assertIn('No request was resubmitted', answer['error'])
-        self.assertEqual(network.upstream_timeout('blog', 'POST', '/api/desk-google-send'), 600)
-        self.assertEqual(network.upstream_timeout('blog', 'POST', '/api/library-add'), 600)
-        # Planning, checking and bringing back the Doc's text read Google more than once.
-        for path in ('/api/desk-google-plan', '/api/desk-google-compare', '/api/desk-google-take'):
-            self.assertEqual(network.upstream_timeout('blog', 'POST', path), 600, path)
+                    status, answer = self.post(bridge, token, 'blog', path, 2)
+                    self.assertEqual(status, 504)
+                    self.assertIn('No request was resubmitted', answer['error'])
         self.assertEqual(network.upstream_timeout('blog', 'GET', '/api/desk-google-send'), 100)
         self.assertEqual(network.upstream_timeout('presentation', 'POST', '/api/library-add'), 100)
         # A new deck's folder or spreadsheet is read in its request, as research sources are.

@@ -644,6 +644,81 @@ class DeskDriverTests(TeamCase):
         self.save(other, shown['revision'], 'Taken over')
         self.assertEqual(self.desk(other)['title'], 'Taken over')
 
+    def test_a_takeover_stops_a_desk_job_working_here(self):
+        # Sharing waits while a step works here (sync_guard), so the takeover is learned
+        # only when a queued job starts just after that check: as the run worker was, the
+        # desk job working then is stopped.
+        queued = management.dispatch(
+            self.root,
+            'desk-note',
+            {'id': self.made['id'], 'seen': 1, 'part': self.part, 'note': 'More.'},
+        )['working']
+        job = tool_jobs.read(self.root, queued['id'])
+        runner = blog_runner.engine(self.root)
+        other = self.other()
+        self.decide(other, 'takeover', self.desk(other)['expected'])
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'data')
+        checked, calls = gitstate.worker_in_progress, []
+
+        def check_then_start(*arguments, **options):
+            busy = checked(*arguments, **options)
+            calls.append(busy)
+            # The last check is the one made after the fetch, just before replaying.
+            if not busy and len(calls) == 2:
+                # tool_jobs.once starts the job here, after sharing checked for steps.
+                tool_jobs.write(self.root, {**job, 'status': 'working', 'attempts': 1})
+                runner.current = 'tool:' + job['id']
+            return busy
+
+        with patch.object(gitstate, 'worker_in_progress', check_then_start):
+            teams.refresh(self.root)
+        self.assertTrue(runner.stop.is_set())
+        stopped = tool_jobs.read(self.root, queued['id'])
+        self.assertEqual(stopped['status'], 'cancelled')
+        self.assertIn('Another computer took this blog over', stopped['error'])
+        self.assertEqual(stopped['payload'], job['payload'])  # Its inputs are kept.
+        self.assertFalse(self.desk(self.root)['driver']['here'])
+
+    def test_a_takeover_stops_a_desk_start_as_stop_does(self):
+        import desk_jobs
+
+        started = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'Started topic', 'way': 'topic', 'point': 'P.'},
+        )
+        (job,) = [found for found in desk_jobs.jobs(self.root, started['id']) if found['status'] == 'queued']
+        runner = blog_runner.engine(self.root)
+        other = self.other()
+        shown = management.view(other, 'desk', {'id': [started['id']]})
+        management.dispatch(
+            other,
+            'team-takeover',
+            {'id': started['id'], 'expected': shown['expected'], 'confirmed': True},
+        )
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'data')
+        checked, calls = gitstate.worker_in_progress, []
+
+        def check_then_start(*arguments, **options):
+            busy = checked(*arguments, **options)
+            calls.append(busy)
+            if not busy and len(calls) == 2:
+                tool_jobs.write(self.root, {**job, 'status': 'working', 'attempts': 1})
+                runner.current = 'tool:' + job['id']
+            return busy
+
+        with patch.object(gitstate, 'worker_in_progress', check_then_start):
+            teams.refresh(self.root)
+        self.assertTrue(runner.stop.is_set())
+        stopped = tool_jobs.read(self.root, job['id'])
+        self.assertEqual(stopped['status'], 'cancelled')
+        self.assertEqual(stopped['error'], teams.TAKEN_STOP)
+        # As the desk's Stop marks a start it stops: Retry starts the step again.
+        self.assertEqual(
+            desk_jobs.transient(self.root, started['id']).get('problem'), desk_jobs.STOPPED_START
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+
     def test_take_over_refuses_a_desk_view_that_changed(self):
         other = self.other()
         outdated = self.desk(other)['expected']
@@ -708,6 +783,126 @@ class DeskDriverTests(TeamCase):
         retried = management.dispatch(other, 'desk-retry', {'id': started['id']})
         self.assertEqual(retried['working']['kind'], 'desk-outline')
         self.assertEqual(retried['start']['problem'], '')
+
+
+class DeskPublishTests(TeamCase):
+    """Publishing a desk blog to the team as a numbered revision: once the desk counts it
+    finished (marked as published, with no desk job under way), as the blog list does."""
+
+    def act(self, ident, action, **data):
+        return management.dispatch(
+            self.root,
+            action,
+            {
+                'id': ident,
+                'expected': management.detail(self.root, ident)['expected'],
+                **data,
+            },
+        )
+
+    def publish(self, ident):
+        return self.act(ident, 'team-publish', confirmed=True)
+
+    def mark_published(self, ident):
+        self.act(
+            ident,
+            'schedule',
+            stage='published',
+            confirm_stage=True,
+            publication_url='https://example.invalid/fictional-post',
+        )
+
+    def tags(self):
+        return support.git(self.found.repo, 'tag')
+
+    def test_a_desk_blog_is_published_once_the_desk_counts_it_finished(self):
+        ident = self.made['id']
+        with self.assertRaisesRegex(ValueError, '^' + teams.DESK_UNPUBLISHED + '$'):
+            self.publish(ident)
+        self.assertEqual(self.tags(), '')
+        self.mark_published(ident)
+        queued = management.dispatch(
+            self.root, 'desk-note', {'id': ident, 'seen': 1, 'part': self.part, 'note': 'More.'}
+        )['working']
+        with self.assertRaisesRegex(ValueError, '^' + teams.DESK_WORKING + '$'):
+            self.publish(ident)
+        self.assertEqual(self.tags(), '')
+        management.dispatch(self.root, 'desk-stop', {'id': ident, 'job': queued['id']})
+        published = self.publish(ident)
+        self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
+        self.assertTrue(published)
+
+    def test_a_finished_run_opened_on_the_desk_is_published_as_before(self):
+        import saved_fixtures
+
+        tree = saved_fixtures.FIXTURES / 'finished-page'
+        (ident,) = [path.name for path in (tree / 'articles').iterdir()]
+        for path in sorted(tree.rglob('*')):
+            if path.is_file():
+                relative = path.relative_to(tree)
+                if relative.parts[0] == 'articles':
+                    relative = Path(*relative.parts[1:])
+                target = self.root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(path.read_bytes())
+        support.git(self.found.repo, 'add', '-A')
+        support.git(self.found.repo, 'commit', '-qm', 'A finished blog of the earlier flow')
+        support.git(self.found.repo, 'push', '-q', 'origin', 'HEAD:main')
+        management.dispatch(
+            self.root,
+            'team-take',
+            {
+                'id': ident,
+                'expected': blog_runner.survey(self.root, ident)['expected'],
+                'confirmed': True,
+            },
+        )
+        management.dispatch(self.root, 'desk-open', {'id': ident})
+        self.assertTrue(blog_runner.engine(self.root).describe(ident)['on_desk'])
+        self.assertTrue(blog_runner.survey(self.root, ident)['complete'])
+        # Not marked as published on the desk: its complete run lets it be published.
+        self.publish(ident)
+        self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
+
+    def test_a_blog_moved_to_the_desk_is_judged_as_desk_work(self):
+        import desk_chat
+        import saved_fixtures
+
+        tree = saved_fixtures.FIXTURES / 'draft-gate'
+        (ident,) = [path.name for path in (tree / 'articles').iterdir()]
+        for path in sorted(tree.rglob('*')):
+            if path.is_file():
+                relative = path.relative_to(tree)
+                if relative.parts[0] == 'articles':
+                    relative = Path(*relative.parts[1:])
+                target = self.root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(path.read_bytes())
+        support.git(self.found.repo, 'add', '-A')
+        support.git(self.found.repo, 'commit', '-qm', 'A saved blog of the earlier flow')
+        support.git(self.found.repo, 'push', '-q', 'origin', 'HEAD:main')
+        # Taken, as a saved blog is taken in a team repository to open it on the desk.
+        management.dispatch(
+            self.root,
+            'team-take',
+            {
+                'id': ident,
+                'expected': blog_runner.survey(self.root, ident)['expected'],
+                'confirmed': True,
+            },
+        )
+        shown = desk_chat.migration_preview(self.root, ident)
+        management.dispatch(self.root, 'desk-migrate', {'id': ident, 'expected': shown['expected']})
+        self.assertTrue(blog_runner.engine(self.root).describe(ident)['on_desk'])
+        # Its run is kept with stages never approved, but the desk judges it: not by stages.
+        self.assertFalse(blog_runner.survey(self.root, ident)['complete'])
+        with self.assertRaisesRegex(ValueError, '^' + teams.DESK_UNPUBLISHED + '$'):
+            self.publish(ident)
+        self.assertEqual(self.tags(), '')
+        self.mark_published(ident)
+        self.publish(ident)
+        self.assertIn('blog-studio/blogs/' + ident + '/1', self.tags())
+        self.assertEqual(gitstate.changed(self.found), [])
 
 
 class DeskTeamImageTests(TeamCase):

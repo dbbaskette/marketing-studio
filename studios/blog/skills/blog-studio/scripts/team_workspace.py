@@ -112,10 +112,51 @@ def _learn(root, found, at):
                 runner.keep_local(ident, state)
                 if runner.current == ident:
                     runner.stop.set()
+                _stop_desk_job(root, ident, runner)
             kept = gitstate.set_aside(found, ident, at)
             state = team.kept('taken')
             state[str(folder)] = {**remote.get('driver', {}), 'at': studio.now(), 'kept': kept}
             team.keep('taken', state)
+
+
+TAKEN_STOP = 'Another computer took this blog over, so this stopped. Your inputs are kept.'
+
+
+def _stop_desk_job(root, ident, runner):
+    """A desk tool job working on a blog taken over elsewhere is stopped as the desk's Stop
+    stops it (desk_jobs.stop): marked cancelled with its inputs kept, a result that comes back
+    never landed, a check's chain ended and a start marked stopped. Queued jobs are refused
+    when they come up (tool_jobs.once).
+
+    This runs inside the sync, under the repository lock. Every studio-lock holder in a team
+    workspace takes that lock first (studio.locked), so nothing else changes the workspace
+    meanwhile, and desk Stop needs no studio lock of its own: it writes only this computer's
+    records under .blog-runs, nothing the replay that follows would see."""
+    import desk_jobs
+    import tool_jobs
+
+    current = runner.current
+    if not isinstance(current, str) or not current.startswith('tool:'):
+        return
+    job_id = current[len('tool:') :]
+    try:
+        job = tool_jobs.read(root, job_id)
+    except (ValueError, OSError):
+        return
+    if (job.get('metadata') or {}).get('article') != ident or job.get('status') not in (
+        'queued',
+        'working',
+    ):
+        return
+    try:
+        desk_jobs.stop(root, ident, job_id)
+    except (ValueError, OSError):
+        pass  # Not a job the desk lists: cancelled below as Cancel would.
+    job = tool_jobs.read(root, job_id)
+    job.update(status='cancelled', error=TAKEN_STOP, finished_at=job.get('finished_at') or studio.now())
+    tool_jobs.write(root, job)
+    if runner.current == current:
+        runner.stop.set()
 
 
 def keep_setup(root):
@@ -443,8 +484,9 @@ def action(root, ident, action, expected=None):
                 )
         elif action == 'publish':
             guard(root, ident)
-            if not blog_runner_complete(root, ident):
-                raise ValueError('Approve every planned stage before publishing a revision.')
+            left = publish_left(root, ident)
+            if left:
+                raise ValueError(left)
             gitstate.commit(found, 'Publish blog ' + ident, [ident])
             report = gitstate.sync(found)
             if found.address and not report['shared']:
@@ -851,7 +893,33 @@ def save_memory(root, data):
     return value
 
 
-def blog_runner_complete(root, ident):
-    import blog_runner
+DESK_WORKING = (
+    'Wait for the work under way on the desk to end, then publish this blog to the team.'
+)
+DESK_UNPUBLISHED = (
+    'Mark this blog as published on the desk first, then publish it to the team as a '
+    'numbered revision.'
+)
 
-    return blog_runner.survey(root, ident)['complete']
+
+def publish_left(root, ident):
+    """What is left before a blog may be published to the team, in a sentence; None when
+    nothing is. A blog whose run is complete may be published, as before, on the desk or not
+    (a finished run opened on the desk keeps its run). Any other blog on the desk, such as
+    one made there or one moved there unfinished, is judged as the desk judges it finished
+    (desk_jobs.published); a run off the desk as its stages stand."""
+    import blog_runner
+    import desk
+    import desk_jobs
+
+    directory, info = studio.item(root, 'articles', ident)
+    if not desk.on_desk(directory):
+        if blog_runner.survey(root, ident)['complete']:
+            return None
+        return 'Approve every planned stage before publishing a revision.'
+    working = desk_jobs.under_way(root, ident)
+    if desk_jobs.published(info, working):
+        return None
+    if (directory / blog_runner.STATE).is_file() and blog_runner.survey(root, ident)['complete']:
+        return None
+    return DESK_WORKING if working else DESK_UNPUBLISHED
