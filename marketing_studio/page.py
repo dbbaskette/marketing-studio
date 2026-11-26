@@ -553,9 +553,12 @@ class Home(server.Page):
                 # they are saved pass (one never saved is empty, as the page shows it), so
                 # the rest of the form is not refused with them.
                 held = state.read().get('paths', {})
-                if getattr(self.caller, 'remote', False) and any(
-                        value != held.get(identifier, '') for identifier, value in paths.items()):
-                    raise WorkspaceError(REMOTE_PATHS)
+                if getattr(self.caller, 'remote', False):
+                    if any(value != held.get(identifier, '') for identifier, value in paths.items()):
+                        raise WorkspaceError(REMOTE_PATHS)
+                    # Exactly what is saved: nothing is looked up or written, not even an
+                    # empty entry for a studio never saved.
+                    return server.as_json(200, {**self.snapshot(fresh=True), **extra})
                 for identifier, value in paths.items():
                     if not isinstance(value, str) or len(value) > 4000:
                         raise WorkspaceError('Give a studio installation folder as text.')

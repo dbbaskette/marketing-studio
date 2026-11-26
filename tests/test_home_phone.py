@@ -139,7 +139,8 @@ class HomePhoneTests(BrandFolders):
                     self.assertEqual(self.ask(route('/api/paths'), {'paths': paths}), (409, {'error': getattr(home_page, 'REMOTE_PATHS', 'refused')}))
             located.assert_not_called()
             self.assertEqual(self.ask('/api/paths', {'paths': {'blog': str(install), 'training': ''}})[0], 200)
-        self.assertEqual(state.read()['paths'], {'blog': str(install), 'training': ''})
+        # Nothing new is written from a phone, not even an empty entry (second review, item 7).
+        self.assertEqual(state.read()['paths'], {'blog': str(install)})
 
         # Document graphics: models listed, a key never taken over the link.
         status, answer = self.ask(route('/api/graphics'), {'key': 'synthetic-not-a-key'})
@@ -214,7 +215,7 @@ class HomePhoneTests(BrandFolders):
             # One saved with a space at its end, sent back exactly, is no change.
             self.assertEqual(self.ask('/api/paths', {'paths': {'blog': install + ' '}}, network=False)[0], 200)
             self.assertEqual(self.ask('/api/paths', {'paths': {'blog': install + ' ', 'training': ''}})[0], 200)
-        self.assertEqual(state.read()['paths'], {'blog': install + ' ', 'training': ''})
+        self.assertEqual(state.read()['paths'], {'blog': install + ' '})   # no empty entry written
 
     def test_a_failure_that_names_a_folder_is_said_to_a_phone_without_it(self):
         # Review item 3: each lookup raising an OSError (or a refusal) that names a folder.
