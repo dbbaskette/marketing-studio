@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 from studio_core import activity_log
-from studio_core import research_contract as rc, research_session, research_sources, research_text
+from studio_core import research_contract as rc, research_session, research_sources, research_text, research_units
 from studio_core import public_fetch, source_documents, research_sites
 from . import research, settings, sources as project_sources
 from .activity import ending
@@ -108,9 +108,12 @@ class Jobs:
                 require(execution is not None, 'Install the pinned complete Harness Research 1.1 runtime before starting optional research.')
                 # Idempotent retries/taps of the same explicit start never create another request.
                 # The helper counts by its protocol only: an update of it is the same request.
+                # How the request is checked (its review entry) does not name it either, so
+                # the same start is the same request before and after an update.
                 key = research_session.digest([self.store.owner, ident, project['revision'], task,
                     prepared['id'], prepared['revision'], rc.stable(contract),
-                    {**execution, 'capability': rc.stable(execution['capability'])}])
+                    {**{name: value for name, value in execution.items() if name != 'review'},
+                     'capability': rc.stable(execution['capability'])}])
                 base = self.folder(ident); rc.write(base, '.gitignore', '*\n')
                 root = rc.inside(base, key)
                 if (root / 'state.json').exists():
@@ -225,6 +228,7 @@ class Jobs:
             transport = research_text.Transport(runtime, call)
             research_session.Workflow(runtime).run(root, state['task'], transport, offered,
                 limit=state['execution']['workers'], progress=lambda value: save(progress=value),
+                review_units=research_units.of(state['execution']),
                 allowed=lambda: not paused.is_set() and current(), cancelled=cancelled, restart_stopped=True,
                 earlier=state['execution'].get('earlier') or {'capability': state['execution']['capability']})
             require(current() and not stop.is_set(), 'The infographic changed before research could be used. Checked research is kept.')
