@@ -65,11 +65,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import home
-from workspace import WorkspaceError
-
-from runner import companion, settings, worker_tools
+from studio_core.modules import host_module
 from studio_core.reachability import codex_host, reachable
+
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+home = host_module(globals(), 'home')
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
+
+companion = host_module(globals(), 'companion', fellow=True)
+settings = host_module(globals(), 'settings', fellow=True)
+worker_tools = host_module(globals(), 'worker_tools', fellow=True)
+
 # How an agent's events are put in plain words, shared with studios that start agents their own
 # way: see studio_core.agent_events.
 from studio_core.agent_events import (  # noqa: F401  part of this module's interface

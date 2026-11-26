@@ -605,7 +605,7 @@ your organisation and is supplied separately. You can write without one.
   installed skills stay installed. A skill chosen here is kept by its stable
   `current` address, so it is found again after the brand skill updates.
 - **Use this brand skill** lists skills found in the usual shared install and
-  assistant skill folders, following Training Studio's discovery rules.
+  assistant skill folders, by the discovery rules every studio shares.
   `BRAND_SKILL_RUNTIME` can point to a particular installed skill folder.
   Choose one and press **Use this skill**. The choice stays on this computer.
 - **Install the brand skill** or **Update the brand skill** opens a sheet with

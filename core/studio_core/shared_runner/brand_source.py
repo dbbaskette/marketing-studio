@@ -46,10 +46,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-import hub
-from workspace import WorkspaceError
+from studio_core.modules import host_module
 
-from runner import companion, settings
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+hub = host_module(globals(), 'hub')
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
+
+companion = host_module(globals(), 'companion', fellow=True)
+settings = host_module(globals(), 'settings', fellow=True)
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has a stand-in.

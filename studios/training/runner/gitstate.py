@@ -19,7 +19,9 @@ was kept and each decision a person made is a commit, so the history says what h
 Change a training through Training Studio, not by hand, so its record stays true.
 """
 
+# A sync in a shared repository also holds Blog Studio's own repository lock, after the
+# shared settings lock, so it never runs while Blog Studio writes there.
 sys.modules[__name__] = for_product(
     __name__, 'Training Studio', TOOL='training-studio', FOLDER='trainings',
     ITEM='training', ITEMS='trainings', README=README, studios_config=studios_config,
-    REQUIRE_WORKSPACE_MARKER=True)
+    REQUIRE_WORKSPACE_MARKER=True, SYNC_LOCKS=('blog-studio.lock',))

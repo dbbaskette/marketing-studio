@@ -69,11 +69,14 @@ import zipfile
 import zlib
 from pathlib import Path
 
-import home
-from workspace import WorkspaceError
-
-from runner import worker_tools
 from studio_core import source_documents
+from studio_core.modules import host_module
+
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+home = host_module(globals(), 'home')
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
+
+worker_tools = host_module(globals(), 'worker_tools', fellow=True)
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins. IS_ITEM(root) says whether a folder is one of the

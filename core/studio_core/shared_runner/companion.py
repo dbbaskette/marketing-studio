@@ -60,7 +60,10 @@ import threading
 import time
 from pathlib import Path
 
-from workspace import WorkspaceError
+from studio_core.modules import host_module
+
+# The studio's modules: those it passed in MODULES, else imported by name (see shared_runner).
+WorkspaceError = host_module(globals(), 'workspace').WorkspaceError
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins.
