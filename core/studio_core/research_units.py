@@ -226,6 +226,11 @@ class Check:
         if not isinstance(review, dict) or review.get('accepted') \
                 or (review.get('units') or {}).get('plan') != status.get('plan'):
             return False
+        # Only while the final unit's accepted answer is still the one that review assembled:
+        # once it was retried, this recheck has begun, and what it reviewed since is kept.
+        final = next((unit for unit in status['units'] if unit['id'] == FINAL), {})
+        if final.get('status') != 'accepted' or final.get('reviewer') not in (review.get('reviewers') or ()):
+            return False
         plan = json.loads(rc.inside(self.case, status['plan_file']).read_bytes())
         unread = {item.get('source') for item in review.get('originals') or ()
                   if isinstance(item, dict) and item.get('read_original') is False}

@@ -255,9 +255,21 @@ class UnitCheckTests(unittest.TestCase):
         self.assertEqual(self.states[-1]['phase'], 'check-incomplete')
         first = len(self.reviews)
         before = list(self.calls), list(self.section_calls)
+        # The recheck stops partway: its unit is reviewed again, its final unit fails. The
+        # next try reviews only the final unit; what the recheck reviewed is kept.
+        def before_final(unit, payload):
+            if unit == units.FINAL and not getattr(self, 'final_failed', False):
+                self.final_failed = True
+                raise ValueError('Synthetic final reviewer failure')
+        self.before = before_final
+        with self.assertRaisesRegex(ValueError, 'Synthetic final reviewer failure'):
+            run()
+        self.assertEqual([row['areas'] for row in self.reviews[first:]], [[unread], []])
+        self.before = None
+        first = len(self.reviews)
         facts, _ = run()
         self.assertTrue(facts['review']['accepted'])
-        self.assertEqual([row['areas'] for row in self.reviews[first:]], [[unread], []])
+        self.assertEqual([row['areas'] for row in self.reviews[first:]], [[]])
         self.assertEqual((self.calls, self.section_calls), before, 'the dossier is kept; only the check runs')
         self.assertTrue(all(original['read_original'] for original in facts['review']['originals']))
 
