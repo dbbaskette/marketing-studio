@@ -313,7 +313,7 @@ def trainings() -> list[dict]:
                         blocking=len(result['blocking']), to_make=len(result['to_make']),
                         **summary(report, result))
         except Exception as failure:  # one record that cannot be read must not hide the rest
-            item['error'] = describe(failure)
+            item['error'] = unread_said(failure)
         listed.append(item)
     return sorted(listed, key=lambda item: item['touched_at'], reverse=True)
 
@@ -345,6 +345,21 @@ def left_out(report: dict) -> list[dict]:
             for stage in workspace.SKIPPABLE if stage not in wanted]
 
 
+UNREADABLE = 'A record in its folder cannot be read.'
+NOT_JSON = 'A record in its folder is not valid JSON.'
+
+
+def unread_said(failure: Exception) -> str:
+    """Why a training's records cannot be read, as Home and its page say it: a refusal's own
+    sentence, and otherwise a plain one, never a reader's own text or a path on this computer
+    (GitHub issue #544)."""
+    if isinstance(failure, (workspace.WorkspaceError, Refusal)):
+        return str(failure)
+    if isinstance(failure, (json.JSONDecodeError, UnicodeDecodeError)):
+        return NOT_JSON
+    return UNREADABLE
+
+
 def detail(path: str) -> dict:
     """One registered training: its status report, its check result, and both in plain words."""
     item = known(registered(path))
@@ -361,7 +376,7 @@ def detail(path: str) -> dict:
                           'limitations': [plainly(reason) for reason in result['limitations']],
                           'warnings': result['warnings']})
     except Exception as failure:  # shown on the page, like the same training in the list
-        item['error'] = describe(failure)
+        item['error'] = unread_said(failure)
     return item
 
 

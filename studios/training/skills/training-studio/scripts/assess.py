@@ -29,7 +29,11 @@ def run_checks(root: Path, show_all: bool = False) -> dict:
     state = workspace.person_statuses(root, session)
     wanted = session['settings']['stages']
     found = workspace.scenarios(root, session)['found']
-    profile = json.loads(workspace.profile_for(root).read_text(encoding='utf-8'))
+    pinned = workspace.profile_for(root)
+    try:
+        profile = json.loads(pinned.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise workspace.unreadable('Yoodli profile', error) from error
     # Only a desk training's references are checked: a saved training keeps its state.
     on_desk = workspace.on_desk(session)
     outcomes, warnings, practice, blueprints = [], [], {}, {}

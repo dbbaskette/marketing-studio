@@ -124,6 +124,29 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertLess(parts.index('Brand skill'), parts.index('Updates'))
         self.assertLess(parts.index('Updates'), parts.index('Notifications'))
 
+    def test_settings_read_sensibly_on_a_phone_with_no_folder_named(self):
+        # GitHub issue #539: through the network bridge the set-up names no folder here.
+        self.started()
+        phone = {**SET_UP, 'workspace': {**SET_UP['workspace'], 'repository': None,
+                                         'path': None, 'shared': False},
+                 'brand': {**SET_UP['brand'], 'repository': 'a folder on this computer'},
+                 'remote': True}
+        result = self.run_page(self.answers(phone), [{'click': 'Settings'},
+                                                     {'snapshot': 'settings'}], narrow=True)
+        shot = result['snapshots']['settings']
+        lines = shot['text'].split('\n')
+        at = lines.index('Folder on this computer')
+        self.assertEqual(lines[at + 1], 'Shown on that computer itself')
+        self.assertNotIn('null', shot['text'])
+        self.assertNotIn('/Users/', shot['text'])
+        # Set-up is refused to a phone, so it is not offered there (fix round, #539).
+        self.assertNotIn('Change the set-up', shot['buttons'])
+        self.assertIn('The set-up is changed on the computer that runs Training Studio.',
+                      shot['text'])
+        here = self.run_page(self.answers(SET_UP), [{'click': 'Settings'},
+                                                    {'snapshot': 'settings'}], narrow=True)
+        self.assertIn('Change the set-up', here['snapshots']['settings']['buttons'])
+
     def test_set_up_has_one_heading_per_card(self):
         fresh = {**SET_UP, 'configured': False, 'workspace': None}
         result = self.run_page(self.answers(fresh), [{'snapshot': 'set-up'}])

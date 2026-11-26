@@ -405,6 +405,10 @@ def _team(joined: gitstate.Workspace, was: str | None) -> None:
     studios_config.update(wanted)
 
 
+FINISHING = ('A training in the workspace this computer uses now still has a step in hand. '
+             'Wait for that step to end, then move to another workspace.')
+
+
 def apply(engine, wanted: dict) -> dict:
     """Set the workspace up, save the settings, and describe both.
 
@@ -457,6 +461,12 @@ def apply(engine, wanted: dict) -> dict:
             raise WorkspaceError('Trainings are working in the workspace this computer uses '
                                  'now. Pause or stop them before moving to another.')
         with engine.files:
+            # A training paused while its step was in hand is not working, but that step
+            # still ends in this workspace: moving now would leave it writing outside the
+            # workspace in use (GitHub issue #549). Asked under the lock the step's mark is
+            # set and cleared under, so no step starts or ends between the look and the move.
+            if moving and any(engine.in_hand(root) for root in engine.trainings()):
+                raise WorkspaceError(FINISHING)
             if repository:
                 gitstate.join(repository, wanted['folder'], wanted['branch'],
                               wanted['name'], share)

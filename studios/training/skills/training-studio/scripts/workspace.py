@@ -135,6 +135,17 @@ def session_path(root: Path) -> Path:
     return root / STATE_DIR / 'session.json'
 
 
+def unreadable(what: str, error: Exception) -> WorkspaceError:
+    """Why a record cannot be read, as a sentence of our own: never the JSON reader's own
+    words, nor the operating system's with a path on this computer (GitHub issue #544). A
+    refusal raised as a ValueError with a sentence of ours keeps that sentence."""
+    if isinstance(error, (json.JSONDecodeError, UnicodeDecodeError)):
+        return WorkspaceError(f'The {what} record is not valid JSON; refusing to change it.')
+    if isinstance(error, (OSError, KeyError)) or not str(error):
+        return WorkspaceError(f'The {what} record cannot be read.')
+    return WorkspaceError(str(error))
+
+
 def load(root: Path) -> dict:
     path = session_path(root)
     if not path.is_file():
@@ -142,15 +153,13 @@ def load(root: Path) -> dict:
         try:
             migration_records.pair(root)
         except (ValueError, OSError, KeyError) as error:
-            raise WorkspaceError(str(error)) from error
+            raise unreadable('desk', error) from error
         raise WorkspaceError('No training in this directory. Use checked desk commands for new work.')
     try:
         import migration_records
         session = migration_records.record(root, f'{STATE_DIR}/session.json')
-    except json.JSONDecodeError as error:
-        raise WorkspaceError('The session record is not valid JSON; refusing to change it.') from error
     except (ValueError, OSError, KeyError) as error:
-        raise WorkspaceError(str(error) or 'The session record cannot be read.') from error
+        raise unreadable('session', error) from error
     if not isinstance(session, dict) or session.get('schema') != SCHEMA:
         found = session.get('schema') if isinstance(session, dict) else None
         raise WorkspaceError(f'Unrecognised session schema {found!r}; refusing to change it.')
@@ -200,7 +209,7 @@ def read_run(root):
     try:
         return migration_records.record(root, f'{STATE_DIR}/run.json')
     except (ValueError, OSError, KeyError) as error:
-        raise WorkspaceError(str(error)) from error
+        raise unreadable('run', error) from error
 
 
 def write_run(root, record):

@@ -2,20 +2,26 @@
 import copy
 import io
 import json
+import sys
 from pathlib import Path
 from unittest import mock
 
-import helpers
-import home
-import saved_fixtures
-import workspace
-from runner import desk_chat, engine as engines, gitstate, pipeline, settings, studio, team
-from runner_support import StudioCase, TeamCase, FORM, BLUEPRINT
-from test_desk import ScriptedPage, ok, SET_UP, RUNNER, AGENTS_FOUND, MODELS
-from test_runner_page import PageCase
-from test_runner_deck import DeckCase
-from test_desk_chat import ConversationTests
-from workspace import WorkspaceError
+# Run alone as `python3 -m unittest tests.test_desk_migration` from the studio's folder, this
+# folder is not on the import path yet: put it there, so `helpers` and the other test modules
+# import as they do in the suite (GitHub issue #544).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import helpers  # noqa: E402,I001  the path-setting imports must come before runner
+import home  # noqa: E402
+import saved_fixtures  # noqa: E402
+import workspace  # noqa: E402
+from runner_support import StudioCase, TeamCase, FORM, BLUEPRINT  # noqa: E402
+from runner import desk_chat, engine as engines, gitstate, pipeline, settings, studio, team  # noqa: E402
+from test_desk import ScriptedPage, ok, SET_UP, RUNNER, AGENTS_FOUND, MODELS  # noqa: E402
+from test_runner_page import PageCase  # noqa: E402
+from test_runner_deck import DeckCase  # noqa: E402
+from test_desk_chat import ConversationTests  # noqa: E402
+from workspace import WorkspaceError  # noqa: E402
 
 SESSION = '.training-studio/session.json'
 RUN = '.training-studio/run.json'

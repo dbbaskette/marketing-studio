@@ -1665,11 +1665,14 @@ function quietRow(training, kind) {
   return add(row, kind === 'finished' ? bead('done') : null, text, withDelete(go, training));
 }
 
+// A training whose records cannot be read, under the card that says so: the runner's own
+// plain sentence, said once, and its folder by the name it has inside the workspace, never
+// this computer's whole path (#544).
 function brokenRow(training) {
   const text = add(make('div', 'row-text'),
     make('p', 'row-title', training.title || 'Untitled'),
-    make('p', 'row-says', 'Its record cannot be read: ' + training.error),
-    pathInto(make('p', 'path'), training.path));
+    make('p', 'row-says', training.error),
+    pathInto(make('p', 'path'), folderIn(training.path)));
   const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
   go.setAttribute('aria-label', 'Open ' + (training.title || 'Untitled'));
   return add(make('li', 'row'), bead('off'), text, go);
@@ -3676,6 +3679,8 @@ function limitsSays(limits) {
   return says.join(' ');
 }
 
+const SETUP_ELSEWHERE = 'The set-up is changed on the computer that runs Training Studio.';
+
 // Settings, with the runner: where the trainings are kept, who can see them, and the way in
 // to change any of it.
 function workspaceCard() {
@@ -3685,8 +3690,9 @@ function workspaceCard() {
   const node = card('Workspace');
   const agent = held.agent || {};
   add(node, make('p', 'row-title', space.name || 'Your trainings'),
+    // From a phone the runner names no folder of its computer (#539): the row says where.
     about([[space.repository ? 'Repository' : 'Folder on this computer',
-      space.repository || space.path],
+      space.repository || space.path || 'Shown on that computer itself'],
     [space.repository ? 'This computer’s copy' : '', space.repository ? space.path : ''],
     ['Folder inside it', space.folder], ['Branch', space.branch],
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
@@ -3696,7 +3702,9 @@ function workspaceCard() {
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
-    add(make('div', 'bar'), capsule('Change the set-up', '', () => show('setup'), 'setup')));
+    // A phone is refused set-up (#539): it is told where set-up is changed instead.
+    held.remote ? make('p', 'quiet', SETUP_ELSEWHERE)
+      : add(make('div', 'bar'), capsule('Change the set-up', '', () => show('setup'), 'setup')));
   return node;
 }
 
@@ -5092,14 +5100,17 @@ function adding(run) {
 
 // A run that is done has finished the training, or has made everything but the deck.
 function runStanding(run) {
+  // Who runs it comes first: a training nobody runs, or a teammate runs, is not worked on
+  // here whatever its files say. Only a finished one is said to be finished (#544).
+  const done = Boolean(run.finished && run.finished.ready);
+  if (run.mine === false && !done) {
+    return run.driver ? RUN_WORDS.elsewhere : ['off', 'Nobody is running it'];
+  }
   if (run.finished) {
     return run.finished.ready ? ['done', 'Finished']
       : ['late', 'Not ready to use yet'];
   }
   if (run.deck_left) return ['done', 'Everything but the slide deck is made'];
-  if (run.mine === false) {
-    return run.driver ? RUN_WORDS.elsewhere : ['off', 'Nobody is running it'];
-  }
   if (queued(run)) return ['none', 'Waiting its turn'];
   return run.state === 'working' && (adding(run) || outlining(run)) ? RUN_WORDS.waiting
     : runWords(run);
@@ -6537,6 +6548,16 @@ function inWorkspace(path) {
   const space = view.runner && view.setup ? view.setup.workspace : null;
   const root = space && space.path ? String(space.path).replace(/[\\/]+$/, '') : '';
   return Boolean(root) && ['/', '\\'].some((mark) => String(path).startsWith(root + mark));
+}
+
+// A training's folder by its name inside the workspace, or by its own name for one kept
+// elsewhere: never the whole path on this computer.
+function folderIn(path) {
+  const space = view.runner && view.setup ? view.setup.workspace : null;
+  const root = space && space.path ? String(space.path).replace(/[\\/]+$/, '') : '';
+  const whole = String(path || '');
+  if (inWorkspace(whole)) return whole.slice(root.length + 1);
+  return whole.split(/[\\/]/).filter(Boolean).pop() || '';
 }
 
 // A training in a shared workspace that was handed over: nobody runs it until someone

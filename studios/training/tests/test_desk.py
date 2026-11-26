@@ -231,7 +231,8 @@ class ListTests(DeskCase):
         session['artifacts'] = {'intake': {}}
         record.write_text(json.dumps(session), encoding='utf-8')
         listed = self.listed()
-        self.assertIn('KeyError', listed[str(self.root)]['error'])
+        # Said plainly, never as the error's own type or text (GitHub issue #544).
+        self.assertEqual(listed[str(self.root)]['error'], desk.UNREADABLE)
         self.assertIn('counts', listed[str(other)])
 
 
@@ -2102,6 +2103,41 @@ class PageScriptTests(ScriptedPage, PageCase):
         self.write('reviews/document.md', '## Review\n\n- The table is new. *My judgment.*\n')
         self.cli('checkpoint', '--approval', 'page', '--gate', 'document', '--stage',
                  'document', '--question', 'Is the guide ready?')
+
+    def test_a_training_that_cannot_be_read_is_said_plainly_by_its_folder_name(self):
+        # GitHub issue #544: Home's Cannot be read row showed the JSON reader's own error
+        # and the folder's whole path on this computer.
+        self.a_gate_with_history()
+        broken = self.another('second')
+        (broken / '.training-studio' / 'session.json').write_text('{not json')
+        run = self.another('third')
+        (run / '.training-studio' / 'run.json').write_text('{not json')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')]}
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']['text']
+        self.assertIn('Cannot be read', home)
+        self.assertIn('The session record is not valid JSON; refusing to change it.', home)
+        self.assertIn('The run record is not valid JSON; refusing to change it.', home)
+        # Said once: the card already says the records cannot be read (fix round, #544).
+        self.assertNotIn('Its record cannot be read', home)
+        for name in ('second', 'third'):
+            self.assertIn(name, home)
+        for raw in (str(self.root.parent), 'Expecting', 'line 1', 'column', 'JSONDecodeError'):
+            self.assertNotIn(raw, home)
+
+    def test_a_failure_of_no_known_kind_is_said_once_on_home(self):
+        self.a_gate_with_history()
+        odd = self.another('odd')
+        record = odd / '.training-studio' / 'session.json'
+        session = json.loads(record.read_text(encoding='utf-8'))
+        session['artifacts'] = {'intake': {}}
+        record.write_text(json.dumps(session), encoding='utf-8')
+        (odd / 'intake.md').write_text('v1\n')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')]}
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']['text']
+        self.assertEqual(home.count('cannot be read'), 1, home)
+        self.assertIn(desk.UNREADABLE, home)
 
     def test_a_change_is_asked_for_from_home_to_done(self):
         self.a_gate_with_history()
@@ -8625,6 +8661,38 @@ class PackageTests(unittest.TestCase):
         self.assertIn('--gate', self.guidance('gates'))
         self.assertIn('--approval page', self.guidance('intake'))
 
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class RunStandingTests(unittest.TestCase):
+    """Where a run stands, as the outline screen says it beside a deck's words: who runs it
+    comes before what its files say (GitHub issue #544)."""
+
+    def standing(self, run: dict) -> list:
+        page = (PAGE / 'app.js').read_text(encoding='utf-8')
+        words = re.search(r'^const RUN_WORDS = \{.*?^\};', page, re.S | re.M).group(0)
+        told = re.search(r'^function runStanding\(run\) \{.*?^\}', page, re.S | re.M).group(0)
+        script = (words + '\n' + told + '\nconst queued = () => false, adding = () => false, '
+                  'outlining = () => false;\nconst runWords = (run) => RUN_WORDS[run.state];\n'
+                  'console.log(JSON.stringify(runStanding(' + json.dumps(run) + ')));')
+        done = subprocess.run([NODE, '-e', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_a_training_nobody_runs_says_so_even_with_all_its_work_made(self):
+        unready = {'ready': False, 'limitations': [], 'blocking': ['x']}
+        self.assertEqual(self.standing({'mine': False, 'driver': None, 'state': 'stopped',
+                                        'finished': unready}),
+                         ['off', 'Nobody is running it'])
+        self.assertEqual(self.standing({'mine': False, 'driver': {'name': 'Alex'},
+                                        'state': 'elsewhere', 'finished': unready,
+                                        'deck_left': {'says': 'x'}}),
+                         ['none', 'Run by your teammates'])
+        # A finished training is finished, whoever reads it.
+        self.assertEqual(self.standing({'mine': False, 'driver': None, 'state': 'done',
+                                        'finished': {'ready': True}}), ['done', 'Finished'])
+        self.assertEqual(self.standing({'mine': True, 'state': 'done', 'finished': unready}),
+                         ['late', 'Not ready to use yet'])
 
 
 class TrainingNamesTests(unittest.TestCase):
