@@ -1665,11 +1665,13 @@ function quietRow(training, kind) {
   return add(row, kind === 'finished' ? bead('done') : null, text, withDelete(go, training));
 }
 
+// A training whose records cannot be read: the runner's plain sentence, and its folder by
+// the name it has inside the workspace, never this computer's whole path (#544).
 function brokenRow(training) {
   const text = add(make('div', 'row-text'),
     make('p', 'row-title', training.title || 'Untitled'),
-    make('p', 'row-says', 'Its record cannot be read: ' + training.error),
-    pathInto(make('p', 'path'), training.path));
+    make('p', 'row-says', 'Its record cannot be read. ' + training.error),
+    pathInto(make('p', 'path'), folderIn(training.path)));
   const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
   go.setAttribute('aria-label', 'Open ' + (training.title || 'Untitled'));
   return add(make('li', 'row'), bead('off'), text, go);
@@ -6540,6 +6542,16 @@ function inWorkspace(path) {
   const space = view.runner && view.setup ? view.setup.workspace : null;
   const root = space && space.path ? String(space.path).replace(/[\\/]+$/, '') : '';
   return Boolean(root) && ['/', '\\'].some((mark) => String(path).startsWith(root + mark));
+}
+
+// A training's folder by its name inside the workspace, or by its own name for one kept
+// elsewhere: never the whole path on this computer.
+function folderIn(path) {
+  const space = view.runner && view.setup ? view.setup.workspace : null;
+  const root = space && space.path ? String(space.path).replace(/[\\/]+$/, '') : '';
+  const whole = String(path || '');
+  if (inWorkspace(whole)) return whole.slice(root.length + 1);
+  return whole.split(/[\\/]/).filter(Boolean).pop() || '';
 }
 
 // A training in a shared workspace that was handed over: nobody runs it until someone

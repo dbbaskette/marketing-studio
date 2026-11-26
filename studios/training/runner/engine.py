@@ -7725,8 +7725,11 @@ class Engine(Reviewing):
 
     @staticmethod
     def _unread(failure: Exception) -> dict:
-        """A run in brief whose record or files could not be read."""
-        return {'state': 'failed', 'sentence': str(failure), 'needs': True, 'question': None,
+        """A run in brief whose record or files could not be read, said in a sentence of
+        our own, never a reader's own text or a path (GitHub issue #544)."""
+        said = str(failure) if isinstance(failure, WorkspaceError) \
+            else str(workspace.unreadable('run', failure))
+        return {'state': 'failed', 'sentence': said, 'needs': True, 'question': None,
                 'mine': True, 'driver': None, 'last_shared': None, 'notice': None,
                 'busy_since': None}
 
@@ -7885,8 +7888,10 @@ class Engine(Reviewing):
             read_record(root)
             workspace.load(root)
             return None
-        except (WorkspaceError, OSError, ValueError) as failure:
+        except WorkspaceError as failure:
             return str(failure)
+        except (OSError, ValueError) as failure:
+            return str(workspace.unreadable('run', failure))
 
     def _saved_driver(self, root: Path) -> tuple[dict | None, bool]:
         """Who drives a read-only record, as its readable run record names: (driver as the

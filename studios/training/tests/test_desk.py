@@ -2103,6 +2103,27 @@ class PageScriptTests(ScriptedPage, PageCase):
         self.cli('checkpoint', '--approval', 'page', '--gate', 'document', '--stage',
                  'document', '--question', 'Is the guide ready?')
 
+    def test_a_training_that_cannot_be_read_is_said_plainly_by_its_folder_name(self):
+        # GitHub issue #544: Home's Cannot be read row showed the JSON reader's own error
+        # and the folder's whole path on this computer.
+        self.a_gate_with_history()
+        broken = self.another('second')
+        (broken / '.training-studio' / 'session.json').write_text('{not json')
+        run = self.another('third')
+        (run / '.training-studio' / 'run.json').write_text('{not json')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')]}
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']['text']
+        self.assertIn('Cannot be read', home)
+        self.assertIn('Its record cannot be read. The session record is not valid JSON; '
+                      'refusing to change it.', home)
+        self.assertIn('Its record cannot be read. The run record is not valid JSON; '
+                      'refusing to change it.', home)
+        for name in ('second', 'third'):
+            self.assertIn(name, home)
+        for raw in (str(self.root.parent), 'Expecting', 'line 1', 'column', 'JSONDecodeError'):
+            self.assertNotIn(raw, home)
+
     def test_a_change_is_asked_for_from_home_to_done(self):
         self.a_gate_with_history()
         other = self.another('second')

@@ -268,7 +268,9 @@ class UnreadableStopTests(SavedStopTests):
         self.assertEqual(shown['sentence'], engines.UNREAD_RECORD)
         self.assertNotIn('earlier', shown['sentence'])
         self.assertEqual(shown['saved_record']['why'], desk_migration.UNREAD)
-        self.assertIn('Expecting property name', shown['saved_record']['refusal'])
+        # Said in a sentence of the runner's own, never the JSON reader's (GitHub issue #544).
+        self.assertEqual(shown['saved_record']['refusal'],
+                         'The run record is not valid JSON; refusing to change it.')
         self.assertEqual(shown['saved_record']['next'], 'new')
         self.assertFalse(shown['can_migrate_desk'] or shown['can_open_desk'])
         self.assertEqual(shown['saved_record']['files'],
