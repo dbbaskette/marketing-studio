@@ -23,6 +23,56 @@ from studio_core import research_reading, research_units
 from studio_core import research_session as session
 
 
+# What a review unit's state in Harness Research (`review-units status`) is shown as (#379).
+# Accepted this time and kept from an earlier check both mean it is not reviewed again.
+UNIT_SHOWN = {'pending': 'waiting', 'reserved': 'waiting', 'running': 'working', 'finished': 'working',
+              'accepted': 'kept', 'kept': 'kept', 'failed': 'failed', 'refused': 'failed',
+              'cancelled': 'stopped'}
+# Which host phase works in which stage of the page, for the observed number working now.
+STAGE_OF = {'investigate': 'gather', 'read': 'gather', 'synthesize': 'combine', 'review': 'check'}
+LABEL_MOST = 80   # a unit's name is a question cut to this, never more of the research
+
+
+def clocked(attempts, now):
+    """How long the latest of these host attempts took, or has taken so far: {'attempts',
+    'seconds', and 'started_at' while it works}, or {} when none was made."""
+    if not attempts:
+        return {}
+    last = max(attempts, key=lambda attempt: attempt.get('started_at') or '')
+    working = not last.get('ended_at')
+    seconds = (now - research_timing.stamp(last['started_at'])) if working else last.get('seconds')
+    shown = {'attempts': len(attempts)}
+    if isinstance(seconds, (int, float)):
+        shown['seconds'] = round(max(0, seconds), 1)
+    if working:
+        shown['started_at'] = last['started_at']
+    return shown
+
+
+def timed_out(error):
+    """Whether a job ended because it ran out of its time: a native job's outcome, or a text
+    transport's reason."""
+    return getattr(getattr(error, 'outcome', None), 'reason', None) == 'timeout' \
+        or getattr(error, 'reason', None) in ('timeout', 'time-limit')
+
+
+class Watched:
+    """The run's helper while a check in units runs: every command goes to the helper as it
+    is, and what each review-units command says of a unit is shown on the page (#379)."""
+
+    def __init__(self, workflow, run):
+        self._workflow, self._run = workflow, run
+
+    def __getattr__(self, name):
+        return getattr(self._workflow, name)
+
+    def command(self, root, group, action, value=None, **flags):
+        result = self._workflow.command(root, group, action, value, **flags)
+        if group == 'review-units':
+            self._run.unit_seen(action, value, result)
+        return result
+
+
 def review_context(helper_value, reuse_value, section_value):
     """What a section review was made under: the helper's and reuse's protocols, the section
     guidance and who checks it. A saved review is reused only under the same."""
@@ -47,6 +97,9 @@ class Run:
         # The case's review-units entry: its check is done in units (research_units.Check),
         # held in `checking` while one runs. None: the single review.
         self.review_units, self.checking = review_units, None
+        # What the page is shown of each review unit, by id, in plan order (#379); and of the
+        # final brief while sections are combined: None until combining reaches it.
+        self.units_shown, self.final_shown = {}, None
         self.host_lock = threading.RLock()    # over the host record of invocations
         self.state_lock = threading.RLock()   # over the progress the page is shown
 
@@ -203,9 +256,11 @@ class Run:
                            'section': a.get('section'),
                            'status': a.get('status', 'working'), **({'unit': a['unit']} if a.get('unit') else {})}
                           for a in host['attempts'] if not a.get('ended_at')]
+                self.units_timed(tracked, host['attempts'])
             unconfirmed = sum(a['status'] == 'termination-unconfirmed' for a in active)
             tracked['agents'] = {'count': None if unconfirmed else len(active),
                                  'unconfirmed': unconfirmed, 'active': active}
+            tracked['counts'] = self.counts(tracked, active, unconfirmed)
             if timing['incomplete']:
                 timing.update(active_seconds=None, assistant_seconds=None)
             tracked['timing'] = timing
@@ -213,6 +268,145 @@ class Run:
                 for area in tracked['streams']: area.pop('evidence', None)
             if phase == 'complete': tracked['checked_result_seconds'] = timing.get('elapsed_seconds')
             self.progress(copy.deepcopy(tracked))
+
+    # What the page is shown of each unit of work (#379): the areas gathered, the sections
+    # combined, the final brief, and each review unit with the final whole-research check;
+    # how long each took from the host's own record of its attempts, and how many work now.
+    # Names and numbers only: never evidence, prose or review text.
+
+    def units_timed(self, tracked, attempts):
+        """Each area's, section's, final brief's and review unit's attempts and time, from the
+        host record (held under host_lock)."""
+        now = research_timing.stamp(session.now())
+        def by(test):
+            return [attempt for attempt in attempts if attempt.get('started_at') and test(attempt)]
+        for area in tracked['streams']:
+            for key in ('attempts', 'seconds', 'started_at'): area.pop(key, None)
+            area.update(clocked(by(lambda a: a['phase'] == 'investigate' and a.get('stream') == area['id']), now))
+        for row in tracked.get('combining') or ():
+            for key in ('attempts', 'seconds', 'started_at'): row.pop(key, None)
+            row.update(clocked(by(lambda a: a['phase'] == 'synthesize' and a.get('section') == row['id']), now))
+        if self.final_shown is not None:
+            tracked['final_brief'] = {'status': self.final_shown, **clocked(
+                by(lambda a: a['phase'] == 'synthesize' and a.get('section') == 'final'), now)}
+        if self.units_shown:
+            tracked['review_units'] = [
+                {**{key: unit[key] for key in ('id', 'kind', 'label', 'status')},
+                 **clocked(by(lambda a, ident=unit['id']: a['phase'] == 'review' and a.get('unit') == ident), now),
+                 **({'attempts': unit['attempt']} if unit.get('attempt') else {})}
+                for unit in self.units_shown.values()]
+
+    def counts(self, tracked, active, unconfirmed):
+        """For each stage with units: how many work now (observed: the host's live jobs, never
+        the configured limit; None when a job's end is unconfirmed), wait, are kept and failed."""
+        rows = {'gather': tracked['streams'],
+                'combine': [*(tracked.get('combining') or ()),
+                            *([tracked['final_brief']] if tracked.get('final_brief') else [])],
+                'check': tracked.get('review_units') or []}
+        shown = {}
+        for stage, units in rows.items():
+            if not units:
+                continue
+            working = sum(STAGE_OF.get(agent['phase']) == stage for agent in active)
+            shown[stage] = {'working': None if unconfirmed else working, 'total': len(units),
+                            **{state: sum(unit.get('status') == state for unit in units)
+                               for state in ('waiting', 'kept', 'failed', 'stopped')}}
+        return shown
+
+    def unit_label(self, unit):
+        """A review unit's name a person can read: the question of the area it checks, or
+        the whole research for the final unit."""
+        if unit.get('kind') == 'final' or unit.get('id') == research_units.FINAL:
+            return 'the whole research'
+        questions = {area['id']: area['questions'] for area in self.tracked['streams']}
+        named = [questions[area] for area in unit.get('areas') or () if questions.get(area)]
+        if not named:
+            return 'one part of the research'
+        first = str(named[0][0])
+        first = first if len(first) <= LABEL_MOST else first[:LABEL_MOST - 1].rstrip() + '…'
+        more = len(named) - 1
+        return first + (f' (and {more} more area{"" if more == 1 else "s"})' if more else '')
+
+    def unit_seen(self, action, value, result):
+        """What one review-units command said of the units, shown on the page."""
+        with self.state_lock:
+            listed = result.get('units') if isinstance(result, dict) else None
+            if isinstance(listed, list) and listed and all(isinstance(u, dict) and u.get('id') for u in listed):
+                # A status or plan lists every unit of the plan: shown in its order.
+                self.units_shown = {unit['id']: {
+                    'id': unit['id'], 'kind': 'final' if unit.get('kind') == 'final' or unit['id'] == research_units.FINAL else 'content',
+                    'label': self.unit_label(unit), 'status': UNIT_SHOWN.get(unit.get('status'), 'waiting'),
+                    'attempt': unit.get('attempt') if type(unit.get('attempt')) is int else None}
+                    for unit in listed}
+            else:
+                ident = (value or {}).get('unit') if isinstance(value, dict) else None
+                ident = ident.get('id') if isinstance(ident, dict) else ident
+                shown = self.units_shown.get(ident)
+                if shown is not None:
+                    if action == 'register':
+                        shown['status'] = 'working'
+                        number = ((result or {}).get('registration') or {}).get('number')
+                        if type(number) is int: shown['attempt'] = number
+                    elif action == 'accept':
+                        shown['status'] = 'kept'
+                    elif action == 'finish' and value.get('outcome') in ('failed', 'refused', 'cancelled'):
+                        shown['status'] = UNIT_SHOWN[value['outcome']]
+                    elif action == 'retry':
+                        shown['status'] = 'waiting'
+                elif action == 'stop':
+                    for unit in self.units_shown.values():
+                        if unit['status'] == 'working': unit['status'] = 'stopped'
+        self.report()
+
+    def final_progress(self, state, error=None):
+        """What section combining says of the final brief: waiting, working, kept, or ended
+        by `error` (failed, or stopped by a stop), shown on the page."""
+        how = None
+        if error is not None:
+            state, how = ('stopped', 'stopped') if self.stopped_by(error) else \
+                ('failed', 'timed-out' if timed_out(error) else 'failed')
+        with self.state_lock:
+            self.final_shown = state
+            if how:
+                sections = self.tracked.get('combining') or []
+                self.ended_in('final-brief', how, kept=sum(row.get('status') == 'kept' for row in sections),
+                              total=len(sections))
+        self.report()
+
+    def stopped_by(self, error):
+        """Whether `error` is a stop or pause rather than a failure."""
+        return isinstance(error, (InterruptedError, KeyboardInterrupt)) or type(error).__name__ == 'Stopped' \
+            or bool(self.cancelled()) or not self.allowed()
+
+    def ended_in(self, part, how, *, kept, total, label=None, parts=1):
+        """Where this run ended, said once for every studio (research_transport.ended_words):
+        the final brief or a review unit, how, and what is kept."""
+        from studio_core import research_transport
+        self.tracked['ended_in'] = {
+            'part': part, 'how': how, **({'label': label} if label else {}), 'kept': kept, 'total': total,
+            'said': research_transport.ended_words(part, how, label=label, parts=parts, kept=kept, total=total)}
+
+    def units_ended(self, error):
+        """A check in units that ended early: which unit, how, and the checks kept."""
+        units = list(self.units_shown.values())
+        if not units:
+            return
+        stopped = self.stopped_by(error)
+        if stopped:
+            for unit in units:
+                if unit['status'] == 'working': unit['status'] = 'stopped'
+        ended = [unit for unit in units if unit['status'] == ('stopped' if stopped else 'failed')] \
+            or [unit for unit in units if unit['status'] in ('failed', 'stopped', 'working')]
+        kept = sum(unit['status'] == 'kept' for unit in units)
+        if not ended:
+            return
+        final = all(unit['kind'] == 'final' for unit in ended)
+        named = [unit for unit in ended if unit['kind'] != 'final']
+        with self.state_lock:
+            self.ended_in('whole-check' if final else 'review-unit',
+                          'stopped' if stopped else 'timed-out' if timed_out(error) else 'failed',
+                          label=named[0]['label'] if len(named) == 1 else None,
+                          parts=len(named), kept=kept, total=len(units))
 
     def require(self):
         """Go on only while the originals are unchanged, the run is not stopped and it is
@@ -524,7 +718,8 @@ class Run:
                 offered_final, self.invoke, round=number,
                 guidance=(runtime / 'references/synthesize.md').read_text(),
                 policy={**self.section_policy, 'workers': self.limit}, require=self.require,
-                notify=self.section_progress, context=self.section_context, earlier=self.earlier_context)
+                notify=self.section_progress, context=self.section_context, earlier=self.earlier_context,
+                final=self.final_progress)
             self.require()
         elif (number == 1 and not pending and self.context_unchanged
               and research_quality.coverage(self.review)['unread']
@@ -588,11 +783,17 @@ class Run:
         output = rc.output_root(case)
         if self.review_units is not None:
             # In units (#378): the assembled review is kept where the single review is.
+            # What the check's review-units commands say of each unit is shown on the page.
+            helper, self.workflow = self.workflow, Watched(self.workflow, self)
             self.checking = research_units.Check(self, number, offered_final)
             try:
                 review, status = self.checking.go()
+            except BaseException as error:
+                self.units_ended(error)
+                self.report()
+                raise
             finally:
-                self.checking = None
+                self.checking, self.workflow = None, helper
             self.review = review
             rc.write(case, 'review.json', json.dumps(review))
         else:

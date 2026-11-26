@@ -74,6 +74,26 @@ class ProgressMapTests(unittest.TestCase):
         self.assertNotIn('warning', research)
         self.assertIn('independent-check notes', research['decision'])
 
+    def test_the_check_in_parts_is_counted_and_the_whole_check_and_final_brief_are_named(self):
+        self.found.done = {'scan', 'review:training-plan', 'research-plan'}
+        self.found.next = NS(step=self.steps[3], kind='work')
+        self.record['research_execution'] = {'progress': {'phase': 'synthesize', 'streams': [{'status': 'kept'}],
+            'combining': [{'status': 'kept'}], 'final_brief': {'status': 'working'}}}
+        self.assertEqual(self.by_id(self.shown())['research']['phase'], 'Assembling the research brief')
+        self.record['research_execution']['progress'] = {'phase': 'review', 'streams': [{'status': 'kept'}],
+            'combining': [{'status': 'kept'}], 'final_brief': {'status': 'kept'},
+            'review_units': [{'kind': 'content', 'status': 'kept'}, {'kind': 'final', 'status': 'working'}]}
+        research = self.by_id(self.shown())['research']
+        self.assertEqual(research['phase'], 'Checking the whole research')
+        self.assertEqual([(count['label'], count['done'], count['total']) for count in research['counts']],
+                         [('areas collected', 1, 1), ('section drafts saved', 1, 1),
+                          ('parts of the independent check kept', 1, 2)])
+        # Research checked by one reviewer, or saved before parts, counts what it did.
+        del self.record['research_execution']['progress']['review_units']
+        research = self.by_id(self.shown())['research']
+        self.assertEqual(research['phase'], 'Independent check')
+        self.assertEqual(len(research['counts']), 2)
+
     def test_only_selected_branches_appear_and_unknown_practice_scope_is_not_complete(self):
         stages = self.by_id(self.shown())
         self.assertEqual([branch['id'] for branch in stages['materials']['branches']], ['reading'])

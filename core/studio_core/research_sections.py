@@ -71,14 +71,22 @@ def timeout(engine, root, error, product):
     section = getattr(error, 'section', None)
     if not section:
         return False
+    from studio_core import research_transport
     seconds = error.section_seconds
-    current = engine._load(root)['section_synthesis']
+    loaded = engine._load(root)
+    current = loaded['section_synthesis']
     own = section in current['more_time']
+    if section == 'final':
+        # The final brief names itself and keeps every section draft (#379), in the words
+        # every studio uses for it.
+        drafts = ((loaded.get('research_execution') or {}).get('progress') or {}).get('combining') or []
+        kept = research_transport.kept_words('final-brief', sum(row.get('status') == 'kept' for row in drafts) or len(drafts))
+    else:
+        kept = 'Completed research areas and section contributions are kept. Retry works only on unfinished contributions.'
     engine._problem(root, 'research', 'failed', stops.timed_out(
-        'Assembling the final brief' if section == 'final' else 'Combining this section',
+        'The final brief' if section == 'final' else 'Combining this section',
         seconds, 1, 'training' if product == 'training' else 'deck', own),
-        'Completed research areas and section contributions are kept. Retry works only on unfinished contributions.',
-        stops.MORE_TIME, detail={'seconds': seconds, 'section': section})
+        kept, stops.MORE_TIME, detail={'seconds': seconds, 'section': section})
     return True
 
 
@@ -135,10 +143,14 @@ def canonical(value, area):
 
 
 def combine(case, task, areas, registry, base, offered, invoke, *, round, guidance, policy,
-            require, notify, context=None, earlier=None):
+            require, notify, context=None, earlier=None, final=None):
     """Keep completed units; a failed peer never causes their author to run again.
     `earlier` is the context an older Marketing Studio keyed contributions with, naming the
-    helper's digest: one kept under it is the same contribution, and is keyed anew."""
+    helper's digest: one kept under it is the same contribution, and is keyed anew.
+    `final(state, error=None)`, when given, hears how the final brief stands (#379): waiting
+    while sections are combined, working, kept, or ended by `error`."""
+    final = final or (lambda state, error=None: None)
+    final('waiting')
     path = rc.inside(case, '.harness-research/studio-combining.json')
     saved = json.loads(path.read_bytes()) if path.exists() else {'schema': 1, 'sections': {}, 'final': None}
     if not isinstance(saved, dict) or saved.get('schema') != 1 or not isinstance(saved.get('sections'), dict):
@@ -261,6 +273,7 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
             saved['final']['basis'] = key
             store()
     if kept(saved.get('final'), key):
+        final('kept')
         return copy.deepcopy(saved['final']['content']), saved['final']['worker']
     worker = 'final-writer-' + secrets.token_hex(12)
     payload = {'task': {key: task[key] for key in rc.TASK_FIELDS}, 'worker': worker,
@@ -277,12 +290,18 @@ def combine(case, task, areas, registry, base, offered, invoke, *, round, guidan
         payload['previous_final'] = {name: prior.get(name) for name in ('brief', 'comparisons')}
         payload['previous_final']['sections'] = [s for s in prior.get('sections', []) if s['id'] not in section_ids]
         payload['previous_review'] = saved['final'].get('review')
-    text, _ = invoke('synthesize', FINAL_GUIDANCE, payload, offered, False)
-    require()
-    value = json.loads(text)
-    research_quality.prose(value)
+    final('working')
+    try:
+        text, _ = invoke('synthesize', FINAL_GUIDANCE, payload, offered, False)
+        require()
+        value = json.loads(text)
+        research_quality.prose(value)
+    except BaseException as error:
+        final('failed', error)
+        raise
     with lock:
         saved['final'] = {'basis': key, 'content': value, 'worker': worker, 'digest': fingerprint(value)}; store()
+    final('kept')
     return value, worker
 
 

@@ -14,6 +14,94 @@ def series_of(groups):
     return 'documents ' + (said[0] if len(said) == 1 else ', '.join(said[:-1]) + ' and ' + said[-1])
 
 
+def count(number, one, many=None):
+    return f'{number} {one if number == 1 else many or one + "s"}'
+
+
+def subject(part, label=None, parts=1):
+    """What a person calls the unit of research work that ended (#379)."""
+    if part == 'final-brief':
+        return 'The final brief'
+    if part == 'whole-check':
+        return 'The independent check of the whole research'
+    if label:
+        return f'The independent check of “{label}”'
+    return f'The independent check of {count(parts, "part")} of the research'
+
+
+def kept_words(part, kept, total=0):
+    """What is kept when the final brief or a review unit ends early, and what Try again
+    does: the same words in every studio, its runner and its desk (#379)."""
+    if part == 'final-brief':
+        drafts = 'The section draft is' if kept == 1 else f'All {kept} section drafts are' if kept else 'The section drafts are'
+        return f'{drafts} kept; Try again writes only the final brief.'
+    if part == 'whole-check':
+        return (f'The checks of all {count(kept, "part")} are kept; Try again checks only the whole research.'
+                if kept else 'Try again checks only the whole research.')
+    if kept:
+        return (f'The checks of the other {count(kept, "part")} are kept; Try again checks only '
+                'what is left, then the whole research.')
+    return 'No other part of the check had finished; evidence and drafts are kept.'
+
+
+def ended_words(part, how, *, label=None, parts=1, kept=0, total=0, detail=''):
+    """The one sentence every studio shows when the final brief (`part` 'final-brief'), one
+    or more review units ('review-unit', named by `label`) or the whole-research check
+    ('whole-check') ended early: `how` is 'failed', 'timed-out' or 'stopped'."""
+    said = subject(part, label, parts)
+    detail = ' '.join(str(detail or '').split())
+    if how == 'stopped':
+        said = 'Research stopped during ' + said[0].lower() + said[1:] + '.'
+    else:
+        said += (' ran out of time' if how == 'timed-out' else ' could not finish') + (': ' + detail if detail else '.')
+        if detail and not said.endswith(('.', '!', '?')):
+            said += '.'
+    return said + ' ' + kept_words(part, kept, total)
+
+
+STATE_COUNTS = (('gather', 'research area'), ('combine', None), ('check', 'part of the check'))
+
+
+def kept_summary(progress):
+    """What a stopped or paused run keeps, in words, from the counts of its units."""
+    counts = progress.get('counts') or {}
+    said = []
+    for stage, word in STATE_COUNTS:
+        held = counts.get(stage)
+        if not isinstance(held, dict) or not held.get('total'):
+            continue
+        if stage == 'combine':
+            drafts = [row for row in progress.get('combining') or ()]
+            brief = progress.get('final_brief') or {}
+            if drafts:
+                said.append(f'{sum(row.get("status") == "kept" for row in drafts)} of {count(len(drafts), "section draft")}')
+            if brief.get('status') == 'kept':
+                said.append('the final brief')
+        else:
+            said.append(f'{held.get("kept", 0)} of {count(held["total"], word, "parts of the check" if stage == "check" else None)}')
+    if not said:
+        return ''
+    return 'Kept: ' + (said[0] if len(said) == 1 else ', '.join(said[:-1]) + ' and ' + said[-1]) + '.'
+
+
+def job_ended(execution, progress):
+    """(part, {label, kept, total}) when a research job that ended early wrote the final
+    brief or checked a review unit, from the progress last shown; else None."""
+    if execution.get('section') == 'final':
+        drafts = progress.get('combining') or []
+        return 'final-brief', {'kept': sum(row.get('status') == 'kept' for row in drafts), 'total': len(drafts)}
+    unit = execution.get('unit')
+    if not unit:
+        return None
+    units = progress.get('review_units') or []
+    others = [row for row in units if row.get('id') != unit]
+    kept = sum(row.get('status') == 'kept' for row in others)
+    if unit == research_units.FINAL:
+        return 'whole-check', {'kept': kept, 'total': len(units)}
+    label = next((row.get('label') for row in units if row.get('id') == unit), None)
+    return 'review-unit', {'label': label, 'kept': kept, 'total': len(units)}
+
+
 def describe(progress):
     phase = progress.get('phase')
     if phase == 'creator-review':
@@ -23,9 +111,30 @@ def describe(progress):
     if phase == 'check-incomplete':
         coverage = progress.get('review_coverage') or {}
         return f'Independent check incomplete: {coverage.get("read", 0)} of {coverage.get("total", 0)} sources read. Evidence and drafts are kept.'
-    if any(agent.get('section') == 'final' or agent.get('stream') == 'final'
-           for agent in (progress.get('agents') or {}).get('active') or []):
+    ended = progress.get('ended_in')
+    if isinstance(ended, dict) and ended.get('said') and phase != 'complete':
+        return ended['said']
+    if phase in ('stopped', 'stopping', 'paused'):
+        kept = kept_summary(progress)
+        if kept:
+            return {'paused': 'Research paused. ', 'stopping': 'Stopping research. '}.get(phase, 'Research stopped. ') + kept
+    if (progress.get('final_brief') or {}).get('status') == 'working' or any(
+            agent.get('section') == 'final' or agent.get('stream') == 'final'
+            for agent in (progress.get('agents') or {}).get('active') or []):
         return 'Assembling the final brief from saved section drafts.'
+    units = progress.get('review_units') or []
+    if phase == 'review' and units:
+        whole = next((unit for unit in units if unit.get('kind') == 'final'), {})
+        parts = [unit for unit in units if unit.get('kind') != 'final']
+        kept = sum(unit.get('status') == 'kept' for unit in parts)
+        if whole.get('status') == 'working':
+            return f'Independently checking the whole research; the checks of all {count(kept, "part")} are kept.'
+        held = (progress.get('counts') or {}).get('check') or {}
+        working = held.get('working')
+        return (f'Independently checking the research in {count(len(parts), "part")}: '
+                + (f'{working} working now, ' if isinstance(working, int) else '')
+                + f'{sum(unit.get("status") == "waiting" for unit in parts)} waiting, {kept} kept. '
+                'The whole research is checked once every part is kept.')
     streams = progress.get('streams') or []
     kept = sum(s.get('status') == 'kept' for s in streams)
     if phase == 'read' and progress.get('reading'):
@@ -130,8 +239,10 @@ def native(engine, root, run, task, sources, product='training'):
             current = engine._load(root)
             return run.stop.is_set() or run.gone or not owns(current)
     folders, lock = [], threading.RLock()
+    seen = {}   # the last progress shown: what a failed job's sentence names and counts
 
     def progress(value):
+        seen['last'] = value
         with engine.files:
             current = engine._load(root)
             if run.gone or not owns(current):
@@ -160,7 +271,9 @@ def native(engine, root, run, task, sources, product='training'):
         if execution.get('section'):
             doing = 'Combining the final brief' if execution['section'] == 'final' else 'Combining an approved research section'
         if execution.get('unit'):
+            named = (job_ended(execution, seen.get('last') or {}) or (None, {}))[1].get('label')
             doing = ('Independently checking the whole research' if execution['unit'] == research_units.FINAL
+                     else f'Independently checking “{named}”' if named
                      else 'Independently checking one part of the research')
         result = {'kind': 'research-json'}
         if phase == 'read':
@@ -232,8 +345,15 @@ def native(engine, root, run, task, sources, product='training'):
         if not accepted:
             problems = [p for found in handed.get('problems', {}).values() for p in found]
             said = ' '.join(problems[:3]) or outcome.detail or 'It handed back no checked result.'
-            failure = WorkspaceError(doing + ' could not finish: ' + said
-                                     + ' Completed research areas are kept for retry.')
+            ended = job_ended(execution, seen.get('last') or {})
+            if ended:
+                # The final brief or a review unit names itself and says what is kept (#379).
+                part, facts = ended
+                failure = WorkspaceError(ended_words(part, 'timed-out' if outcome.reason == 'timeout' else 'failed',
+                                                     detail=said, **facts))
+            else:
+                failure = WorkspaceError(doing + ' could not finish: ' + said
+                                         + ' Completed research areas are kept for retry.')
             failure.outcome = outcome
             if outcome.reason == 'timeout' and execution.get('section'):
                 failure.section = execution['section']

@@ -308,6 +308,14 @@ class UnitNativeTests(StudioCase):
         root = self.start()
         self.assertEqual(self.engine._load(root)['research_execution']['review'], research_units.entry(RUNTIME))
         self.assertTrue(self.view(root)['problem'])
+        # The stop names the part that failed and keeps the others' checks (#379), in the
+        # words the progress says it in.
+        saved = self.engine._load(root)
+        self.assertRegex(saved['problem']['what'], r'^The independent check of “.+\?” could not '
+                         r'finish: Synthetic unit check failed\. ')
+        ended = saved['research_execution']['progress']['ended_in']
+        self.assertEqual((ended['part'], ended['how'], ended['total']), ('review-unit', 'failed', 4))
+        self.assertRegex(ended['said'], r'^The independent check of “.+\?” could not finish\. ')
         self.assertEqual(len(self.units), 3, 'every content unit ran; the final waits')
         self.assertTrue(all(len(files) == 1 for _, files in self.units), 'a content unit holds its own capture only')
         self.phases.clear(); self.units.clear()
