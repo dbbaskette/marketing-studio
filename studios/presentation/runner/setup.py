@@ -9,6 +9,8 @@ What a caller needs to know
     setup.save_brand(engine, sent)   the brand skill's repository, once it can be read
     wanted = setup.read(sent)     what the set-up screen sent, once it all makes sense
     setup.apply(engine, wanted)   set the workspace up, save the settings, and describe them
+    setup.refuse_place(engine, sent)   refuse a folder that is a deck's or lies inside the
+                                  workspace this computer uses now, before check or set-up
 
 - A workspace is given as a repository's address (`repository`) or as a folder on this
   computer (`path`), never both. A repository is cloned into a copy of the runner's own; a
@@ -86,6 +88,11 @@ What a caller needs to know
   repository. Where a value differed,
   `shared_notice` is a sentence that says so, until `notice_read()` (`POST /api/shared`
   {"seen": true}). While the file cannot be read nothing is moved.
+- `refuse_place` refuses, in a sentence, a folder on this computer that lies inside the
+  workspace this computer uses now (its folder for decks, or anything in it), and a folder
+  that is a deck's own folder or lies inside one (a folder holding `run.json`), by resolved
+  paths: either would put a workspace inside decks. A repository's address is never
+  refused here, and nothing is written.
 - Ported from Training Studio's runner/setup.py. Its Word copies are gone; the brand
   skill's repository follows its PR #66 and the studios config part its issues #67 and
   #70 (shared values kept only in the studios config).
@@ -121,6 +128,31 @@ modules.bind(globals(), _shared, _shared.NAMES)
 PROBE = 'presentation-studio-write-check'   # a branch name that is asked about, never made
 NOBODY = ('-c', 'user.name=Presentation Studio', '-c', 'user.email=check@example.invalid')
 LIMITS = ('step_seconds', 'parallel')
+
+
+INSIDE_WORKSPACE = ('That folder is inside the workspace this computer uses now. Choose a '
+                    'folder outside it.')
+A_DECK = ('That folder is a deck’s own folder. Choose a folder made for decks, not the '
+          'folder of one deck.')
+
+
+def refuse_place(engine, sent: dict) -> None:
+    """Refuse a folder on this computer that would put the workspace inside decks: one
+    inside the workspace in use, or a deck's own folder (GitHub issue #544)."""
+    _, path = place(sent)
+    if not path:
+        return
+    folder = whole(path)
+    current = engine.workspace
+    from runner import team
+    if current is not None and team.overlaps(folder, current.root) == 'inside':
+        raise WorkspaceError(INSIDE_WORKSPACE)
+    try:
+        resolved = folder.resolve()
+    except (OSError, RuntimeError):
+        return
+    if any((one / decks.RUN).is_file() for one in (resolved, *resolved.parents)):
+        raise WorkspaceError(A_DECK)
 
 
 def working(engine) -> bool:

@@ -575,8 +575,10 @@ class RunnerPage(server.Page):
                     self.engine, root, {key: value for key, value in sent.items() if key != 'path'})
             return server.as_json(HTTPStatus.OK, value)
         if path == '/api/setup/check':
+            shaped(setup.refuse_place, self.engine, sent)
             return server.as_json(HTTPStatus.OK, shaped(setup.check, sent))
         if path == '/api/setup':
+            shaped(setup.refuse_place, self.engine, sent)
             return server.as_json(HTTPStatus.OK,
                                   setup.apply(self.engine, shaped(setup.read, sent)))
         if path == DECKS:
