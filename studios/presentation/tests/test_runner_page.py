@@ -870,6 +870,63 @@ class PhoneSettingsTests(PageCase):
             self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
                                        remote=False), (400, {'error': said}))
 
+    def get_as(self, endpoint: str, remote: bool) -> dict:
+        status, _, data, _ = self.raw('GET', f'/api/{endpoint}', origin=self.origin,
+                                      remote=remote)
+        self.assertEqual(status, 200, data)
+        return json.loads(data)
+
+    def test_a_phone_is_shown_no_folder_of_this_computer_in_set_up_or_the_brand(self):
+        # The planner's ruling on #539 (a): the workspace's folder is left out, and a brand
+        # repository saved as a folder is said only as a folder on this computer.
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        folder = str(self.base / 'brand.git')
+        settings.save(replace(settings.load(), brand_repository=folder))
+        here = self.get_as('setup', remote=False)
+        self.assertEqual(here['workspace']['path'], str(self.space.repo))
+        self.assertEqual(here['brand']['repository'], folder)
+        phone = self.get_as('setup', remote=True)
+        self.assertIsNone(phone['workspace']['path'])
+        self.assertEqual(phone['brand']['repository'], caller.FOLDER_HERE)
+        self.assertNotIn(str(self.base), json.dumps(phone))
+        self.assertNotIn(str(self.base.resolve()), json.dumps(phone))
+        # Everything else is as this computer has it.
+        self.assertEqual({key: value for key, value in phone.items()
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep')},
+                         {key: value for key, value in here.items()
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep')})
+        # The answers of the brand route and of the shared notice are shown the same way.
+        with mock.patch.object(brand_source, 'check', lambda address, place: {
+                'repository': address, 'commit': '0' * 40}):
+            status, made = self.send('brand', {'repository': 'https://example.invalid/b.git'},
+                                     remote=True)
+        self.assertEqual((status, made['brand']['repository']), (200, 'https://example.invalid/b.git'))
+        self.assertIsNone(made['workspace']['path'])
+        self.assertNotIn(str(self.base.resolve()), json.dumps(made))
+        status, seen = self.send('shared', {'seen': True}, remote=True)
+        self.assertEqual(status, 200, seen)
+        self.assertNotIn(str(self.base.resolve()), json.dumps(seen))
+
+    def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
+        # The planner's ruling on #539 (b): the same sentence whatever the folder holds.
+        from studio_core.shared_runner import caller
+        path = Path(self.started())
+        known = self.base / 'outside' / 'restarts'
+        shutil.copytree(path, known, ignore=shutil.ignore_patterns('work', 'sources'))
+        home.remember(known, 'Rolling restarts')
+        before = sorted(one.name for one in self.space.root.iterdir())
+        for given in (str(known), str(self.base / 'nothing-there'), str(self.space.root), '~/x'):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('bring', {'path': given}, remote=True),
+                                 (403, {'error': caller.BRING_HERE}))
+        self.assertEqual(sorted(one.name for one in self.space.root.iterdir()), before)
+        self.assertEqual(self.send('bring', {'path': str(self.base / 'nothing-there')},
+                                   remote=False),
+                         (403, {'error': 'That folder is not a deck this computer knows.'}))
+        status, made = self.send('bring', {'path': str(known)}, remote=False)
+        self.assertEqual((status, made['id']), (200, 'rolling-restarts-2'))
+
     def test_the_shared_decision_answers_only_a_remote_caller_and_only_its_routes(self):
         from studio_core.shared_runner import caller
         phone = Message()

@@ -311,7 +311,8 @@ class RunnerPage(server.Page):
                                                   'version': gitstate.installed(),
                                                   'install': gitstate.installed_copy()})
         if path == '/api/setup':
-            return server.as_json(HTTPStatus.OK, setup.describe(self.engine))
+            # Through the network bridge, with no folder path (GitHub issue #539).
+            return server.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
         if path == '/api/agents':
             return server.as_json(HTTPStatus.OK, {'agents': self.agents()})
         if path == '/api/models':
@@ -481,8 +482,9 @@ class RunnerPage(server.Page):
         change shows at once in every open tab. A read sent as a POST changes nothing."""
         try:
             # A phone through the network bridge sets nothing up here, and gives the brand
-            # skill's repository only as a web address (GitHub issue #539): it learns nothing
-            # of this computer's folders. A caller on this computer is answered as before.
+            # skill's repository only as a web address on another computer (GitHub issue
+            # #539): no folder here is checked or set for it, and the set-up it is shown
+            # names no folder (`caller.shown`). A caller on this computer is answered as before.
             refused = caller.settings_refused(path, sent)
             if refused:
                 raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
@@ -651,7 +653,8 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().dismiss(dismissed)})
         if path == '/api/brand':
             try:
-                return server.as_json(HTTPStatus.OK, setup.save_brand(self.engine, sent))
+                return server.as_json(HTTPStatus.OK,
+                                      caller.shown(setup.save_brand(self.engine, sent)))
             except brand_source.Unreadable as refusal:
                 # Git's own reason can name hosts and ports: kept from a phone (#539).
                 raise server.Refusal(HTTPStatus.BAD_REQUEST,
@@ -663,7 +666,7 @@ class RunnerPage(server.Page):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '
                                      'notice about the shared values has been read.')
             setup.notice_read()
-            return server.as_json(HTTPStatus.OK, setup.describe(self.engine))
+            return server.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = server.text(sent, 'commit')
             return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
@@ -875,6 +878,10 @@ class RunnerPage(server.Page):
         """Copy a deck this computer knows, made outside the workspace, into it. Any other
         folder is refused, whatever it holds; the folder it came from is only read."""
         path = server.text(sent, 'path')
+        # A phone is refused before anything about the folder is read or compared (#539).
+        refused = caller.bring_refused(path)
+        if refused:
+            raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
         if path not in [entry['path'] for entry in home.decks()]:
             raise server.Refusal(HTTPStatus.FORBIDDEN, 'That folder is not a deck this '
                                  'computer knows.')

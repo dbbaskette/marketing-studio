@@ -1782,8 +1782,9 @@ function workspaceCard() {
   const node = card('Workspace');
   const agent = held.agent || {};
   add(node, make('p', 'row-title', space.name || 'Your decks'),
+    // From a phone the runner names no folder of its computer (#539): the row says where.
     about([[space.repository ? 'Repository' : 'Folder on this computer',
-      space.repository || space.path],
+      space.repository || space.path || 'Shown on that computer itself'],
     [space.repository ? 'This computer’s copy' : '', space.repository ? space.path : ''],
     ['Folder inside it', space.folder], ['Branch', space.branch],
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
