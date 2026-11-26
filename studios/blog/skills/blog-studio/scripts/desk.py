@@ -695,9 +695,14 @@ def open_run(root, ident):
     # DRAFT.md is the person's latest text, so it opens too.
     if not (found['complete'] or found['finished']) or not (directory / 'DRAFT.md').is_file():
         raise ValueError('Finish this blog, then open it on the desk.')
-    draft = desk_images.fitted(split((directory / 'DRAFT.md').read_text(), title=record['title']))
+    taken = (directory / 'DRAFT.md').read_bytes()
+    draft = desk_images.fitted(split(taken.decode('utf-8'), title=record['title']))
     if len(draft['sections']) > SECTIONS:
         raise ValueError(TOO_MANY)
+    # The desk takes this DRAFT.md as it is, hand edits and all: that text is what the desk
+    # last wrote, so a later change outside the desk is told apart (google_handoff).
+    record.setdefault('artifact_hashes', {})['draft'] = studio.digest(taken)
+    studio.persist(directory, 'articles', record)
     now = studio.now()
     draft = {
         'schema': 1,

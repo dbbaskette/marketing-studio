@@ -121,6 +121,45 @@ class HandoffTests(RunnerCase):
         self.assertEqual(self.open(ident)['url'], result['url'])
         self.assertEqual(len(self.drive.imports), 1)
 
+    def taken_to_the_desk(self, state, move):
+        """A saved blog whose DRAFT.md was edited by hand (to the stand-in Doc's text) before
+        it was taken to the desk by `move`: that text is what the desk last wrote."""
+        import saved_fixtures
+
+        ident = saved_fixtures.load(self.root, state)
+        draft = studio.inside(self.root, 'articles', ident) / 'DRAFT.md'
+        draft.write_text(self.desk_text())
+        move(ident)
+        return ident, draft
+
+    def migrated(self, ident):
+        import desk_chat
+
+        shown = desk_chat.migration_preview(self.root, ident)
+        self.assertTrue(shown['eligible'], shown['blockers'])
+        desk_chat.migrate(self.root, ident, shown['expected'])
+
+    def opened(self, ident):
+        import management
+
+        management.dispatch(self.root, 'desk-open', {'id': ident})
+
+    def test_a_hand_edited_draft_taken_to_the_desk_goes_and_a_later_edit_does_not(self):
+        for state, move in (('draft-gate', self.migrated), ('finished-page', self.opened)):
+            with self.subTest(state=state):
+                ident, draft = self.taken_to_the_desk(state, move)
+                result = self.open(ident)
+                self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
+                self.assertEqual(self.drive.imports[-1], (draft.read_bytes(), None))
+        for state, move in (('draft-gate-chat', self.migrated), ('finished-page-warm', self.opened)):
+            with self.subTest(state=state, edited='after'):
+                ident, draft = self.taken_to_the_desk(state, move)
+                draft.write_text(draft.read_text() + '\nChanged by hand after.\n')
+                count = len(self.drive.imports)
+                with self.assertRaisesRegex(handoff.Conflict, 'changed outside the desk'):
+                    self.open(ident)
+                self.assertEqual(len(self.drive.imports), count)
+
     def test_refusals_and_uncertain_upload_never_import_twice(self):
         unfinished = self.on_desk()
         (studio.inside(self.root, 'articles', unfinished) / 'DRAFT.md').write_text('')
