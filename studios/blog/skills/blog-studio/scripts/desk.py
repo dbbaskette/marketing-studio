@@ -264,6 +264,15 @@ def _attach(root, data, record):
 
 
 def create(root, data):
+    """A new desk blog (`_make`), shared with a selected Team Hub as soon as it is made,
+    whichever way it was asked for: the page's New blog, a conversation, a repurposed copy
+    or a GEO report's desk copy. Every new desk blog is made here."""
+    made = _make(root, data)
+    _share_new(root, made['id'])
+    return made
+
+
+def _make(root, data):
     """A new desk blog from a pasted draft (`manuscript`), an uploaded draft (`source`), or a
     blog just started from a Google Doc (`article`), with its kind of post, tone and length.
 
@@ -1592,7 +1601,6 @@ def _create(root, data):
     made = create(root, data)
     studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
     keep_problem = keep_in_library(root, made['id'], kept)
-    _share_new(root, made['id'])
     try:
         desk_jobs.prune_angles(root)
         if picked:

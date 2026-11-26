@@ -2759,6 +2759,51 @@ class HubMaterialTests(Fixture):
         self.assertIn('New blog', [entry.get('label') for entry in receipts['items']])
         self.assert_unshared()
 
+    def shared_on_making(self, ident, title):
+        """The new blog is in the Team Hub with no decision since, with a receipt."""
+        item = self.workspace.state['items']['articles/' + ident]['item']
+        graph = self.hub.graph()
+        (head,) = graph['heads'][item]
+        self.assertEqual(graph['revisions'][head]['kind'], 'article')
+        self.assertEqual(graph['revisions'][head]['title'], title)
+        self.assertIn('New blog', [entry.get('label') for entry in management.receipts(self.root)['items']])
+
+    def test_a_blog_started_in_conversation_is_shared_when_it_is_made(self):
+        import blog_runner
+        import desk_chat
+
+        made = desk_chat.create(
+            self.root, {'title': 'A chat post', 'manuscript': 'An opening.\n\n## One\n\nWords.\n'}
+        )
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        self.shared_on_making(made['id'], 'A chat post')
+
+    def test_a_repurposed_copy_is_shared_when_it_is_made(self):
+        import secrets
+        import blog_runner
+        import tool_jobs
+
+        found = desk_blog(self.root)
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        job = tool_jobs.create(
+            self.root,
+            secrets.token_hex(16),
+            'repurpose',
+            {'source': 'x'},
+            'g',
+            basis=None,
+            metadata={'article': found['id'], 'format': 'linkedin'},
+        )
+        job = tool_jobs.read(self.root, job['id'])
+        job.update(status='ready', result={'content': 'Copy for a feed.', 'notes': ''})
+        tool_jobs.write(self.root, job)
+        shown = management.dispatch(
+            self.root,
+            'desk-repurpose',
+            {'id': found['id'], 'job': job['id'], 'title': 'A feed copy', 'content': 'Copy for a feed.'},
+        )
+        self.shared_on_making(shown['made']['id'], 'A feed copy')
+
     def test_a_missing_material_file_does_not_stop_its_blog_being_shared(self):
         import shutil
         import blog_runner
