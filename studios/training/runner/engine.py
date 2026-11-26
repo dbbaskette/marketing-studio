@@ -714,6 +714,7 @@ class _Run:
     def __init__(self):
         self.thread: threading.Thread | None = None
         self.again = self.queued = self.busy = False
+        self.aside = 0      # work run aside from the training's own run, under way now
         self.gone = False   # it stopped being this computer's: nothing more is written
         self.stop = threading.Event()
         self.workers: dict[str, dict] = {}
@@ -1839,10 +1840,31 @@ class Engine(Reviewing):
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
 
     def in_hand(self, path) -> bool:
-        """Whether this computer is in the middle of a step of a training: its step's mark
-        is held, as it is while a paused training's step finishes. A run only queued for a
-        slot has no step in hand. Call it holding `files`, the lock the mark is set under."""
-        return str(Path(path)) in self._active_steps
+        """Whether anything in this process is working in a training's folder: a step whose
+        mark is held, a run that has its slot and has not come fully to rest (its last write
+        included), an assistant's job under way (`_job` registers each in `run.workers`), or
+        work run aside from the training's own run (`run.aside`, a rebranded copy). A run
+        only waiting for a slot does not count: it has written nothing since it began to
+        wait, and finds the workspace where set-up puts it (`_here`). Nothing that ended
+        counts, however it ended. Call it holding `files`, the lock each is set under."""
+        root = str(Path(path))
+        if root in self._active_steps:
+            return True
+        with self._lock:
+            run = self._runs.get(root)
+            return run is not None and bool(run.workers or run.aside
+                                            or (run.busy and not run.queued))
+
+    def _here(self, root: Path) -> bool:
+        """Whether a training's folder is in the workspace this computer uses now."""
+        space = self.workspace
+        if space is None:
+            return False
+        try:
+            gitstate.inside(space, Path(root) / IN_HAND)
+        except WorkspaceError:
+            return False
+        return True
 
     def _step_released(self, root: Path) -> None:
         """Clear this process's mark that a step of a training is in hand, however the step
@@ -1875,6 +1897,8 @@ class Engine(Reviewing):
         moved = False   # whether this pass did anything: a job, a step or a desk receipt
         try:
             while not self._closing:
+                if not self._here(root):
+                    return  # set-up moved the workspace while it waited for its turn
                 record = self._load(root)
                 if run.gone or not self._ours(record) or drafts.in_conversation(record):
                     return  # someone else drives it, or nobody does
@@ -1884,9 +1908,9 @@ class Engine(Reviewing):
                                 if job.get('status') == 'queued'), None)
                 if drafts.on_desk(record) and pending and not self._resting(record):
                     if self.background and not held:
-                        run.queued = True
-                        with self.files:
+                        with self.files:   # written before it waits: a waiting run writes nothing
                             activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
+                        run.queued = True
                         held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                         run.queued = False
                         if not held:
@@ -1942,9 +1966,9 @@ class Engine(Reviewing):
                 if step.kind == 'deck':
                     return self._hand_on(root, found)
                 if self.background and not held:
-                    run.queued = True
-                    with self.files:
+                    with self.files:   # written before it waits: a waiting run writes nothing
                         activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
+                    run.queued = True
                     held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                     run.queued = False
                     if not held:
@@ -5263,6 +5287,9 @@ class Engine(Reviewing):
             kept['rebrand'] = {'state': 'working', 'skill': chosen['id'], 'name': chosen['name'],
                                'at': home.now(), 'seen': seen}
             self._store(root, record)
+            run = self._run(root)
+            with self._lock:    # counted under `files`, so set-up never moves under it
+                run.aside += 1
 
         def work():
             try:
@@ -5276,11 +5303,15 @@ class Engine(Reviewing):
                     chosen, source, title, Path(tempfile.mkdtemp(prefix='rebrand-')) / 'run'))
             except (WorkspaceError, OSError, ValueError) as refusal:
                 made = {'state': 'failed', 'url': None, 'said': str(refusal)[:600]}
-            with self.files:
-                now = self._load(root)
-                self._decided(now, level)['rebrand'] = {
-                    **made, 'skill': chosen['id'], 'name': chosen['name'], 'at': home.now()}
-                self._store(root, now)
+            try:
+                with self.files:
+                    now = self._load(root)
+                    self._decided(now, level)['rebrand'] = {
+                        **made, 'skill': chosen['id'], 'name': chosen['name'], 'at': home.now()}
+                    self._store(root, now)
+            finally:
+                with self._lock:
+                    run.aside -= 1
         if wait:
             work()
         else:

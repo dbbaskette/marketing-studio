@@ -405,8 +405,8 @@ def _team(joined: gitstate.Workspace, was: str | None) -> None:
     studios_config.update(wanted)
 
 
-FINISHING = ('A training in the workspace this computer uses now still has a step in hand. '
-             'Wait for that step to end, then move to another workspace.')
+FINISHING = ('Work on a training in the workspace this computer uses now is still under way '
+             'here. Wait for it to end, then move to another workspace.')
 
 
 def apply(engine, wanted: dict) -> dict:
@@ -456,8 +456,10 @@ def apply(engine, wanted: dict) -> dict:
         moving = before is not None and (
             before.address != repository if repository
             else before.address is not None or before.repo != path.resolve())
+        # A run only waiting for its turn says it is working, but has written nothing while
+        # it waits and finds the workspace where set-up puts it: it does not hold a move up.
         if moving and any((engine.brief(root) or {}).get('state') == 'working'
-                          for root in engine.trainings()):
+                          and not engine._run(root).queued for root in engine.trainings()):
             raise WorkspaceError('Trainings are working in the workspace this computer uses '
                                  'now. Pause or stop them before moving to another.')
         with engine.files:

@@ -1911,11 +1911,23 @@ class RunTests(PageCase):
                 self.assertEqual(self.post('setup', {'path': str(folder)})['workspace']['path'],
                                  str(folder))
 
-    def test_a_run_queued_for_a_slot_has_no_step_in_hand(self):
-        root = Path(self.started())
-        run = self.engine._run(root)
-        run.busy = run.queued = True     # as a run waiting for its turn is
-        self.assertFalse(self.engine.in_hand(root))
+    def test_a_paused_run_is_in_hand_until_its_resting_write(self):
+        # Between dropping a step's marker and the resting write to its activity log a paused
+        # training holds no mark but still writes in its folder (second fix round, #549).
+        activity_log = engines.activity_log
+        seen, real = [], activity_log.checkpoint
+
+        def checkpoint(path, kind, *given, **named):
+            if kind == 'stopped':
+                with self.engine.files:
+                    seen.append(self.engine.in_hand(Path(path).parent.parent))
+            return real(path, kind, *given, **named)
+        self.pause_after('research-plan')
+        with mock.patch.object(activity_log, 'checkpoint', checkpoint):
+            root = Path(self.started())
+        self.assertEqual(self.view(root)['state'], 'paused')
+        self.assertTrue(seen and all(seen), seen)
+        self.assertFalse(self.engine.in_hand(root), 'and once it is at rest, nothing is')
 
     def test_a_question_and_a_problem_are_described_field_for_field(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
