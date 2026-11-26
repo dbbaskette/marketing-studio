@@ -252,6 +252,12 @@ characters). Add or remove descriptions; AI supplies roles, dialogue, goals and
 evaluation criteria, adapted to every selected level. The same intent follows the
 scenario into its Yoodli fields. Existing authored scenarios are kept.
 
+A Yoodli layout names the copy of the brief to upload, and the desk makes a copy of a
+brief only once you mark it ready or send it to its copies. So a level's Yoodli layouts
+are written once you have done one of those for its brief; until then each layout's card
+says that it waits for the brief. If the copy cannot be made, the layout is written anyway
+and says why the brief has no copy to upload.
+
 The private intake saves your descriptions across reloads and mode switches.
 After starting, use **Change settings** while stopped, review the change and save.
 Scenario-only changes keep collected research and mark affected materials out of

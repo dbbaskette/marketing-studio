@@ -57,6 +57,8 @@ See the [example Yoodli scenario](../skills/training-studio/assets/examples/yood
 
 **The reference file.** Upload the brief as an AI asset. If you keep Google Docs, download the brief's Doc from Google as a PDF and upload that; Yoodli can also show a PDF to the learner, which it cannot do with a Word file. If you keep no Google Docs, a Word copy of the brief is made for the upload, because Yoodli does not list markdown among the files it accepts. Turning on strict mode keeps the AI within the brief, and uses more of the roleplay's capacity.
 
+On the desk, a level's Yoodli scenarios are written once its brief is marked ready or sent to its copies, so that each names the copy to upload.
+
 Training Studio prepares these files on your computer. It does not create, upload or enable anything in Yoodli.
 
 ### What your Yoodli account needs
