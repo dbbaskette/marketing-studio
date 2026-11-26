@@ -84,6 +84,7 @@ async function check(){
   await manuscriptEditing();
   await reviewInteractions();
   await editorTransitions();
+  await editorRunsNameNoLevel();
   await commentCompletionAndFailure();
   await pendingEditorSaves();
   await manualEditingJourneys();
@@ -302,6 +303,23 @@ async function editorTransitions(){
   assert.equal(sent.plan,'b'.repeat(32),'a late delivery preview cannot restore an older plan');
 }
 
+// A run the manuscript editor's check made accepted its own steps: its About card and what
+// Ask for changes says never claim the saved review level, which the check did not apply.
+async function editorRunsNameNoLevel(){
+  const found={id:'checked',title:'Checked blog',status:'complete',complete:true,next:null,approval:'page',expected:'v1',enabled:false,directory:'/synthetic/articles/checked',seconds:600,engine:'codex',mode:'review',editor_check:'revise',existing:true,review_level:null,decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},publication:null,stages:[{stage:'research-plan',label:'Research plan',path:'derived/blog-research-plan.md',status:'approved'},{stage:'research',label:'Research findings',path:'derived/blog-research.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'approved'}],ahead:{steps_left:0,next_gate:null,next_stop:null}};
+  const f=fixture(url=>url.startsWith('/api/run?')?found:{items:[],total:0});f.loadRunner();
+  const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent).join('|');
+  for(const level of [null,'balanced','step_by_step']){
+    f.set('found',{...found,review_level:level});f.run('sRun(found)');
+    assert.ok(text().includes('The manuscript editor’s check accepted its own steps · Drafted by Codex.'),'an editor run says its check accepted its steps: '+level);
+    assert.ok(!/(Balanced|Step by step|Automatic draft) review/.test(text()),'an editor run names no review level: '+level);
+  }
+  // Asked to change its draft, the check writes it again and goes on to its review, at any level.
+  f.set('found',{...found,review_level:'step_by_step',ahead:{steps_left:2,next_gate:'review',next_stop:'Review'}});
+  assert.equal(f.run("sChangedSays(found,'draft')"),'Your changes are noted. The draft is written again and the run goes on to the review, where you see it.');
+  assert.equal(f.run("sChangedSays(found,'review')"),'Your changes are noted. The next review comes back for your review.');
+}
+
 async function commentCompletionAndFailure(){
   const state={id:'comments',title:'Local comments',content:'Keep this text.',expected:'v1',google:null,proposals:[{id:'one',kind:'comment',before:'Keep this text.',reason:'Explain the audience.'}],findings:[],checks:{},working:false};
   const f=fixture(url=>url==='/api/run-options'?{sources:[]}:state);f.loadRunner();f.run('sDownload=async value=>{window.downloaded=value;}');await f.run("sRoute('editor','comments','finish')");
@@ -323,6 +341,9 @@ async function commentCompletionAndFailure(){
   assert.ok(nodes().some(e=>e.textContent==='The latest pass failed. These are earlier saved suggestions; no new results were added.'));
   state.operation.editor_check='factual-support';f.run('studio.editorChoices={}');await f.run("sRoute('editor','comments','prepare')");
   assert.equal(nodes().find(e=>e.id==='editor-check').value,'factual-support','reopening a failed pass retains its action instead of switching to polish');
+  // Where research is chosen, before the pass starts, the screen says it runs through its
+  // steps, research included, without stopping for approval.
+  assert.ok(nodes().some(e=>e.id==='editor-research-hint'&&e.textContent==='This pass runs through each of its steps, research included, to its review without stopping for your approval.'),'the research choice says the pass does not stop for approval');
   assert.ok(nodes().some(e=>e.textContent==='Try again'));
   // A check of several steps says which one is under way, and one stopped before its review
   // says so and how to go on, even with earlier feedback saved.

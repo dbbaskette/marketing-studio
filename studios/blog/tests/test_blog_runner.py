@@ -1153,6 +1153,45 @@ class SharedPatternTests(RunnerCase):
         shown = engine.describe(found['id'])['ahead']
         self.assertEqual((shown['jobs'], shown['spent']), (0, None))
 
+    def test_each_step_the_editor_check_accepts_is_recorded_and_names_no_level(self):
+        import studios_config
+        from studio_core import review_policy
+
+        studios_config.update({'review': {'level': 'balanced'}})
+        found = self.editor_run('revise', research='supplied-only')
+        # The view names no review level and stops only at the review, never at the draft
+        # Balanced would stop at.
+        self.assertIsNone(found['review_level'])
+        self.assertEqual(found['ahead']['next_gate'], 'review')
+        accepted = []
+        while found['next'] != 'review':
+            stage = found['next']
+            found = self.submit(found)
+            accepted.append(stage)
+            self.assertEqual(found['ahead']['next_gate'], 'review')
+        _, _, run = runner.load(self.root, found['id'])
+        events = run['review_events']
+        self.assertEqual([event['gate'] for event in events], accepted)
+        self.assertIn('draft', accepted)
+        for event in events:
+            # Where and as the review level's own acceptance is recorded, but said as the
+            # check's, with the saved level kept and marked as not applied.
+            self.assertEqual(
+                set(event),
+                {'gate', 'by', 'level', 'level_applied', 'evidence', 'at', 'decision'},
+            )
+            self.assertEqual(event['by'], 'editor-check')
+            self.assertEqual(event['level'], 'balanced')
+            self.assertIs(event['level_applied'], False)
+            self.assertEqual(event['decision'], 'continued-automatically')
+            self.assertEqual(
+                event['evidence'], review_policy.fingerprint(run['stages'][event['gate']])
+            )
+        # The review, the check's one stop, is submitted for the person, not accepted.
+        found = self.submit(found)
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertEqual(len(run['review_events']), len(accepted))
+
     def test_redo_says_what_a_change_draws_again(self):
         found = self.editor_run('revise')
         engine = runner.Engine(self.root, worker=self.worker())

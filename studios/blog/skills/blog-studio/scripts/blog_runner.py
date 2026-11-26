@@ -1009,13 +1009,18 @@ def survey(root, ident, listing=False):
     # What is left: the stages not yet approved, and the first of them that stops for the
     # person under this run's own level. The angles always do: the person picks one.
     left = [row['stage'] for row in rows if row['status'] != 'approved']
-    stops_ahead = review_policy.ahead(
-        run,
-        'blog',
-        [stage for stage in left if stage != 'angles'],
-        last=run['pipeline'][-1],
-        first='outline' if 'outline' in run['pipeline'] else 'draft',
-    )
+    if run.get('editor_check'):
+        # The manuscript editor's check accepts its own steps and stops only at its review,
+        # whatever the saved review level says.
+        stops_ahead = [run['pipeline'][-1]] if left else []
+    else:
+        stops_ahead = review_policy.ahead(
+            run,
+            'blog',
+            [stage for stage in left if stage != 'angles'],
+            last=run['pipeline'][-1],
+            first='outline' if 'outline' in run['pipeline'] else 'draft',
+        )
     next_gate = 'angles' if 'angles' in left else (stops_ahead[0] if stops_ahead else None)
     ahead = {
         'steps_left': len(left),
@@ -1062,7 +1067,9 @@ def survey(root, ident, listing=False):
         'approval': run['approval'],
         'engine': run['engine'],
         'model_mode': (run.get('model_profiles') or {}).get('mode', 'single'),
-        'review_level': review_policy.level(run),
+        # A run the manuscript editor's check made never applied the saved level: the check
+        # accepted its own steps, so the view names no level for it.
+        'review_level': None if run.get('editor_check') else review_policy.level(run),
         'seconds': run['seconds'],
         'stages': rows,
         'next': next_stage,
@@ -1502,6 +1509,7 @@ def submit(root, ident, stage, result, expected, page=False):
         # nobody approves a step before the review, so the step is recorded as continued by
         # the check, never as approved by a person.
         _accept(directory, run, stage, EDITOR_CHECK)
+        editor_receipt(run, stage, studio.now())
     if stage == 'research':
         # Saved research, from the page, chat or a handover, replaces any kept draft.
         shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
@@ -1552,6 +1560,24 @@ def gaps(directory, stage):
 # review (EDITOR_CHECK), or, in runs the earlier flow saved, the saved review level.
 EDITOR_CHECK = 'editor-check'
 CONTINUED = (EDITOR_CHECK, 'review-policy')
+
+
+def editor_receipt(run, stage, at):
+    """Record that the manuscript editor's check accepted `stage`, where and as the review
+    level's own acceptance is recorded (review_policy.receipt), bound to the same evidence.
+    The saved review level is kept for the record but marked as not applied: the check
+    accepts its own steps whatever the level says."""
+    run.setdefault('review_events', []).append(
+        {
+            'gate': stage,
+            'by': EDITOR_CHECK,
+            'level': review_policy.level(run),
+            'level_applied': False,
+            'evidence': review_policy.fingerprint(run['stages'][stage]),
+            'at': at,
+            'decision': 'continued-automatically',
+        }
+    )
 
 
 def _accept(directory, run, stage, by):
@@ -3112,7 +3138,7 @@ def document(root, ident, stage):
             and item['stage'] != stage
             and item['status'] == 'approved'
             and (
-                found['review_level'] != 'step_by_step'
+                review_policy.level(run) != 'step_by_step'
                 or item['stage'] == 'draft'
                 and stage == run['pipeline'][-1]
             )
