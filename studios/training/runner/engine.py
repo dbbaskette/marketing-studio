@@ -6004,18 +6004,6 @@ class Engine(Reviewing):
                     item['price'] = drafts.section_price(self._load(root), level, section)
             return result
 
-    def finding_apply(self, path, level, finding, seen):
-        return self._finding_action(path, level, finding, seen, 'apply')
-
-    def finding_skip(self, path, level, finding, seen):
-        return self._finding_action(path, level, finding, seen, 'skip')
-
-    def _finding_action(self, path, level, finding, seen, action):
-        if not isinstance(finding, dict) or not isinstance(finding.get('job'), str) \
-                or not isinstance(finding.get('id'), str):
-            raise WorkspaceError('Choose a suggestion from its review.')
-        return self.deck_finding(path, level, seen, finding['job'], action, [finding['id']])
-
     def deck_finding(self, path, level, seen, job, action, ids):
         level = level or None
         with self.files:

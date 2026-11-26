@@ -133,6 +133,14 @@ class SlideNoteTests(DeckCase):
         self.engine._run(root).workers.clear()
 
 
+    def test_a_finding_is_applied_or_skipped_only_through_deck_finding(self):
+        # GitHub issue #544: the /finding route calls deck_finding itself; the two one-finding
+        # wrappers had no caller and are gone.
+        from runner import engine as engines
+        for gone in ('finding_apply', 'finding_skip', '_finding_action'):
+            self.assertFalse(hasattr(engines.Engine, gone), gone)
+        self.assertTrue(callable(engines.Engine.deck_finding))
+
     def test_review_finding_apply_makes_a_priced_note(self):
         # Still found after the one automatic pass of fixes, so it is kept as a note.
         found = {**MAJOR, 'slide': 'check-yourself'}
