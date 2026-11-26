@@ -179,6 +179,35 @@ def bring(address) -> dict:
         return _bring(address)
 
 
+REMOTE_UNGOT = ('The brands could not be got. See why on the computer Marketing Studio runs on, '
+                'where the brands folder is.')
+# An absolute or home folder written in a sentence: at its start, or after a space or a quote,
+# and naming something. "~/." in "one beginning with ~/." names no folder: the product's own
+# advice is said as it is.
+_A_FOLDER = re.compile(r'''(?:^|[\s'"(`=])(?:/|~/)(?=[^\s'"`)]*\w)[^\s'"`)]*''')
+
+
+def names_a_folder(text) -> bool:
+    """Whether a sentence may name a folder on this computer, as an error's text can."""
+    return bool(_A_FOLDER.search(str(text)))
+
+
+def got(address, remote=False) -> dict:
+    """Get brands, as Shared settings' Brand card asks for it: `bring(address)`. A caller that
+    came over the network bridge (a phone on the private link) is told what was got without
+    the folders on this computer, and a failure is said without any it names: a refusal, or
+    an error of this computer such as a folder that cannot be written."""
+    if not remote:
+        return bring(address)
+    try:
+        done = bring(address)
+    except (ValueError, OSError) as failure:
+        said = str(failure)
+        raise preferences.WorkspaceError(
+            REMOTE_UNGOT if isinstance(failure, OSError) or names_a_folder(said) else said) from None
+    return {key: value for key, value in done.items() if key not in ('folder', 'replaced')}
+
+
 def _following() -> dict:
     """With no repository set: the brands Harness Brand already reads, used as they are."""
     folder = chosen(None)

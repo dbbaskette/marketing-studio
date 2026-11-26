@@ -1774,6 +1774,8 @@ function limitsSays(limits) {
   return says.join(' ');
 }
 
+const SETUP_ELSEWHERE = 'The set-up is changed on the computer that runs Presentation Studio.';
+
 // Settings: where the decks are kept, who can see them, and the way in to change any of it.
 function workspaceCard() {
   const held = view.setup;
@@ -1782,8 +1784,9 @@ function workspaceCard() {
   const node = card('Workspace');
   const agent = held.agent || {};
   add(node, make('p', 'row-title', space.name || 'Your decks'),
+    // From a phone the runner names no folder of its computer (#539): the row says where.
     about([[space.repository ? 'Repository' : 'Folder on this computer',
-      space.repository || space.path],
+      space.repository || space.path || 'Shown on that computer itself'],
     [space.repository ? 'This computer’s copy' : '', space.repository ? space.path : ''],
     ['Folder inside it', space.folder], ['Branch', space.branch],
     ['Shared', space.repository ? lower(SHARE_SAYS[space.share_when === 'when-asked' ? 1 : 0])
@@ -1793,7 +1796,9 @@ function workspaceCard() {
     ['Limits', limitsSays(held.limits || {})],
     ['Slide previews', held.previews ? previewsSays(held.previews) : '']]),
     sharingLine(), fetchLine(),
-    add(make('div', 'bar'), capsule('Change the set-up', '', () => show('setup'), 'setup')));
+    // A phone is refused set-up (#539): it is told where set-up is changed instead.
+    held.remote ? make('p', 'quiet', SETUP_ELSEWHERE)
+      : add(make('div', 'bar'), capsule('Change the set-up', '', () => show('setup'), 'setup')));
   return node;
 }
 
@@ -3775,8 +3780,9 @@ function paintDeck(fresh) {
     return;
   }
   const run = view.run;
-  // A deck the earlier gated flow saved, whose record the runner cannot read, is a read-only
-  // record: what it is, why, its saved files, and one way on.
+  // A deck the earlier step-by-step flow saved is a saved record, whatever its state: it
+  // opens on the desk, waits, is finished or is read-only, and its screen says which, with
+  // its saved files and one way on (paintSavedRecord).
   if (run.saved_record) return paintSavedRecord(run, fresh);
   // Every other deck was started on the desk (or opened there), and is drawn by
   // deck-desk.js: its progress until it reaches the desk, and the desk from then on.

@@ -498,3 +498,90 @@ class SyncGuardTests(unittest.TestCase):
         for value, busy in (('paused', False), ('working', True)):
             status.write_text(json.dumps({'enabled': False, 'status': value}))
             self.assertEqual(worker_in_progress(self.repo), busy)
+
+
+class BlogTeamMigrationTests(unittest.TestCase):
+    """A Blog Studio blog moved to the desk in a team repository holds the team's run.json
+    driver record beside its own desk/migration.json. The records say whose they are, so it
+    is checked as Blog Studio's: idle when whole, busy while its migration is pending, refused
+    when its record is damaged, and never read as a Presentation Studio deck."""
+
+    def setUp(self):
+        import os
+        import shutil
+        import subprocess
+        import sys
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name).resolve()
+        self.repo = base / 'team'
+        root = self.repo / 'blogs'
+        studios = Path(__file__).resolve().parents[1] / 'studios/blog'
+        tree = studios / 'tests/fixtures/saved/draft-gate'
+        (self.ident,) = [path.name for path in (tree / 'articles').iterdir()]
+        environment = {
+            **os.environ,
+            'HOME': str(base / 'home'),
+            'BLOG_STUDIO_DATA': str(base / 'data'),
+            'STUDIOS_CONFIG': str(base / 'studios-config.json'),
+            'STUDIOS_LIBRARY': str(base / 'library'),
+            'BRAND_SKILL_RUNTIME': str(base / 'no-brand'),
+            'HARNESS_RESEARCH_RUNTIME': str(base / 'no-research'),
+        }
+        script = studios / 'skills/blog-studio/scripts/studio.py'
+
+        def blog(*words):
+            done = subprocess.run([sys.executable, str(script), '--root', str(root), *words],
+                                  env=environment, capture_output=True, text=True, timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            return json.loads(done.stdout or 'null')
+
+        blog('init')
+        shutil.copytree(tree / 'articles', root / 'articles', dirs_exist_ok=True)
+        shown = blog('desk', 'migration-preview', '--article', self.ident)
+        self.assertTrue(shown['eligible'], shown)
+        blog('desk', 'migrate', '--article', self.ident, '--expected', shown['expected'])
+        self.folder = root / 'articles' / self.ident
+        self.assertTrue((self.folder / 'desk/migration.json').is_file())
+        # The team's driver record, as Blog Studio keeps one beside every blog it shares.
+        (self.folder / 'run.json').write_text(json.dumps({'schema': 1, 'driver': None}))
+
+    def test_a_whole_migration_beside_the_team_record_is_idle(self):
+        self.assertFalse(worker_in_progress(self.repo))
+        (self.folder / 'run.json').write_text(json.dumps(
+            {'schema': 1, 'driver': {'name': 'Synthetic Author', 'computer': '0' * 16,
+                                     'since': '2026-11-25T00:00:00+00:00'}}))
+        self.assertFalse(worker_in_progress(self.repo))
+
+    def test_a_pending_migration_is_busy(self):
+        (self.folder / 'desk/migration.pending.json').write_text('{"interrupted": true}')
+        self.assertTrue(worker_in_progress(self.repo))
+
+    def test_a_damaged_or_unclear_record_is_refused(self):
+        marker = self.folder / 'desk/migration.json'
+        whole = marker.read_text()
+        value = json.loads(whole)
+        for damaged in ('{broken', json.dumps({**value, 'expected': 'bm1.short'}),
+                        json.dumps({**value, 'id': 'another-blog'})):
+            with self.subTest(record=damaged[:30]):
+                marker.write_text(damaged)
+                with self.assertRaisesRegex(ValueError, 'could not be checked'):
+                    worker_in_progress(self.repo)
+        marker.write_text(whole)
+        # A Presentation Studio receipt beside a Blog Studio record: neither can be told apart.
+        (self.folder / 'desk/migration-origin.json').write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'could not be checked'):
+            worker_in_progress(self.repo)
+
+    def test_a_presentation_record_that_claims_blog_studio_is_still_refused(self):
+        deck = self.repo / 'deck'
+        deck.mkdir()
+        (deck / 'run.json').write_text(json.dumps({'schema': 1, 'id': 'deck', 'title': 'Synthetic',
+            'created': '2026-10-28T12:00:00Z', 'agent': 'test', 'route': 'scratch',
+            'form': {'route': 'scratch', 'title': 'Synthetic', 'output': 'pptx'},
+            'steps': {}, 'gates': {}, 'limits': {}, 'revisions': []}))
+        (deck / 'desk').mkdir()
+        (deck / 'desk/migration.json').write_text(json.dumps({'schema': 1, 'product': 'Blog Studio'}))
+        with self.assertRaisesRegex(ValueError, 'could not be checked'):
+            worker_in_progress(self.repo)

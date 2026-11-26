@@ -133,6 +133,14 @@ class SlideNoteTests(DeckCase):
         self.engine._run(root).workers.clear()
 
 
+    def test_a_finding_is_applied_or_skipped_only_through_deck_finding(self):
+        # GitHub issue #544: the /finding route calls deck_finding itself; the two one-finding
+        # wrappers had no caller and are gone.
+        from runner import engine as engines
+        for gone in ('finding_apply', 'finding_skip', '_finding_action'):
+            self.assertFalse(hasattr(engines.Engine, gone), gone)
+        self.assertTrue(callable(engines.Engine.deck_finding))
+
     def test_review_finding_apply_makes_a_priced_note(self):
         # Still found after the one automatic pass of fixes, so it is kept as a note.
         found = {**MAJOR, 'slide': 'check-yourself'}
@@ -1489,6 +1497,34 @@ class SlideSelectionTests(DeckCase):
         self.assertEqual(len(self.workers.of('section')), count)
         self.assertEqual(self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]['source'], 'selection')
 
+    def test_set_up_never_moves_the_workspace_under_a_selection_job(self):
+        # Second fix round of GitHub issue #549: the slide-selection job sets no step mark,
+        # and the training reads as done while it runs; the workspace is still not moved.
+        import subprocess
+        from runner import setup
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        old = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        refused = []
+
+        def words(tools, job):
+            try:
+                setup.apply(self.engine, setup.read({'path': str(self.base / 'moved-away')}))
+            except Exception as refusal:   # noqa: BLE001  what set-up said is the result
+                refused.append(str(refusal))
+            return tools.submit_artifact('words', 'Review')
+        self.workers.then('words', words)
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'rephrase', 0,
+            old.split()[0], old, self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.assertEqual(refused, [setup.FINISHING])
+        self.assertEqual(self.engine.space().repo, self.space.repo)
+        self.assertFalse((self.base / 'moved-away').exists())
+        job = self.engine._load(root)['drafts']['jobs'][-1]
+        self.assertEqual(job['status'], 'done', job)
+        self.assertFalse(job.get('error'), job)
+        self.assertEqual(subprocess.run(['git', 'status', '--porcelain'], cwd=root,
+                                        capture_output=True, text=True).stdout, '')
+
     def test_selection_does_not_replace_concurrently_edited_words(self):
         root = self.begin(flow='desk')
         self.to_end(root)
@@ -1924,6 +1960,28 @@ class DeckRebrandCopyTests(DeckCase):
             return self.result
         self.engine.rebrand_run = run
         return root, self.engine._load(root)['deck']['']['saved']['sha256']
+
+    def test_set_up_never_moves_the_workspace_under_a_rebranded_copy(self):
+        # Second fix round of GitHub issue #549: the copy is made aside from the training's
+        # run, and still counts as work under way in its folder until it is kept.
+        from runner import setup
+        self.result = {'status': 'branded', 'url': 'https://docs.google.com/presentation/d/c/edit'}
+        root, seen = self.ready()
+        during = []
+
+        def run(skill, source, name, run_dir):
+            with self.engine.files:
+                during.append(self.engine.in_hand(root))
+            try:
+                setup.apply(self.engine, setup.read({'path': str(self.base / 'moved-away')}))
+            except Exception as refusal:   # noqa: BLE001  what set-up said is the result
+                during.append(str(refusal))
+            return self.result
+        self.engine.rebrand_run = run
+        self.engine.deck_rebrand_copy(root, None, 'example-brand', seen, wait=True)
+        self.assertEqual(during, [True, setup.FINISHING])
+        self.assertFalse((self.base / 'moved-away').exists())
+        self.assertFalse(self.engine.in_hand(root), 'once it is kept, nothing is under way')
 
     def test_the_existing_deck_is_rebranded_as_a_copy_with_nothing_drawn_again(self):
         self.result = {'status': 'branded', 'url': 'https://docs.google.com/presentation/d/copy/edit'}

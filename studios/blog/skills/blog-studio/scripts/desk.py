@@ -263,7 +263,23 @@ def _attach(root, data, record):
     ]
 
 
-def create(root, data):
+def create(root, data, settle=None):
+    """A new desk blog (`_make`), shared with a selected Team Hub when it is made, whichever
+    way it was asked for: the page's New blog, a conversation, a repurposed copy or a GEO
+    report's desk copy. Every new desk blog is made here.
+
+    `settle(made)` is the caller's own part, run before the blog is shared: what makes asking
+    again safe (the page's operation record, a repurpose job's receipt) and the rest of the
+    blog's record (its library sources, a conversation's scope), so the Team Hub gets the
+    record as it is saved here. Sharing comes last and never fails or repeats the making: a
+    share that did not happen is said in `share_problem` (None when shared or no Team Hub)."""
+    made = _make(root, data)
+    if settle is not None:
+        settle(made)
+    return {**made, 'share_problem': _share_new(root, made['id'])}
+
+
+def _make(root, data):
     """A new desk blog from a pasted draft (`manuscript`), an uploaded draft (`source`), or a
     blog just started from a Google Doc (`article`), with its kind of post, tone and length.
 
@@ -686,9 +702,14 @@ def open_run(root, ident):
     # DRAFT.md is the person's latest text, so it opens too.
     if not (found['complete'] or found['finished']) or not (directory / 'DRAFT.md').is_file():
         raise ValueError('Finish this blog, then open it on the desk.')
-    draft = desk_images.fitted(split((directory / 'DRAFT.md').read_text(), title=record['title']))
+    taken = (directory / 'DRAFT.md').read_bytes()
+    draft = desk_images.fitted(split(taken.decode('utf-8'), title=record['title']))
     if len(draft['sections']) > SECTIONS:
         raise ValueError(TOO_MANY)
+    # The desk takes this DRAFT.md as it is, hand edits and all: that text is what the desk
+    # last wrote, so a later change outside the desk is told apart (google_handoff).
+    record.setdefault('artifact_hashes', {})['draft'] = studio.digest(taken)
+    studio.persist(directory, 'articles', record)
     now = studio.now()
     draft = {
         'schema': 1,
@@ -1073,7 +1094,7 @@ WHOLE_DRAFT = ('desk-outline', 'desk-draft', 'desk-research', 'desk-first-pass',
 
 
 def outline_save(root, ident, seen, rows):
-    """Rename, reorder, add and remove sections and edit their briefs, from the Outline tab.
+    """Rename, reorder, add and remove sections and edit their briefs, from the Outline in the parts list.
     Ids are kept; a section without one is new. A form older than a section it changes, or
     than the outline's order, is refused."""
     import desk_jobs
@@ -1149,7 +1170,7 @@ def reimport(root, ident, markdown, source, record=None):
     history (`chat`), or Google's accepted text (`google`). Each part it changes keeps its
     text first as a version from that source; sections go with the desk section of the same
     heading, then with the one in their place, so ids and History follow the text; a section
-    the new text leaves out can be brought back from the Outline tab. DRAFT.md and the
+    the new text leaves out can be brought back from the Outline in the parts list. DRAFT.md and the
     record are written by `_write`, so a desk page open meanwhile is refused for what changed
     rather than writing over it. `record`, the caller's copy, is brought up to date."""
     _require_lock()
@@ -1258,7 +1279,7 @@ def _removed_path(root, ident):
 
 
 def removed(root, ident):
-    """Sections taken out on the Outline tab, newest first, each with its text and brief."""
+    """Sections taken out on the Outline, newest first, each with its text and brief."""
     return _drafting(root).removed(ident)
 
 
@@ -1378,7 +1399,7 @@ def counts(root, ident):
 def restore(root, ident, seen, part, index):
     """Bring back a kept version; the text it replaces is kept as a version too. A version
     from before a first pass divided the draft undoes the division as a whole: the sections
-    that pass added go to the Outline tab's removed list, to bring back if wanted."""
+    that pass added go to the Outline's removed list, to bring back if wanted."""
     found = _kept(root, ident, part)
     if type(index) is not int or not 0 <= index < len(found):
         raise ValueError('Choose a saved version.')
@@ -1426,8 +1447,8 @@ def restore(root, ident, seen, part, index):
 def _restore_divided(root, ident, seen, draft, entry):
     """Bring back an opening kept before its headings started sections, such as the whole
     draft before a first pass on a record the desk later divided: its headings start the
-    sections again, as `split` reads them, and the sections there now go to the Outline
-    tab's removed list, to bring back if wanted. The opening there now is kept first."""
+    sections again, as `split` reads them, and the sections there now go to the Outline's
+    removed list, to bring back if wanted. The opening there now is kept first."""
     import desk_jobs
 
     had = draft.get('images') or {}
@@ -1527,6 +1548,36 @@ UNSHARED = (
 FINISH_FIRST = ('copyedit', 'feedback', 'geo')
 
 
+NOT_SHARED = (
+    'This blog is saved on this computer but is not shared with the Team Hub yet. '
+    'Retry Hub sync to share it.'
+)
+
+
+def _share_new(root, ident):
+    """A new blog is shared with a selected Team Hub when it is made, as the step-by-step
+    flow shared one (blog_runner.save), with a receipt. Sharing never fails the blog, whatever
+    goes wrong, even finding the Team Hub: what did not happen is said in a sentence, NOT_SHARED,
+    as a share the Team Hub did not take is said in its receipt (Retry Hub sync). None when it
+    was shared, or when no Team Hub is selected (nothing is shared and no receipt is kept)."""
+    import management
+
+    try:
+        from hub_workspace import active
+
+        if not active(root):
+            return None
+        _, record = studio.item(root, 'articles', ident)
+        result = management.share(root, 'article', record)
+        management.receipt(root, 'New blog', result, 'article')
+    except Exception as error:  # noqa: BLE001 - the blog is made either way.
+        management.note_unexpected(error)
+        return NOT_SHARED
+    if (result.get('hub_sync') or {}).get('status') == 'local-saved-not-shared':
+        return NOT_SHARED
+    return None
+
+
 def _create(root, data):
     """Create once per page operation: the same request again returns the same blog."""
     import desk_jobs
@@ -1575,9 +1626,15 @@ def _create(root, data):
         if prior['fingerprint'] != fingerprint:
             raise ValueError('This creation request changed. Open a new form.')
         return desk_jobs.view(root, prior['id'])
-    made = create(root, data)
-    studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
-    keep_problem = keep_in_library(root, made['id'], kept)
+    kept_said = {}
+
+    def settle(made):
+        # Recorded first, so asking again returns this blog, then its library sources.
+        studio.write_json(path, {'id': made['id'], 'fingerprint': fingerprint})
+        kept_said['problem'] = keep_in_library(root, made['id'], kept)
+
+    made = create(root, data, settle)
+    keep_problem, share_problem = kept_said['problem'], made['share_problem']
     try:
         desk_jobs.prune_angles(root)
         if picked:
@@ -1592,6 +1649,7 @@ def _create(root, data):
             **desk_jobs.view(root, made['id']),
             'first_pass_problem': None,
             'keep_problem': keep_problem,
+            'share_problem': share_problem,
         }
     try:
         if choice == 'copyedit':
@@ -1609,6 +1667,7 @@ def _create(root, data):
         **desk_jobs.view(root, made['id']),
         'first_pass_problem': problem,
         'keep_problem': keep_problem,
+        'share_problem': share_problem,
     }
 
 

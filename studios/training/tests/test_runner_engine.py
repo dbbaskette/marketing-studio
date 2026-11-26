@@ -1354,6 +1354,90 @@ class SharingTests(StudioCase):
                          'Rolling restarts: write the index; the training is finished')
         self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
 
+    def test_a_desk_run_that_comes_to_rest_shares_its_last_commit(self):
+        # Issue #549: the earlier flow shared after the runner's last step. A desk run that
+        # has written everything and waits for Mark ready shares what it made, unasked.
+        root = self.start()
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(self.shared()[0], self.log()[-1])
+        self.assertEqual(self.engine.shared(), {'shared': True, 'notice': None})
+
+    def test_a_desk_run_that_comes_to_rest_shares_nothing_when_sharing_is_asked_for(self):
+        self.gitstate.share_when('asked')
+        root = self.start()
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')
+
+    def test_a_desk_run_shares_once_at_its_end(self):
+        # Second fix round of GitHub issue #549: counted, as the earlier flow shared: once
+        # when the run comes to rest, then once for the decision and once for the index.
+        calls, real = [], self.engine.share
+
+        def share():
+            calls.append(1)
+            return real()
+        with mock.patch.object(self.engine, 'share', share):
+            root = self.start()
+            self.assertEqual(len(calls), 1, 'coming to rest shares once')
+            self.all_ready(root)
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(len(calls), 3, 'then the decision, and the index, each once')
+        self.assertEqual(self.shared()[0],
+                         'Rolling restarts: write the index; the training is finished')
+
+    def unshared(self, root: Path) -> None:
+        """Only the claim that starts the training reached the team, though more was made."""
+        self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')
+        self.assertNotEqual(self.log()[-1], self.shared()[0], 'more was made here')
+
+    def test_a_desk_run_stopped_at_a_question_shares_nothing(self):
+        # The planner's ruling on #549: shared where the earlier flow shared, never at a stop.
+        self.workers.then('blueprint', asks('Which platform is this about?'))
+        root = self.start()
+        self.assertEqual(self.state(root), 'waiting')
+        self.unshared(root)
+
+    def test_a_desk_run_paused_or_stopped_shares_nothing(self):
+        self.pause_after('blueprint')
+        root = self.start()
+        self.assertEqual(self.state(root), 'paused')
+        self.unshared(root)
+
+        def stopping(tools, job):
+            self.engine.act(self.space.training('health-checks'), 'stop')
+            return self.workers.blueprint(tools, job)
+        self.workers.then('blueprint', stopping)
+        stopped = self.start(title='Health checks')
+        self.assertEqual(self.state(stopped), 'stopped')
+        self.assertNotIn('Health checks: write the blueprint', ' '.join(self.shared()))
+
+    def test_a_desk_run_that_failed_or_waits_shares_nothing(self):
+        self.workers.then('blueprint', fails(), fails(), fails())
+        root = self.start()
+        self.assertEqual(self.state(root), 'failed')
+        self.unshared(root)
+
+        def waiting(tools, job):
+            here = self.space.training('health-checks')
+            done = self.workers.blueprint(tools, job)
+            self.engine._problem(here, 'blueprint', 'waiting', 'Waiting on Google.', 'Kept.')
+            return done
+        self.workers.then('blueprint', waiting)
+        other = self.start(title='Health checks')
+        self.assertEqual(self.record(other)['problem']['state'], 'waiting')
+        self.assertFalse(any(line.startswith('Health checks') and 'start the training'
+                             not in line for line in self.shared()), self.shared())
+
+    def test_a_desk_run_paused_when_a_level_is_finished_shares_nothing(self):
+        def finishing(tools, job):
+            self.engine.act(self.space.training('rolling-restarts'), 'finish-level')
+            return self.workers.document(tools, job)
+        self.workers.then('document', finishing)
+        root = self.start(levels=['101', '201'])
+        self.assertEqual(self.state(root), 'paused')
+        self.assertIsNone(self.record(root).get('halt_after'))
+        self.unshared(root)
+
     def test_a_repository_that_cannot_be_reached_never_holds_a_run_up(self):
         root = self.start()
         self.remote.rename(self.base / 'moved-away.git')
@@ -1382,6 +1466,42 @@ class SharingTests(StudioCase):
         found = self.engine.share()
         self.assertEqual(found['shared'], False)
         self.assertIn('no shared repository', found['notice'])
+
+
+class WaitingForATurnTests(StudioCase):
+    """A run waiting for a slot that set-up moves the workspace from (second fix round of
+    GitHub issue #549): it has written nothing while it waits, so the move is accepted, and
+    once its turn comes it finds its training is no longer in the workspace in use and stops,
+    leaving that training as it was."""
+
+    BACKGROUND = True
+
+    def test_a_run_waiting_behind_a_full_slot_lets_set_up_move_and_then_stops(self):
+        from runner import setup
+        slots = self.engine._slots
+        slots.read = lambda: 1
+        self.assertTrue(slots.take(lambda: False))      # the one slot is taken
+        root = self.start()
+        run = self.engine._run(root)
+        deadline = time.monotonic() + 30
+        while not run.queued and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(run.queued, 'the run waits for its turn')
+        with self.engine.files:
+            self.assertFalse(self.engine.in_hand(root))
+        moved = setup.apply(self.engine, setup.read({'path': str(self.base / 'elsewhere')}))
+        self.assertEqual(moved['workspace']['path'], str(self.base / 'elsewhere'))
+        before = self.git('rev-parse', 'HEAD')
+        with slots.changed:                              # the slot is given back
+            slots.used -= 1
+            slots.changed.notify_all()
+        while (run.busy or run.queued) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertFalse(run.busy or run.queued, 'its turn came, and it stopped')
+        self.assertEqual(self.workers.jobs, [], 'nothing was worked on')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+        self.assertEqual(self.git('status', '--porcelain', '--', str(root)), '')
+        self.assertFalse((self.base / 'elsewhere' / 'trainings' / root.name).exists())
 
 
 class LiveTests(StudioCase):

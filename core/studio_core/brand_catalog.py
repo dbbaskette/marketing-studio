@@ -24,6 +24,18 @@ KEPT_FOR = 15     # seconds a listing is used again while nothing it was read fr
 MOST = 100        # skill folders looked at
 _KEPT: dict = {}  # what a listing was read from -> (when, the listing)
 _HELD = threading.Lock()
+NO_NODE = 'Node.js is needed to list installed brands. You can keep the saved IDs or leave them blank.'
+NONE_FOUND = ('No installed brand skill was found. Keep a repository address for installation from a '
+              'studio’s settings, or leave the brand blank for now.')
+# What a caller that came over Marketing Studio's network bridge (a phone on the private link)
+# is told instead of anything naming a folder on this computer.
+REMOTE_SKILL = ('An installed brand skill folder other than the one saved in these settings is read '
+                'only on the computer Marketing Studio runs on. Look up its brands there, or enter a '
+                'brand ID.')
+REMOTE_UNASKED = ('Some installed brand skills could not be asked for their brands. See why on the '
+                  'computer Marketing Studio runs on, or enter a brand ID.')
+REMOTE_UNLISTED = ('The installed brands could not be listed. See why on the computer Marketing '
+                   'Studio runs on, or enter a brand ID.')
 
 
 def _looked_at(roots, env, node):
@@ -61,7 +73,7 @@ def choices(skill=None, home=None, run=subprocess.run, which=shutil.which):
     env = brand_skills.environment()
     node = which('node')
     if not node:
-        return {'skills': [], 'problem': 'Node.js is needed to list installed brands. You can keep the saved IDs or leave them blank.'}
+        return {'skills': [], 'problem': NO_NODE}
     key = (str(selected), str(home), run, which, _looked_at(roots, env, node))
     now = time.monotonic()
     with _HELD:
@@ -125,5 +137,34 @@ def _scan(roots, env, node, run):
                 break
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 problems.append(f'{name}: {error}')
-    problem = ' '.join(problems) or (None if found else 'No installed brand skill was found. Keep a repository address for installation from a studio’s settings, or leave the brand blank for now.')
+    problem = ' '.join(problems) or (None if found else NONE_FOUND)
     return {'skills': found, 'problem': problem}
+
+
+def unplaced(found: dict) -> dict:
+    """`choices` for a caller that came over the network: each skill's name and brands with
+    their variants, without the folder it is in, and a problem said without the folders or
+    error text it may name on this computer."""
+    skills = [{'name': skill.get('name'), 'brands': skill.get('brands') or []}
+              for skill in found.get('skills') or [] if isinstance(skill, dict)]
+    problem = found.get('problem')
+    if problem not in (None, NO_NODE, NONE_FOUND):
+        problem = REMOTE_UNASKED
+    return {'skills': skills, 'problem': problem}
+
+
+def listed(skill=None, remote=False, saved=None) -> dict:
+    """The installed brands as Shared settings' Brand card asks for them; never raises.
+    A caller on this computer gets `choices(skill)` as it is. A caller that came over the
+    network bridge is told names only. It may name only the installed skill folder the
+    shared settings hold (`saved`), exactly as saved, and that is looked up as the setting;
+    any other skill folder is refused unread: choosing one is done on the computer."""
+    if remote and skill is not None and (not isinstance(saved, str) or skill != saved):
+        return {'skills': [], 'problem': REMOTE_SKILL}
+    try:
+        found = choices(skill)
+    except (ValueError, OSError) as failure:
+        if remote:
+            return {'skills': [], 'problem': REMOTE_UNLISTED}
+        return {'skills': [], 'problem': f'The installed brands could not be listed: {failure}'}
+    return unplaced(found) if remote else found

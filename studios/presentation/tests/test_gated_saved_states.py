@@ -446,12 +446,22 @@ class GatedSavedStateTests(runner_support.DeskCase):
         record['steps']['research-report'] = {'done': True}
         decks.write_run(root, record)
         # The pinned bundle is read before anything else, and its absence is the one blocker.
+        # GitHub issue #544: in a sentence, not the operating system's error naming a path.
         blockers = self.preview(root)['blockers']
-        self.assertEqual(len(blockers), 1)
-        self.assertIn('output.json', blockers[0])
+        self.assertEqual(blockers, [desk_migration.RESEARCH_MISSING])
+        self.assertNotIn(str(root), blockers[0])
         saved = self.checked(root)['saved_record']
         self.assertEqual((saved['state'], saved['why']),
                          ('read-only', 'The pinned research bundle is missing.'))
+
+    def test_a_missing_file_of_the_pinned_research_bundle_is_said_without_a_path(self):
+        root = self.load_saved('researched')
+        listed = json.loads((root / 'research' / 'output.json').read_text())['artifacts']
+        gone = next(entry['file'] for entry in listed if entry['file'] != 'output.json')
+        (root / 'research' / gone).unlink()
+        blockers = self.preview(root)['blockers']
+        self.assertEqual(blockers, [desk_migration.RESEARCH_UNREAD])
+        self.assertNotIn(str(root), blockers[0])
 
     # --- records the runner cannot read ------------------------------------------------------
 

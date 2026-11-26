@@ -1006,6 +1006,223 @@ class MigrationTests(FirstTimeCase):
         self.assertEqual(self.kept_here(), (self.mine, self.record))
 
 
+class PhoneSettingsTests(PageCase):
+    """GitHub issue #539, the owner's ruling: a phone on the private link (a request the
+    network bridge carried, X-Marketing-Studio-Via: network) is refused set-up, gives the
+    brand skill's repository only as a web address, and is shown no folder of this computer.
+    The tests set the header themselves; nothing reaches the network."""
+
+    def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
+        made = super().headers(token, host, origin, kind)
+        if remote:
+            made['X-Marketing-Studio-Via'] = 'network'
+        return made
+
+    def send(self, endpoint: str, sent: dict, remote: bool) -> tuple[int, dict]:
+        status, reply, _ = self.answer('POST', f'/api/{endpoint}', json.dumps(sent).encode(),
+                                       origin=self.origin, kind='application/json',
+                                       remote=remote)
+        return status, reply
+
+    def get_as(self, endpoint: str, remote: bool) -> dict:
+        status, reply, _ = self.answer('GET', f'/api/{endpoint}', remote=remote)
+        self.assertEqual(status, 200, reply)
+        return reply
+
+    def test_set_up_is_refused_to_a_phone_and_says_nothing_of_any_folder(self):
+        from studio_core.shared_runner import caller
+        before = self.get('setup')
+        here = self.base / 'phone-asked'
+        here.mkdir()
+        for endpoint in ('setup/check', 'setup'):
+            for sent in ({'path': str(here)}, {'path': str(self.base / 'not-yet')},
+                         {'path': str(self.space.repo)}, {'repository': str(self.base)},
+                         {'repository': 'https://example.invalid/team.git'},
+                         {'limits': {'parallel': 3}}, {}):
+                with self.subTest(endpoint=endpoint, sent=sent):
+                    self.assertEqual(self.send(endpoint, sent, remote=True),
+                                     (403, {'error': caller.SETUP_HERE}))
+        self.assertFalse((self.base / 'not-yet').exists())
+        self.assertEqual(list(here.iterdir()), [])
+        self.assertEqual(self.get('setup'), before)
+        # On this computer the same check answers about the folder, as before.
+        status, found = self.send('setup/check', {'path': str(here)}, remote=False)
+        self.assertEqual(status, 200, found)
+        self.assertIn('checks', found)
+
+    def test_a_phone_gives_the_brand_repository_only_as_a_web_address(self):
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        bare = self.base / 'brand.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(bare)], check=True,
+                       capture_output=True)
+        for given in (str(bare), str(self.base), '~/brand', './brand', 'file://' + str(bare),
+                      'host:brand.git', '', 'http://example.invalid/brand.git',
+                      'git@localhost:/srv/brand', 'ssh://u@127.0.0.1/brand.git'):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('brand', {'repository': given}, remote=True),
+                                 (403, {'error': caller.BRAND_ADDRESS}))
+        self.assertIsNone(settings.load().brand_repository)
+        said = ("The brand skill's repository could not be read. ssh: connect to host "
+                '10.0.0.5 port 22: Connection refused.')
+
+        def check(address, place):
+            if address.startswith('git@10.'):
+                raise brand_source.Unreadable(said)
+            return {'repository': address, 'commit': '0' * 40}
+        with mock.patch.object(brand_source, 'check', check):
+            for given in ('https://example.invalid/owner/brand.git',
+                          'git@example.invalid:owner/brand.git'):
+                with self.subTest(given=given):
+                    status, made = self.send('brand', {'repository': given}, remote=True)
+                    self.assertEqual((status, made['brand']['repository']), (200, given))
+            # Git's own reason names hosts and ports: a phone is told a plain sentence.
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=True), (400, {'error': caller.BRAND_UNREAD}))
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=False), (400, {'error': said}))
+        # On this computer a folder is still read as a repository, as before.
+        status, made = self.send('brand', {'repository': str(bare / 'missing.git')},
+                                 remote=False)
+        self.assertEqual(status, 400, made)
+        self.assertTrue(made['error'].startswith("The brand skill's repository could not be "
+                                                 'read.'), made)
+
+    def test_a_phone_is_shown_no_folder_of_this_computer_in_set_up_or_the_brand(self):
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        folder = str(self.base / 'brand.git')
+        settings.save(replace(settings.load(), brand_repository=folder))
+        here = self.get_as('setup', remote=False)
+        self.assertEqual(here['workspace']['path'], str(self.space.repo))
+        self.assertEqual(here['brand']['repository'], folder)
+        phone = self.get_as('setup', remote=True)
+        self.assertIsNone(phone['workspace']['path'])
+        self.assertEqual(phone['brand']['repository'], caller.FOLDER_HERE)
+        for shown in (str(self.base), str(self.base.resolve())):
+            self.assertNotIn(shown, json.dumps(phone))
+        # Everything else is as this computer has it.
+        self.assertEqual({key: value for key, value in phone.items()
+                          if key not in ('workspace', 'brand', 'shared', 'remote')},
+                         {key: value for key, value in here.items()
+                          if key not in ('workspace', 'brand', 'shared')})
+        # It is told it is a phone, so the page offers no set-up change (fix round, #539).
+        self.assertEqual((phone.get('remote'), 'remote' in here), (True, False))
+        # The answers of the brand route and of the shared notice are shown the same way.
+        with mock.patch.object(brand_source, 'check', lambda address, place: {
+                'repository': address, 'commit': '0' * 40}):
+            status, made = self.send('brand', {'repository': 'https://example.invalid/b.git'},
+                                     remote=True)
+        self.assertEqual((status, made['brand']['repository']),
+                         (200, 'https://example.invalid/b.git'))
+        self.assertIsNone(made['workspace']['path'])
+        self.assertNotIn(str(self.base.resolve()), json.dumps(made))
+        status, seen = self.send('shared', {'seen': True}, remote=True)
+        self.assertEqual(status, 200, seen)
+        self.assertNotIn(str(self.base.resolve()), json.dumps(seen))
+        # Set-up saved on this computer answers it in full.
+        self.assertEqual(self.send('setup', {'limits': {'parallel': 3}}, remote=False)[1]
+                         ['workspace']['path'], str(self.space.repo))
+
+
+class PhoneRouteWalkTests(PageCase):
+    """Fix rounds of GitHub issue #539: no answer to a phone names a folder of this computer,
+    whatever key it is under, upkeep included. Every route the page answers is walked from
+    its own lists, GET and POST, with the bridge header set: a GET with no query and with
+    the training's own folder, a POST with its body below or an empty one. A refusal is
+    checked as an answer is."""
+
+    def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
+        made = super().headers(token, host, origin, kind)
+        if remote:
+            made['X-Marketing-Studio-Via'] = 'network'
+        return made
+
+    def folders(self, value, allowed=()) -> list:
+        """Every string naming a folder here, anywhere in `value`, but those `allowed`."""
+        if isinstance(value, dict):
+            return [found for one in value.values() for found in self.folders(one, allowed)]
+        if isinstance(value, list):
+            return [found for one in value for found in self.folders(one, allowed)]
+        here = (str(self.base), str(self.base.resolve()), str(Path.home()))
+        if isinstance(value, str) and value not in allowed and any(
+                place in value for place in here):
+            return [value]
+        return []
+
+    def test_no_answer_names_a_folder_of_this_computer_to_a_phone(self):
+        from runner import brand_source
+
+        class Keeping(Keeper):
+            def __init__(self, base):
+                super().__init__()
+                self.base = base
+
+            def report(self):
+                return {'links': [{'assistant': 'Claude Code', 'name': 'training-studio',
+                                   'path': str(self.base / 'skills' / 'training-studio'),
+                                   'state': 'ok'}],
+                        'versions': {'brand': {'repository': str(self.base / 'brand.git')}}}
+
+            def update(self, working):
+                return self.report()
+            upgrade = restart = install_brand = lambda self, *given: self.report()
+            dismiss = lambda self, key: self.report()
+
+        root = Path(self.started())
+        self.engine.upkeep = Keeping(self.base)
+        settings.save(replace(settings.load(), brand_repository=str(self.base / 'brand.git')))
+        # Shown to a phone on purpose: the training's own folder, which is how the page names
+        # a training in every request it sends back (as every list and run does). Nothing
+        # else that names a folder here is.
+        allowed = (str(root),)
+        bodies = {'/api/brand': {'repository': 'https://example.invalid/brand.git'},
+                  '/api/shared': {'seen': True}, '/api/versions': {'dismiss': 'brand'},
+                  '/api/upgrade': {'version': '1.0.0'}, '/api/brand/install': {'commit': 'a' * 40}}
+        reads = sorted(target for target in self.page.reads if target.startswith('/api/'))
+        writes = sorted(target for target in self.page.writes if target.startswith('/api/'))
+        answered = {}
+        # A look at this computer (POST /api/computer) finds nothing installed, here as a
+        # stand-in: no command is run and nothing is reached.
+        with mock.patch.object(brand_source, 'check', lambda address, place: {
+                'repository': address, 'commit': '0' * 40}), \
+                mock.patch.object(computer, 'run', lambda command: {
+                    'found': False, 'ok': False, 'output': ''}), \
+                mock.patch.object(computer, 'reach', lambda host: 'not reached in a test'):
+            for target in reads:
+                for query in ('', '?' + urlencode({'path': str(root)})):
+                    status, reply, _ = self.answer('GET', target + query, remote=True)
+                    answered[('GET', target + query, status)] = reply
+            for target in writes:
+                status, reply, _ = self.answer('POST', target,
+                                               json.dumps(bodies.get(target, {})).encode(),
+                                               origin=self.origin, kind='application/json',
+                                               remote=True)
+                answered[('POST', target, status)] = reply
+        self.assertEqual(len([one for one in answered if one[0] == 'POST']), len(writes))
+        for asked in (('GET', '/api/setup', 200), ('GET', '/api/status', 200),
+                      ('POST', '/api/brand', 200), ('POST', '/api/companions', 200),
+                      ('POST', '/api/brand/install', 200)):
+            self.assertIn(asked, answered)
+        self.assertIn('upkeep', answered[('GET', '/api/status', 200)])
+        for asked, reply in answered.items():
+            with self.subTest(asked=asked):
+                self.assertEqual(self.folders(reply, allowed), [])
+        # A library that is not where it was saved is said without its folder too.
+        from studio_core.document_library import store as library_store
+        away = {'available': False, 'location': str(self.base / 'library'),
+                'problem': library_store.gone(str(self.base / 'library'))}
+        with mock.patch.object(page.library_context, 'answer', lambda *given: dict(away)):
+            status, reply, _ = self.answer('POST', '/api/library', b'{}', origin=self.origin,
+                                           kind='application/json', remote=True)
+        self.assertEqual((status, reply['problem'], self.folders(reply)),
+                         (200, page.LIBRARY_AWAY, []))
+        # On this computer the same answers keep their folders.
+        status, reply, _ = self.answer('GET', '/api/status', remote=False)
+        self.assertEqual(reply['upkeep']['links'][0]['path'],
+                         str(self.base / 'skills' / 'training-studio'))
+
+
 class CheckTests(FirstTimeCase):
     """`POST /api/setup/check` looks, and changes nothing."""
 
@@ -1654,6 +1871,86 @@ class RunTests(PageCase):
         self.assertEqual(run['steps'][1], {
             'id': 'research-plan', 'label': 'Draft the research plan', 'kind': 'agent',
             'status': 'done', 'attempts': 1, 'seconds': 1.5, 'dollars': 0.5, 'error': None})
+
+    def test_the_workspace_is_not_moved_while_a_paused_trainings_step_finishes(self):
+        # GitHub issue #549, seen once: paused from inside its research-plan job, the
+        # training is not working, so set-up moved the workspace; the step then ended
+        # outside it and the runner was refused "step.lock is outside trainings/".
+        said, before = [], self.space.repo
+
+        def inside(tools, job):
+            self.engine.act(self.engine.space().training('rolling-restarts'), 'pause')
+            said.append(self.post('setup', {'path': str(self.base / 'elsewhere')}, 409))
+            said.append(self.post('setup', {'limits': {'parallel': 3}}))  # nothing moves
+            return self.workers.research_plan(tools, job)
+
+        self.workers.then('research-plan', inside)
+        root = Path(self.started())
+        self.assertEqual(said[0], {'error': setup.FINISHING})
+        self.assertEqual(said[1]['workspace']['path'], str(before))
+        self.assertEqual(self.engine.space().repo, before)
+        self.assertFalse((root / engines.IN_HAND).exists(), 'the step ended in its workspace')
+        self.assertEqual(self.view(root)['state'], 'paused')
+        self.assertFalse((self.base / 'elsewhere').exists())
+        # Once the step has ended, the workspace may move.
+        self.assertEqual(self.post('setup', {'path': str(self.base / 'elsewhere')})
+                         ['workspace']['path'], str(self.base / 'elsewhere'))
+
+    def ended(self, how, title: str) -> Path:
+        """A training of its own, titled `title`, started in the workspace in use now, whose
+        research-plan step ended as `how` ends it. It proves it is that training: started
+        here, in this workspace, with its own title."""
+        self.workers.then('research-plan', *how)
+        space = self.engine.space()
+        status, reply, _ = self.answer('POST', '/api/trainings', json.dumps(
+            {**FORM, 'flow': 'desk', 'title': title}).encode(), origin=self.origin,
+            kind='application/json')
+        self.assertEqual(status, 200, reply)
+        root = Path(reply['path'])
+        self.assertEqual(root.parent.resolve(), space.root.resolve(), 'in the workspace in use')
+        self.assertEqual(workspace.load(root)['title'], title)
+        return root
+
+    def test_however_a_step_ends_its_mark_goes_and_the_workspace_may_move(self):
+        # Fix round of GitHub issue #549: a Stop left the step's mark in place, so every
+        # later move was refused as "finishing" and automatic sharing stayed held back.
+        from studio_core.shared_runner.write_markers import defer_share
+
+        def stopped(tools, job):
+            self.engine.act(self.engine.space().training('stopped-here'), 'stop')
+            raise engines.companion.Stopped('Stopped on the page.')
+
+        def raising(tools, job):
+            raise RuntimeError('Something no step expects.')
+        for name, how, state in (('stopped', (stopped,), 'stopped'),
+                                 ('failed', (fails(), fails(), fails()), 'failed'),
+                                 ('raised', (raising,), 'failed')):
+            with self.subTest(name):
+                root = self.ended(how, f'{name.capitalize()} here')
+                self.assertEqual(self.view(root)['state'], state)
+                self.assertFalse(self.engine.in_hand(root))
+                self.assertFalse(defer_share(self.engine), 'sharing is not held back')
+                folder = self.base / f'moved-{name}'
+                self.assertEqual(self.post('setup', {'path': str(folder)})['workspace']['path'],
+                                 str(folder))
+
+    def test_a_paused_run_is_in_hand_until_its_resting_write(self):
+        # Between dropping a step's marker and the resting write to its activity log a paused
+        # training holds no mark but still writes in its folder (second fix round, #549).
+        activity_log = engines.activity_log
+        seen, real = [], activity_log.checkpoint
+
+        def checkpoint(path, kind, *given, **named):
+            if kind == 'stopped':
+                with self.engine.files:
+                    seen.append(self.engine.in_hand(Path(path).parent.parent))
+            return real(path, kind, *given, **named)
+        self.pause_after('research-plan')
+        with mock.patch.object(activity_log, 'checkpoint', checkpoint):
+            root = Path(self.started())
+        self.assertEqual(self.view(root)['state'], 'paused')
+        self.assertTrue(seen and all(seen), seen)
+        self.assertFalse(self.engine.in_hand(root), 'and once it is at rest, nothing is')
 
     def test_a_question_and_a_problem_are_described_field_for_field(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))

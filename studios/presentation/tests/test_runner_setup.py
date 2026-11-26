@@ -225,6 +225,30 @@ class CheckTests(FirstTimeCase):
         self.assertEqual(self.get('setup')['configured'], False)
         return found
 
+    def test_a_decks_folder_or_one_inside_the_workspace_is_refused(self):
+        # GitHub issue #544: set-up on a deck's folder made that folder the workspace.
+        import shutil
+        folder = self.base / 'my-decks'
+        self.post('setup', {'path': str(folder)})
+        deck = Path(self.post('decks', {'form': {**FORM, 'flow': 'desk',
+                                                 'agent': 'codex'}})['path'])
+        outside = self.base / 'conversation' / 'restarts'
+        shutil.copytree(deck, outside, ignore=shutil.ignore_patterns('work', 'sources'))
+        before = self.get('setup')['workspace']
+        for given, said in ((deck, setup.INSIDE_WORKSPACE),
+                            (folder / 'presentations', setup.INSIDE_WORKSPACE),
+                            (folder / 'presentations' / 'new', setup.INSIDE_WORKSPACE),
+                            (outside, setup.A_DECK), (outside / 'sources', setup.A_DECK)):
+            for route in ('setup/check', 'setup'):
+                with self.subTest(given=str(given), route=route):
+                    self.assertEqual(self.post(route, {'path': str(given)}, 400)['error'], said)
+        self.assertFalse((folder / 'presentations' / 'new').exists())
+        self.assertFalse((outside / '.git').exists())
+        self.assertEqual(self.get('setup')['workspace'], before)
+        # The folder in use, and another folder beside it, are still looked at as before.
+        self.assertTrue(self.post('setup/check', {'path': str(folder)})['found'])
+        self.assertTrue(self.post('setup/check', {'path': str(self.base / 'other')})['ok'])
+
     def test_a_new_folder_on_this_computer_can_be_used(self):
         found = self.check(path=str(self.base / 'my-decks'))
         self.assertEqual((found['ok'], found['found']), (True, {

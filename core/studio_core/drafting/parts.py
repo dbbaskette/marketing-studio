@@ -142,7 +142,7 @@ def has_heading(text, level=2):
 def heading_problem(deepest):
     """What to say when a part holds a heading that would start a section."""
     if deepest >= 6:
-        return 'A heading would start a new section. Add sections on the Outline tab.'
+        return 'A heading would start a new section. Add sections under Outline in the parts list.'
     mark = '#' * deepest
     return (
         'A ' + mark + ' heading would start a new section. Use ' + mark + '# for a heading '

@@ -55,8 +55,12 @@ brand keeps the folder in agreement with it: empty when the skill the studios fi
 themselves offers the brand, else the folder of the skill that does; when two installed
 skills offer the same brand, **From brand skill** asks which. When the lookup cannot be
 made, the card says why, a brand ID can still be typed, and a saved Git address still
-offers **Get brands**. Through the network bridge the card is told how many brands there
-are, not this computer's folders.
+offers **Get brands**. Through the network bridge (a phone on the private link) the card
+is told each brand skill and its brands by name, never a folder on this computer; a skill
+folder other than the saved one is refused unread, and **Get brands** answers without the
+brands folder. From a phone, **Installed skill folder** and **Workspace folder** are not
+changed, and a repository is changed only to an https or ssh address of another computer:
+see [what a phone can change](local-network.md#what-a-phone-can-change).
 The brand skill is installed and updated from its repository's `main`, so there is no
 release to choose and Shared settings has no release field. A `brand.release` an older
 version saved is not read or shown, is left in the file as it is, and one sent by a form

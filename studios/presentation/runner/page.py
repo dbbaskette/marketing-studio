@@ -47,7 +47,9 @@ What a caller needs to know
     Presentation Studio can use; `shared_problem`, a sentence when it could not be read;
     `team_moved`, {"repository", "branch", "says"} when it names a team repository this
     computer's workspace is not a copy of; and `shared_notice`, a sentence about the values
-    the file already held when this computer's own moved there.
+    the file already held when this computer's own moved there. Through the network bridge
+    every set-up answer (`described`) names no folder here and also says `remote`, so the
+    page offers a phone no set-up change it would be refused (GitHub issue #539).
   - `/api/shared` {"seen": true}: the notice about the shared values has been read and is
     not shown again; answers the set-up.
   - `/api/decks` {"form", "uploads"?}: start a deck. `form` is what `decks.check_form`
@@ -145,7 +147,7 @@ import home
 import server
 from workspace import WorkspaceError
 
-from runner import decks, gitstate, marks, saved_gate, settings, setup
+from runner import brand_source, decks, gitstate, marks, saved_gate, settings, setup
 from runner import engine as engines
 
 from studio_core import modules, polling
@@ -266,6 +268,14 @@ def shaped(action, *args):
         raise server.Refusal(HTTPStatus.BAD_REQUEST, str(refusal))
 
 
+def described(found: dict) -> dict:
+    """The set-up as this caller is shown it (`caller.shown`). Through the network bridge it
+    also says `remote`, so the page offers no set-up change a phone would be refused
+    (GitHub issue #539); a caller on this computer gets the set-up exactly as before."""
+    shown = caller.shown(found)
+    return {**shown, 'remote': True} if caller.remote() else shown
+
+
 class RunnerPage(server.Page):
     """What the page may ask the runner."""
     reads = (*server.READS, *READS)
@@ -311,7 +321,8 @@ class RunnerPage(server.Page):
                                                   'version': gitstate.installed(),
                                                   'install': gitstate.installed_copy()})
         if path == '/api/setup':
-            return server.as_json(HTTPStatus.OK, setup.describe(self.engine))
+            # Through the network bridge, with no folder path (GitHub issue #539).
+            return server.as_json(HTTPStatus.OK, described(setup.describe(self.engine)))
         if path == '/api/agents':
             return server.as_json(HTTPStatus.OK, {'agents': self.agents()})
         if path == '/api/models':
@@ -356,7 +367,10 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.desk(
                 lambda: self.engine.desk_outline_price(path, None)))
         if path == '/api/status':
-            return server.as_json(HTTPStatus.OK, self.engine.standing())
+            # Its decks are named as on every list; its upkeep report names no folder here
+            # to a phone (GitHub issue #539).
+            found = self.engine.standing()
+            return server.as_json(HTTPStatus.OK, {**found, 'upkeep': caller.shown(found['upkeep'])})
         if path == '/api/published':
             return server.as_json(HTTPStatus.OK, {'published': self.engine.published()})
         if path == '/api/delete':
@@ -480,7 +494,19 @@ class RunnerPage(server.Page):
         next poll walks the workspace again instead of reusing the last walk, so the
         change shows at once in every open tab. A read sent as a POST changes nothing."""
         try:
-            # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`).
+            # A phone through the network bridge sets nothing up here, and gives the brand
+            # skill's repository only as a web address on another computer (GitHub issue
+            # #539): no folder here is checked or set for it, and the set-up it is shown
+            # names no folder (`caller.shown`). A caller on this computer is answered as before.
+            refused = caller.settings_refused(path, sent)
+            if refused:
+                raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
+            # A deck the earlier step-by-step flow saved is refused by default (`saved_gate`),
+            # always as 409, as Training Studio's saved-record guard answers (GitHub issue
+            # #544). The page shows such a refusal as its sentence, as it does a 400. Only
+            # its slide-text draft reads a 409 otherwise, as changed in another window with
+            # Reload and no sentence (drafting.js), and that draft is used only for desk
+            # decks (deck-desk.js), which this gate never refuses.
             decision = SAVED_ROUTES.get(path, saved_gate.NEVER)
             if decision != saved_gate.WORKSPACE:
                 try:
@@ -575,10 +601,12 @@ class RunnerPage(server.Page):
                     self.engine, root, {key: value for key, value in sent.items() if key != 'path'})
             return server.as_json(HTTPStatus.OK, value)
         if path == '/api/setup/check':
+            shaped(setup.refuse_place, self.engine, sent)
             return server.as_json(HTTPStatus.OK, shaped(setup.check, sent))
         if path == '/api/setup':
+            shaped(setup.refuse_place, self.engine, sent)
             return server.as_json(HTTPStatus.OK,
-                                  setup.apply(self.engine, shaped(setup.read, sent)))
+                                  described(setup.apply(self.engine, shaped(setup.read, sent))))
         if path == DECKS:
             return server.as_json(HTTPStatus.OK, self.start(sent))
         if path == '/api/run':
@@ -626,31 +654,42 @@ class RunnerPage(server.Page):
                 self.deck(server.text(sent, 'path')), title))
         if path == '/api/bring':
             return server.as_json(HTTPStatus.OK, self.bring(sent))
+        # The upkeep report's links carry each skill link's folder: a phone is shown none
+        # (`caller.shown`, GitHub issue #539); a caller on this computer sees it whole.
         if path == '/api/companions':
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().update(
-                self.working())})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().update(
+                self.working()))})
         if path == '/api/upgrade':
             version = server.text(sent, 'version')
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().upgrade(
-                self.working(), version)})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().upgrade(
+                self.working(), version))})
         if path == '/api/restart':
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().restart(
-                self.working())})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().restart(
+                self.working()))})
         if path == '/api/versions':
             dismissed = server.text(sent, 'dismiss')
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().dismiss(dismissed)})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
+                self.keeper().dismiss(dismissed))})
         if path == '/api/brand':
-            return server.as_json(HTTPStatus.OK, shaped(setup.save_brand, self.engine, sent))
+            try:
+                return server.as_json(HTTPStatus.OK,
+                                      described(setup.save_brand(self.engine, sent)))
+            except brand_source.Unreadable as refusal:
+                # Git's own reason can name hosts and ports: kept from a phone (#539).
+                raise server.Refusal(HTTPStatus.BAD_REQUEST,
+                                     caller.unread_said(str(refusal))) from None
+            except WorkspaceError as refusal:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(refusal)) from None
         if path == '/api/shared':
             if sent.get('seen') is not True:
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '
                                      'notice about the shared values has been read.')
             setup.notice_read()
-            return server.as_json(HTTPStatus.OK, setup.describe(self.engine))
+            return server.as_json(HTTPStatus.OK, described(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = server.text(sent, 'commit')
-            return server.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
-                self.working(), commit)})
+            return server.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
+                self.keeper().install_brand(self.working(), commit))})
         return super().write(path, sent)
 
     def keeper(self):
@@ -858,6 +897,10 @@ class RunnerPage(server.Page):
         """Copy a deck this computer knows, made outside the workspace, into it. Any other
         folder is refused, whatever it holds; the folder it came from is only read."""
         path = server.text(sent, 'path')
+        # A phone is refused before anything about the folder is read or compared (#539).
+        refused = caller.bring_refused(path)
+        if refused:
+            raise server.Refusal(HTTPStatus.FORBIDDEN, refused)
         if path not in [entry['path'] for entry in home.decks()]:
             raise server.Refusal(HTTPStatus.FORBIDDEN, 'That folder is not a deck this '
                                  'computer knows.')

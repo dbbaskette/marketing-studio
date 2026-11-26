@@ -168,6 +168,7 @@ class WorkerTests(FlowCase):
         super().setUp()
         self.root = self.start(yoodli=True)
         self.to_end(self.root)
+        self.briefs_ready(self.root)   # a Yoodli layout waits for the brief's copy
         self.jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
 
     def given(self, kind: str) -> list[str]:
@@ -255,6 +256,67 @@ class YoodliTests(FlowCase):
                 'label': workspace.label('yoodli:main'),
                 'text': (root / 'yoodli/main.md').read_text()}]})
         self.assertEqual(assess.run_checks(root)['practice']['basis'], 'Yoodli goals')
+
+    def test_a_yoodli_layout_is_written_once_the_brief_has_a_copy_to_name(self):
+        # GitHub issue #549: the desk makes a copy of a material only once it is Ready, so a
+        # layout written before that was told no copy of the brief existed. It waits for the
+        # brief's copy, as it followed the brief's approval and copies in the earlier flow.
+        from runner import drafts
+        root = self.start(yoodli=True)
+        self.assertEqual(self.workers.of('yoodli'), [], 'nothing is laid out yet')
+        self.assertFalse((root / 'yoodli' / 'main.md').exists())
+        card = next(card for card in drafts.view(self.engine, root)['cards']
+                    if card['name'] == 'yoodli:main')
+        self.assertEqual((card['state'], card['says']), ('queued', drafts.HANDOFF_WAITS.format(
+            brief='the brief')))
+        session = workspace.load(root)
+        brief = workspace.artifact(root, session, 'brief')['file']
+        self.engine.mark_ready(root, 'brief', workspace.sha256_file(root / brief))
+        task = self.workers.of('yoodli')[0].task
+        self.assertIn('The copy of the brief to upload is its Word file, product-brief.docx.',
+                      task)
+        self.assertNotIn('No copy of the brief', task)
+        self.assertTrue((root / 'yoodli' / 'main.md').is_file())
+
+    def test_a_brief_sent_to_its_copies_lets_the_layout_name_that_copy(self):
+        root = self.start(yoodli=True)
+        self.engine.send_copy(root, 'brief')
+        self.assertIn('The copy of the brief to upload is its Word file, product-brief.docx.',
+                      self.workers.of('yoodli')[0].task)
+
+    def test_a_copy_that_cannot_be_made_is_said_to_the_layout_with_why(self):
+        # As in the earlier flow: once the brief's copy was tried and could not be made, the
+        # layout is written and told why, so the person knows the handoff is incomplete.
+        self.copies.refuse['word'] = 'This computer has no converter for Word files.'
+        root = self.start(yoodli=True)
+        session = workspace.load(root)
+        brief = workspace.artifact(root, session, 'brief')['file']
+        self.engine.mark_ready(root, 'brief', workspace.sha256_file(root / brief))
+        self.assertIn('No copy of the brief is ready to upload: This computer has no '
+                      'converter for Word files.', self.workers.of('yoodli')[0].task)
+
+    def test_waiting_on_a_google_doc_the_next_step_says_what_the_desk_says(self):
+        # GitHub issue #549: with every material Ready and the brief's Google Doc not made,
+        # the core's next step kept "... Next: write the index." while the desk said the
+        # training is not ready. The two now agree, and agree again once the Doc is made.
+        from runner import drafts
+        self.copies.refuse['google'] = 'Google access is not set up on this computer.'
+        root = self.start(yoodli=True, copies=['google'])
+        self.all_ready(root)
+        standing = drafts.standing(self.engine, root)
+        self.assertEqual(standing['state'], 'needs-you')
+        self.assertTrue(standing['sentence'].startswith(drafts.ALL_READY + ' '),
+                        standing['sentence'])
+        self.assertIn('Google Doc', standing['sentence'])
+        self.assertEqual(workspace.status(root)['next_step'], standing['sentence'])
+        self.assertIn('not ready yet', self.view(root)['sentence'])
+        self.assertEqual(self.git('status', '--porcelain'), '', 'and it is committed')
+        self.copies.refuse.clear()
+        after = self.engine.copies_again(root)
+        self.assertEqual(after['finished']['ready'], True)
+        self.assertEqual(workspace.status(root)['next_step'], after['sentence'])
+        self.assertTrue(after['sentence'].startswith('This training is finished'),
+                        after['sentence'])
 
     def test_without_yoodli_no_scenario_is_laid_out(self):
         root = self.start()

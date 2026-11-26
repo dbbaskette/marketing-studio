@@ -14,6 +14,8 @@ What a caller needs to know
   brought.
 - The deck copied is only read. It may be working, finished or driven by someone else.
   Nothing is started and nothing of it changes: the new deck is made by Start, as any other.
+- A deck upgraded from Selected changes brings the copy it is redesigned from, every change
+  made at Selected changes in it (`existing.UPGRADED`), never the deck first given.
 - A document pinned from the Document Library is brought as the revision the deck kept, as
   a file. It is no longer tied to the library.
 - Documents and the deck's starting material are kept only on the computer they were added
@@ -55,17 +57,24 @@ def _file(path: Path, name: str) -> dict | None:
     return {'name': name, 'size': len(raw), 'encoded': base64.b64encode(raw).decode('ascii')}
 
 
-def _material(root: Path, form: dict, entries: list[dict], left: list[str]):
+def _material(root: Path, form: dict, entries: list[dict], left: list[str],
+              record: dict | None = None):
     """The file or text the deck started from, and the entry it is kept as (never a
-    research source of the copy)."""
+    research source of the copy). A deck upgraded from Selected changes is redesigned from
+    the copy kept at its upgrade, every change made at Selected changes in it, so that copy
+    is the file a new deck like it starts from (GitHub issue #544)."""
     route, source = form.get('route'), form.get('source') or {}
     kind = source.get('kind')
     first = entries[0] if route == 'document' and entries else None
     if kind == 'upload':
         name = source.get('name') or 'upload'
-        kept = root / existing.SOURCE if route == 'existing' \
+        upgraded = route == 'existing' and isinstance((record or {}).get('upgraded'), dict)
+        kept = root / existing.UPGRADED if upgraded \
+            else root / existing.SOURCE if route == 'existing' \
             else root / first['original'] if first else None
-        found = _file(root / INCOMING / 'upload', name) or (_file(kept, name) if kept else None)
+        # What waits in incoming/ is the file first given: never an upgraded deck's material.
+        found = (None if upgraded else _file(root / INCOMING / 'upload', name)) \
+            or (_file(kept, name) if kept else None)
         if found is None:
             left.append(NO_FILE.format(name=name))
         return found, None, first
@@ -138,7 +147,7 @@ def of(engine, path) -> dict:
         entries = documents.listed(root)
     except (OSError, ValueError, WorkspaceError):
         entries = []
-    upload, text, first = _material(root, kept, entries, left)
+    upload, text, first = _material(root, kept, entries, left, record)
     made = None
     if form.get('route') != 'existing':
         from studio_core import studios_config

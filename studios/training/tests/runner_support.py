@@ -1747,19 +1747,41 @@ class StudioCase(unittest.TestCase):
             return Outcome(False, 'stopped', 'Stopped')
         self.workers.queued.setdefault(kind, []).insert(0, holding)
 
+    def briefs_ready(self, root: Path, engine=None) -> None:
+        """Mark each level's brief ready, in the version it is now, as the person does on the
+        desk. A Yoodli layout names the brief's copy, so it is written only after this
+        (GitHub issue #549)."""
+        import workspace
+        engine = engine or self.engine
+        session = workspace.load(root)
+        for level in session['levels'] or [None]:
+            name = workspace.qualify('brief', level)
+            file = root / workspace.artifact(root, session, name)['file']
+            engine.mark_ready(root, name, workspace.sha256_file(file))
+
     def all_ready(self, root: Path, engine=None) -> list[dict]:
         """Desk work's own end: mark every card of each level ready, as the person does on
         the desk, each in the version it is now. Says what each level's batch answered."""
         import workspace
         engine = engine or self.engine
-        session = workspace.load(root)
-        seen = {}
-        for name in workspace.artifact_names(root, session):
-            file = root / workspace.artifact(root, session, name)['file']
-            if file.is_file():
-                seen[name] = workspace.sha256_file(file)
-        return [engine.mark_level_ready(root, level, seen)
-                for level in session['levels'] or [None]]
+        answered, marked = [], set()
+        # A Yoodli layout is written only once its brief is Ready (GitHub issue #549), so
+        # what the runner writes after a mark is marked in turn, until nothing new is.
+        for _ in range(4):
+            session = workspace.load(root)
+            seen = {}
+            for name in workspace.artifact_names(root, session):
+                file = root / workspace.artifact(root, session, name)['file']
+                if file.is_file():
+                    seen[name] = workspace.sha256_file(file)
+            done = [engine.mark_level_ready(root, level, seen)
+                    for level in session['levels'] or [None]]
+            answered += done
+            new = {name for one in done for name in one['marked']} - marked
+            if not new:
+                break
+            marked |= new
+        return answered
 
     def send(self, root: Path, name: str, text: str = 'Capacity holds only when more than '
              'one instance is running.\n') -> dict:

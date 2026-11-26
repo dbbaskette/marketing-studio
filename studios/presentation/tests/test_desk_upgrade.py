@@ -172,6 +172,24 @@ class UpgradeTests(Upgrading):
         self.assertNotIn('gate:redesign', [step.name for step in stages.steps(record)
                                           if not stages._is_done(record, step)])
 
+    def test_copy_as_new_brings_the_deck_it_is_redesigned_from(self):
+        # GitHub issue #544: not the deck first given, which lacks the selected changes.
+        import base64
+        root = self.deck()
+        self.upgrade(root)
+        for upgraded in (self.engine.copy_setup(root),
+                         (self.engine.desk_redesign_start(root), self.engine.copy_setup(root))[1]):
+            brought = base64.b64decode(upgraded['upload']['encoded'])
+            self.assertEqual(hashlib.sha256(brought).hexdigest(), digest(root / existing.UPGRADED))
+            self.assertNotEqual(brought, (root / existing.SOURCE).read_bytes())
+            self.assertEqual((upgraded['form']['level'], upgraded['upload']['name'],
+                              upgraded['left']), ('redesign', 'old.pptx', []))
+        # Where the copy kept at the upgrade is not on this computer, it is asked for again.
+        (root / existing.UPGRADED).unlink()
+        found = self.engine.copy_setup(root)
+        self.assertIsNone(found['upload'])
+        self.assertIn('old.pptx', found['left'][0])
+
     def test_a_delivered_revision_stays_delivered_and_the_redesign_is_the_next(self):
         root = self.deck()
         view = self.engine.desk_deliver(root, self.expected(root))

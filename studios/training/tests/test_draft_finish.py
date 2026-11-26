@@ -20,6 +20,8 @@ class FinishingTests(DeckCase):
         self.finish = importlib.import_module('runner.draft_finish')
         root = self.begin(flow='desk', levels=['101'], **changes)
         self.to_end(root)
+        if changes.get('yoodli'):
+            self.briefs_ready(root)   # a Yoodli layout waits for the brief's copy
         self.assertIsNone(self.record(root)['problem'])
         return root
 

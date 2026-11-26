@@ -22,6 +22,8 @@ class DraftJobTests(DeckCase):
         self.jobs = draft_jobs
         root = self.begin(flow='desk', levels=['101'], **changes)
         self.to_end(root)
+        if changes.get('yoodli'):
+            self.briefs_ready(root)   # a Yoodli layout waits for the brief's copy
         self.assertIsNone(self.record(root)['problem'])
         return root
 

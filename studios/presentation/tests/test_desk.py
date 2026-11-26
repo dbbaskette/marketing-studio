@@ -916,6 +916,32 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIn(shown, shots['settings']['text'])
         self.assertEqual(self.posts(result), [])
 
+    def test_settings_read_sensibly_on_a_phone_with_no_folder_named(self):
+        # GitHub issue #539: through the network bridge the set-up names no folder here.
+        from studio_core.shared_runner import caller
+        described = self.get('setup')
+        phone = {**described, 'workspace': {**described['workspace'], 'path': None},
+                 'brand': {**described['brand'], 'repository': caller.FOLDER_HERE},
+                 'remote': True}
+        result = self.run_page(self.answers(**{'GET /api/setup': [ok(phone)]}),
+                               [{'click': 'Settings'}, {'snapshot': 'settings'}], narrow=True)
+        shot = result['snapshots']['settings']
+        lines = shot['text'].split('\n')
+        at = lines.index('Folder on this computer')
+        self.assertEqual(lines[at + 1], 'Shown on that computer itself')
+        self.assertNotIn(str(self.base), shot['text'])
+        self.assertLayout(shot)
+        # Set-up is refused to a phone, so it is not offered there; it is said where it is
+        # changed instead (#539). On the computer the action is offered as before.
+        self.assertNotIn('Change the set-up', shot['buttons'])
+        self.assertIn('The set-up is changed on the computer that runs Presentation Studio.',
+                      lines)
+        here = self.run_page(self.answers(**{'GET /api/setup': [ok(described)]}),
+                             [{'click': 'Settings'}, {'snapshot': 'settings'}], narrow=True)
+        self.assertIn('Change the set-up', here['snapshots']['settings']['buttons'])
+        self.assertNotIn('The set-up is changed on the computer that runs Presentation Studio.',
+                         here['snapshots']['settings']['text'])
+
     def test_search_and_jump_finds_a_deck_by_name_and_opens_it(self):
         path = self.started(title='Capacity planning')
         self.started(title='Rolling restarts')

@@ -212,6 +212,15 @@ SAVED_MARKERS = ('work/step.lock', 'work/.harness-slides/design/.lock', '.studio
 SAVED_LOCKS = ('work/step.lock', '.training-studio/step.lock',
                'work/.harness-slides/design/.lock', '.studio-research/lock')
 NESTED_LOCKS = ('.harness-slides/design/.lock', '.studio-research/lock')
+# How many folders of a saved deck's work/ and of its sources/ start-up looks into for lock
+# files. It is the bound the shared running-step check (`sync_guard.worker_in_progress`)
+# walks a cache to, and the walk is that check's own: top-down in the order the disk lists
+# folders, with `.git` and every link left out. So the folders start-up looks into are the
+# ones that check looks into, and every lock it can find there is cleared. A lock in a
+# folder beyond the bound is left where it is: for so large a cache that check refuses, as it
+# did before, naming the deck and saying its work or sources folder holds too many folders
+# to check, until the person makes the folder smaller.
+UNMARK_FOLDERS = 2000
 # What makes the shared running-step check wait, as far as this Presentation Studio knows it.
 # Start-up recovers every step a stopped runner left marked, so a marker that is still there
 # belongs to a step running somewhere. Only a step known to run here is said to end.
@@ -293,6 +302,8 @@ BROKEN = ('"{title}" was changed on this computer and on another at the same tim
           'set aside and kept.')
 UNREACHED = ('The shared repository could not be reached, so this deck cannot be taken now. '
              'Nothing was changed. Try again when it can be reached.')
+HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brought into it. '
+                   'Bring in a deck folder that is outside the workspace.')
 CHECKING = ('The runner has just started and is still looking at what your team shared while '
             'it was closed. Nothing was changed. Try again in a moment.')
 STALLED = ('Something went wrong while the runner picked its decks up ({failure}), so this '
@@ -1182,9 +1193,13 @@ class Engine(Jobs, Researching, DeskActions):
             top = root / cache
             if top.is_symlink() or not top.is_dir():
                 continue
-            for folder, directories, _ in os.walk(top, followlinks=False):
+            # Bounded, as the running-step check's walk is (GitHub issue #544).
+            for seen, (folder, directories, _) in enumerate(os.walk(top, followlinks=False)):
+                if seen >= UNMARK_FOLDERS:
+                    break
                 here = Path(folder)
-                directories[:] = [name for name in directories if not (here / name).is_symlink()]
+                directories[:] = [name for name in directories if name != '.git'
+                                  and not (here / name).is_symlink()]
                 for name in NESTED_LOCKS:
                     self._unlock(root, here / name)
 
@@ -4164,8 +4179,13 @@ class Engine(Jobs, Researching, DeskActions):
         read. Returns {'path', 'id'}; the run carries on from what its record says."""
         space, chosen, top = self.space(), settings.load(), Path(path)
         gitstate.identity(space.repo)
-        if top == space.root or space.root.resolve() in top.resolve().parents:
+        # By resolved paths, before anything is read: a folder holding the workspace would be
+        # copied into itself (GitHub issue #544).
+        where = team.overlaps(top, space.root)
+        if where == 'inside':
             raise WorkspaceError('This deck is already in the workspace.')
+        if where == 'holds':
+            raise WorkspaceError(HOLDS_WORKSPACE)
         try:
             record = decks.read_run(top)
             title, form = record['title'], record['form']

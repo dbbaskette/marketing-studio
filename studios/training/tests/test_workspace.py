@@ -111,6 +111,20 @@ class RecordTests(PlainCase):
             workspace.save(self.root, 'intake')
         self.assertEqual(path.read_text(), '{not json')
 
+    def test_a_record_that_cannot_be_read_is_said_without_the_readers_own_words(self):
+        # GitHub issue #544: never the JSON reader's text, nor a path on this computer.
+        run = self.root / '.training-studio' / 'run.json'
+        run.write_text('{not json')
+        with self.assertRaises(WorkspaceError) as refused:
+            workspace.read_run(self.root)
+        self.assertEqual(str(refused.exception),
+                         'The run record is not valid JSON; refusing to change it.')
+        # The system's own error names the file by its whole path.
+        said = workspace.unreadable('run', OSError(13, 'Permission denied', str(run)))
+        self.assertEqual(str(said), 'The run record cannot be read.')
+        self.assertEqual(str(workspace.unreadable('session', ValueError('Ours, as a sentence.'))),
+                         'Ours, as a sentence.')
+
     def test_row_35_a_record_missing_a_key_is_refused(self):
         path = workspace.session_path(self.root)
         session = json.loads(path.read_text())

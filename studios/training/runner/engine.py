@@ -296,6 +296,13 @@ TAKEN = '{name} took this training over on {when}. This computer stopped working
 SET_ASIDE = (' What this computer had made and not yet shared is kept on this computer, and '
              'can be brought back.')
 THEIRS = '{name} is running this training from another computer.'
+HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brought into it. '
+                   'Bring in a training folder that is outside the workspace.')
+IN_REPOSITORY = ("That folder is inside the workspace's repository, so it cannot be brought "
+                 'into it. Bring in a training folder that is outside the workspace.')
+# Where a desk training stood when its run had made what it could and it was not finished:
+# not every material was marked ready, or something else kept it from being used.
+UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
 LAST = ' What is here is what was last shared{when}. {then} It may have moved on since.'
 BROKEN = ('"{title}" was changed on this computer and on another at the same time, so '
           'nothing here can be shared. One side must take it over. Taking it over here '
@@ -707,6 +714,7 @@ class _Run:
     def __init__(self):
         self.thread: threading.Thread | None = None
         self.again = self.queued = self.busy = False
+        self.aside = 0      # work run aside from the training's own run, under way now
         self.gone = False   # it stopped being this computer's: nothing more is written
         self.stop = threading.Event()
         self.workers: dict[str, dict] = {}
@@ -1831,6 +1839,48 @@ class Engine(Reviewing):
         """True while a run may start nothing: halted, failed, or waiting for an answer."""
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
 
+    def in_hand(self, path) -> bool:
+        """Whether anything in this process is working in a training's folder: a step whose
+        mark is held, a run that has its slot and has not come fully to rest (its last write
+        included), an assistant's job under way (`_job` registers each in `run.workers`), or
+        work run aside from the training's own run (`run.aside`, a rebranded copy). A run
+        only waiting for a slot does not count: it has written nothing since it began to
+        wait, and finds the workspace where set-up puts it (`_here`). Nothing that ended
+        counts, however it ended. Call it holding `files`, the lock each is set under."""
+        root = str(Path(path))
+        if root in self._active_steps:
+            return True
+        with self._lock:
+            run = self._runs.get(root)
+            return run is not None and bool(run.workers or run.aside
+                                            or (run.busy and not run.queued))
+
+    def _here(self, root: Path) -> bool:
+        """Whether a training's folder is in the workspace this computer uses now."""
+        space = self.workspace
+        if space is None:
+            return False
+        try:
+            gitstate.inside(space, Path(root) / IN_HAND)
+        except WorkspaceError:
+            return False
+        return True
+
+    def _step_released(self, root: Path) -> None:
+        """Clear this process's mark that a step of a training is in hand, however the step
+        ended: finished, failed, stopped or raised (GitHub issue #549). The step's file
+        marker is left as each ending leaves it: after a Stop it stays for the next start.
+        Sharing held back while the step was in hand goes now, as `mark_step` lets it."""
+        with self.files:
+            if str(root) not in self._active_steps:
+                return
+            self._active_steps.discard(str(root))
+            share = self._deferred_share and not self._active_steps
+            if share:
+                self._deferred_share = False
+        if share:
+            self.share_soon()
+
     def _step_marker(self, root: Path, step: str | None = None) -> None:
         with self.files:
             if drafts.in_conversation(self._load(root)):
@@ -1844,8 +1894,11 @@ class Engine(Reviewing):
         if run.busy:  # woken from inside its own step: that step's end looks again anyway
             return
         held, last, run.busy = False, None, True
+        moved = False   # whether this pass did anything: a job, a step or a desk receipt
         try:
             while not self._closing:
+                if not self._here(root):
+                    return  # set-up moved the workspace while it waited for its turn
                 record = self._load(root)
                 if run.gone or not self._ours(record) or drafts.in_conversation(record):
                     return  # someone else drives it, or nobody does
@@ -1855,9 +1908,9 @@ class Engine(Reviewing):
                                 if job.get('status') == 'queued'), None)
                 if drafts.on_desk(record) and pending and not self._resting(record):
                     if self.background and not held:
-                        run.queued = True
-                        with self.files:
+                        with self.files:   # written before it waits: a waiting run writes nothing
                             activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
+                        run.queued = True
                         held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                         run.queued = False
                         if not held:
@@ -1865,6 +1918,7 @@ class Engine(Reviewing):
                         continue
                     if not self._may_go(root):
                         return
+                    moved = True
                     try:
                         self._draft_job(root, run, pending)
                     except _Gone:
@@ -1881,6 +1935,7 @@ class Engine(Reviewing):
                         and not deck_content.checkpoint(record, step.step.id):
                     with self.files:
                         self._edits_first(root)
+                    moved = True
                     self._desk_gate(root, found)
                     continue
                 if self._resting(record) or step.kind not in (*WORK, 'deck'):
@@ -1890,6 +1945,14 @@ class Engine(Reviewing):
                             getattr(step.step, 'id', '') if step.step else '')
                     if record.get('halt_after') is not None and not self._resting(record):
                         self._wait_arrived(root)  # a review or a gate: the wait asked for
+                    if step.kind == 'done' and not self._resting(record):
+                        moved = self._held_back(root, found) or moved
+                        if moved:
+                            # Desk work's own end (issue #549): everything the run can draft
+                            # is drafted, so what it did is shared now, as the earlier flow
+                            # shared after its last step. Never at a pause, a Stop, a failure,
+                            # a wait or a worker's question: the earlier flow shared at none.
+                            self._last(root)
                     return
                 # Asked to finish one level and then wait: work for another level waits.
                 # What has no level of its own, such as the index, is not another level.
@@ -1903,9 +1966,9 @@ class Engine(Reviewing):
                 if step.kind == 'deck':
                     return self._hand_on(root, found)
                 if self.background and not held:
-                    run.queued = True
-                    with self.files:
+                    with self.files:   # written before it waits: a waiting run writes nothing
                         activity_log.checkpoint(root / 'work' / activity_log.FILE, 'queued')
+                    run.queued = True
                     held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
                     run.queued = False
                     if not held:
@@ -1919,9 +1982,12 @@ class Engine(Reviewing):
                 with self.files:   # what was typed on the desk is committed before a job
                     self._edits_first(root)
                 self._step_marker(root, step.step.id)
+                moved = True
                 with companion.stopping(run.stop):  # a command a step runs ends on Stop
                     self._do(root, run, found, step)
                 self._step_marker(root)
+                if step.step.id == 'package':
+                    moved = False   # the index step shared it all already (`_last`): once
         except _Gone:   # it is someone else's now: what the step wrote was put back
             self._step_marker(root)
         except companion.Stopped:   # ended on purpose; IN_HAND stays for the next start
@@ -1930,6 +1996,7 @@ class Engine(Reviewing):
             self._step_marker(root)
             self._trouble(root, failure)
         finally:
+            self._step_released(root)
             if held:    # given back before the run counts as ended
                 self._slots.give_back()
             run.queued = run.busy = False
@@ -1994,6 +2061,20 @@ class Engine(Reviewing):
             record['halt'], record['halt_after'] = 'paused', None
             self._store(root, record)
             self._commit(root, f'level {level} finished; paused as asked on the page')
+
+    def _held_back(self, root: Path, found: pipeline.Survey) -> bool:
+        """On the desk, every material is Ready and something else keeps the index back, so
+        the index step is not due: say so as the training's next step, in the desk's words,
+        as the earlier flow's index step did ("the training is not ready yet"), so the core's
+        status and the desk agree (GitHub issue #549). True when that was committed."""
+        with self.files:
+            record = self._load(root)
+            says = drafts.held_back(self, root, record, found)
+            if not says or workspace.load(root).get('next_step') == says:
+                return False
+            workspace.checkpoint(root, next_step=says)
+            self._commit(root, 'every material is ready; the training is not ready yet')
+        return True
 
     def _wait_arrived(self, root: Path) -> None:
         """The run waits for the person anyway, so there is no longer a level to finish
@@ -5208,6 +5289,9 @@ class Engine(Reviewing):
             kept['rebrand'] = {'state': 'working', 'skill': chosen['id'], 'name': chosen['name'],
                                'at': home.now(), 'seen': seen}
             self._store(root, record)
+            run = self._run(root)
+            with self._lock:    # counted under `files`, so set-up never moves under it
+                run.aside += 1
 
         def work():
             try:
@@ -5221,11 +5305,15 @@ class Engine(Reviewing):
                     chosen, source, title, Path(tempfile.mkdtemp(prefix='rebrand-')) / 'run'))
             except (WorkspaceError, OSError, ValueError) as refusal:
                 made = {'state': 'failed', 'url': None, 'said': str(refusal)[:600]}
-            with self.files:
-                now = self._load(root)
-                self._decided(now, level)['rebrand'] = {
-                    **made, 'skill': chosen['id'], 'name': chosen['name'], 'at': home.now()}
-                self._store(root, now)
+            try:
+                with self.files:
+                    now = self._load(root)
+                    self._decided(now, level)['rebrand'] = {
+                        **made, 'skill': chosen['id'], 'name': chosen['name'], 'at': home.now()}
+                    self._store(root, now)
+            finally:
+                with self._lock:
+                    run.aside -= 1
         if wait:
             work()
         else:
@@ -5994,18 +6082,6 @@ class Engine(Reviewing):
                 if section:
                     item['price'] = drafts.section_price(self._load(root), level, section)
             return result
-
-    def finding_apply(self, path, level, finding, seen):
-        return self._finding_action(path, level, finding, seen, 'apply')
-
-    def finding_skip(self, path, level, finding, seen):
-        return self._finding_action(path, level, finding, seen, 'skip')
-
-    def _finding_action(self, path, level, finding, seen, action):
-        if not isinstance(finding, dict) or not isinstance(finding.get('job'), str) \
-                or not isinstance(finding.get('id'), str):
-            raise WorkspaceError('Choose a suggestion from its review.')
-        return self.deck_finding(path, level, seen, finding['job'], action, [finding['id']])
 
     def deck_finding(self, path, level, seen, job, action, ids):
         level = level or None
@@ -7510,6 +7586,17 @@ class Engine(Reviewing):
             return []
         return list(self._since_fetch('kept', root, lambda: gitstate.kept(space, root)))
 
+    @staticmethod
+    def _finished(record: dict, found: pipeline.Survey, state: str) -> bool:
+        """Whether a training is finished: done, and on the desk with its index written,
+        which is due only once every material is Ready. A desk training whose work is all
+        made but not all Ready is done for its run, and not finished: it keeps its driver."""
+        if state != 'done':
+            return False
+        if not drafts.on_desk(record):
+            return True
+        return any(step.id == 'package' for step in found.steps) and 'package' in found.done
+
     def _then(self, record: dict, found: pipeline.Survey) -> str:
         """Where a training stood when it was last shared, said of the past: nothing here
         knows what the computer that drives it is doing now."""
@@ -7527,7 +7614,9 @@ class Engine(Reviewing):
         if step.kind == 'stuck':
             return f'Then, it could not go on: {step.why}'
         if step.kind == 'done':
-            return 'Then, it was finished.'
+            # On the desk, done for its run is not finished until the index is written.
+            return 'Then, it was finished.' if self._finished(record, found, 'done') \
+                else UNFINISHED_THEN
         if step.kind == 'deck':
             return f'Then: {pipeline.deck_says(found)}'
         if self._away(found):
@@ -7561,7 +7650,12 @@ class Engine(Reviewing):
         if mine:
             return mine, who, state, sentence, None
         if who is None:
-            return mine, who, *((state, sentence) if state == 'done'
+            # Only a finished training, or a desk one still its finisher's, keeps what its
+            # files say: one handed over before it was finished says that nobody runs it
+            # (GitHub issue #544).
+            kept = self._finished(record, found, state) or (
+                state == 'done' and (record.get('drafts') or {}).get('finished_by'))
+            return mine, who, *((state, sentence) if kept
                                 else ('stopped', team.NOBODY)), None
         last = self._last_shared(root, record, found)
         when = f", on {team.day(last['at'])}" if last['at'] else ''
@@ -7682,8 +7776,11 @@ class Engine(Reviewing):
 
     @staticmethod
     def _unread(failure: Exception) -> dict:
-        """A run in brief whose record or files could not be read."""
-        return {'state': 'failed', 'sentence': str(failure), 'needs': True, 'question': None,
+        """A run in brief whose record or files could not be read, said in a sentence of
+        our own, never a reader's own text or a path (GitHub issue #544)."""
+        said = str(failure) if isinstance(failure, WorkspaceError) \
+            else str(workspace.unreadable('run', failure))
+        return {'state': 'failed', 'sentence': said, 'needs': True, 'question': None,
                 'mine': True, 'driver': None, 'last_shared': None, 'notice': None,
                 'busy_since': None}
 
@@ -7842,8 +7939,10 @@ class Engine(Reviewing):
             read_record(root)
             workspace.load(root)
             return None
-        except (WorkspaceError, OSError, ValueError) as failure:
+        except WorkspaceError as failure:
             return str(failure)
+        except (OSError, ValueError) as failure:
+            return str(workspace.unreadable('run', failure))
 
     def _saved_driver(self, root: Path) -> tuple[dict | None, bool]:
         """Who drives a read-only record, as its readable run record names: (driver as the
@@ -8689,8 +8788,18 @@ class Engine(Reviewing):
         carries on from wherever its files say it is."""
         space, chosen, top = self.space(), settings.load(), Path(path)
         gitstate.identity(space.repo)
-        if top == space.root or space.root in top.resolve().parents:
+        # Folders compared as folders, before anything is read: a folder holding the
+        # workspace would be copied into itself (GitHub issue #544).
+        where = team.overlaps(top, space.root)
+        if where == 'inside':
             raise WorkspaceError('This training is already in the workspace.')
+        # The workspace's repository as a whole, too: a folder elsewhere in it, or one that
+        # holds it, is never copied into it.
+        where = where or team.overlaps(top, space.repo)
+        if where == 'inside':
+            raise WorkspaceError(IN_REPOSITORY)
+        if where == 'holds':
+            raise WorkspaceError(HOLDS_WORKSPACE)
         try:
             session = workspace.load(top)
         except WorkspaceError as refusal:

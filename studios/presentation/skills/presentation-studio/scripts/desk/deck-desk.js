@@ -104,6 +104,9 @@
     // The slide text waiting for approval: the change typed for it and the words edited in
     // it, by deck.
     slideText: {}, stories: {},
+    // Before the deck reaches the desk, a part chosen in the list that is not the one being
+    // made now, by deck (none: the part being made).
+    progressPart: {},
     // The deck whose Delivered card takes the focus once it is drawn, after Deliver.
     landing: null };
 
@@ -722,33 +725,155 @@
     const desk = run.desk;
     const previews = run.build_progress && h.list(run.build_progress.slides).length;
     const text = gate?.content_first && gate.name === 'gate:outline';
+    const story = !text && gate?.name === 'gate:story';
+    const listed = progressParts(run, lead);
+    const asked = text ? ['slide-text', [gate, read], () => slideTextReview(run, read)]
+      : story ? ['slide-story', [gate, read], () => storyReview(run, read)] : null;
+    const look = pause ? ['look-pause', [gate, lead, h.brandsFound()],
+      () => lookPause(run, lead === 'look')] : null;
+    const begin = !pause && start ? ['redesign-start', [gate, lead, read, desk.redesign_stopped],
+      () => redesignStart(run, lead === 'start')] : null;
+    const doing = !pause && !start ? ['progress', [run.state, run.sentence, desk.progress,
+      Boolean(run.question), run.problem], () => progressPart(run)] : null;
+    const shown = previews ? ['previews', [run.build_progress, read, run.mine],
+      () => previewsCard(run)] : null;
+    // Beside the slide text, the story or the look pause, the previews sit in the rail.
+    const beside = text || story || pause;
+    const work = [asked, text || story ? null : look, begin, beside ? null : shown]
+      .filter(Boolean);
+    // With the list of parts the screen is a workbench, the work in the middle: where no
+    // step's own work is shown, what the deck is doing is that work. The work and what a
+    // part chosen in the list says above it are one part of the page.
+    const doingWorks = Boolean(listed) && !work.length && Boolean(doing);
+    if (doingWorks) work.push(doing);
+    const middle = listed ? [['progress-work', [], () => make('div', 'stack desk-work'),
+      (node) => {
+        node.dataset.zone = 'work';
+        h.fit(node, [listed.note, ...work], fresh);
+      }]] : work.map((part) => zoned('work', part));
     h.placeParts({ title, above: above(run), back: true, actions: progressActions(run, lead),
       mark: ['progress', title, run.state, lead, read, run.driver, Boolean(run.question),
         run.problem, gate] }, [
       ...workbench(run, lead),
+      listed ? listed.nav : null,
       ...interruptions(run, lead, title),
       // Folded above the text, so it is reached without going past every slide.
       zoned('rail', text && !read ? ['slide-text-research', [desk.research_items, desk.research],
         () => researchFound(run)] : null),
-      zoned('work', text ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null),
-      zoned('work', !text && gate?.name === 'gate:story' ? ['slide-story', [gate, read], () => storyReview(run, read)] : null),
-      pause ? zoned(text || gate?.name === 'gate:story' ? 'rail' : 'work',
-        ['look-pause', [gate, lead, h.brandsFound()], () => lookPause(run, lead === 'look')])
-        : start ? zoned('work', ['redesign-start', [gate, lead, read, desk.redesign_stopped],
-          () => redesignStart(run, lead === 'start')])
-        : zoned('rail', ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
-          run.problem], () => progressPart(run)]),
+      ...middle,
+      zoned('rail', text || story ? look : null),
+      zoned('rail', doingWorks ? null : doing),
       // An upgraded deck's earlier deliveries, kept while it is redrawn.
       zoned('rail', desk.upgraded && h.list(desk.receipts).length ? ['upgraded-receipts',
         [desk.upgraded, desk.receipts], () => upgradedReceipts(run)] : null),
-      zoned(text || pause || gate?.name === 'gate:story' ? 'rail' : 'work', previews ? ['previews', [run.build_progress, read, run.mine],
-        () => previewsCard(run)] : null),
+      zoned('rail', beside ? shown : null),
       // What each assistant working now is doing, and the deck's Activity log.
       run.research_progress && h.researchActivity ? ['research-progress',run.research_progress,()=>h.researchActivity(run)] : null,
       h.list(run.workers).length ? ['workers', run.workers, () => h.workersCard(run)] : null,
       ['activity-log', [h.view.path], () => h.activityLogCard(h.view.path)],
     ], fresh);
     h.tidyPictures();
+  }
+
+  // --- the deck's parts before it reaches the desk ----------------------------------------------
+  // The same list down the left as on the desk (StudioShell.parts; docs/design/ui-kit.md, "The
+  // parts of a project"), from the deck's own steps: the Slide story, Research, the Slide text
+  // (the Outline of a deck whose text is not drafted first) and the Look, each where the deck
+  // has it, then the Slides. The part being made now is the one shown: Writing while it is
+  // made, Needs you while it waits on the person. A part made already says Done, and one
+  // still to be made Queued. Choosing a part other than the one shown says what it is above
+  // the work; choosing the one shown puts that away. The part chosen is kept with the screen
+  // in the browser's history (`deskPart`), as the desk keeps its own (GitHub issue #544).
+  const PROGRESS_PARTS = [
+    ['story', () => 'Slide story', 'the slide story'],
+    ['research', () => 'Research', 'the research'],
+    ['outline', (run) => (run.desk.content_first ? 'Slide text' : 'Outline'),
+      (run) => (run.desk.content_first ? 'the slide text' : 'the outline')],
+    ['look', () => 'Look', 'the look'],
+    ['build', () => 'Slides', 'the slides'],
+  ];
+  // Only a step the person sees as a part: a deck with no look to pick only loads its brand.
+  const PART_STEPS = { story: ['scan', 'gate:story'], look: ['look-preview', 'gate:look'] };
+
+  function progressPartsOf(run, lead) {
+    const read = h.theirs(run);
+    const rows = h.list(run.timeline);
+    const parts = [];
+    for (const [id, named, phrase] of PROGRESS_PARTS) {
+      const steps = rows.filter((row) => row.stage === id
+        && (!PART_STEPS[id] || PART_STEPS[id].includes(row.name)));
+      if (!steps.length) continue;
+      const current = steps.some((row) => row.state === 'current');
+      const done = steps.every((row) => row.state === 'done');
+      const waits = current && !read && (['answer', 'problem', 'look', 'start'].includes(lead)
+        || (run.gate && run.state !== 'working'));
+      const state = done ? '' : waits ? 'Needs you'
+        : current && run.state === 'working' ? 'Writing' : current ? '' : 'Queued';
+      parts.push({ id, name: named(run), state, count: done ? 'Done' : '', current, done,
+        phrase: typeof phrase === 'function' ? phrase(run) : phrase });
+    }
+    return parts;
+  }
+
+  // What a part not shown is, said above the work when it is chosen.
+  function progressPartNote(run, part, now) {
+    const said = part.done ? {
+      story: 'Approved. The outline is written from the story you approved.',
+      research: 'Done. What it found is used to write ' + (now ? now.phrase : 'the deck')
+        + ', and stays with the deck.',
+      outline: 'Approved. On the desk it is the Outline, where its words can still be changed.',
+      look: 'Picked. Once the deck is on the desk, the look can be changed in the Outline.',
+      build: 'Drawn.',
+    }[part.id] : 'Not made yet. ' + (now ? 'It is made after ' + now.phrase + '.'
+      : 'It is made in its turn.');
+    const node = h.card(part.name, 'desk-part-shown');
+    node.dataset.key = 'desk-part-shown';
+    return h.add(node, make('p', '', said));
+  }
+
+  function progressParts(run, lead) {
+    if (typeof StudioShell === 'undefined' || !StudioShell.parts) return null;
+    const path = h.view.path;
+    const parts = progressPartsOf(run, lead);
+    if (!parts.length) return null;
+    // Opened from the history (a reload, Back or Forward): at the part it was showing.
+    const state = window.history.state;
+    if (!(path in held.progressPart) && state && state.path === path && state.deskPart) {
+      held.progressPart[path] = state.deskPart;
+    }
+    const now = parts.find((part) => part.current) || null;
+    const picked = parts.find((part) => part.id === held.progressPart[path] && !part.current);
+    const shown = picked ? picked.id : now ? now.id : null;
+    const listed = parts.map(({ id, name, state: said, count }) => ({ id, name, state: said, count }));
+    progressAddress(path, picked ? picked.id : '', false);
+    return {
+      nav: ['desk-parts', [listed, shown], () => StudioShell.parts({ label: 'Parts of this deck',
+        key: 'desk-parts', chosen: shown, groups: [{ title: 'Deck', parts: listed }],
+        choose: (id) => {
+          held.progressPart[path] = now && id === now.id ? '' : id;
+          progressAddress(path, held.progressPart[path], true);
+          h.paintDeck(false);
+        } })],
+      note: picked ? ['desk-part-shown', [picked.id, picked.state, picked.done, now && now.id],
+        () => progressPartNote(run, picked, now)] : null,
+    };
+  }
+
+  // The part shown before the deck reaches the desk, kept with the screen: choosing one adds
+  // an entry, so Back returns to the part before; anything else only says again what is shown.
+  function progressAddress(path, shown, push) {
+    try {
+      const now = window.history.state;
+      if (!now || now.path !== path || now.deskTab) return;
+      const part = shown || '';
+      if (now.deskPart === part) return;
+      const next = { ...now, deskPart: part };
+      if (push && 'deskPart' in now) {
+        window.history.pushState({ ...next, deskStep: (now.deskStep || 0) + 1 }, '');
+      } else window.history.replaceState(next, '');
+    } catch (failure) {
+      // A browser that keeps nothing with the screen keeps the part for this page only.
+    }
   }
 
   // The slide text waits for approval. Its words are boxes: a typo is put right here, with no
@@ -1553,6 +1678,13 @@
   function returnTo(state) {
     const path = h.view.path;
     const run = h.view.run;
+    // Before the deck reaches the desk: the part chosen in its list.
+    if (state && state.path === path && 'deskPart' in state && !state.deskTab && run
+        && run.desk && opens(run) && !(run.desk.arrived || run.desk.migrated)) {
+      held.progressPart[path] = state.deskPart || '';
+      h.paintDeck(false);
+      return true;
+    }
     if (!state || !state.deskTab || state.path !== path || !run || !run.desk || !opens(run)
         || !(run.desk.arrived || run.desk.migrated)) return false;
     held.tabs[path] = state.deskTab === 'outline' ? 'outline' : 'slides';

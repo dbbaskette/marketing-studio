@@ -253,12 +253,25 @@ class DriverTests(Team):
                          'nothing was written to it there')
         self.assertEqual(len(self.workers.jobs), jobs, 'and nothing was worked on there')
 
+    def test_a_teammate_is_told_a_training_whose_work_is_made_is_not_finished(self):
+        # The driver is kept until every material is Ready (the owner's ruling on #549), so a
+        # teammate reads who runs it, and that it was not finished when it was last shared.
+        root = self.desk_started()
+        self.fetch(self.blake)
+        view = self.seen(self.blake, root)
+        self.assertEqual((view['mine'], view['driver']['name'], view['state']),
+                         (False, 'Alex', 'elsewhere'))
+        self.assertIn('Alex is running this training from another computer.', view['sentence'])
+        self.assertIn(engines.UNFINISHED_THEN, view['sentence'])
+        self.assertNotIn('it was finished', view['sentence'])
+
     def test_handing_over_leaves_a_training_for_anyone_to_take(self):
         root = self.desk_started()
         handed = self.drive(self.alex, root, 'hand-over')
-        # A desk training's work is all done here, so it says what is made, not who runs it.
-        self.assertEqual((handed['mine'], handed['driver'], handed['state']),
-                         (False, None, 'done'))
+        # Its work is all made, but not all marked ready: it is not finished, so it says
+        # that nobody runs it, not what its files say (GitHub issue #544).
+        self.assertEqual((handed['mine'], handed['driver'], handed['state'], handed['sentence']),
+                         (False, None, 'stopped', team.NOBODY))
         self.assertEqual(self.shared()[0], 'Rolling restarts: Alex hands this training over')
         with self.be(self.alex), self.assertRaisesRegex(engines.Elsewhere,
                                                         'Nobody is running this training'):
@@ -300,8 +313,12 @@ class DriverTests(Team):
         taken = self.drive(self.blake, root)
         self.assertEqual((taken['mine'], taken['driver']['name'], taken['driver']['here']),
                          (True, 'Blake', True))
-        self.assertEqual(self.shared()[0],
-                         'Rolling restarts: Blake takes this training over from Alex')
+        # Blake's run carries on from the takeover and shares what it did when it comes to
+        # rest (issue #549), so the takeover is shared and is not always the last commit.
+        self.assertIn('Rolling restarts: Blake takes this training over from Alex',
+                      self.shared())
+        blakes = self.git('rev-parse', 'main', repo=self.remote)
+        self.assertEqual(blakes, self.head(self.blake))
         self.assertNotIn(marked, self.ready(self.theirs(self.blake, root)),
                          "Blake's runner carried on from what was shared")
 
@@ -336,8 +353,7 @@ class DriverTests(Team):
             self.alex.engine.resume()
             self.assertEqual(self.alex.engine.share()['shared'], True)
         self.assertEqual(len(self.workers.jobs), jobs, 'it works on it no more')
-        self.assertEqual(self.shared()[0],
-                         'Rolling restarts: Blake takes this training over from Alex',
+        self.assertEqual(self.git('rev-parse', 'main', repo=self.remote), blakes,
                          "nothing of Alex's was put on top of Blake's")
         self.assertEqual(self.as_(self.alex, team.taken, root)['by'], 'Blake',
                          'and it is remembered on this computer')
@@ -796,9 +812,10 @@ class SlowRemoteTests(Team):
                 go.set()
 
     def test_a_decision_is_not_held_up_by_a_slow_push_or_fetch(self):
-        root = self.desk_started()
         with self.be(self.alex):
-            gitstate.share_when('asked')    # so the decision itself sends nothing
+            # So neither the run coming to rest nor the decision sends anything itself.
+            gitstate.share_when('asked')
+        root = self.desk_started()
         for name, sharing in (('push', self.engine.share), ('fetch', self.engine.fetch)):
             with self.subTest(name), self.be(self.alex), self.held_up(name) as (reached, go):
                 behind = threading.Thread(target=sharing, daemon=True)
@@ -848,6 +865,8 @@ class SlowRemoteTests(Team):
         with self.be(self.alex), asked() as ran:
             self.engine.fetch()
         self.assertNotIn('merge-base', ran, 'nothing came in, so there is nothing to learn')
+        with self.be(self.blake):
+            gitstate.share_when('asked')    # so only the claim that starts it is sent
         self.desk_started(self.blake, title='Blue green')
         with self.be(self.alex), asked() as ran:
             self.assertEqual(self.engine.fetch()['received'], 1)
@@ -1028,6 +1047,73 @@ class BringTests(Team):
         self.assertNotEqual(((view.get('documents') or {}).get('waiting'), view['state']),
                             (True, 'waiting'), view['sentence'])
 
+    def from_phone(self, sent: dict) -> tuple[int, dict]:
+        """Bring in asked through the network bridge, as a phone on the private link asks."""
+        made = page.RunnerPage(self.PORT, self.alex.engine)
+        headers = Message()
+        headers['Host'] = f'127.0.0.1:{self.PORT}'
+        headers[desk.TOKEN_HEADER] = made.token
+        headers['Origin'] = f'http://127.0.0.1:{self.PORT}'
+        headers['Content-Type'] = 'application/json'
+        headers['X-Marketing-Studio-Via'] = 'network'
+        with self.be(self.alex):
+            try:
+                status, _, data = made.answer('/api/adopt', headers, 'POST',
+                                              json.dumps(sent).encode())
+                return status, json.loads(data)
+            except desk.Refusal as refusal:
+                return int(refusal.status), {'error': str(refusal)}
+
+    def test_a_folder_that_holds_the_workspace_is_never_brought_into_it(self):
+        # GitHub issue #544: compared as folders, before anything is read, so a folder that
+        # holds the workspace is never copied into itself.
+        # A training started in a conversation in the folder that became the workspace.
+        holder = self.alex.space.repo
+        workspace.init(holder, 'Holds the workspace')
+        with self.be(self.alex):
+            home.remember(holder, 'Holds the workspace', [])
+        self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(holder)}, 409)['error'],
+                         engines.HOLDS_WORKSPACE)
+        self.assertFalse(self.alex.space.training('holds-the-workspace').exists())
+        root = self.desk_started()
+        linked = self.base / 'linked-workspace'
+        linked.symlink_to(self.alex.space.root, target_is_directory=True)
+        inside = linked / root.name
+        with self.be(self.alex):
+            home.remember(inside, 'Rolling restarts', [])
+        self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(inside)}, 409)['error'],
+                         'This training is already in the workspace.')
+        self.assertEqual([one.name for one in self.alex.space.root.iterdir() if one.is_dir()
+                          and not one.name.startswith('.')], [root.name], 'nothing was copied')
+
+    def test_a_folder_elsewhere_in_the_workspace_repository_is_never_brought_into_it(self):
+        # Fix round of GitHub issue #544: compared with the repository, not only its folder
+        # for trainings.
+        notes = self.alex.space.repo / 'notes' / 'kept-here'
+        notes.mkdir(parents=True)
+        workspace.init(notes, 'Kept here')
+        with self.be(self.alex):
+            home.remember(notes, 'Kept here', [])
+        self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(notes)}, 409)['error'],
+                         engines.IN_REPOSITORY)
+        self.assertFalse(self.alex.space.training('kept-here').exists())
+
+    def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
+        from studio_core.shared_runner import caller
+        chat = self.chat()
+        before = sorted(one.name for one in self.alex.space.root.iterdir())
+        for given in (str(chat), str(self.base / 'nothing-there'), str(self.alex.space.root),
+                      '~/x'):
+            with self.subTest(given=given):
+                self.assertEqual(self.from_phone({'path': given}),
+                                 (403, {'error': caller.BRING_HERE}))
+        self.assertEqual(sorted(one.name for one in self.alex.space.root.iterdir()), before)
+        # The shared sentence names no studio's work: never a deck in Training Studio.
+        self.assertNotIn('deck', caller.BRING_HERE.lower())
+        # On this computer it is brought in as before.
+        self.ask(self.alex, 'adopt', {'path': str(chat)})
+        self.assertTrue(self.alex.space.training('started-in-a-chat').is_dir())
+
     def test_what_cannot_be_brought_in_is_refused_in_a_sentence(self):
         chat = self.chat()
         root = self.desk_started()
@@ -1073,6 +1159,9 @@ class PageTests(Team):
     """The appendix, field for field, through the page's own addresses."""
 
     def test_driving_a_training_on_the_page(self):
+        with self.be(self.alex):
+            # Alex's work stays on Alex's computer, so a takeover has something to keep.
+            gitstate.share_when('asked')
         root = self.desk_started()
         path = str(root)
         run = self.ask(self.alex, 'run', path=path)

@@ -295,6 +295,26 @@ class DriverTests(Team):
         self.changed(self.blake, root)
         self.assertEqual(self.seen(self.blake, root)['gate']['name'], 'gate:build')
 
+    def test_a_note_on_a_deck_delivered_here_takes_it_back_first(self):
+        # GitHub issue #549: the computer that delivered a deck changes it on the desk without
+        # taking it first; the change takes it back, then is made.
+        root = self.begun()
+        self.delivered(self.alex, root)
+        self.assertEqual(self.seen(self.alex, root)['driver'], None)
+        with self.be(self.alex):
+            expected = self.alex.engine.view(root)['desk']['expected']
+            shown = self.alex.engine.desk_note(root, 3, 'Shorter.', expected)
+        self.assertEqual((shown['mine'], (shown['driver'] or {}).get('name')), (True, 'Alex'))
+        self.assertEqual(shown['gate']['name'], 'gate:build')
+        self.assertIn('Rolling restarts: Alex takes this deck', self.shared())
+        # A teammate still takes it first: only the computer that delivered it is let through.
+        self.fetch(self.blake)
+        with self.be(self.blake):
+            theirs = self.theirs(self.blake, root)
+            with self.assertRaises(engines.Elsewhere):
+                self.blake.engine.desk_note(
+                    theirs, 3, 'Longer.', self.blake.engine.view(theirs)['desk']['expected'])
+
     def test_an_upload_kept_on_the_computer_that_started_the_deck_stops_it_elsewhere(self):
         # Taken before its outline is drafted: the outline's assistant could not be used here.
         self.workers.then('outline', fails('Not signed in.', reason='unavailable'))

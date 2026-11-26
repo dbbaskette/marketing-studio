@@ -416,6 +416,9 @@ class Survey:
     missing: tuple[str, ...] = ()   # why a deck that is wanted cannot be made here
     # Where its research may look, as the run pinned it: {'documents', 'sites', 'web'}.
     research_from: dict = field(default_factory=lambda: dict(WEB_ONLY))
+    # On the desk, the Yoodli layouts not written yet that wait for their brief's copy
+    # (`handoff_waits`).
+    waits: frozenset = frozenset()
 
 
 # --- the form ----------------------------------------------------------------------------
@@ -1408,12 +1411,34 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     from runner import training_plan
     if drafts.on_desk(run):
         listed, done = training_plan.group(root, session, run, listed, done)
-    first = next((step for step in listed if step.id not in done), None)
+    waits = handoff_waits(listed, done, seen.copyable, state)
+    first = next((step for step in listed if step.id not in done
+                  and step.artifact not in waits), None)
     return Survey(session, state, listed, done,
                   _next(first, session, state, asked, found, decks,
                         drafts.updates(run) if drafts.on_desk(run) else None), found, asked, named,
                   own, tuple(copies), (given or {}).get('scope') or SCOPE, decks, missing,
-                  research_of(run))
+                  research_of(run), waits)
+
+
+def handoff_waits(listed, done, copyable, state=None) -> frozenset[str]:
+    """On the desk, the Yoodli layouts still to write whose level's brief has no copy to
+    name yet: the person has neither marked that brief Ready nor sent it to its copies, and
+    the desk makes no copy of a draft by itself. A layout names the copy of the brief to
+    upload, so it is written once that brief's copies are made, or found not to be makeable,
+    as it was after the brief's approval in the earlier flow (GitHub issue #549). Its gate
+    and copies wait with it. Elsewhere, for a layout already written, and where the brief is
+    left out or cannot be made (so no copy of it ever will be), nothing waits."""
+    if copyable is None:
+        return frozenset()
+
+    def brief(step):
+        return workspace.qualify('brief', workspace.split(step.artifact)[1])
+    return frozenset(
+        step.artifact for step in listed
+        if step.kind == 'agent' and step.stage == 'yoodli' and step.id not in done
+        and brief(step) not in copyable
+        and (state or {}).get(brief(step)) not in ('skipped', 'unavailable'))
 
 
 def _next(first: Step | None, session: dict, state: dict, asked: dict,
