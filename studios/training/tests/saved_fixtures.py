@@ -34,9 +34,10 @@ FOLDER = b'@SAVED_TRAINING_FOLDER@'
 
 def names() -> list[str]:
     """Every stored state the earlier gated flow saved (the conversation-guided trainings
-    under `conversation/` are listed by `conversation_names`)."""
+    under `conversation/` are listed by `conversation_names`, and `flow/` holds the trees
+    `stored_builders` places)."""
     return sorted(path.name for path in FIXTURES.iterdir()
-                  if path.is_dir() and path.name != 'conversation')
+                  if path.is_dir() and path.name not in ('conversation', 'flow'))
 
 
 def tree(state: str) -> dict[str, bytes]:

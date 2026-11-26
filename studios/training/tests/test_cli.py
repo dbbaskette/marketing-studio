@@ -12,6 +12,8 @@ from pathlib import Path
 
 import helpers
 from helpers import TrainingCase
+import stored_builders
+from stored_builders import builder
 import gdocs
 from test_google import FakeTransport
 import training
@@ -49,6 +51,8 @@ class Flow(TrainingCase):
     """Drives the helper the way the assistant does, in process."""
 
     def cli(self, *args, expect=0) -> dict:
+        if args and args[0] in stored_builders.CONTINUING:
+            stored_builders.trace('training.py ' + args[0])
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
             try:
@@ -58,12 +62,14 @@ class Flow(TrainingCase):
         self.assertEqual(code, expect, captured.getvalue())
         return json.loads(captured.getvalue())
 
+    @builder
     def make(self, artifact: str, relative: str, text: str) -> None:
         """Write an artifact's file, save it as built and approve it."""
         self.write(relative, text)
         self.cli('save', artifact, '--built')
         self.cli('approve', artifact)
 
+    @builder
     def research(self, *init_args, yoodli: bool = True, copies=('word',)) -> None:
         helpers.saved_init(self.root, '--title', 'Rolling restarts', *init_args,
                  *(['--yoodli'] if yoodli else []), *(['--copies', *copies] if copies else []))
@@ -73,6 +79,7 @@ class Flow(TrainingCase):
         self.write('.harness-research/research.json', json.dumps(helpers.RESEARCH))
         self.make('research', '.harness-research/research-report.md', '# Research brief\n')
 
+    @builder
     def content(self, level: str | None = None, blueprint: str | None = None,
                 document: str | None = None) -> None:
         """Blueprint, document and brief for one level, with the two exports."""
@@ -89,6 +96,7 @@ class Flow(TrainingCase):
         self.cli('export', f'document{at}', '--file', f'{folder}document.docx')
         self.cli('export', f'brief{at}', '--file', f'{folder}product-brief.docx')
 
+    @builder
     def deck(self, level: str | None = None, objectives=('O1', 'O2', 'O3')) -> None:
         at = f'@{level}' if level else ''
         folder = f'{level}/' if level else ''
@@ -98,6 +106,7 @@ class Flow(TrainingCase):
         self.cli('save', f'deck{at}', '--built', '--coverage', str(coverage))
         self.cli('approve', f'deck{at}')
 
+    @builder
     def scenario(self, level: str | None = None, yoodli: bool = True) -> None:
         at = f'@{level}' if level else ''
         folder = f'{level}/' if level else ''
@@ -105,6 +114,7 @@ class Flow(TrainingCase):
         if yoodli:
             self.make(f'yoodli:main{at}', f'{folder}yoodli/main.md', example('yoodli.md'))
 
+    @builder
     def complete(self, level: str | None = None) -> None:
         self.content(level)
         self.deck(level)
@@ -440,6 +450,7 @@ class CheckTests(Flow):
 class OptionalYoodliTests(Flow):
     """Yoodli is an optional stage, off unless asked for (matrix rows 58 to 62)."""
 
+    @builder
     def without_yoodli(self) -> None:
         self.research(yoodli=False)
         self.content()
@@ -490,6 +501,7 @@ class OptionalYoodliTests(Flow):
 class CopiesTests(Flow):
     """Word copies and Google Docs are kept only when asked for (matrix rows 64, 67 and 68)."""
 
+    @builder
     def built(self, *copies: str) -> None:
         """Everything approved, Yoodli off, and no copy of anything made yet."""
         self.research(yoodli=False, copies=copies)
@@ -549,6 +561,7 @@ class CopiesTests(Flow):
         self.assertNotIn('The Google Doc of document is behind its file',
                          self.check()['blocking'])
 
+    @builder
     def with_yoodli_and_google_docs(self) -> None:
         """Everything approved with Yoodli on and Google Docs kept, and no Doc made yet."""
         self.research(copies=('google',))

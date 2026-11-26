@@ -25,6 +25,8 @@ from urllib.parse import urlencode, urlsplit
 
 import helpers
 import test_cli
+import stored_builders
+from stored_builders import builder
 import assess
 import cmd_desk
 import computer
@@ -81,6 +83,15 @@ class Registry(test_cli.Flow):
                         mock.patch.object(computer, 'reach', never)):
             patcher.start()
             self.addCleanup(patcher.stop)
+        # A gate read or decision continues a conversation's training: traced for #547.
+        if os.environ.get(stored_builders.TRACE):
+            for name in ('decide', 'gate', 'move_approval'):
+                def traced(*args, _original=getattr(desk, name), _name=name, **kwargs):
+                    stored_builders.trace('desk.' + _name)
+                    return _original(*args, **kwargs)
+                patcher = mock.patch.object(desk, name, traced)
+                patcher.start()
+                self.addCleanup(patcher.stop)
 
     def another(self, name: str, *init_args) -> Path:
         """A second training in its own folder, registered like the first."""
@@ -94,6 +105,7 @@ class Registry(test_cli.Flow):
         return {path.relative_to(base).as_posix(): path.read_bytes()
                 for path in sorted(base.rglob('*')) if path.is_file()}
 
+    @builder
     def at_the_blueprint_gate(self, approval: str = 'page') -> None:
         """Research approved, a blueprint built and waiting at its gate."""
         self.research()
@@ -2092,6 +2104,7 @@ class PageScriptTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [{'click': 'Review the research report'}, {'snapshot': 'research'}])
         self.assertEqual(result['snapshots']['research']['text'].count(said), 1)
 
+    @builder
     def a_gate_with_history(self) -> None:
         """The learner guide at its gate on the page, changed since it was last approved."""
         self.research()
@@ -3094,6 +3107,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         return [request['address'] for request in result['requests']
                 if request['address'].split('?')[0] == f'/api/{endpoint}']
 
+    @builder
     def started(self, *init) -> None:
         """A training as the runner leaves it once the form is in: its start approved."""
         helpers.saved_init(self.root, '--title', 'Rolling restarts', *init)
@@ -3101,6 +3115,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.cli('checkpoint', '--approval', 'page', '--stage', 'research-plan',
                  '--next', 'Draft the research questions')
 
+    @builder
     def at_the_questions_gate(self) -> None:
         self.write('.training-studio/research-plan.json', json.dumps(helpers.PLAN))
         self.cli('save', 'research-plan', '--built')
@@ -4597,6 +4612,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn(said, result['snapshots']['asking']['sheet'])
         self.assertEqual(self.posts(result), [])
 
+    @builder
     def at_the_decks_gate(self) -> None:
         """A deck saved through the core and waiting at its gate."""
         self.research()

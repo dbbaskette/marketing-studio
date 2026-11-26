@@ -13,6 +13,7 @@ import helpers
 import hub
 import validate_package
 from test_cli import Flow, example, levelled
+from stored_builders import builder
 
 CLI = helpers.SCRIPTS / 'training.py'
 NEVER = {'sources', '.training-studio', '.harness-research', '.harness-slides'}
@@ -123,6 +124,7 @@ class HubCase(Flow):
     def record(self, revision: int = 1, training: str = 'rolling-restarts') -> dict:
         return json.loads(self.shared(f'trainings/{training}/{revision}/record.json'))
 
+    @builder
     def start(self, *init_args, title: str = 'Rolling restarts') -> None:
         """A training with approved research and nothing built from it yet."""
         helpers.saved_init(self.root, '--title', title, *init_args)
@@ -132,6 +134,7 @@ class HubCase(Flow):
         self.write('.harness-research/research.json', json.dumps(helpers.RESEARCH))
         self.make('research', '.harness-research/research-report.md', REPORT)
 
+    @builder
     def lesson(self, level: str | None = None) -> None:
         """An approved blueprint and scenario, for one level or for a plain training."""
         at = f'@{level}' if level else ''
@@ -141,6 +144,7 @@ class HubCase(Flow):
                   levelled(text, level) if level else text)
         self.make(f'scenario:main{at}', f'{folder}scenario.md', example('scenario.md'))
 
+    @builder
     def small(self, *init_args, title: str = 'Rolling restarts') -> None:
         self.start(*init_args, title=title)
         self.lesson()

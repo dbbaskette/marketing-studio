@@ -72,6 +72,25 @@ class StoredTreeTests(StudioCase):
         self.assertTrue(seen)
 
 
+class StoredBuilderTreeTests(StudioCase):
+    """The trees the conversation builders place (`stored_builders.py`, GitHub issue #547):
+    every file a tree names is stored once under its own digest, and nothing else is."""
+
+    def test_every_stored_file_is_named_by_its_bytes_and_used(self):
+        import stored_builders
+        stored = json.loads(stored_builders.TREES.read_text(encoding='utf-8'))
+        named = {sha for tree in stored.values() for sha in tree['files'].values()}
+        on_disk = {path.name for path in stored_builders.BLOBS.iterdir()}
+        self.assertEqual(named, on_disk)
+        for name in on_disk:
+            data = (stored_builders.BLOBS / name).read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), name)
+            for mark in (b'/Users/', b'/home/', b'/var/folders/', b'/private/', b'/tmp/'):
+                self.assertNotIn(mark, data, name)
+        for name, tree in stored.items():
+            self.assertEqual(stored_builders.key(tree['steps']), name)
+
+
 class ConversationTreeTests(StudioCase):
     """The stored conversation-guided trainings (GitHub issue #547), captured with
     `capture_conversation.py`, agree with themselves and with this computer's helper."""

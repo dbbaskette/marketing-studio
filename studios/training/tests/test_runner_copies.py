@@ -14,6 +14,7 @@ from unittest import mock
 
 import runner_support  # puts the runner on the import path, and its StudioCase
 from test_cli import Flow, example, levelled
+from stored_builders import builder
 from test_google import FakeTransport
 import gdocs
 import workspace
@@ -69,6 +70,7 @@ class Built(Flow):
         super().setUp()
         self.drive, self.word = FakeTransport(), Converter()
 
+    @builder
     def level(self, level: str | None = None) -> None:
         """One level's blueprint, and whichever of its guide, brief, deck and scenarios the
         training still wants, each approved."""
@@ -87,6 +89,7 @@ class Built(Flow):
         if 'scenario' in wanted:
             self.scenario(level, 'yoodli' in wanted)
 
+    @builder
     def built(self, *kinds: str, yoodli: bool = False, levels: tuple = (),
               without: tuple = ()) -> None:
         """A whole training, approved, that keeps these kinds of copy and leaves these
@@ -106,6 +109,7 @@ class Built(Flow):
         return [(entry['artifact'], entry['kind'], entry['state'])
                 for entry in copies.wanted(self.root, problems)]
 
+    @builder
     def revise(self, name: str = 'document', file: str = 'document.md') -> None:
         """The person changes a file that was approved, and approves it again."""
         self.write(file, example(file) + '\nOne more line.\n')

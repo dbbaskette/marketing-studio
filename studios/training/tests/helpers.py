@@ -99,15 +99,30 @@ CHAIN = ('intake', 'research-plan', 'research', 'blueprint', 'document')
 
 
 def saved_init(root, *args):
-    """Construct an existing gated-format fixture; exercise saved operations separately."""
-    import sync_guidance
-    import training
-    import workspace
-    parsed = training.parser().parse_args(['init', *args])
-    workspace.init(root, parsed.title, parsed.levels, parsed.brief_kind, parsed.deck_target,
-                   parsed.brand, parsed.yoodli, parsed.copies, parsed.approval, parsed.delivery)
-    sync_guidance.adopt(root)
-    return training.summarise(root)
+    """A training a conversation started, as the retired `training.py init` started one with
+    these arguments: placed from its stored tree (`stored_builders`), and remembered on this
+    computer as the helper remembered it. Answers its status."""
+    import assess
+    import home
+    import stored_builders
+
+    def started():
+        import sync_guidance
+        import training
+        import workspace
+        parsed = training.parser().parse_args(['init', *args])
+        workspace.init(root, parsed.title, parsed.levels, parsed.brief_kind, parsed.deck_target,
+                       parsed.brand, parsed.yoodli, parsed.copies, parsed.approval,
+                       parsed.delivery)
+        sync_guidance.adopt(root)
+        return training.summarise(root)
+
+    found = stored_builders.step(root, 'saved_init', list(args), started)
+    if found is not None:
+        return found
+    report = assess.describe(Path(root))
+    home.remember(Path(root), report['title'], report['levels'])
+    return report
 
 
 class TrainingCase(unittest.TestCase):
