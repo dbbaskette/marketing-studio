@@ -1047,6 +1047,59 @@ class BringTests(Team):
         self.assertNotEqual(((view.get('documents') or {}).get('waiting'), view['state']),
                             (True, 'waiting'), view['sentence'])
 
+    def from_phone(self, sent: dict) -> tuple[int, dict]:
+        """Bring in asked through the network bridge, as a phone on the private link asks."""
+        made = page.RunnerPage(self.PORT, self.alex.engine)
+        headers = Message()
+        headers['Host'] = f'127.0.0.1:{self.PORT}'
+        headers[desk.TOKEN_HEADER] = made.token
+        headers['Origin'] = f'http://127.0.0.1:{self.PORT}'
+        headers['Content-Type'] = 'application/json'
+        headers['X-Marketing-Studio-Via'] = 'network'
+        with self.be(self.alex):
+            try:
+                status, _, data = made.answer('/api/adopt', headers, 'POST',
+                                              json.dumps(sent).encode())
+                return status, json.loads(data)
+            except desk.Refusal as refusal:
+                return int(refusal.status), {'error': str(refusal)}
+
+    def test_a_folder_that_holds_the_workspace_is_never_brought_into_it(self):
+        # GitHub issue #544: compared as folders, before anything is read, so a folder that
+        # holds the workspace is never copied into itself.
+        # A training started in a conversation in the folder that became the workspace.
+        holder = self.alex.space.repo
+        workspace.init(holder, 'Holds the workspace')
+        with self.be(self.alex):
+            home.remember(holder, 'Holds the workspace', [])
+        self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(holder)}, 409)['error'],
+                         engines.HOLDS_WORKSPACE)
+        self.assertFalse(self.alex.space.training('holds-the-workspace').exists())
+        root = self.desk_started()
+        linked = self.base / 'linked-workspace'
+        linked.symlink_to(self.alex.space.root, target_is_directory=True)
+        inside = linked / root.name
+        with self.be(self.alex):
+            home.remember(inside, 'Rolling restarts', [])
+        self.assertEqual(self.ask(self.alex, 'adopt', {'path': str(inside)}, 409)['error'],
+                         'This training is already in the workspace.')
+        self.assertEqual([one.name for one in self.alex.space.root.iterdir() if one.is_dir()
+                          and not one.name.startswith('.')], [root.name], 'nothing was copied')
+
+    def test_a_phone_is_refused_bring_in_before_any_folder_is_read(self):
+        from studio_core.shared_runner import caller
+        chat = self.chat()
+        before = sorted(one.name for one in self.alex.space.root.iterdir())
+        for given in (str(chat), str(self.base / 'nothing-there'), str(self.alex.space.root),
+                      '~/x'):
+            with self.subTest(given=given):
+                self.assertEqual(self.from_phone({'path': given}),
+                                 (403, {'error': caller.BRING_HERE}))
+        self.assertEqual(sorted(one.name for one in self.alex.space.root.iterdir()), before)
+        # On this computer it is brought in as before.
+        self.ask(self.alex, 'adopt', {'path': str(chat)})
+        self.assertTrue(self.alex.space.training('started-in-a-chat').is_dir())
+
     def test_what_cannot_be_brought_in_is_refused_in_a_sentence(self):
         chat = self.chat()
         root = self.desk_started()

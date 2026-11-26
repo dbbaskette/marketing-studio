@@ -296,6 +296,8 @@ TAKEN = '{name} took this training over on {when}. This computer stopped working
 SET_ASIDE = (' What this computer had made and not yet shared is kept on this computer, and '
              'can be brought back.')
 THEIRS = '{name} is running this training from another computer.'
+HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brought into it. '
+                   'Bring in a training folder that is outside the workspace.')
 # Where a desk training stood when its run had made what it could and it was not finished:
 # not every material was marked ready, or something else kept it from being used.
 UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
@@ -8737,8 +8739,13 @@ class Engine(Reviewing):
         carries on from wherever its files say it is."""
         space, chosen, top = self.space(), settings.load(), Path(path)
         gitstate.identity(space.repo)
-        if top == space.root or space.root in top.resolve().parents:
+        # Folders compared as folders, before anything is read: a folder holding the
+        # workspace would be copied into itself (GitHub issue #544).
+        where = team.overlaps(top, space.root)
+        if where == 'inside':
             raise WorkspaceError('This training is already in the workspace.')
+        if where == 'holds':
+            raise WorkspaceError(HOLDS_WORKSPACE)
         try:
             session = workspace.load(top)
         except WorkspaceError as refusal:

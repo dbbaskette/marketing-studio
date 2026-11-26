@@ -100,13 +100,15 @@ What a caller needs to know
   `POST /api/shared` with {"seen": true} stops it being shown and answers the set-up. See
   `setup` and `studios_config`.
 - `POST /api/adopt` with {"path"} copies a training this computer knows, started in a
-  conversation, into the workspace, and answers {"path", "id"} of the copy.
+  conversation, into the workspace, and answers {"path", "id"} of the copy. A folder that is
+  the workspace, holds it or lies inside it is refused (409).
 - A request the network bridge carried (`X-Marketing-Studio-Via: network`, read through
   `studio_core.shared_runner.caller`) is a phone's: `POST /api/setup` and
-  `POST /api/setup/check` are 403 whatever they send, and `POST /api/brand` is 403 unless
-  its `repository` is a web address on another computer (GitHub issue #539). A brand
-  repository that cannot be read is said to it without git's own words. A caller on this
-  computer is answered as before.
+  `POST /api/setup/check` are 403 whatever they send, `POST /api/brand` is 403 unless its
+  `repository` is a web address on another computer, and `POST /api/adopt` is 403 before
+  the folder is read (GitHub issue #539). What it is shown of set-up and the brand names no
+  folder on this computer, and a brand repository that cannot be read is said without
+  git's own words. A caller on this computer is answered as before.
 - Every request that passes the rules tells the engine a page is open, which is how the
   runner knows not to notify through the computer instead.
 - `POST /api/documents` alone may carry up to DOCUMENT_LIMIT bytes, because it carries a
@@ -449,7 +451,8 @@ class RunnerPage(desk.Page):
                                                 'version': gitstate.installed(),
                                                 'install': gitstate.installed_copy()})
         if path == '/api/setup':
-            return desk.as_json(HTTPStatus.OK, setup.describe(self.engine))
+            # Through the network bridge, with no folder path (GitHub issue #539).
+            return desk.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
         if path == '/api/agents':
             return desk.as_json(HTTPStatus.OK, {'agents': self.agents()})
         if path == '/api/models':
@@ -1165,7 +1168,8 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'dismiss'))})
         if path == '/api/brand':
             try:
-                return desk.as_json(HTTPStatus.OK, setup.save_brand(self.engine, sent))
+                return desk.as_json(HTTPStatus.OK,
+                                    caller.shown(setup.save_brand(self.engine, sent)))
             except brand_source.Unreadable as refusal:
                 # Git's own reason can name hosts and ports: kept from a phone (#539).
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST,
@@ -1182,7 +1186,7 @@ class RunnerPage(desk.Page):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Send {"seen": true} once the '
                                    'notice about the shared values has been read.')
             setup.notice_read()
-            return desk.as_json(HTTPStatus.OK, setup.describe(self.engine))
+            return desk.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = desk.text(sent, 'commit')
             return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
@@ -1194,8 +1198,8 @@ class RunnerPage(desk.Page):
         if path == '/api/setup/check':
             return desk.as_json(HTTPStatus.OK, shaped(setup.check, sent))
         if path == '/api/setup':
-            return desk.as_json(HTTPStatus.OK,
-                                setup.apply(self.engine, shaped(setup.read, sent)))
+            return desk.as_json(HTTPStatus.OK, caller.shown(
+                setup.apply(self.engine, shaped(setup.read, sent))))
         if path == '/api/trainings':
             # The source editor's draft, and the Document Library's revisions chosen beside it.
             reference, picks = sent.get('research_inputs'), sent.get('library')
@@ -1512,6 +1516,10 @@ class RunnerPage(desk.Page):
         workspace. The copy is the one to work on; the folder it came from is left as it
         was."""
         path = desk.text(sent, 'path')
+        # A phone is refused before anything about the folder is read or compared (#539).
+        refused = caller.bring_refused(path)
+        if refused:
+            raise desk.Refusal(HTTPStatus.FORBIDDEN, refused)
         desk.registered(path)
         return self.engine.bring(path)
 

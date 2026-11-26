@@ -1088,6 +1088,40 @@ class PhoneSettingsTests(PageCase):
         self.assertTrue(made['error'].startswith("The brand skill's repository could not be "
                                                  'read.'), made)
 
+    def test_a_phone_is_shown_no_folder_of_this_computer_in_set_up_or_the_brand(self):
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        folder = str(self.base / 'brand.git')
+        settings.save(replace(settings.load(), brand_repository=folder))
+        here = self.get_as('setup', remote=False)
+        self.assertEqual(here['workspace']['path'], str(self.space.repo))
+        self.assertEqual(here['brand']['repository'], folder)
+        phone = self.get_as('setup', remote=True)
+        self.assertIsNone(phone['workspace']['path'])
+        self.assertEqual(phone['brand']['repository'], caller.FOLDER_HERE)
+        for shown in (str(self.base), str(self.base.resolve())):
+            self.assertNotIn(shown, json.dumps(phone))
+        # Everything else is as this computer has it.
+        self.assertEqual({key: value for key, value in phone.items()
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep')},
+                         {key: value for key, value in here.items()
+                          if key not in ('workspace', 'brand', 'shared', 'upkeep')})
+        # The answers of the brand route and of the shared notice are shown the same way.
+        with mock.patch.object(brand_source, 'check', lambda address, place: {
+                'repository': address, 'commit': '0' * 40}):
+            status, made = self.send('brand', {'repository': 'https://example.invalid/b.git'},
+                                     remote=True)
+        self.assertEqual((status, made['brand']['repository']),
+                         (200, 'https://example.invalid/b.git'))
+        self.assertIsNone(made['workspace']['path'])
+        self.assertNotIn(str(self.base.resolve()), json.dumps(made))
+        status, seen = self.send('shared', {'seen': True}, remote=True)
+        self.assertEqual(status, 200, seen)
+        self.assertNotIn(str(self.base.resolve()), json.dumps(seen))
+        # Set-up saved on this computer answers it in full.
+        self.assertEqual(self.send('setup', {'limits': {'parallel': 3}}, remote=False)[1]
+                         ['workspace']['path'], str(self.space.repo))
+
 
 class CheckTests(FirstTimeCase):
     """`POST /api/setup/check` looks, and changes nothing."""
