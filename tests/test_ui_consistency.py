@@ -621,6 +621,22 @@ class PartsListTests(unittest.TestCase):
         start = kit.index('/* --- the parts of a project')
         return uncommented(kit[start:kit.index('/* --- the desk (drafting.js)')])
 
+    def test_presentation_studio_lists_its_parts_before_the_desk_as_the_page_says(self):
+        # Review of #544: the per-studio row names the parts a deck has before it reaches the
+        # desk, and the page draws those names and states.
+        doc = (ROOT / 'docs/design/ui-kit.md').read_text(encoding='utf-8')
+        row = next(line for line in doc.splitlines()
+                   if line.startswith('| Presentation Studio | On the desk, Deck:'))
+        page = (ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/'
+                'deck-desk.js').read_text(encoding='utf-8')
+        for name in ('Slide story', 'Research', 'Slide text', 'Outline', 'Look', 'Slides'):
+            self.assertIn(name, row)
+            self.assertIn("'" + name + "'", page)
+        for state in ('Writing', 'Needs you', 'Done', 'Queued'):
+            self.assertIn(state, row)
+        self.assertIn('Before the deck reaches the desk', row)
+        self.assertIn('progressParts', page)
+
     def test_the_kit_draws_it_once_before_the_desk_and_after_the_fallbacks(self):
         kit = KIT.read_text()
         self.assertLess(kit.index('/* --- fallbacks'), kit.index('/* --- the parts of a project'))
