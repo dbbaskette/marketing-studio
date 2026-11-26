@@ -101,6 +101,12 @@ What a caller needs to know
   `setup` and `studios_config`.
 - `POST /api/adopt` with {"path"} copies a training this computer knows, started in a
   conversation, into the workspace, and answers {"path", "id"} of the copy.
+- A request the network bridge carried (`X-Marketing-Studio-Via: network`, read through
+  `studio_core.shared_runner.caller`) is a phone's: `POST /api/setup` and
+  `POST /api/setup/check` are 403 whatever they send, and `POST /api/brand` is 403 unless
+  its `repository` is a web address on another computer (GitHub issue #539). A brand
+  repository that cannot be read is said to it without git's own words. A caller on this
+  computer is answered as before.
 - Every request that passes the rules tells the engine a page is open, which is how the
   runner knows not to notify through the computer instead.
 - `POST /api/documents` alone may carry up to DOCUMENT_LIMIT bytes, because it carries a
@@ -245,7 +251,7 @@ from workspace import WorkspaceError
 from studio_core import research_sites
 
 from runner import engine as engines
-from runner import draft_finish, drafts, gitstate, library, pipeline, setup
+from runner import brand_source, draft_finish, drafts, gitstate, library, pipeline, setup
 from studio_core.document_library import LibraryError
 from studio_core.document_library import context as library_context
 
@@ -1045,6 +1051,13 @@ class RunnerPage(desk.Page):
         next poll walks the workspace again instead of reusing the last walk, so the
         change shows at once in every open tab. A read sent as a POST changes nothing. A
         saved record is refused here, before any route, unless SAVED_ALLOWED names it."""
+        # A phone through the network bridge sets nothing up here, and gives the brand
+        # skill's repository only as a web address on another computer (GitHub issue #539,
+        # the owner's ruling: refuse folders, allow addresses). It is refused before anything
+        # is read; a caller on this computer is answered as before.
+        refused = caller.settings_refused(path, sent)
+        if refused:
+            raise desk.Refusal(HTTPStatus.FORBIDDEN, refused)
         self.saved_gate(path, sent)
         try:
             return self.apply(path, sent)
@@ -1151,7 +1164,14 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().dismiss(
                 desk.text(sent, 'dismiss'))})
         if path == '/api/brand':
-            return desk.as_json(HTTPStatus.OK, shaped(setup.save_brand, self.engine, sent))
+            try:
+                return desk.as_json(HTTPStatus.OK, setup.save_brand(self.engine, sent))
+            except brand_source.Unreadable as refusal:
+                # Git's own reason can name hosts and ports: kept from a phone (#539).
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST,
+                                   caller.unread_said(str(refusal))) from None
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(refusal)) from None
         if path == '/api/research-site':
             # A site added on the start form for one training only: checked here, the one
             # check every studio uses, and saved nowhere. The shared list is changed in

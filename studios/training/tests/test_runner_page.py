@@ -1006,6 +1006,89 @@ class MigrationTests(FirstTimeCase):
         self.assertEqual(self.kept_here(), (self.mine, self.record))
 
 
+class PhoneSettingsTests(PageCase):
+    """GitHub issue #539, the owner's ruling: a phone on the private link (a request the
+    network bridge carried, X-Marketing-Studio-Via: network) is refused set-up, gives the
+    brand skill's repository only as a web address, and is shown no folder of this computer.
+    The tests set the header themselves; nothing reaches the network."""
+
+    def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
+        made = super().headers(token, host, origin, kind)
+        if remote:
+            made['X-Marketing-Studio-Via'] = 'network'
+        return made
+
+    def send(self, endpoint: str, sent: dict, remote: bool) -> tuple[int, dict]:
+        status, reply, _ = self.answer('POST', f'/api/{endpoint}', json.dumps(sent).encode(),
+                                       origin=self.origin, kind='application/json',
+                                       remote=remote)
+        return status, reply
+
+    def get_as(self, endpoint: str, remote: bool) -> dict:
+        status, reply, _ = self.answer('GET', f'/api/{endpoint}', remote=remote)
+        self.assertEqual(status, 200, reply)
+        return reply
+
+    def test_set_up_is_refused_to_a_phone_and_says_nothing_of_any_folder(self):
+        from studio_core.shared_runner import caller
+        before = self.get('setup')
+        here = self.base / 'phone-asked'
+        here.mkdir()
+        for endpoint in ('setup/check', 'setup'):
+            for sent in ({'path': str(here)}, {'path': str(self.base / 'not-yet')},
+                         {'path': str(self.space.repo)}, {'repository': str(self.base)},
+                         {'repository': 'https://example.invalid/team.git'},
+                         {'limits': {'parallel': 3}}, {}):
+                with self.subTest(endpoint=endpoint, sent=sent):
+                    self.assertEqual(self.send(endpoint, sent, remote=True),
+                                     (403, {'error': caller.SETUP_HERE}))
+        self.assertFalse((self.base / 'not-yet').exists())
+        self.assertEqual(list(here.iterdir()), [])
+        self.assertEqual(self.get('setup'), before)
+        # On this computer the same check answers about the folder, as before.
+        status, found = self.send('setup/check', {'path': str(here)}, remote=False)
+        self.assertEqual(status, 200, found)
+        self.assertIn('checks', found)
+
+    def test_a_phone_gives_the_brand_repository_only_as_a_web_address(self):
+        from runner import brand_source
+        from studio_core.shared_runner import caller
+        bare = self.base / 'brand.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(bare)], check=True,
+                       capture_output=True)
+        for given in (str(bare), str(self.base), '~/brand', './brand', 'file://' + str(bare),
+                      'host:brand.git', '', 'http://example.invalid/brand.git',
+                      'git@localhost:/srv/brand', 'ssh://u@127.0.0.1/brand.git'):
+            with self.subTest(given=given):
+                self.assertEqual(self.send('brand', {'repository': given}, remote=True),
+                                 (403, {'error': caller.BRAND_ADDRESS}))
+        self.assertIsNone(settings.load().brand_repository)
+        said = ("The brand skill's repository could not be read. ssh: connect to host "
+                '10.0.0.5 port 22: Connection refused.')
+
+        def check(address, place):
+            if address.startswith('git@10.'):
+                raise brand_source.Unreadable(said)
+            return {'repository': address, 'commit': '0' * 40}
+        with mock.patch.object(brand_source, 'check', check):
+            for given in ('https://example.invalid/owner/brand.git',
+                          'git@example.invalid:owner/brand.git'):
+                with self.subTest(given=given):
+                    status, made = self.send('brand', {'repository': given}, remote=True)
+                    self.assertEqual((status, made['brand']['repository']), (200, given))
+            # Git's own reason names hosts and ports: a phone is told a plain sentence.
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=True), (400, {'error': caller.BRAND_UNREAD}))
+            self.assertEqual(self.send('brand', {'repository': 'git@10.0.0.5:team/brand.git'},
+                                       remote=False), (400, {'error': said}))
+        # On this computer a folder is still read as a repository, as before.
+        status, made = self.send('brand', {'repository': str(bare / 'missing.git')},
+                                 remote=False)
+        self.assertEqual(status, 400, made)
+        self.assertTrue(made['error'].startswith("The brand skill's repository could not be "
+                                                 'read.'), made)
+
+
 class CheckTests(FirstTimeCase):
     """`POST /api/setup/check` looks, and changes nothing."""
 
