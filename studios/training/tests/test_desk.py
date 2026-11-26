@@ -2116,14 +2116,28 @@ class PageScriptTests(ScriptedPage, PageCase):
                    'GET /api/computer': [self.read('computer')]}
         home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']['text']
         self.assertIn('Cannot be read', home)
-        self.assertIn('Its record cannot be read. The session record is not valid JSON; '
-                      'refusing to change it.', home)
-        self.assertIn('Its record cannot be read. The run record is not valid JSON; '
-                      'refusing to change it.', home)
+        self.assertIn('The session record is not valid JSON; refusing to change it.', home)
+        self.assertIn('The run record is not valid JSON; refusing to change it.', home)
+        # Said once: the card already says the records cannot be read (fix round, #544).
+        self.assertNotIn('Its record cannot be read', home)
         for name in ('second', 'third'):
             self.assertIn(name, home)
         for raw in (str(self.root.parent), 'Expecting', 'line 1', 'column', 'JSONDecodeError'):
             self.assertNotIn(raw, home)
+
+    def test_a_failure_of_no_known_kind_is_said_once_on_home(self):
+        self.a_gate_with_history()
+        odd = self.another('odd')
+        record = odd / '.training-studio' / 'session.json'
+        session = json.loads(record.read_text(encoding='utf-8'))
+        session['artifacts'] = {'intake': {}}
+        record.write_text(json.dumps(session), encoding='utf-8')
+        (odd / 'intake.md').write_text('v1\n')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')]}
+        home = self.run_page(answers, [{'snapshot': 'home'}])['snapshots']['home']['text']
+        self.assertEqual(home.count('cannot be read'), 1, home)
+        self.assertIn(desk.UNREADABLE, home)
 
     def test_a_change_is_asked_for_from_home_to_done(self):
         self.a_gate_with_history()

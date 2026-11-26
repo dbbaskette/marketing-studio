@@ -1665,12 +1665,13 @@ function quietRow(training, kind) {
   return add(row, kind === 'finished' ? bead('done') : null, text, withDelete(go, training));
 }
 
-// A training whose records cannot be read: the runner's plain sentence, and its folder by
-// the name it has inside the workspace, never this computer's whole path (#544).
+// A training whose records cannot be read, under the card that says so: the runner's own
+// plain sentence, said once, and its folder by the name it has inside the workspace, never
+// this computer's whole path (#544).
 function brokenRow(training) {
   const text = add(make('div', 'row-text'),
     make('p', 'row-title', training.title || 'Untitled'),
-    make('p', 'row-says', 'Its record cannot be read. ' + training.error),
+    make('p', 'row-says', training.error),
     pathInto(make('p', 'path'), folderIn(training.path)));
   const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
   go.setAttribute('aria-label', 'Open ' + (training.title || 'Untitled'));
