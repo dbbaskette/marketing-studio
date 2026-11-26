@@ -122,8 +122,9 @@ def _listed(names):
 
 class for_phone:
     """The shared settings `config` as a caller over the network may save them: each save is
-    checked by folders_refused against what the file holds under its lock, before the save's
-    own check, so nothing that changes a folder setting is written in between."""
+    checked by folders_refused against what the file holds under its lock, after the save's
+    own check (so an outdated form is refused as from the computer) and before anything is
+    written, so nothing that changes a folder setting is written in between."""
 
     def __init__(self, config):
         self.config = config
@@ -133,11 +134,14 @@ class for_phone:
 
     def update(self, changes, guard=None):
         def checked(held):
+            # The save's own checks first, an outdated form's refusal with its fields
+            # included, exactly as from the computer; then the folder settings, still
+            # before anything is written.
+            if guard is not None:
+                guard(held)
             refused = folders_refused(changes, held)
             if refused:
                 raise preferences.WorkspaceError(refused)
-            if guard is not None:
-                guard(held)
         return self.config.update(changes, guard=checked)
 
 

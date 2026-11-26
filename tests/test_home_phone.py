@@ -57,8 +57,9 @@ class HomePhoneTests(BrandFolders):
         try:
             reply = self.page.answer(path, headers, 'GET' if sent is None else 'POST',
                                      None if sent is None else json.dumps(sent).encode())
-        except WorkspaceError as refused:   # the HTTP server answers these 409
-            return 409, {'error': str(refused)}
+        except WorkspaceError as refused:   # the HTTP server answers these 409, with their details
+            details = getattr(refused, 'details', None)
+            return 409, {**(details if isinstance(details, dict) else {}), 'error': str(refused)}
         return reply[0], json.loads(reply[2])
 
     def save(self, changes, network=True):
@@ -189,7 +190,8 @@ class HomePhoneTests(BrandFolders):
                         'changes': {'local': {'root': sent}, 'person': {'name': 'Ana'}},
                         'seen': seen})
                     self.assertEqual(status, 409)
-                    self.assertIn('“Workspace folder” names a folder', answer['error'])
+                    # A forged `seen` is an outdated form, refused as such first (second review, item 4).
+                    self.assertIn('names a folder' if 'schema' in seen else 'was changed in another tab', answer['error'])
                     self.assertEqual(shared.read()[0]['local']['root'], work)
             prepare.assert_not_called()
         # A saved folder that ends in a space, sent back exactly, is no change.
@@ -349,6 +351,18 @@ class HomePhoneTests(BrandFolders):
                 with self.subTest(skill=other):
                     self.assertEqual(self.ask('/api/brands', {'skill': other})[1]['problem'], brand_catalog.REMOTE_SKILL)
             choices.assert_not_called()
+
+    def test_an_outdated_form_from_a_phone_is_refused_as_from_the_computer(self):
+        # Second review, item 4: the outdated-form check answers first, with its fields.
+        first, second = str(self.root / 'first'), str(self.root / 'second')
+        self.assertEqual(self.save({'local': {'root': first}}, network=False)[0], 200)
+        shown = shared.read()[0]                     # the phone loads the form
+        self.assertEqual(self.save({'local': {'root': second}}, network=False)[0], 200)
+        sent = {'changes': {'local': {'root': first}, 'person': {'name': 'Ana'}}, 'seen': shown}
+        phone, here = self.ask('/api/shared', sent), self.ask('/api/shared', sent, network=False)
+        self.assertEqual(phone, here)
+        self.assertEqual((phone[0], phone[1]['conflict']), (409, {'fields': ['local.root']}))
+        self.assertEqual(shared.read()[0]['local']['root'], second)
 
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},
