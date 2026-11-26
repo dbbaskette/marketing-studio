@@ -445,15 +445,13 @@ class Home(server.Page):
         extra = {}   # what a save did beside the settings, for the page to say
         with finishing, self.changes:
             if path == '/api/shared':
-                # A phone cannot change a setting holding a folder on this computer; the
-                # others it sends, and a repository web address, save as from the computer.
-                refused = getattr(self.caller, 'remote', False) and onboarding.folders_refused(
-                    sent.get('changes'), sent.get('seen'))
-                if refused:
-                    raise WorkspaceError(refused)
                 before = shared.read()[0]
                 try:
-                    shared_preferences.save(shared, sent.get('changes'), sent.get('seen'))
+                    # A phone cannot change a setting holding a folder on this computer,
+                    # checked under the settings file's lock; the others it sends, and a
+                    # repository web address, save as from the computer.
+                    shared_preferences.save(onboarding.for_phone(shared) if getattr(self.caller, 'remote', False)
+                                            else shared, sent.get('changes'), sent.get('seen'))
                 except shared_preferences.Conflict as failure:
                     # Nothing was written. The page names the field and offers the newer values.
                     refused = WorkspaceError(str(failure))

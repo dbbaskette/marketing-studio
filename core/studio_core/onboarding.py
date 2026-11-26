@@ -55,21 +55,23 @@ def carried(headers) -> bool:
 
 
 def _leaf(values, group, key):
+    """A setting exactly as it is written: an absent one reads as null, as a save writes it."""
     part = values.get(group) if isinstance(values, dict) else None
-    value = part.get(key) if isinstance(part, dict) else None
-    return (value.strip() or None) if isinstance(value, str) else value
+    return part.get(key) if isinstance(part, dict) else None
 
 
 def _folder(value) -> bool:
     return isinstance(value, str) and bool(value) and not _ADDRESS.match(value)
 
 
-def folders_refused(changes, seen):
+def folders_refused(changes, held):
     """For a caller that came over the network: the sentence refusing a shared settings save
-    that would change a setting holding a folder on this computer, or None. A setting sent as
-    the form was shown passes, so the other settings of the same form can be saved, and the
-    save's own check of an outdated form still decides the rest. A repository given as a web
-    address may replace a folder; emptying a folder setting changes it, and is refused."""
+    that would change a setting holding a folder on this computer, or None. `held` is what the
+    settings file holds, read under its lock (for_phone). A setting passes when the save would
+    write exactly the value held, character for character, so the other settings of the same
+    form can be saved; the save's own check of an outdated form still decides the rest. A
+    repository given as a web address may replace a folder; emptying a folder setting changes
+    it, and is refused."""
     if not isinstance(changes, dict):
         return None
     found = []
@@ -77,8 +79,8 @@ def folders_refused(changes, seen):
         part = changes.get(group)
         if not isinstance(part, dict) or key not in part:
             continue
-        wanted, before = _leaf(changes, group, key), _leaf(seen, group, key)
-        if wanted != before and (_folder(wanted) or (_folder(before) and wanted is None)):
+        wanted, before = _leaf(changes, group, key), _leaf(held, group, key)
+        if wanted != before and (_folder(wanted) or (_folder(before) and not wanted)):
             found.append(f'“{preferences.label((group, key))}”')
     if not found:
         return None
@@ -88,6 +90,27 @@ def folders_refused(changes, seen):
     named = ', '.join(found[:-1]) + ' and ' + found[-1]
     return (f'{named} name folders on the computer the studios run on, so they are changed only '
             'on that computer. Put them back as they were to save your other changes here.')
+
+
+class for_phone:
+    """The shared settings `config` as a caller over the network may save them: each save is
+    checked by folders_refused against what the file holds under its lock, before the save's
+    own check, so nothing that changes a folder setting is written in between."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def read(self):
+        return self.config.read()
+
+    def update(self, changes, guard=None):
+        def checked(held):
+            refused = folders_refused(changes, held)
+            if refused:
+                raise preferences.WorkspaceError(refused)
+            if guard is not None:
+                guard(held)
+        return self.config.update(changes, guard=checked)
 
 
 def config(product):
@@ -146,11 +169,10 @@ class Controller:
                     return protocol.as_json(200, owner.models.get(sent.get('agent'), refresh=True))
                 with owner.lock:
                     if path.endswith('/shared'):
-                        refused = remote and folders_refused(sent.get('changes'), sent.get('seen'))
-                        if refused:
-                            raise ValueError(refused)
                         before = owner.store.read()[0]
-                        preferences.save(owner.store, sent.get('changes'), sent.get('seen'))
+                        # A phone's save is checked for folder settings under the file's lock.
+                        preferences.save(for_phone(owner.store) if remote else owner.store,
+                                         sent.get('changes'), sent.get('seen'))
                         after, problem = owner.store.read()
                         # A brands folder on this computer is read by Harness Brand from this save on.
                         done = None if problem else brand_data.saved(before, after)

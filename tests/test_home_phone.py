@@ -167,6 +167,27 @@ class HomePhoneTests(BrandFolders):
 
         self.assertEqual(asked, {*self.page.reads, *self.page.writes}, 'every route was asked from a phone')
 
+    def test_a_folder_is_unchanged_only_when_it_is_exactly_what_is_saved(self):
+        work = str(self.root / 'work')
+        self.assertEqual(self.save({'local': {'root': work}}, network=False)[0], 200)
+        self.assertEqual(self.ask('/api/setup', {'done': True}, network=False)[0], 200)
+        with mock.patch.object(self.launcher, 'prepare') as prepare:
+            for sent, seen in [(sent, seen) for sent in (work + ' ', work + '/', work + '/.')
+                           for seen in (shared.read()[0], {'local': {'root': sent}})]:
+                with self.subTest(sent=sent, seen=seen):
+                    status, answer = self.ask('/api/shared', {
+                        'changes': {'local': {'root': sent}, 'person': {'name': 'Ana'}},
+                        'seen': seen})
+                    self.assertEqual(status, 409)
+                    self.assertIn('“Workspace folder” names a folder', answer['error'])
+                    self.assertEqual(shared.read()[0]['local']['root'], work)
+            prepare.assert_not_called()
+        # A saved folder that ends in a space, sent back exactly, is no change.
+        with mock.patch.object(self.launcher, 'prepare', return_value={}):
+            self.assertEqual(self.save({'local': {'root': work + ' '}}, network=False)[0], 200)
+        self.assertEqual(self.save({'local': {'root': work + ' '}, 'person': {'name': 'Bo'}})[0], 200)
+        self.assertEqual((shared.read()[0]['local']['root'], shared.read()[0]['person']['name']), (work + ' ', 'Bo'))
+
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},
                                'brand': {'skill': str(self.root / 'skill')}}, network=False)
