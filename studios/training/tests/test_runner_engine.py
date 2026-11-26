@@ -1368,6 +1368,23 @@ class SharingTests(StudioCase):
         self.assertEqual(self.state(root), 'done')
         self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')
 
+    def test_a_desk_run_shares_once_at_its_end(self):
+        # Second fix round of GitHub issue #549: counted, as the earlier flow shared: once
+        # when the run comes to rest, then once for the decision and once for the index.
+        calls, real = [], self.engine.share
+
+        def share():
+            calls.append(1)
+            return real()
+        with mock.patch.object(self.engine, 'share', share):
+            root = self.start()
+            self.assertEqual(len(calls), 1, 'coming to rest shares once')
+            self.all_ready(root)
+        self.assertEqual(self.state(root), 'done')
+        self.assertEqual(len(calls), 3, 'then the decision, and the index, each once')
+        self.assertEqual(self.shared()[0],
+                         'Rolling restarts: write the index; the training is finished')
+
     def unshared(self, root: Path) -> None:
         """Only the claim that starts the training reached the team, though more was made."""
         self.assertEqual(self.shared()[0], 'Rolling restarts: start the training from the form')

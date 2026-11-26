@@ -1986,6 +1986,8 @@ class Engine(Reviewing):
                 with companion.stopping(run.stop):  # a command a step runs ends on Stop
                     self._do(root, run, found, step)
                 self._step_marker(root)
+                if step.step.id == 'package':
+                    moved = False   # the index step shared it all already (`_last`): once
         except _Gone:   # it is someone else's now: what the step wrote was put back
             self._step_marker(root)
         except companion.Stopped:   # ended on purpose; IN_HAND stays for the next start
