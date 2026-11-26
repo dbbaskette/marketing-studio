@@ -314,7 +314,10 @@ class RuleTests(PageCase):
         self.assertEqual(self.on_disk(), self.before)
 
     def test_the_desks_own_addresses_are_still_refused_as_before(self):
-        self.assertEqual(self.answer('GET', '/api/decide')[::2], (405, 'POST'))
+        self.assertEqual(self.answer('GET', '/api/computer', None)[0], 200)
+        # The gate and its decisions are not served at all (GitHub issue #547).
+        for target in ('/api/gate', '/api/decide', '/api/approval'):
+            self.assertEqual(self.answer('GET', target)[0], 404, target)
         self.assertEqual(self.answer('GET', '/api/nothing')[0], 404)
         status, said, _ = self.answer('GET', '/api/training?path=' + str(self.base))
         self.assertEqual((status, said['error']),
@@ -2114,9 +2117,6 @@ class ListTests(PageCase):
         self.assertEqual(item['run']['state'], 'waiting')
         detail = self.get('training', path=path)
         self.assertEqual((detail['state'], detail['run']), ('needs-you', item['run']))
-        self.assertEqual(desk.next_up(self.page.trainings()), {
-            'path': path, 'title': 'Rolling restarts', 'artifact': None,
-            'sentence': item['sentence']})
 
     def test_a_run_with_a_problem_counts_as_needing_the_person(self):
         self.workers.then('research-plan', fails(), fails(), fails())
@@ -2146,24 +2146,6 @@ class ListTests(PageCase):
         self.assertEqual([self.get('run', path=path)['state'] for path in (failed, asking)],
                          ['failed', 'waiting'])
 
-
-class DecideTests(PageCase):
-    def approve(self, path: str, name: str, expect: int = 200) -> dict:
-        root = Path(path)
-        file = root / workspace.artifact(root, workspace.load(root), name)['file']
-        return self.post('decide', {'path': path, 'artifact': name, 'decision': 'approve',
-                                    'seen': workspace.sha256_file(file)}, expect)
-
-    def test_a_training_no_run_is_driving_is_decided_as_the_desk_always_did(self):
-        chat = self.base / 'started-in-a-chat'
-        chat.mkdir()
-        workspace.init(chat, 'Started in a chat', approval='page')
-        home.remember(chat, 'Started in a chat', [])
-        said = self.post('decide', {'path': str(chat), 'artifact': 'deck', 'decision': 'skip',
-                                    'note': 'No slides.'})
-        self.assertEqual(said['said'], f"{desk.SAID['skip']} {desk.BACK_TO_CHAT}")
-        self.assertEqual(self.post('approval', {'path': str(chat), 'mode': 'chat'}),
-                         {'approval': 'chat'})
 
 
 class LaterTests(PageCase):
@@ -2431,7 +2413,7 @@ class WireTests(WireCase):
         status, _, body = self.ask('/api/documents', sent)
         self.assertEqual(status, 200, body)
         self.assertEqual(json.loads(body)['documents']['added'][0]['bytes'], 27 * 2_000)
-        for target in ('/api/answer', '/api/copies', '/api/decide', '/api/run'):
+        for target in ('/api/answer', '/api/copies', '/api/computer', '/api/run'):
             # An over-long body is never read: the server refuses and closes the line. A
             # client still sending may see the line reset before it reads the refusal.
             try:
@@ -2910,15 +2892,11 @@ class DeskPageTests(PageCase):
         saved = self.saved()
         before, commits = self.on_disk(), self.log()
         name = 'blueprint'
-        for target, sent in (
-                ('decide', {'artifact': name, 'decision': 'approve',
-                            'seen': hashed(root, name)}),
-                ('outline', {'decision': 'approve'})):
+        # The gate and its decisions went with the conversation's way of working (#547).
+        for target, sent in (('outline', {'decision': 'approve'}),):
             with self.subTest(route=target):
                 said = self.post(target, {'path': path, **sent}, 409)
                 self.assertEqual(said['error'], drafts.ON_DESK)
-        said = self.get('gate', 409, path=path, artifact=name)
-        self.assertEqual(said['error'], drafts.ON_DESK)
         self.assertEqual(self.get('drafts', 409, path=saved)['error'], drafts.NOT_ON_DESK)
         for route, sent in (('ready', {'name': 'research-plan', 'seen': 'x'}),
                             ('level-ready', {'level': '', 'seen': {}}),
@@ -2945,10 +2923,10 @@ class DeskPageTests(PageCase):
         self.assertEqual(said['error'], drafts.NOT_ON_DESK)
         self.assertEqual((self.on_disk(), self.log()), (before, commits),
                          'nothing was changed or committed')
-        # The desk still answers what is its own as it always did; a saved training's gate is
-        # read on its saved record now, not at the gate.
-        self.assertEqual(self.get('gate', 409, path=saved, artifact='research-plan')['error'],
-                         engines.SAVED_ONLY)
+        # The desk still answers what is its own as it always did; a saved training is read on
+        # its saved record, and no gate is served at all (GitHub issue #547).
+        self.assertEqual(self.get('gate', 404, path=saved, artifact='research-plan')['error'],
+                         'Nothing is served here.')
         self.assertEqual(sorted(self.get('drafts', path=path)),
                          ['cards', 'docs', 'execution', 'flow', 'index_written', 'job', 'levels',
                           'library', 'needs', 'progress', 'sources', 'standing', 'team', 'title'])

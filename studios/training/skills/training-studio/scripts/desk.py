@@ -1,14 +1,14 @@
-"""The page: every training on this computer, and the place a gate is decided.
+"""The page: every training on this computer.
 
 The server answers on 127.0.0.1 only. It reads through the same functions the command line
-uses, so the page shows what the assistant sees. Reading is GET. The few things that change
-a training are POST with a JSON body, accepted only from the page itself, and they go through
-the same function as the command line's `approve` and `skip`, recorded as made on the page.
+uses, so the page shows what the assistant sees. Reading is GET; the only POST here is a new
+look at this computer, accepted only from the page itself. A training a conversation made
+with this helper is no longer continued here or anywhere (GitHub issue #547): there is no
+gate to decide and no decision to record. The runner's page adds what desk work does.
 """
 from __future__ import annotations
 
 import codecs
-import difflib
 import json
 import re
 import secrets  # noqa: F401  retained legacy module exports
@@ -44,10 +44,9 @@ TEXT_SUFFIXES = ('.md', '.json')
 PREVIEW_LIMIT = 1_000_000
 BODY_LIMIT = 64_000      # bytes a POST may carry
 NOTE_LIMIT = 10_000      # characters in a note or a reason
-CHANGE_LIMIT = 2_000     # lines of comparison sent to the page
 COMPUTER_CACHE = 60      # seconds a look at this computer is reused
-READS = ('/api/trainings', '/api/training', '/api/file', '/api/gate', '/api/computer')
-WRITES = ('/api/decide', '/api/approval', '/api/computer')
+READS = ('/api/trainings', '/api/training', '/api/file', '/api/saved-file', '/api/computer')
+WRITES = ('/api/computer',)
 
 from studio_core.server import for_product as _server_for_product  # noqa: E402
 
@@ -71,19 +70,6 @@ STAGE_NAMES = {'intake': 'Start', 'research-plan': 'Research plan', 'research': 
 STAGE_STATES = {'done': 'done', 'current': 'in progress', 'review': 'yours to review',
                 'not-started': 'not started', 'left-out': 'left out',
                 'unavailable': 'could not be made'}
-BACK_TO_CHAT = ('Your assistant picks this up when you go back to the conversation and tell '
-                'it you have decided. You can close this page.')
-SAID = {
-    'approve': 'Approved.',
-    'accept': 'Accepted as it is.',
-    'revise': 'Your changes are noted. Once they are made, the new version comes back here '
-              'for your review.',
-    'rebuild': 'A rebuild is asked for. The new version comes back here for your review.',
-    'skip': 'This stage is left out. You can bring it back from the training at any time.',
-    'restore': 'This stage is back.',
-}
-
-
 def named(name: str) -> str:
     """An artifact in the page's words, ready to start a sentence."""
     return workspace.sentence(workspace.label(name))
@@ -295,6 +281,86 @@ def summary(report: dict, result: dict) -> dict:
             'stages': stage_row(report, result['ready'], needs and needs['artifact'])}
 
 
+# --- a training a conversation made ---------------------------------------------------------
+#
+# One made in a conversation with this helper (a session record, no run record, not on the
+# desk) is no longer continued anywhere (GitHub issue #547): it is a saved record, said in
+# these words, with its files to read in place. Brought into the workspace, it is classed
+# like any other saved training: it opens on the desk or is kept to read.
+
+CONVERSATION = workspace.CONVERSATION_SAID
+CONVERSATION_BRIEF = ('Made in a conversation, which no longer continues it. Open it to see '
+                      'what can be done with it.')
+CONVERSATION_WHY = ('Training Studio no longer continues a training made in a conversation. '
+                    'Brought into your workspace, it opens on the desk where it has a plan, '
+                    'or is kept to read.')
+CONVERSATION_ELSEWHERE = ('It is brought in from the Training Studio page, which this page '
+                          'is not. Open Training Studio to bring it in.')
+# The shared files a saved record lists to read in place, at the top or in a level's folder.
+SAVED_FILES = ('intake.md', 'research-report.md', 'blueprint.md', 'document.md',
+               'product-brief.md', 'competitive-brief.md', 'scenario.md', 'deck-link.md')
+
+
+def saved_files(root: Path) -> list[str]:
+    """Each of SAVED_FILES, at the top or in a level's folder, that is an ordinary file
+    inside the training's folder: what a saved record lists, and all it serves."""
+    inside_ = root.resolve()
+    found = []
+    for level in ('', *(name + '/' for name in workspace.LEVELS)):
+        for name in SAVED_FILES:
+            if level and name in ('intake.md', 'research-report.md'):
+                continue
+            path = root / (level + name)
+            try:
+                real = path.resolve()
+            except (OSError, RuntimeError):
+                continue
+            if not path.is_symlink() and not path.parent.is_symlink() \
+                    and inside_ in real.parents and real.is_file():
+                found.append(level + name)
+    return found
+
+
+made_in_conversation = workspace.made_in_conversation
+
+
+def as_conversation(item: dict) -> dict:
+    """A conversation's training as a list says it: saved, waiting for nobody, its stages
+    saying only what is done."""
+    item.update(state='saved', saved='conversation', sentence=CONVERSATION_BRIEF,
+                waiting=None)
+    item['stages'] = [{**stage, 'state': 'not-started', 'words': STAGE_STATES['not-started']}
+                      if stage.get('state') in ('current', 'review') else stage
+                      for stage in item.get('stages') or ()]
+    return item
+
+
+def conversation_record(root: Path) -> dict:
+    """The saved record of a conversation's training: why it is not continued, its files,
+    and its way on, Bring it in."""
+    return {'outcome': 'bring', 'why': CONVERSATION_WHY, 'refusal': None, 'next': 'bring',
+            'outside': True, 'elsewhere': CONVERSATION_ELSEWHERE,
+            'files': saved_files(root), 'waits': [], 'retained': [], 'targets': []}
+
+
+def saved_file(path: str, name: str) -> dict:
+    """One file a conversation's saved record lists, read in place as text. Writes nothing."""
+    registered(path)
+    root = Path(path)
+    if not made_in_conversation(root):
+        raise Refusal(HTTPStatus.NOT_FOUND, 'This training is not a saved record.')
+    if name not in saved_files(root):
+        raise Refusal(HTTPStatus.FORBIDDEN, 'That is not one of its saved files.')
+    try:
+        found = text_of(inside(root, name))
+    except OSError:
+        raise Refusal(HTTPStatus.NOT_FOUND, f'{name} can no longer be read. Open the training '
+                      'again.') from None
+    if found is None:
+        raise Refusal(HTTPStatus.CONFLICT, f'{name} is not text, so it is not shown here.')
+    return {'name': name, 'text': found[0], 'truncated': found[1]}
+
+
 def trainings() -> list[dict]:
     """Every training in the registry, most recently touched first."""
     listed = []
@@ -312,6 +378,8 @@ def trainings() -> list[dict]:
                         counts=counts, ready=result['ready'],
                         blocking=len(result['blocking']), to_make=len(result['to_make']),
                         **summary(report, result))
+            if made_in_conversation(root):
+                as_conversation(item)
         except Exception as failure:  # one record that cannot be read must not hide the rest
             item['error'] = unread_said(failure)
         listed.append(item)
@@ -375,6 +443,9 @@ def detail(path: str) -> dict:
                           'blocking': [plainly(reason) for reason in result['blocking']],
                           'limitations': [plainly(reason) for reason in result['limitations']],
                           'warnings': result['warnings']})
+        if made_in_conversation(root):
+            as_conversation(item)
+            item.update(sentence=CONVERSATION, saved_record=conversation_record(root))
     except Exception as failure:  # shown on the page, like the same training in the list
         item['error'] = unread_said(failure)
     return item
@@ -427,7 +498,7 @@ def preview(path: str, name: str) -> dict:
     return {**shown, 'binary': False, 'text': found[0], 'truncated': found[1]}
 
 
-# --- a gate ---------------------------------------------------------------------
+# --- what a file shows ----------------------------------------------------------
 
 def questions(text: str) -> dict | None:
     """A research plan as its questions, or None if it cannot be read as one."""
@@ -442,7 +513,7 @@ def questions(text: str) -> dict | None:
 
 
 def document(root: Path, session: dict, name: str) -> dict:
-    """What a gate shows for an artifact: a document to read, a list of questions, or, for
+    """What the page shows of an artifact: a document to read, a list of questions, or, for
     a deck, its name and size."""
     relative = workspace.artifact(root, session, name)['file']
     file = inside(root, relative)
@@ -458,200 +529,6 @@ def document(root: Path, session: dict, name: str) -> dict:
         return {**shown, 'kind': 'questions', **plan}
     kind = 'link' if workspace.split(name)[0] == 'deck' else 'markdown'
     return {**shown, 'kind': kind, 'text': text, 'truncated': truncated}
-
-
-def lines_of(name: str, text: str) -> list[str]:
-    """A file as the lines to compare: a research plan is compared question by question."""
-    plan = questions(text) if name == 'research-plan' else None
-    if plan is None:
-        return text.splitlines()
-    return [f"{item['id']}: {item['question']}" for item in plan['questions']]
-
-
-def changes(root: Path, session: dict, name: str) -> dict:
-    """A line comparison with the version last approved, when there is one."""
-    approved = (session['artifacts'].get(name) or {}).get('approved')
-    file = inside(root, workspace.artifact(root, session, name)['file'])
-    current = workspace.sha256_file(file)
-    if not approved or current is None:
-        return {'available': False}
-    shown = {'available': True, 'approved_at': approved.get('at'), 'rows': [],
-             'same': approved['sha256'] == current, 'comparable': True, 'truncated': False}
-    if shown['same']:
-        return shown
-    kept = workspace.history_file(root, name, approved['sha256'], file.suffix)
-    before = text_of(kept) if kept.is_file() else None
-    after = text_of(file)
-    if before is None or after is None or before[1] or after[1]:
-        return {**shown, 'comparable': False}
-    rows = []
-    for line in difflib.unified_diff(lines_of(name, before[0]), lines_of(name, after[0]),
-                                     lineterm='', n=2):
-        if line.startswith(('---', '+++')) and not rows:
-            continue
-        kind = {'@': 'gap', '+': 'added', '-': 'removed'}.get(line[:1], 'same')
-        rows.append({'kind': kind, 'text': '' if kind == 'gap' else line[1:]})
-    return {**shown, 'rows': rows[:CHANGE_LIMIT], 'truncated': len(rows) > CHANGE_LIMIT}
-
-
-def latest_review(root: Path, name: str) -> str | None:
-    """The latest entry in an artifact's review file: everything from its last `## ` heading."""
-    relative = workspace.review_file(name)
-    try:
-        file = inside(root, relative)
-    except Refusal:
-        return None
-    found = text_of(file) if file.is_file() else None
-    if found is None:
-        return None
-    lines = found[0].splitlines()
-    starts = [index for index, line in enumerate(lines) if line.startswith('## ')]
-    entry = '\n'.join(lines[starts[-1]:] if starts else lines).strip()
-    return entry or None
-
-
-def out_of_date(root: Path, session: dict, name: str, state: dict) -> list[str]:
-    """Why an artifact is out of date: what it was built from that has changed since."""
-    spec = workspace.artifact(root, session, name)
-    reasons = [f'{named(upstream)} is itself out of date.'
-               for upstream in spec['upstream'] if state[upstream] == 'stale']
-    built = (session['artifacts'].get(name) or {}).get('built_from') or {}
-    now = workspace.inputs(root, session, name)
-    for key in dict.fromkeys([*built, *now]):
-        if built.get(key) == now.get(key):
-            continue
-        if key.startswith('setting:'):
-            setting = key.partition(':')[2].replace('_', ' ')
-            reasons.append(f'The {setting} setting has changed since this was made.')
-        elif key == 'profile':
-            reasons.append('The Yoodli field data has changed since this was made.')
-        else:
-            reasons.append(f'{named(key)} has changed since this was made.')
-    return reasons
-
-
-def offered(session: dict, spec: dict, name: str, state: dict) -> tuple[list[str], list[dict]]:
-    """The decisions a gate offers for an artifact, and what has to be settled first."""
-    status, wanted = state[name], session['settings']['stages']
-    first = [{'artifact': upstream, 'label': workspace.label(upstream)}
-             for upstream in spec['upstream'] if state[upstream] not in ('approved', 'skipped')]
-    offers = []
-    if status == 'draft' and not first:
-        offers.append('approve')
-    if status in ('draft', 'stale', 'approved'):
-        offers += ['revise', 'rebuild']
-    if status == 'stale' and not first:
-        offers.append('accept')
-    if status in ('skipped', 'unavailable'):
-        offers.append('restore')
-    elif spec['stage'] in workspace.SKIPPABLE and not (
-            spec['stage'] in ('brief', 'scenario') and 'yoodli' in wanted):
-        offers.append('skip')
-    return offers, first
-
-
-def gate(path: str, name: str) -> dict:
-    """Everything the gate screen shows for one artifact of one training."""
-    root, session = artifact_of(path, name)
-    report, result = assess.describe(root), assess.run_checks(root, show_all=True)
-    state, spec = report['artifacts'], workspace.artifact(root, session, name)
-    about = summary(report, result)
-    needs = about['waiting']
-    here = bool(needs) and needs['artifact'] == name
-    own = [outcome for outcome in result['checks']
-           if checks.artifact_of(outcome['check']) == name]
-    offers, first = offered(session, spec, name, state)
-    approved = (session['artifacts'].get(name) or {}).get('approved') or {}
-    plan = document(root, session, 'research-plan') if name == 'research' else {}
-    account = research_view.account(root / 'research', plan.get('questions') or []) if name == 'research' else None
-    return {
-        'path': path, 'title': report['title'], 'levels': report['levels'],
-        'approval': report['approval'], 'stages': about['stages'],
-        'artifact': name, 'label': named(name), 'stage': spec['stage'],
-        'stage_name': STAGE_NAMES[spec['stage']],
-        'status': state[name], 'words': WORDS[state[name]], 'waiting': here,
-        'question': report.get('pending_question') if here else None,
-        'sha256': workspace.sha256_file(inside(root, spec['file'])),
-        'document': document(root, session, name),
-        **({'research': account} if name == 'research' else {}),
-        'changes': changes(root, session, name),
-        'checked': {'passed': sum(outcome['status'] == 'passed' for outcome in own),
-                    'problems': [{'check': outcome['check'], 'problems': outcome['problems'],
-                                  'words': ('could not run' if outcome['status'] == 'unavailable'
-                                            else 'failed')}
-                                 for outcome in own if outcome['status'] != 'passed']},
-        'out_of_date': (out_of_date(root, session, name, state)
-                        if state[name] == 'stale' else []),
-        'unavailable': report['unavailable_stages'].get(spec['stage']),
-        'review': latest_review(root, name),
-        'asked': [request for request in report['requests'] if request.get('artifact') == name],
-        'approved': ({'at': approved.get('at'), 'by': approved.get('by', 'chat')}
-                     if state[name] == 'approved' else None),
-        'decisions': offers, 'first': first,
-        # Why a stage that can be left out is not offered so: Yoodli uses the brief and the
-        # practice scenarios.
-        **({'held_by': 'yoodli'} if spec['stage'] in ('brief', 'scenario') and 'skip' not in
-           offers and 'yoodli' in session['settings']['stages']
-           and state[name] not in ('skipped', 'unavailable') else {}),
-    }
-
-
-def next_up(listed: list[dict] | None = None) -> dict | None:
-    """The next thing that needs the user, across every training, or None."""
-    for item in trainings() if listed is None else listed:
-        if item.get('state') == 'needs-you':
-            return {'path': item['path'], 'title': item['title'],
-                    'artifact': item['waiting']['artifact'], 'sentence': item['sentence']}
-    return None
-
-
-# --- what the page changes ------------------------------------------------------
-
-def decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
-           refresh: bool = False, *, held=None) -> dict:
-    registered(path)
-    import write_guard
-    with write_guard.admitted(Path(path), held=held):
-        return _decide(path, target, decision, note, seen, refresh)
-
-
-def _decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
-            refresh: bool = False) -> dict:
-    """Record a decision made on the page, through the function the command line uses."""
-    registered(path)
-    root = Path(path)
-    session = workspace.load(root)
-    if decision not in workspace.DECISIONS:
-        raise Refusal(HTTPStatus.BAD_REQUEST, 'A decision is one of: '
-                      + ', '.join(workspace.DECISIONS) + '.')
-    stage = decision in ('skip', 'restore') and target in workspace.SKIPPABLE
-    if not stage and target not in workspace.artifact_names(root, session):
-        raise Refusal(HTTPStatus.FORBIDDEN, f'{target} is not an artifact of this training.')
-    if session['settings']['approval'] != 'page':
-        raise Refusal(HTTPStatus.CONFLICT, 'Decisions for this training are made in the '
-                      'conversation. Move them to the page first.')
-    if decision in ('approve', 'accept') and not seen:
-        raise Refusal(HTTPStatus.BAD_REQUEST, 'Say which version was read, as `seen`.')
-    outcome = assess.decide(root, target, decision, note, by='page', seen=seen,
-                            refresh=refresh)
-    return {'decided': outcome, 'said': f'{SAID[decision]} {BACK_TO_CHAT}', 'next': next_up()}
-
-
-def move_approval(path: str, mode: str, *, held=None) -> dict:
-    registered(path)
-    import write_guard
-    with write_guard.admitted(Path(path), held=held):
-        return _move_approval(path, mode)
-
-
-def _move_approval(path: str, mode: str) -> dict:
-    """Move a training's approval to the page, or back to the conversation."""
-    registered(path)
-    if mode not in workspace.APPROVAL:
-        raise Refusal(HTTPStatus.BAD_REQUEST, 'Approval is one of: '
-                      + ', '.join(workspace.APPROVAL) + '.')
-    outcome = workspace.checkpoint(Path(path), approval=mode, by='page')
-    return {'approval': outcome['settings']['approval']}
 
 
 def uses_google() -> bool:
@@ -676,7 +553,7 @@ class Page(_security.Page):
 
     A program that serves the same page with more behind it, as the runner does, makes a
     subclass: it adds addresses to `reads` and `writes`, answers them in `read` and `write`,
-    and may add to what `trainings`, `detail`, `decide` and `move_approval` return. Every
+    and may add to what `trainings` and `detail` return. Every
     rule about who may ask stays here, in `answer` and `change`.
     """
     reads, writes = READS, WRITES
@@ -697,15 +574,11 @@ class Page(_security.Page):
     def trainings(self) -> list[dict]:
         return trainings()
 
+    def saved_file(self, path: str, name: str) -> dict:
+        return saved_file(path, name)
+
     def detail(self, path: str) -> dict:
         return detail(path)
-
-    def decide(self, path: str, target: str, decision: str, note: str | None,
-               seen: str | None, refresh: bool = False, *, held=None) -> dict:
-        return decide(path, target, decision, note, seen, refresh, held=held)
-
-    def move_approval(self, path: str, mode: str, *, held=None) -> dict:
-        return move_approval(path, mode, held=held)
 
     def read(self, path: str, one) -> tuple[int, str, bytes]:
         """Answer one GET that passed every rule. `one(name)` is a query value."""
@@ -718,25 +591,14 @@ class Page(_security.Page):
             return as_json(HTTPStatus.OK, self.detail(one('path')))
         if path == '/api/file':
             return as_json(HTTPStatus.OK, preview(one('path'), one('artifact')))
-        if path == '/api/gate':
-            return as_json(HTTPStatus.OK, gate(one('path'), one('artifact')))
+        if path == '/api/saved-file':
+            return as_json(HTTPStatus.OK, self.saved_file(one('path'), one('name')))
         return as_json(HTTPStatus.OK, {'computer': self.computer(look=False)})
 
 
 
     def write(self, path: str, sent: dict) -> tuple[int, str, bytes]:
         """Answer one POST that passed every rule. `sent` is its JSON object."""
-        if path == '/api/decide':
-            if sent.get('refresh', False) not in (True, False):
-                raise Refusal(HTTPStatus.BAD_REQUEST, 'Say whether to bring the evidence up '
-                              'to date with true or false.')
-            return as_json(HTTPStatus.OK, self.decide(
-                text(sent, 'path'), text(sent, 'artifact'), text(sent, 'decision'),
-                text(sent, 'note', False), text(sent, 'seen', False),
-                **({'refresh': True} if sent.get('refresh') else {})))
-        if path == '/api/approval':
-            return as_json(HTTPStatus.OK, self.move_approval(text(sent, 'path'),
-                                                             text(sent, 'mode')))
         return as_json(HTTPStatus.OK, {'computer': self.computer(look=True)})
 
 

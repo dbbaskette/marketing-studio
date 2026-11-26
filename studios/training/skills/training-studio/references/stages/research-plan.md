@@ -58,6 +58,6 @@ One investigation answers synthesis questions together and an independent check 
 
 ## Gate 1
 
-`training.py save research-plan --built`, then present the gate as the gates reference describes: the questions as a readable list grouped by the areas above, with the source scope.
+`training.py save research-plan --built`. The questions read as a list grouped by the areas above, with the source scope.
 
 On approval: `training.py approve research-plan`, then read the research-handoff reference.

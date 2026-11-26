@@ -22,7 +22,7 @@ Under each goal, outside the pasteable blocks:
 
 ## Gate 8
 
-For each, present the scenario and its Yoodli file together as the gates reference describes:
+For each, present the scenario and its Yoodli file together:
 
 - which goal carries each success criterion,
 - the counts against Yoodli's limits, and that the limits are provisional while `check` says so,

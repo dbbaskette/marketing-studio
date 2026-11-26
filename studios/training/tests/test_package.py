@@ -47,8 +47,8 @@ class SyntheticCase(unittest.TestCase):
         self.assertIn('SKILL.md links to missing references/modes/tutor.md', found)
 
     def test_a_broken_link_in_a_reference_is_reported(self):
-        self.append('references/gates.md', '\nSee [nothing](nowhere.md).\n')
-        self.assertEqual(self.found(), ['references/gates.md links to missing nowhere.md'])
+        self.append('references/workspace.md', '\nSee [nothing](nowhere.md).\n')
+        self.assertEqual(self.found(), ['references/workspace.md links to missing nowhere.md'])
 
     def test_external_links_are_not_followed(self):
         self.append('references/privacy.md', '\nSee [docs](https://example.com/missing).\n')
@@ -56,7 +56,7 @@ class SyntheticCase(unittest.TestCase):
 
     def test_a_reference_reached_only_through_another_is_reported(self):
         self.put('references/deep.md', '# Deep\n')
-        self.append('references/gates.md', '\nSee [deep](deep.md).\n')
+        self.append('references/workspace.md', '\nSee [deep](deep.md).\n')
         self.assertEqual(self.found(), ['references/deep.md is not linked from SKILL.md, '
                                         'so it is more than one hop away'])
 
@@ -66,10 +66,10 @@ class SyntheticCase(unittest.TestCase):
                                         'so it is more than one hop away'])
 
     def test_files_over_budget_are_reported(self):
-        self.append('references/intake.md', 'x' * 4000)
+        self.append('references/levels.md', 'x' * 4000)
         self.append('assets/examples/document.md', 'y' * 4900)
         found = self.found()
-        self.assertTrue(any(line.startswith('references/intake.md is 1') and
+        self.assertTrue(any(line.startswith('references/levels.md is 1') and
                             line.endswith('the budget is 1000') for line in found), found)
         self.assertTrue(any(line.startswith('assets/examples/document.md is 12') and
                             line.endswith('the budget is 1200') for line in found), found)
@@ -83,7 +83,7 @@ class SyntheticCase(unittest.TestCase):
 
     def test_a_loading_set_over_budget_is_reported(self):
         for name in ('references/stages/scenario.md', 'references/modes/pitch.md',
-                     'references/profiles/yoodli.md', 'references/gates.md'):
+                     'references/profiles/yoodli.md', 'references/stages/scenario.md'):
             self.append(name, 'x' * 3900)
         self.append('assets/examples/yoodli.md', 'x' * 4700)
         self.append('assets/examples/scenario.md', 'x' * 4700)

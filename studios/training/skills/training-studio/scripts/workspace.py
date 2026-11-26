@@ -382,6 +382,27 @@ def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
     return session
 
 
+# A training a conversation made with the helper (a session record, no run record, not on the
+# desk): nothing continues it any more (GitHub issue #547). Status, the page and the helper's
+# guard say so in these words.
+CONVERSATION_SAID = ('This training was made in a conversation, which no longer continues '
+                     'it. Its files are kept as they are.')
+CONVERSATION_NEXT = ('Bring it in on the Training Studio page to open it on the desk, or start '
+                     'a new training.')
+
+
+def made_in_conversation(root: Path) -> bool:
+    """Whether a readable training is one a conversation made: no run record, and not on
+    the desk."""
+    run = root / STATE_DIR / 'run.json'
+    if run.exists() or run.is_symlink():
+        return False
+    try:
+        return not on_desk(load(root))
+    except WorkspaceError:
+        return False
+
+
 def on_desk(session: dict) -> bool:
     """Whether a training is worked on at the desk, with no gates or review screens."""
     return session.get('flow') == 'desk'
@@ -939,26 +960,6 @@ def status(root: Path) -> dict:
 
 
 # --- approval -------------------------------------------------------------------
-
-@mutating
-def import_research(root: Path, case: Path) -> dict:
-    from studio_core import research_contract
-    session = load(root)
-    if session['settings']['approval'] == 'page':
-        raise WorkspaceError('This training is driven from its page. Use its research stage there.')
-    if (root / RESEARCH_RECORD).exists():
-        raise WorkspaceError('Existing research keeps its original workflow. Use a fresh training for synthesis research.')
-    contract = research_contract.snapshot()
-    if not contract:
-        raise WorkspaceError('Install the shared Harness Research 1.0 or newer before importing synthesis research.')
-    facts, manifest = research_contract.adopt_case(case, root)
-    session['research_contract'] = contract
-    write_atomic(root / SHARED['research'][0], (root / 'research/report.md').read_bytes())
-    record(root, session, 'research', built=True)
-    store(root, session)
-    return {'status': 'ready-for-review', 'digest': manifest['digest'],
-            'report': 'research/report.md', 'brief': 'research/brief.md'}
-
 
 def research_record_file(root: Path) -> str:
     session = load(root) if session_path(root).is_file() else {}
@@ -1711,27 +1712,3 @@ def pins_shown(session: dict) -> dict:
     skill itself says where it runs from each time it is started or resumed."""
     return {key: {name: value for name, value in entry.items() if name != 'runtime'}
             if isinstance(entry, dict) else entry for key, entry in session['pins'].items()}
-
-
-@mutating
-def pin(root: Path, skill: str, task: str, runtime: str | None = None,
-        run: str | None = None, level: str | None = None) -> dict:
-    """Record the harness skill task this training, or one of its levels, resumes with: the
-    task and its run, never where the skill is installed. `runtime` is taken and ignored, for
-    the guidance a training in progress was saved with, which still passes it."""
-    session = load(root)
-    check_choice(skill, PINNABLE, 'A pinned skill')
-    if level is not None and level not in session['levels']:
-        raise WorkspaceError('The level is one of: ' + (', '.join(session['levels'])
-                                                        or 'none; this is a plain training'))
-    key = qualify(skill, level)
-    before = session['pins'].get(key)
-    entry = {'task': task}
-    if isinstance(before, dict) and 'runtime' in before:
-        entry['runtime'] = before['runtime']    # what an older version saved stays as it is
-    if run:
-        entry['run'] = run
-    session['pins'][key] = entry
-    log(session, 'pin', skill=skill, task=task)
-    store(root, session)
-    return pins_shown(session)

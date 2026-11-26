@@ -46,11 +46,14 @@ def main():
                 from runner_support import fails
                 case.engine.content_first = True
                 case.workers.then('section', *[fails()] * 12)
-            # --unreadable-conversation: a training a conversation keeps outside the workspace
-            # whose record cannot be read, as stored (GitHub issue #547): its read-only record.
+            # --conversation: a training a conversation keeps outside the workspace, at its
+            # blueprint, as stored (GitHub issue #547): its saved record, to bring in.
+            # --unreadable-conversation: one whose record cannot be read: a read-only record.
             import saved_fixtures
-            root = saved_fixtures.conversation(case, 'conversation-unreadable-session') \
-                if '--unreadable-conversation' in sys.argv else case.begin(flow='desk', slide_text_review=False) if '--stopped-deck' in sys.argv else case.supplied(**({'materials': ['document', 'brief', 'scenario'], 'yoodli': True} if '--practice' in sys.argv else {})) if '--settings' in sys.argv else case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
+            stored = ('conversation-unreadable-session' if '--unreadable-conversation'
+                      in sys.argv else 'conversation-blueprint-gate'
+                      if '--conversation' in sys.argv else None)
+            root = saved_fixtures.conversation(case, stored) if stored else case.begin(flow='desk', slide_text_review=False) if '--stopped-deck' in sys.argv else case.supplied(**({'materials': ['document', 'brief', 'scenario'], 'yoodli': True} if '--practice' in sys.argv else {})) if '--settings' in sys.argv else case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
                 **({'levels':['101','201']} if '--two-levels' in sys.argv else {}),
                 **({'yoodli': True} if '--yoodli' in sys.argv else {}))
         server = desk.Desk(page=lambda port: page.RunnerPage(port, case.engine))

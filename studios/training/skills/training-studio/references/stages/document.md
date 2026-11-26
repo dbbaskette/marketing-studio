@@ -37,7 +37,7 @@ This is declared coverage. It proves a section claims to teach something, not th
 
 ## Gate 4
 
-Save the first version with `training.py save document --built`. Run `training.py check`, fix what fails, and present the gate as the gates reference describes.
+Save the first version with `training.py save document --built`. Run `training.py check`, and fix what fails.
 
 On approval:
 

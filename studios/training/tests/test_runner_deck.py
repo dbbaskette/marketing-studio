@@ -2689,7 +2689,10 @@ class CompatibleTests(DeckCase):
         self.workers.then('section', *[fails()] * 6)
         root = self.begin()
         self.assertEqual(self.view(root)['state'], 'failed', 'approved, and still drawing')
-        workspace.pin(root, 'harness-slides', 'deck', '0.13.1')
+        # A companion task kept with the training, as one saved earlier holds it.
+        session = workspace.load(root)
+        session['pins']['harness-slides'] = {'task': 'deck', 'runtime': '0.13.1'}
+        workspace.store(root, session)
         pins, kept = workspace.load(root)['pins'], self.record(root)['deck']['']
         start = self.built(root)['start']
         # Harness Slides 0.14.1 is installed, with everything it lists, and looked at.

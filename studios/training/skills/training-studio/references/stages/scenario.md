@@ -30,7 +30,7 @@ The `practice` report in `check` lists which objectives the scenarios exercise, 
 
 ## Gate 7
 
-Present each scenario as the gates reference describes: whose file it is, its mode, its success criteria, and your judgment of whether the brief supports what it asks of the learner.
+Present each scenario with whose file it is, its mode, its success criteria, and your judgment of whether the brief supports what it asks of the learner.
 
 On approval: `training.py approve scenario:<id>` for each. The last one moves the training on, to `yoodli` if it is on; read the reference for the new `stage`.
 

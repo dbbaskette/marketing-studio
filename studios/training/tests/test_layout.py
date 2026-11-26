@@ -14,14 +14,13 @@ from test_desk import SET_UP, a_copy, a_run, ok, steps
 
 @unittest.skipUnless(test_desk.NODE, 'Node is needed to run the page scripts without a browser')
 class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
+    DRIVEN = True
     answers = test_desk.RunnerScreenTests.answers
     posts = test_desk.RunnerScreenTests.posts
     started = test_desk.RunnerScreenTests.started
     at_the_questions_gate = test_desk.RunnerScreenTests.at_the_questions_gate
     listed = test_desk.RunnerScreenTests.listed
     detail = test_desk.RunnerScreenTests.detail
-    gate_as_the_runner_gives_it = test_desk.RunnerScreenTests.gate_as_the_runner_gives_it
-    at_the_yoodli_gate = test_desk.RunnerScreenTests.at_the_yoodli_gate
 
     def run_page(self, answers: dict, steps: list, layout: bool = True, **plan) -> dict:
         return super().run_page(answers, steps, layout=layout, **plan)
@@ -119,8 +118,9 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
             'Preview files in your Google Drive', 'This page')]
         self.assertEqual(parts[0], 'Shared settings')
         self.assertEqual(parts[-1], 'This page')
-        self.assertLess(parts.index('Workspace'), parts.index('Where each training is decided'))
-        self.assertLess(parts.index('Where each training is decided'), parts.index('Notifications'))
+        # Where each training is decided went with the conversation's decisions (#547).
+        self.assertNotIn('Where each training is decided', parts)
+        self.assertLess(parts.index('Workspace'), parts.index('Notifications'))
         self.assertLess(parts.index('Brand skill'), parts.index('Updates'))
         self.assertLess(parts.index('Updates'), parts.index('Notifications'))
 
@@ -492,65 +492,8 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
                                'GET /api/training': [self.detail('waiting', waits)],
                                'GET /api/run': [waiting]})
 
-    def gate_lede(self, artifact: str) -> None:
-        found = self.read('gate', path=str(self.root), artifact=artifact)
-        label = found['body']['label']
-        named = label[0].lower() + label[1:]
-        answers = {'GET /api/trainings': [self.read('trainings')],
-                   'GET /api/computer': [self.read('computer')], 'GET /api/gate': [found]}
-        result = self.run_page(answers, [{'click': 'Review ' + named}, {'snapshot': 'gate'}])
-        shot = result['snapshots']['gate']
-        self.assertEqual(shot['ledes'], ['Read ' + named + ', then approve it or ask for '
-                                         'changes.'])
-        asks = [control for control in shot['toolbar'] if control['name'] == 'Ask for changes']
-        self.assertEqual([control['quiet'] for control in asks], [True])
-        self.assertTrue(shot['toolbar'][0]['filled'])
-
-    def test_every_gate_has_one_lede(self):
-        self.at_the_blueprint_gate()
-        self.gate_lede('blueprint')
-
-    def test_the_questions_gate_has_one_lede_too(self):
-        self.started()
-        self.at_the_questions_gate()
-        self.gate_lede('research-plan')
-
-    def test_a_covered_gate_sends_you_to_the_review_from_its_toolbar(self):
-        self.at_the_blueprint_gate()
-        combined = {'name': 'first drafts review', 'phase': 'direction'}
-        waits = 'Review the first drafts.'
-        waiting = a_run('waiting', waits)
-        waiting['body']['review'] = {
-            'phase': 'direction', 'label': 'Review the first drafts', 'expected': 'v1',
-            'items': [{'target': 'blueprint', 'label': 'Teaching plan', 'text': '# Plan'}]}
-        answers = self.answers(**{
-            'GET /api/trainings': [self.listed('waiting', waits)],
-            'GET /api/training': [self.detail('waiting', waits)],
-            'GET /api/run': [waiting],
-            'GET /api/gate': [self.gate_as_the_runner_gives_it(
-                'blueprint', combined=combined,
-                decisions=['approve', 'revise', 'rebuild', 'skip'])]})
-        result = self.run_page(answers, [{'click': 'Review the blueprint'},
-                                         {'snapshot': 'gate'}])
-        shot = result['snapshots']['gate']
-        self.assertEqual(shot['toolbar'][0], {'name': 'Request changes in the first drafts '
-                                                      'review', 'filled': True, 'quiet': False})
-        self.assertEqual(shot['buttons'].count('Request changes in the first drafts review'), 1)
-
 
     # --- what the review of the whole branch found -----------------------------------
-
-    def test_a_covered_gate_that_can_be_brought_back_has_one_filled_action(self):
-        self.at_the_blueprint_gate()
-        combined = {'name': 'first drafts review', 'phase': 'direction'}
-        answers = self.answers(**{'GET /api/gate': [self.gate_as_the_runner_gives_it(
-            'blueprint', combined=combined, decisions=['restore', 'skip'])]})
-        result = self.run_page(answers, [{'click': 'Review the blueprint'},
-                                         {'snapshot': 'gate'}])
-        shot = result['snapshots']['gate']
-        self.assertEqual(shot['filled'], ['Bring this stage back'])
-        self.assertIn({'name': 'Request changes in the first drafts review', 'filled': False,
-                       'quiet': True}, shot['toolbar'])
 
     def test_deleting_several_says_what_one_delete_would_say(self):
         found = self.four()
@@ -629,19 +572,6 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         published = result['snapshots']['published']
         self.assertNotIn('Ready to use', published['fields'])
         self.assertNotIn('More filters', published['buttons'])
-
-    def test_opening_a_sheet_on_a_gate_leaves_the_gate_as_it_was(self):
-        at = self.at_the_yoodli_gate()
-        gate = self.read('gate', path=str(self.root), artifact='yoodli:main')
-        answers = {'GET /api/trainings': [self.read('trainings')],
-                   'GET /api/computer': [self.read('computer')], 'GET /api/gate': [gate]}
-        self.assertTrue(at)
-        result = self.run_page(answers, [
-            {'click': 'Review'}, {'hold': 'Copy Roleplay name'},
-            {'click': 'Ask for changes'}, {'snapshot': 'asking'}])
-        shot = result['snapshots']['asking']
-        self.assertTrue(shot['sheet'])
-        self.assertEqual(shot['still'], ['Copy Roleplay name'])
 
 
 if __name__ == '__main__':

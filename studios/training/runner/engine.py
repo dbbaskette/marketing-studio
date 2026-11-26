@@ -500,8 +500,6 @@ WAITS_FOR = {
                'then check again.'),
     'other': (None, 'Put that right in the workspace, then check again.')}
 # The shared files a read-only record may list and read, by name (`Engine._saved_files`).
-SAVED_FILES = ('intake.md', 'research-report.md', 'blueprint.md', 'document.md',
-               'product-brief.md', 'competitive-brief.md', 'scenario.md', 'deck-link.md')
 DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
          'doc': 'Google Doc'}
 
@@ -3400,12 +3398,8 @@ class Engine(Reviewing):
                    if drafts.on_desk(self._load(root)) and rounds else {}),
                 'audit_findings': blocked, 'audit_warnings': noticed,
                 **({'auditNote': audit_note} if audit_note else {})})
-            # What the screens and the brand's check send back is drawn again before anyone
-            # reviews it, within the rounds a deck has: the last round is always reviewed.
-            back = deck.sent_back(screens) + blocked
-            if back and not drafts.on_desk(self._load(root)) and len(rounds) <= deck.REPAIRS:
-                rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
-                                        'by': 'screen', 'at': home.now()}
+            # What the screens and the brand's check find goes to the round's review, which
+            # sends it back (`_review`). The earlier flow's screen-only round went with it.
             self._note(root, level, rounds=rounds)
             self._done(root, it, clock, f'put {workspace.label(it.artifact)} together: '
                        f"{len(slides)} slide{'' if len(slides) == 1 else 's'}")
@@ -7908,24 +7902,10 @@ class Engine(Reviewing):
 
     @staticmethod
     def _saved_files(root: Path) -> list[str]:
-        """The shared files a read-only record lists: each of SAVED_FILES, at the top or in
-        a level's folder, that is an ordinary file inside the training's folder, so
+        """The shared files a read-only record lists (`desk.saved_files`), so
         `/api/saved-file` serves every name listed and nothing else."""
-        inside = root.resolve()
-        found = []
-        for level in ('', *(name + '/' for name in ('101', '201', '301', '401'))):
-            for name in SAVED_FILES:
-                if level and name in ('intake.md', 'research-report.md'):
-                    continue
-                path = root / (level + name)
-                try:
-                    real = path.resolve()
-                except (OSError, RuntimeError):
-                    continue
-                if not path.is_symlink() and not path.parent.is_symlink() \
-                        and inside in real.parents and real.is_file():
-                    found.append(level + name)
-        return found
+        import desk
+        return desk.saved_files(root)
 
     def conversation_unread(self, path) -> bool:
         """Whether `path` holds a training a conversation keeps outside the workspace whose

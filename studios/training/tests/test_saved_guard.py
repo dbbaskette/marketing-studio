@@ -23,8 +23,8 @@ from runner import engine as engines, page, studio
 STATES = ('blueprint-gate', 'research-plan-gate', 'finished')
 # Every changing route the page serves that is not allowed: each refuses a saved record.
 REFUSED = (
-    '/api/answer', '/api/approval', '/api/asset', '/api/brand', '/api/brand/install',
-    '/api/companions', '/api/computer', '/api/copies', '/api/decide', '/api/documents',
+    '/api/answer', '/api/asset', '/api/brand', '/api/brand/install',
+    '/api/companions', '/api/computer', '/api/copies', '/api/documents',
     '/api/documents-library', '/api/documents-library-keep', '/api/documents-library-update',
     '/api/drafts/apply', '/api/drafts/deck-brand', '/api/drafts/deck-brand-copy',
     '/api/drafts/deck-note', '/api/drafts/deck-outline', '/api/drafts/deck-outline-price',
@@ -113,10 +113,11 @@ class SavedGuardTests(StudioCase):
         shutil.copytree(root, outside)
         native = page.RunnerPage(8765, self.engine)
         before = self.folder(outside)
-        for route in ('/api/decide', '/api/approval'):
+        # The gate's decisions that once reached such a folder are gone (GitHub issue
+        # #547); every changing route that names it still refuses it.
+        for route in ('/api/copies', '/api/documents', '/api/note'):
             with self.subTest(route=route), self.assertRaises(page.desk.Refusal) as caught:
-                native.write(route, {'path': str(outside), 'artifact': 'blueprint',
-                                     'decision': 'approve', 'mode': 'chat'})
+                native.write(route, {'path': str(outside), 'action': 'done'})
             self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
         self.assertEqual(self.folder(outside), before)
 
@@ -139,21 +140,47 @@ class SavedGuardTests(StudioCase):
                     self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
                     self.assert_untouched(root, before, head, action)
 
+    def helper(self, root, argv) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = training.main(['--dir', str(root), *argv])
+        self.assertEqual(code, 2, out.getvalue())
+        return json.loads(out.getvalue())['error']
+
     def test_the_helper_never_writes_a_training_a_runner_made(self):
+        import write_guard
         for state in STATES:
             root = saved_fixtures.load(self, state)
+            # The commands that continued a training are gone (GitHub issue #547): each
+            # answers that it ended. The helper's one writer left, `google`, is refused.
             for argv in (['approve', 'blueprint'], ['skip', 'deck', '--reason', 'Not needed.'],
                          ['checkpoint', '--next', 'Something else'],
                          ['save', 'blueprint', '--built'],
-                         ['pin', 'harness-research', '--task', 'x']):
+                         ['pin', 'harness-research', '--task', 'x'],
+                         ['google', 'push', 'document', '--prepare',
+                          str(self.base / 'send.md')]):
                 with self.subTest(state=state, argv=argv):
                     before, head = self.folder(root), self.git('rev-parse', 'HEAD')
-                    out = io.StringIO()
-                    with contextlib.redirect_stdout(out):
-                        code = training.main(['--dir', str(root), *argv])
-                    self.assertEqual(code, 2, out.getvalue())
-                    self.assertIn('earlier step-by-step flow', json.loads(out.getvalue())['error'])
+                    said = self.helper(root, argv)
+                    self.assertEqual(said, training.ENDED if argv[0] in
+                                     training.ENDED_COMMANDS else write_guard.SAVED_RUNNER)
                     self.assert_untouched(root, before, head, ' '.join(argv))
+
+    def test_the_helper_never_writes_a_training_a_conversation_made(self):
+        """GitHub issue #547: a conversation's training is a saved record too; the helper
+        changes nothing in it."""
+        import write_guard
+        for state in ('conversation-blueprint-gate', 'conversation-finished'):
+            top = saved_fixtures.conversation(self, state)
+            for argv in (['approve', 'blueprint'], ['save', 'blueprint', '--built'],
+                         ['google', 'push', 'document', '--prepare',
+                          str(self.base / 'send.md')]):
+                with self.subTest(state=state, argv=argv):
+                    before = self.folder(top)
+                    said = self.helper(top, argv)
+                    self.assertEqual(said, training.ENDED if argv[0] in
+                                     training.ENDED_COMMANDS else write_guard.SAVED_CONVERSATION)
+                    self.assertEqual(self.folder(top), before)
 
 
 from test_runner_deck import DeckCase  # noqa: E402

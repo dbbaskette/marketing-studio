@@ -1720,7 +1720,6 @@ class ResearchAccountTests(StudioCase):
         from synthesis_fixture import research_stop
         from studio_core import research_contract, research_view
         from types import SimpleNamespace
-        import desk
         root = self.start()
         research_stop(root / research_contract.CASE / 'research')
         record = self.engine._load(root); record['research_contract'] = {'schema': 2}
@@ -1729,7 +1728,9 @@ class ResearchAccountTests(StudioCase):
         with mock.patch.object(research_contract, 'matching', return_value=tool):
             step = next(s for s in pipeline.steps([]) if s.id == 'research-report')
             self.engine._report(root, step)
-        note = desk.latest_review(root, 'research')
+        # The latest entry of the research's review file: from its last `## ` heading.
+        text = (root / workspace.review_file('research')).read_text(encoding='utf-8')
+        note = '## ' + text.rpartition('\n## ')[2] if '\n## ' in text else text
         self.assertIn(research_view.CHECKED + ' An honest account.', note)
         self.assertNotIn('Digest', note)
         self.assertNotIn('synthetic-digest', note)

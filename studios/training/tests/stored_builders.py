@@ -23,18 +23,15 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import inspect
 import json
 import os
 import re
-import unittest
 from pathlib import Path
 
 STORE = Path(__file__).resolve().parent / 'fixtures' / 'saved' / 'flow'
 TREES = STORE / 'trees.json'
 BLOBS = STORE / 'blobs'
 RECORD = 'TRAINING_STUDIO_RECORD_BUILDERS'
-TRACE = 'TRAINING_STUDIO_HELPER_TRACE'
 # The helper's commands that continue a training: none of them reaches a stored tree.
 CONTINUING = ('save', 'approve', 'skip', 'checkpoint', 'pin', 'export', 'research-import')
 STAMP = re.compile(rb'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)?')
@@ -90,22 +87,6 @@ def trees() -> dict:
     if _trees is None:
         _trees = json.loads(TREES.read_text(encoding='utf-8')) if TREES.is_file() else {}
     return _trees
-
-
-def _test_id() -> str:
-    for frame in inspect.stack():
-        found = frame.frame.f_locals.get('self')
-        if isinstance(found, unittest.TestCase):
-            return found.id()
-    return 'an unknown test'
-
-
-def trace(what: str) -> None:
-    """Note that a test drove a helper command that continues a training."""
-    target = os.environ.get(TRACE)
-    if target and _depth == 0:
-        with open(target, 'a', encoding='utf-8') as log:
-            log.write(json.dumps({'test': _test_id(), 'did': what}) + '\n')
 
 
 def _normal(tree: dict[str, bytes]) -> dict[str, bytes]:

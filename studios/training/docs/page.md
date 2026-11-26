@@ -1,13 +1,13 @@
 # The page
 
-Training Studio has a page that runs in your browser, on your own computer. It shows what needs you, where every training stands, and whether this computer is ready. If you choose, it is also the only place a stage can be approved.
+Training Studio has a page that runs in your browser, on your own computer. It shows what needs you, where every training stands, and whether this computer is ready.
 
 ## Two ways it is served
 
 The same page is served two ways.
 
-- **From a conversation**, with `training desk`, as below. It does not start or run a training: your assistant does that, in the conversation. Settings holds notifications and where each training is decided.
-- **From the runner**, with `studio serve`, which "Open Training Studio" starts. There the page starts and runs trainings too: "New training", each run and its stops, your documents, the copies, the deck and working as a team, as [the runner](runner.md) describes. Settings holds more there: **Shared settings**, **Workspace**, **Preview files in your Google Drive** when there are any, **Notifications**, **When this page is closed**, **Updates**, **Brand skill** and **Where each training is decided**.
+- **From a conversation**, with `training desk`, as below. It does not start or run a training. Settings holds notifications.
+- **From the runner**, with `studio serve`, which "Open Training Studio" starts. There the page starts and runs trainings too: "New training", each run and its stops, your documents, the copies, the deck and working as a team, as [the runner](runner.md) describes. Settings holds more there: **Shared settings**, **Workspace**, **Preview files in your Google Drive** when there are any, **Notifications**, **When this page is closed**, **Updates** and **Brand skill**.
 
 The rest of this page is about the page served from a conversation.
 
@@ -23,13 +23,13 @@ It prints one line with a link. Open the link exactly as it is printed: the part
 
 The installer writes `training`, for a linked checkout too, and it finds a Python new enough itself. Without the installer, run `python3 skills/training-studio/scripts/training.py desk` in a checkout of this repository, with Python 3.11 or newer.
 
-You can also ask your assistant to open the page. It then opens in your browser by itself, and your assistant is never shown the key: when the command is not run in a terminal, it prints only the address and says so. For a training that is decided on the page, your assistant does not open it at all. It asks you to run the command yourself.
+You can also ask your assistant to open the page. It then opens in your browser by itself, and your assistant is never shown the key: when the command is not run in a terminal, it prints only the address and says so.
 
 ## Home
 
 Home opens on what needs you.
 
-- **Needs you** lists each training that is waiting at a gate, or has a question for you, with one sentence saying what is waiting. The button in the toolbar takes you to the first of them.
+- **Needs you** lists each training that is waiting for you, with one sentence saying what is waiting. The button in the toolbar takes you to the first of them.
 - **In progress** shows the trainings that are being worked on, each with its row of stages.
 - **Finished** shows the ones that are complete.
 
@@ -39,44 +39,15 @@ The same row of stages appears everywhere. A stage is done, in progress, yours t
 
 A training made on the desk is said the same way on Home, Trainings, Status and its desk: working on its own, needs your decision (an answer, documents, the teaching plan or a deck's slide text), needs attention (a review finding or a held material), drafts to mark ready, ready, or stopped. A finished writing job is never called finished: the training is Ready only once you have marked every material ready and its index is written. Status counts drafts **still to write** apart from drafts **to review and mark ready** and what **needs attention**. Its button opens the desk at the next thing to do, down to the deck slide a finding is on. Opening any screen starts no work.
 
-## A gate
+## A training made in a conversation
 
-A gate is one thing to read and one decision to make.
-
-- **The document** is shown as a document, not as its source. A research plan is shown as its questions. A deck is not text, so the page gives its name, its size and where it is.
-- **What changed** compares it, line by line, with the version you last approved. It is one press away, above the document.
-- **Checked for you** says how many automatic checks passed. **Worth a look** names any that did not, says why something is out of date, and shows your assistant's latest review note.
-
-Then decide, from the toolbar:
-
-| You choose | What happens |
-| --- | --- |
-| Approve | This version is approved, against what it was built from. The page asks you to confirm |
-| Ask for changes | You say what should change, in your own words. Nothing is approved |
-| Rebuild it | It is made again. You can say what to do differently |
-| Skip this stage | The stage is left out. You give a reason, and can bring it back later |
-| Accept as it is | Offered when something it was built from has changed. You give a reason |
-
-After a decision the page says what happens next and offers the next thing that needs you. You can close it. Go back to your assistant and say you have decided: it reads what you chose and carries on.
-
-If the document changes while you have it open, the page says so and waits for you to look at the new version. You never approve something you were not shown.
-
-## Deciding on the page, or in the conversation
-
-Each training is decided in one of two places. Change it in Settings, or on the training's own screen.
-
-- **In the conversation.** You approve by telling your assistant. This is how every training starts unless you ask otherwise.
-- **On this page.** Only the page can approve, skip a stage or bring one back. If your assistant tries, the helper refuses and tells it to send you here. Only the page can move a training back to the conversation.
-
-To start a training this way, ask for it at the beginning: "I want to approve each stage on the page."
-
-Be clear about what this does. It stops an assistant that follows its instructions, or that slips, from approving for you. It does not make forgery impossible: an assistant with a shell that set out to rewrite the training's record could still do so. The guidance forbids that. [The runner](runner.md) closes the gap for the stages it drives: its agents have no shell and cannot reach the training's files at all.
+A training made in a conversation with the helper is no longer continued, here or anywhere (GitHub issue #547). There is no gate to decide and no decision to record. It is listed as made in a conversation, and opened it is a saved record: what it is, why it is not continued, and its files to read in place. On the Training Studio page its one action is **Bring it in**, which copies it into your workspace and leaves its own folder as it is; the copy then opens on the desk where it has a plan, or is kept to read. A training whose record cannot be read is a read-only record, with **Start a new training**.
 
 ## Trainings, Status and Settings
 
-- **Trainings** shows every training on this computer as a card. Open one to see its files, what is in the way, its checks, what was left out, which objectives its scenarios exercise, its research, the guidance it follows and the Training Studio version it started on. From there you can open any file, bring back a stage that was left out, and copy a sentence that asks your assistant to resume.
+- **Trainings** shows every training on this computer as a card. Open one to see its files, what is in the way, its checks, what was left out, which objectives its scenarios exercise, its research, the guidance it follows and the Training Studio version it started on.
 - **Status** shows everything at once: each training's stage, where it stands, how long since it changed and how many things are in its way. **Check this computer** looks for what a training needs: Claude Code and Codex, each installed, signed in where that can be asked, and reachable from the network you are on; Node; the two companion skills; and, as extras, the Google Cloud CLI and pandoc. Anything missing comes with how to put it right. The check asks each tool for its version, asks Codex whether it is signed in, and opens a connection to each service. It never starts an assistant.
-- **Settings** holds notifications and where each training is decided. Served from the runner, it holds more; see [two ways it is served](#two-ways-it-is-served).
+- **Settings** holds notifications. Served from the runner, it holds more; see [two ways it is served](#two-ways-it-is-served).
 
 The page keeps itself up to date. You do not need to reload it.
 
@@ -112,11 +83,8 @@ The page is drawn like a Mac app: translucent glass for the sidebar, the toolbar
 | `GET /` | The page. Its other files are `app.js`, `markdown.js` and `style.css` |
 | `GET /api/trainings` | Every known training: where it is, what it is waiting for, its row of stages, and how many need you |
 | `GET /api/training?path=P` | One training: what `status` and `check` report, and the same in plain words |
-| `GET /api/gate?path=P&artifact=A` | One file at its gate: the document, what changed, what was checked, and the decisions on offer |
 | `GET /api/file?path=P&artifact=A` | The text of one file, or its name and size if it is not text |
 | `GET /api/computer` | The last check of this computer, if there was one |
-| `POST /api/decide` | Records a decision: `path`, `artifact`, `decision`, and a `note` and the version `seen` where they apply |
-| `POST /api/approval` | Moves a training's approval to the page or back: `path`, `mode` |
 | `POST /api/computer` | Checks this computer now |
 
 Every `/api/` request needs the key, in a header named `X-Training-Studio-Token`. A `POST` also needs an `Origin` header naming the page's own address and a JSON body. The page's files live with the scripts, in `skills/training-studio/scripts/desk/`. The design is in the [milestone 1 specification](archive/superpowers/specs/2026-10-13-milestone-1-page-approval.md).

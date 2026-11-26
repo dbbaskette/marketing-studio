@@ -596,16 +596,11 @@ class NothingContinuesTests(SavedStopTests):
                     native.apply(target, sent)
                 self.assertEqual((caught.exception.status, str(caught.exception)),
                                  (409, engines.SAVED_ONLY))
-        session = workspace.load(root)
-        seen = workspace.sha256_file(root / workspace.artifact(root, session, 'blueprint')['file'])
-        with self.assertRaises(page.desk.Refusal) as caught:
-            native.decide(path, 'blueprint', 'approve', None, seen)
-        self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
-        with self.assertRaises(page.desk.Refusal):
-            native.read('/api/gate', lambda key: {'path': path, 'artifact': 'blueprint'}[key])
-        # The combined review and the look gate of the earlier flow are no longer routes.
-        for gone in ('/api/review', '/api/look'):
+        # The combined review and the look gate of the earlier flow are no longer routes,
+        # nor the conversation's gate and its decisions (GitHub issue #547).
+        for gone in ('/api/review', '/api/look', '/api/decide', '/api/approval'):
             self.assertNotIn(gone, native.writes)
+        self.assertNotIn('/api/gate', native.reads)
         self.engine.wake(root)
         self.engine.resume()
         self.assertEqual(len(self.workers.jobs), jobs)
