@@ -1103,9 +1103,9 @@ class PhoneSettingsTests(PageCase):
             self.assertNotIn(shown, json.dumps(phone))
         # Everything else is as this computer has it.
         self.assertEqual({key: value for key, value in phone.items()
-                          if key not in ('workspace', 'brand', 'shared', 'upkeep')},
+                          if key not in ('workspace', 'brand', 'shared')},
                          {key: value for key, value in here.items()
-                          if key not in ('workspace', 'brand', 'shared', 'upkeep')})
+                          if key not in ('workspace', 'brand', 'shared')})
         # The answers of the brand route and of the shared notice are shown the same way.
         with mock.patch.object(brand_source, 'check', lambda address, place: {
                 'repository': address, 'commit': '0' * 40}):
@@ -1121,6 +1121,88 @@ class PhoneSettingsTests(PageCase):
         # Set-up saved on this computer answers it in full.
         self.assertEqual(self.send('setup', {'limits': {'parallel': 3}}, remote=False)[1]
                          ['workspace']['path'], str(self.space.repo))
+
+
+class PhoneRouteWalkTests(PageCase):
+    """Fix round of GitHub issue #539: every answer that carries the set-up, the brand or
+    the upkeep report names no folder of this computer to a phone, upkeep included. The
+    page's routes are walked from its own lists, GET and POST, with the header set."""
+
+    DESCRIBED = ('workspace', 'brand', 'upkeep', 'skills')
+
+    def headers(self, token=True, host=None, origin=None, kind=None, remote=False) -> Message:
+        made = super().headers(token, host, origin, kind)
+        if remote:
+            made['X-Marketing-Studio-Via'] = 'network'
+        return made
+
+    def send(self, endpoint: str, sent: dict, remote: bool) -> tuple[int, dict]:
+        status, reply, _ = self.answer('POST', f'/api/{endpoint}', json.dumps(sent).encode(),
+                                       origin=self.origin, kind='application/json',
+                                       remote=remote)
+        return status, reply
+
+    def folders(self, value, inside: bool = False) -> list:
+        """Every string naming a folder here under one of DESCRIBED, anywhere in `value`."""
+        if isinstance(value, dict):
+            return [found for key, one in value.items()
+                    for found in self.folders(one, inside or key in self.DESCRIBED)]
+        if isinstance(value, list):
+            return [found for one in value for found in self.folders(one, inside)]
+        here = (str(self.base), str(self.base.resolve()), str(Path.home()))
+        return [value] if inside and isinstance(value, str) and value.startswith(here) else []
+
+    def test_no_answer_describing_set_up_the_brand_or_upkeep_names_a_folder_to_a_phone(self):
+        from runner import brand_source
+
+        class Keeping(Keeper):
+            def __init__(self, base):
+                super().__init__()
+                self.base = base
+
+            def report(self):
+                return {'links': [{'assistant': 'Claude Code', 'name': 'training-studio',
+                                   'path': str(self.base / 'skills' / 'training-studio'),
+                                   'state': 'ok'}],
+                        'versions': {'brand': {'repository': str(self.base / 'brand.git')}}}
+
+            def update(self, working):
+                return self.report()
+            upgrade = restart = install_brand = lambda self, *given: self.report()
+            dismiss = lambda self, key: self.report()
+
+        self.engine.upkeep = Keeping(self.base)
+        settings.save(replace(settings.load(), brand_repository=str(self.base / 'brand.git')))
+        bodies = {'/api/brand': {'repository': 'https://example.invalid/brand.git'},
+                  '/api/shared': {'seen': True}, '/api/versions': {'dismiss': 'brand'},
+                  '/api/upgrade': {'version': '1.0.0'}, '/api/brand/install': {'commit': 'a' * 40},
+                  '/api/companions': {}, '/api/restart': {}}
+        walked, answered = [], {}
+        with mock.patch.object(brand_source, 'check', lambda address, place: {
+                'repository': address, 'commit': '0' * 40}):
+            for target in sorted(set(page.READS) | set(desk.READS)):
+                status, reply, _ = self.answer('GET', target, remote=True)
+                walked.append(('GET', target))
+                if status == 200:
+                    answered[('GET', target)] = reply
+            for target in sorted(set(page.WRITES)):
+                if target not in bodies:
+                    continue
+                status, reply = self.send(target[len('/api/'):], bodies[target], remote=True)
+                walked.append(('POST', target))
+                self.assertEqual(status, 200, (target, reply))
+                answered[('POST', target)] = reply
+        for asked in (('GET', '/api/setup'), ('GET', '/api/status'), ('POST', '/api/brand'),
+                      ('POST', '/api/companions'), ('POST', '/api/brand/install')):
+            self.assertIn(asked, answered)
+        self.assertIn('upkeep', answered[('GET', '/api/status')])
+        for asked, reply in answered.items():
+            with self.subTest(asked=asked):
+                self.assertEqual(self.folders(reply), [])
+        # On this computer the same answers keep their folders.
+        status, reply, _ = self.answer('GET', '/api/status', remote=False)
+        self.assertEqual(reply['upkeep']['links'][0]['path'],
+                         str(self.base / 'skills' / 'training-studio'))
 
 
 class CheckTests(FirstTimeCase):

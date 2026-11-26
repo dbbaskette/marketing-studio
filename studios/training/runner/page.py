@@ -443,7 +443,10 @@ class RunnerPage(desk.Page):
                 return self.download_level(one('path'), given('level') or '')
             return self.download(one('path'), one('artifact'), given('copy'))
         if path == '/api/status':
-            return desk.as_json(HTTPStatus.OK, self.engine.standing())
+            # Its trainings are named as on every list; its upkeep report names no folder
+            # here to a phone (GitHub issue #539).
+            found = self.engine.standing()
+            return desk.as_json(HTTPStatus.OK, {**found, 'upkeep': caller.shown(found['upkeep'])})
         if path == '/api/published':
             return desk.as_json(HTTPStatus.OK, {'published': self.engine.published()})
         if path == '/api/capabilities':
@@ -1155,17 +1158,17 @@ class RunnerPage(desk.Page):
         if path == '/api/fetch':
             return desk.as_json(HTTPStatus.OK, self.engine.fetch())
         if path == '/api/companions':
-            return desk.as_json(HTTPStatus.OK, {'upkeep': self.update()})
+            return desk.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.update())})
         if path == '/api/upgrade':
             version = desk.text(sent, 'version')
-            return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().upgrade(
-                self.working(), version)})
+            return desk.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().upgrade(
+                self.working(), version))})
         if path == '/api/restart':
-            return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().restart(
-                self.working())})
+            return desk.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().restart(
+                self.working()))})
         if path == '/api/versions':
-            return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().dismiss(
-                desk.text(sent, 'dismiss'))})
+            return desk.as_json(HTTPStatus.OK, {'upkeep': caller.shown(self.keeper().dismiss(
+                desk.text(sent, 'dismiss')))})
         if path == '/api/brand':
             try:
                 return desk.as_json(HTTPStatus.OK,
@@ -1189,8 +1192,8 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, caller.shown(setup.describe(self.engine)))
         if path == '/api/brand/install':
             commit = desk.text(sent, 'commit')
-            return desk.as_json(HTTPStatus.OK, {'upkeep': self.keeper().install_brand(
-                self.working(), commit)})
+            return desk.as_json(HTTPStatus.OK, {'upkeep': caller.shown(
+                self.keeper().install_brand(self.working(), commit))})
         if path == '/api/delete':
             title = desk.text(sent, 'title')
             return desk.as_json(HTTPStatus.OK, self.engine.delete(
