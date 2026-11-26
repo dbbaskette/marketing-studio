@@ -211,6 +211,34 @@ class OnboardingPhoneTests(BrandFolders):
         self.assertEqual(self.save({'brand': {'brands': 'https://example.com/b.git'}})[0], 200)
         self.assertEqual(self.save({'brand': {'brands': None}})[0], 200)
 
+    def test_what_each_route_still_shows_a_phone_of_saved_folders(self):
+        # Review item 5: the saved folder values each route answers a phone with, as
+        # onboarding.PHONE_SHOWS records them; what is shown is the owner's separate decision.
+        from test_home_phone import folders_shown
+        folder = self.brands_folder(self.root / 'brands', 'acme')
+        self.assertEqual(self.save({'local': {'root': str(self.root / 'work')},
+                                    'brand': {'skill': str(self.root / 'skill'), 'brands': str(folder),
+                                              'repository': str(self.root / 'skill-repo')},
+                                    'team': {'repository': str(self.root / 'team-repo')}}, network=False)[0], 200)
+        asked = {'/onboarding/api/home': None, '/onboarding/api/models': {'agent': 'claude'},
+                 '/onboarding/api/shared': {'changes': {'person': {'name': 'Ana'}}, 'seen': {}},
+                 '/onboarding/api/setup': {'done': True}, '/onboarding/api/graphics': {'models': 'gemini'},
+                 '/onboarding/api/brands': {}, '/onboarding/api/brands-repository': {},
+                 '/onboarding/api/research-site': {'site': 'https://example.com'}}
+        self.assertEqual(set(asked), set(onboarding.PHONE))
+        shown = {}
+        with mock.patch.object(self.page.models, 'get', return_value={'models': []}), \
+                mock.patch.object(graphics, 'listed', return_value={'provider': 'gemini', 'models': []}), \
+                mock.patch.object(brand_catalog, 'choices', return_value=SKILLS):
+            for path, sent in asked.items():
+                with self.subTest(path=path):
+                    found = folders_shown(self.ask(path, sent)[1])
+                    if found:
+                        shown[path] = found
+        self.assertEqual(shown, {path: set(fields) for path, fields in onboarding.PHONE_SHOWS.items()})
+        for path, why in onboarding.PHONE.items():
+            self.assertEqual(onboarding.SAVED in why, path in onboarding.PHONE_SHOWS, path)
+
     def test_a_computer_still_changes_folder_settings(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')}, 'brand': {'skill': str(self.root / 'skill')}},
                               network=False)

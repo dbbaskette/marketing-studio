@@ -26,6 +26,16 @@ LIBRARY = (*library_context.ROUTES, '/api/library-upload', '/api/library-downloa
            '/api/library-existing', '/api/library-adopt', '/api/library-hide')
 
 
+def folders_shown(value, at=''):
+    """Where in an answer a folder on this computer is written: each key path (a list's
+    items as []) whose text names one."""
+    if isinstance(value, dict):
+        return set().union(*(folders_shown(part, f'{at}.{key}' if at else key) for key, part in value.items()))
+    if isinstance(value, list):
+        return set().union(*(folders_shown(part, at + '[]') for part in value))
+    return {at} if isinstance(value, str) and brand_data.names_a_folder(value) else set()
+
+
 class HomePhoneTests(BrandFolders):
     def setUp(self):
         super().setUp()
@@ -258,6 +268,66 @@ class HomePhoneTests(BrandFolders):
         # A web address may be emptied from a phone.
         self.assertEqual(self.save({'brand': {'brands': 'https://example.com/b.git'}})[0], 200)
         self.assertEqual(self.save({'brand': {'brands': None}})[0], 200)
+
+    def test_what_each_route_still_shows_a_phone_of_saved_folders(self):
+        # Review item 5: the saved folder values each route answers a phone with, route by
+        # route, as page.PHONE_SHOWS records them. What is shown is the owner's separate
+        # decision; this keeps the record true.
+        folder = self.brands_folder(self.root / 'brands', 'acme')
+        install = self.root / 'blog-install'
+        tools = {'ready': True, 'items': [{'name': 'Git', 'ready': True, 'detail': '/usr/bin/git', 'optional': False}]}
+        with mock.patch.object(self.launcher, 'prepare', return_value={}), \
+                mock.patch.object(catalog, 'locate', return_value=install):
+            self.assertEqual(self.save({'local': {'root': str(self.root / 'work')},
+                                        'brand': {'skill': str(self.root / 'skill'), 'brands': str(folder),
+                                                  'repository': str(self.root / 'skill-repo')},
+                                        'team': {'repository': str(self.root / 'team-repo')}}, network=False)[0], 200)
+            self.assertEqual(self.ask('/api/setup', {'done': True}, network=False)[0], 200)
+            self.assertEqual(self.ask('/api/paths', {'paths': {'blog': str(install)}}, network=False)[0], 200)
+        # A Blog Studio workspace the studio remembers, with a source to add to the library.
+        from test_library_adopt import Workspace
+        blogs = Workspace(self.root / 'writing')
+        blogs.source('gateway-guide-1a2b3c4e', 'Gateway guide', '# Gateway guide\n\nRoutes.\n',
+                     library={'origin_kind': 'upload'})
+        data = Path(os.environ['BLOG_STUDIO_DATA'])
+        data.mkdir(parents=True, exist_ok=True)
+        (data / 'page.json').write_text(json.dumps({'workspace': str(blogs.root)}))
+        with mock.patch.object(computer, 'check', return_value=tools):
+            self.assertEqual(self.ask('/api/computer', {}, network=False)[0], 200)   # one look taken here
+        signature = self.ask('/api/library-existing', {}, network=False)[1]['signature']
+        asked = {
+            '/api/home': None, '/api/computer': {}, '/api/models': {'agent': 'claude'},
+            '/api/shared': {'changes': {'person': {'name': 'Ana'}}, 'seen': {}},
+            '/api/setup': {'done': True}, '/api/open': {'studio': 'blog'}, '/api/connect': {'studio': 'blog'},
+            '/api/paths': {'paths': {'blog': str(install)}}, '/api/graphics': {'models': 'gemini'},
+            '/api/brands': {}, '/api/brands-repository': {}, '/api/research-site': {'site': 'https://example.com'},
+            **{path: {} for path in LIBRARY},
+            '/api/library-upload': {'name': 'note.md', 'content': 'IyBOb3RlCg=='},
+            '/api/library-adopt': {'signature': signature},
+            **{f'/api/brand-{name}': {} for name in BRAND_ROUTES}}
+        self.assertEqual(set(asked), set(home_page.PHONE))
+        shown = {}
+        with mock.patch.object(computer, 'check', return_value=tools), \
+                mock.patch.object(self.launcher, 'prepare', return_value={}), \
+                mock.patch.object(self.launcher, 'open', return_value='http://192.168.1.9:1/#token=x'), \
+                mock.patch.object(self.launcher, 'connect', return_value={'connected': True}), \
+                mock.patch.object(catalog, 'locate', return_value=install), \
+                mock.patch.object(self.page.models, 'get', return_value={'models': []}), \
+                mock.patch.object(graphics, 'listed', return_value={'provider': 'gemini', 'models': []}), \
+                mock.patch.object(brand_catalog, 'choices', return_value=SKILLS):
+            # Walked twice: with a team repository, then with only a local work folder.
+            for storage in ({}, {'team': {'repository': None}}):
+                if storage:
+                    self.assertEqual(self.save(storage, network=False)[0], 200)
+                for path, sent in asked.items():
+                    with self.subTest(path=path, storage=storage):
+                        status, answer = self.ask(path, sent)
+                        shown.setdefault(path, set()).update(folders_shown(answer))
+        shown = {path: found for path, found in shown.items() if found}
+        self.assertEqual(shown, {path: set(fields) for path, fields in home_page.PHONE_SHOWS.items()})
+        # Each route's written decision says whether it shows saved folders, and only then.
+        for path, why in home_page.PHONE.items():
+            self.assertEqual(home_page.SAVED in why, path in home_page.PHONE_SHOWS, path)
 
     def test_a_computer_still_changes_folder_settings_and_installation_folders(self):
         status, _ = self.save({'local': {'root': str(self.root / 'work')},

@@ -33,16 +33,23 @@ REMOTE_FAILED = 'That could not be done here. See why on the computer the studio
 
 # What a phone may do with each route of this page, decided route by route; a route added
 # without a decision here fails tests/test_onboarding_phone.py.
+SAVED = ' It still shows the saved folders PHONE_SHOWS names.'
 PHONE = {
-    '/onboarding/api/home': 'Allowed: the saved settings, as the page shows them; nothing is looked up.',
+    '/onboarding/api/home': 'Allowed: the saved settings, as the page shows them; nothing is looked up.' + SAVED,
     '/onboarding/api/models': 'Allowed: an assistant’s models, read or looked up again; no folder.',
-    '/onboarding/api/shared': 'Allowed, except a change to a setting holding a folder (folders_refused).',
-    '/onboarding/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.',
+    '/onboarding/api/shared': 'Allowed, except a change to a setting holding a folder (for_phone).' + SAVED,
+    '/onboarding/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.' + SAVED,
     '/onboarding/api/graphics': 'Allowed: models listed; a key is refused (graphics.act).',
     '/onboarding/api/brands': 'Names and states only; a skill folder is refused unread.',
     '/onboarding/api/brands-repository': 'Allowed: the saved setting is got, answered without folders.',
     '/onboarding/api/research-site': 'Allowed: a web address is checked; no folder.',
 }
+# The saved folder values on this computer each route still shows a phone, by where they are in
+# its answer: the shared settings the page is filled from. Showing them is the owner's separate
+# decision; tests/test_onboarding_phone.py walks every route and keeps this list true.
+PHONE_SHOWS = {route: ('shared.local.root', 'shared.brand.skill', 'shared.brand.brands',
+                       'shared.brand.repository', 'shared.team.repository')
+               for route in ('/onboarding/api/home', '/onboarding/api/shared', '/onboarding/api/setup')}
 
 
 def carried(headers) -> bool:

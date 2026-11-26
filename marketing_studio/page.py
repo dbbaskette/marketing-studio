@@ -33,24 +33,49 @@ REMOTE_PATHS = ('Studio installation folders are folders on the computer Marketi
 # What a phone on the private link may do with each route (GitHub issue #539): it cannot set
 # or ask about a folder on this computer, and may give a repository web address. A route added
 # without a decision here fails tests/test_home_phone.py.
+SAVED = ' It still shows the saved folders PHONE_SHOWS names.'
 PHONE = {
-    '/api/home': 'Allowed: the home snapshot, as it is (the private link itself left out).',
-    '/api/computer': 'Allowed: a look at this computer’s tools; it takes no folder.',
+    '/api/home': 'Allowed: the home snapshot (the private link itself left out).' + SAVED,
+    '/api/computer': 'Allowed: a look at this computer’s tools; it takes no folder.' + SAVED,
     '/api/models': 'Allowed: an assistant’s models, read or looked up again; no folder.',
-    '/api/shared': 'Allowed, except a change to a setting holding a folder (onboarding.folders_refused).',
-    '/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.',
+    '/api/shared': 'Allowed, except a change to a setting holding a folder (onboarding.for_phone).' + SAVED,
+    '/api/setup': 'Allowed: finishes setup with the saved settings; it takes no folder.' + SAVED,
     '/api/open': 'Allowed: opens a studio, and gives a phone its bridge link.',
-    '/api/connect': 'Allowed: joins a studio to the saved storage; it takes only a studio.',
-    '/api/paths': 'Refused when an installation folder changes; the saved folders sent again pass.',
+    '/api/connect': 'Allowed: joins a studio to the saved storage; it takes only a studio.' + SAVED,
+    '/api/paths': 'Refused when an installation folder changes; the saved folders sent again pass.' + SAVED,
     '/api/graphics': 'Allowed: models listed; a key is refused (graphics.act).',
     '/api/brands': 'Names and states only; a skill folder is refused unread (brand_catalog.listed).',
     '/api/brands-repository': 'Allowed: the saved setting is got, answered without folders (brand_data.got).',
     '/api/research-site': 'Allowed: a web address is checked; no folder.',
-    **{route: 'Allowed: the Document Library’s documents; no folder is named or set.'
+    **{route: 'Allowed: the Document Library’s documents; the caller names and sets no folder.'
+       + (SAVED if route in ('/api/library', '/api/library-upload', '/api/library-existing',
+                             '/api/library-adopt') else '')
        for route in (*library_context.ROUTES, '/api/library-upload', '/api/library-download',
                      '/api/library-existing', '/api/library-adopt', '/api/library-hide')},
     **{f'/api/brand-{name}': 'Refused: Brands is used on the computer (REMOTE_BRANDS).'
        for name in BRAND_ROUTES},
+}
+# The saved folder values on this computer each route still shows a phone, by where they are
+# in its answer (a list's items as []). Showing them is the owner's separate decision (GitHub
+# issue #539); tests/test_home_phone.py walks every route and keeps this list true. A route
+# not named here shows a phone no folder.
+SNAPSHOT_SHOWS = (
+    'shared.local.root', 'shared.brand.skill', 'shared.brand.brands', 'shared.brand.repository',
+    'shared.team.repository',                       # the saved settings, a repository when a path
+    'setup.paths.blog',                             # the studio installation folders saved here
+    'studios[].path', 'studios[].configured_path',  # each installation folder, found and saved
+    'studios[].workspace.workspace.root',           # each studio's workspace folder
+    'studios[].workspace.to.root', 'studios[].workspace.to.repository',   # where it would join
+    'studios[].workspace.detail',                   # the sentence that names that folder
+    'computer.items[].detail')                      # where Git and the other tools were found
+PHONE_SHOWS = {
+    **{route: SNAPSHOT_SHOWS for route in ('/api/home', '/api/shared', '/api/setup', '/api/connect',
+                                           '/api/paths')},
+    '/api/computer': ('computer.items[].detail',),
+    '/api/library': ('location',),                   # the Document Library's folder
+    '/api/library-upload': ('location',),
+    '/api/library-adopt': ('location',),
+    '/api/library-existing': ('workspaces[].shown',),   # each studio's remembered workspace
 }
 CHANGED_WHILE_PREPARING = ('The settings changed while the studios were being prepared, so that '
                            'result was not kept. Review the settings shown now and save again.')
