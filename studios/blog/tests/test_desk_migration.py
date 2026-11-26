@@ -816,12 +816,10 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
         worker.assert_not_called()
 
     def test_worker_waiting_for_lock_rechecks_migration_ownership(self):
-        ident, directory = self.eligible()
-        # Only the manuscript editor's own runs still reach a worker: this one is the editor's.
-        run = studio.read_json(directory / runner.STATE)
-        run['editor_check'] = 'proofread'
-        studio.write_json(directory / runner.STATE, run)
+        # Only the manuscript editor's own runs still reach a worker: a check it made.
+        ident = self.editor_run('proofread', MANUSCRIPT)['id']
         shown = self.preview(ident)
+        self.assertTrue(shown['eligible'], shown['blockers'])
         worker = Mock(side_effect=AssertionError('provider'))
         engine = runner.Engine(self.root, worker=worker)
         real_lock, local = studio.locked, engine.local

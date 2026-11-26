@@ -654,6 +654,33 @@ class InterruptedStepTests(SavedStateCase):
                 # The saved record then classifies by what the blog holds.
                 self.assertEqual(desk_migration.classify(self.root, found['id'])['outcome'], 'migrates')
 
+    def test_a_working_marker_beside_a_run_record_that_cannot_be_read_is_settled(self):
+        from studio_core import sync_guard
+
+        for damage in ('unreadable', 'missing'):
+            with self.subTest(damage=damage):
+                found = self.saved('draft-gate-working')
+                record = studio.inside(self.root, 'articles', found['id']) / runner.STATE
+                if damage == 'unreadable':
+                    record.write_text('{not json')
+                else:
+                    record.unlink()
+                marker = '.blog-runs/' + found['id'] + '.json'
+                studio.write_json(self.root / marker, {'enabled': True, 'status': 'working'})
+                self.assertTrue(sync_guard.worker_in_progress(self.root))
+                blog, before = self.blog(found['id']), self.tree()
+                self.start_up()
+                self.assertFalse(sync_guard.worker_in_progress(self.root))
+                local = studio.read_json(self.root / marker)
+                self.assertEqual((local['enabled'], local['status']), (False, 'stopped'))
+                # Only this computer's runner record changed: the saved files are as they were.
+                self.assertEqual(self.blog(found['id']), blog)
+                after = self.tree()
+                self.assertEqual(
+                    {key for key in before.keys() | after.keys() if before.get(key) != after.get(key)},
+                    {marker},
+                )
+
     def test_a_step_running_in_this_process_is_not_touched(self):
         found = self.saved('draft-gate-working')
         marker = self.root / '.blog-runs' / (found['id'] + '.json')

@@ -31,10 +31,7 @@ REQUIRED = (
     'assets/examples/product-brief.md',
     'assets/examples/scenario.md',
     'assets/examples/yoodli.md',
-    'references/short-commands.md',
     'references/levels.md',
-    'references/intake.md',
-    'references/gates.md',
     'references/workspace.md',
     'references/privacy.md',
     'references/google.md',
@@ -75,27 +72,24 @@ def estimate(text: str) -> int:
 
 def loading_sets() -> dict[str, tuple[list[str], int]]:
     """What each operation reads, and the budget for it in estimated tokens."""
-    gates = 'references/gates.md'
     sets = {
-        'short-command': (['SKILL.md', 'references/short-commands.md'], 2000),
-        'start': (['SKILL.md', 'references/intake.md'], 2000),
         'google': (['SKILL.md', 'references/google.md'], 2000),
         'desk': (['SKILL.md', 'references/desk.md'], 2000),
         'hub': (['SKILL.md', 'references/hub.md'], 2000),
     }
     for stage, templates in STAGE_TEMPLATES.items():
         sets[f'stage:{stage}'] = (
-            ['SKILL.md', f'references/stages/{stage}.md', gates, *templates], 3500)
+            ['SKILL.md', f'references/stages/{stage}.md', *templates], 3500)
     sets['levelled-blueprint'] = (
-        ['SKILL.md', 'references/stages/blueprint.md', 'references/levels.md', gates,
+        ['SKILL.md', 'references/stages/blueprint.md', 'references/levels.md',
          'assets/examples/blueprint.md'], 4000)
     for mode in MODES:
         sets[f'scenario:{mode}'] = (
             ['SKILL.md', 'references/stages/scenario.md', f'references/modes/{mode}.md',
-             gates, 'assets/examples/scenario.md'], 4000)
+             'assets/examples/scenario.md'], 4000)
         sets[f'yoodli:{mode}'] = (
             ['SKILL.md', 'references/stages/yoodli.md', 'references/profiles/yoodli.md',
-             f'references/modes/{mode}.md', gates, 'assets/examples/scenario.md',
+             f'references/modes/{mode}.md', 'assets/examples/scenario.md',
              'assets/examples/yoodli.md'], 6000)
     return sets
 

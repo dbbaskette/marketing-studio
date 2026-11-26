@@ -404,9 +404,6 @@ class OwnScenarioTests(FlowCase):
         file.write_text(text)
         return file
 
-    def test_a_training_with_no_run_cannot_say_whose_a_scenario_is(self):
-        self.assertIsNone(self.engine.whose(self.base / 'elsewhere', 'scenario:main'))
-
 
 class CopiesTests(FlowCase):
     def shown(self, root: Path) -> dict:

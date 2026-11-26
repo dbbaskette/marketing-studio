@@ -187,7 +187,7 @@ class InstallTests(InstallerCase):
         staged = self.root / 'versions' / result['version']
         self.assertIn('training-studio/training guidance start',
                       (staged / 'SKILL.md').read_text())
-        self.assertTrue((staged / 'guidance' / 'references' / 'gates.md').is_file())
+        self.assertTrue((staged / 'guidance' / 'references' / 'desk.md').is_file())
         self.assertTrue((staged / 'guidance' / 'assets' / 'profiles' / 'yoodli.json').is_file())
         self.assertFalse((staged / 'references').exists())
         self.assertIn('github.com', (staged / 'source.json').read_text())
@@ -243,7 +243,7 @@ class InstallTests(InstallerCase):
 
     def test_a_broken_package_is_refused_before_anything_changes(self):
         source = self.copy_of_the_skill('9.9.9')
-        (source / 'references' / 'gates.md').unlink()
+        (source / 'references' / 'desk.md').unlink()
         refusal = self.run_installer('install', '--yes', '--source', str(source), expect=1)
         self.assertIn('The package is not whole', refusal['error'])
         self.assertFalse(self.root.exists())

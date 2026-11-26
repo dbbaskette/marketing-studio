@@ -33,8 +33,11 @@ FOLDER = b'@SAVED_TRAINING_FOLDER@'
 
 
 def names() -> list[str]:
-    """Every stored state."""
-    return sorted(path.name for path in FIXTURES.iterdir() if path.is_dir())
+    """Every stored state the earlier gated flow saved (the conversation-guided trainings
+    under `conversation/` are listed by `conversation_names`, and `flow/` holds the trees
+    `stored_builders` places)."""
+    return sorted(path.name for path in FIXTURES.iterdir()
+                  if path.is_dir() and path.name not in ('conversation', 'flow'))
 
 
 def tree(state: str) -> dict[str, bytes]:
@@ -68,3 +71,71 @@ def load(case, state: str) -> Path:
     home.remember(root, session['title'], list(session['levels']))
     gitstate.commit(space, f'{session["title"]}: a saved training', [root])
     return root
+
+
+# --- conversation-guided trainings (GitHub issue #547) ---------------------------------------
+#
+# Each folder under `fixtures/saved/conversation/<state>/` is one training a conversation
+# made with the helper `training.py` (approval in chat or on the helper's page), exactly as
+# the helper left it at one stop, byte for byte. They were captured by really driving the
+# helper with synthetic content: started as the retired `training.py init` started one, then
+# every change a helper command (`save`, `approve`, `skip`, `checkpoint`, `pin`, `export`,
+# `research-import`) or a decision on the helper's page. None has a run record: no runner
+# drove it. Such a training lives in a folder of its own, outside the workspace, and reaches
+# the runner only through Bring in.
+#
+# Those commands and that page are gone, so these trees are the only record of what the
+# retired helper wrote and cannot be captured again. They are history: never rewritten, and
+# never compared with what is installed today except where a test says what a difference
+# would mean for saved work (the Yoodli profile, in `test_saved_fixtures.py`).
+
+CONVERSATION = FIXTURES / 'conversation'
+
+
+def conversation_names() -> list[str]:
+    """Every stored conversation-guided state."""
+    return sorted(path.name for path in CONVERSATION.iterdir() if path.is_dir())
+
+
+def conversation_tree(state: str) -> dict[str, bytes]:
+    """The stored files of one conversation-guided state, by their path in its folder."""
+    folder = CONVERSATION / state
+    if not folder.is_dir():
+        raise KeyError(f'No conversation fixture called {state}.')
+    return {path.relative_to(folder).as_posix(): path.read_bytes()
+            for path in sorted(folder.rglob('*')) if path.is_file()}
+
+
+def conversation_title(state: str) -> tuple[str, list]:
+    """The title and levels the helper remembered the training by: its session record's, or,
+    where that record cannot be read, the folder's name (what the registry still holds is
+    not part of the stored tree)."""
+    try:
+        session = json.loads((CONVERSATION / state / SESSION).read_bytes())
+        return session['title'], list(session['levels'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return state, []
+
+
+def place(state: str, root: Path) -> Path:
+    """Copy one stored conversation-guided state into `root` (missing or empty) and register
+    it on this computer, as the helper's every command did. Nothing else is written: the
+    files are the stored bytes. Answers `root`."""
+    import home
+    root = Path(root)
+    if root.exists() and any(root.iterdir()):
+        raise FileExistsError(f'{root} is not empty.')
+    shutil.copytree(CONVERSATION / state, root, dirs_exist_ok=True)
+    title, levels = conversation_title(state)
+    home.remember(root, title, levels)
+    return root
+
+
+def conversation(case, state: str) -> Path:
+    """One stored conversation-guided state in a folder of its own beside `case`'s workspace,
+    outside it, as a conversation keeps one. Answers the training's folder."""
+    try:
+        ident = json.loads((CONVERSATION / state / SESSION).read_bytes())['id']
+    except (OSError, ValueError, KeyError, TypeError):
+        ident = state
+    return place(state, case.base / 'conversation' / ident)

@@ -157,6 +157,7 @@ def public(value):
             'model_selection',
             'applied',
             'saved_content',
+            'discarded_at',
         )
     } | {
         'result': result,
@@ -180,7 +181,11 @@ def control(root, ident, action, engine):
     elif action == 'retry':
         if saved['kind'] in DESK:
             raise ValueError('Run it again from the desk, where the draft it changes is shown.')
-        if saved['status'] not in ('failed', 'cancelled') or saved['attempts'] >= 3:
+        if (
+            saved['status'] not in ('failed', 'cancelled')
+            or saved['attempts'] >= 3
+            or saved.get('discarded_at')
+        ):
             raise ValueError(
                 'This task cannot be retried. Start a new task after reviewing its inputs.'
             )
@@ -189,6 +194,48 @@ def control(root, ident, action, engine):
         engine.wake.set()
     else:
         raise ValueError('Choose cancel or retry.')
+    return public(saved)
+
+
+NOT_DISCARDED = 'Only a ready result that was not saved can be discarded.'
+# The tool tasks that can sit ready on a saved blog and be applied to it (job-apply): the
+# only ones a discard lets go of. Every other kind, an import among them, is refused.
+DISCARDABLE = ('repurpose', 'interview-question', 'interview-outline')
+NOT_DISCARDABLE = 'This kind of task cannot be discarded here.'
+NOT_WAITED_ON = (
+    'Only a ready task that a saved blog of the earlier flow waits on can be discarded. '
+    'Save or keep this one where it is.'
+)
+
+
+def discard(root, ident):
+    """Let go of a ready task's result that was never saved, as the person asked on the
+    page: the task ends as cancelled, with no result and when it was discarded, and it is
+    not tried again. A blog of the earlier flow whose ready task waited on the person (its
+    result cannot be saved to it) then opens on the desk or is read-only as what it holds
+    decides. Only this computer's record of the task changes."""
+    saved = read(root, ident)
+    if saved.get('kind') not in DISCARDABLE:
+        raise ValueError(NOT_DISCARDABLE)
+    if saved['metadata'].get('article'):
+        from team_workspace import guard
+
+        guard(root, saved['metadata']['article'])
+    if saved['status'] != 'ready' or saved.get('applied'):
+        raise ValueError(NOT_DISCARDED)
+    import saved_gate
+
+    article = saved['metadata'].get('article')
+    # Only for a saved blog of the earlier flow that waits on this ready task; every other
+    # blog's task is saved or left as it always was.
+    if not (
+        isinstance(article, str)
+        and saved_gate.state(root, article) == 'unfinished'
+        and saved_gate.waits_on_ready_task(root, article, ident)
+    ):
+        raise ValueError(NOT_WAITED_ON)
+    saved.update(status='cancelled', result=None, error='', discarded_at=studio.now())
+    write(root, saved)
     return public(saved)
 
 

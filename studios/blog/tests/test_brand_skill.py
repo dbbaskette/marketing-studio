@@ -237,29 +237,49 @@ class BrandSkillTests(unittest.TestCase):
         leftovers = list(Path(tempfile.gettempdir()).glob('blog-brand-contract-*'))
         self.assertFalse(any((folder / 'voice-profile.json').exists() for folder in leftovers))
 
+    def review(self, ident):
+        """The run the manuscript editor's check makes for a saved manuscript, with a brand."""
+        return blog_runner.create(
+            self.root,
+            {
+                'id': ident,
+                'mode': 'review',
+                'goal': 'Edit the saved manuscript',
+                'audience': 'Authors',
+                'research': 'none',
+                'stop': 'review',
+                'brand': 'fictional',
+                'variant': 'dark',
+            },
+            'page',
+        )
+
+    def voice(self, ident, *words):
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'article', 'voice', '--id', ident, *words]
+        )
+        studio.article_command(self.root, args)
+
     def test_run_with_a_voice_exports_it_to_the_brand(self):
+        from test_blog_runner import manuscript
+
         self.skill()
         made = self.profile(status='provisional')
-        start = {
-            'title': 'Synthetic article',
-            'goal': 'Explain a fictional system',
-            'audience': 'Authors',
-            'research': 'none',
-            'brand': 'fictional',
-            'variant': 'dark',
-        }
+        voiced = manuscript(self.root, 'A synthetic article.', 'Synthetic article')
+        self.voice(voiced, '--profile', made['id'])
+        toned = manuscript(self.root, 'Another synthetic article.', 'Tone only')
+        self.voice(toned, '--voice', 'tone', '--tone', 'Plain and personal')
         with patch.dict(os.environ, {'SYNTHETIC_VOICE_SEEN': str(self.base / 'voice-seen.json')}):
-            blog_runner.create(self.root, {**start, 'profile': made['id']})
+            self.review(voiced)
             self.assertEqual(self.seen()['voice']['status'], 'provisional')
             self.assertEqual(self.seen()['voice']['id'], made['id'])
-            blog_runner.create(
-                self.root, {**start, 'title': 'Tone only', 'tone': 'Plain and personal'}
-            )
+            self.review(toned)
             self.assertEqual(self.seen(), {'voice': None}, 'a tone-only run passes none')
 
     def test_the_default_voice_is_exported_to_the_brand(self):
         isolation.voices_on(self.root)  # These exercise the older voice tools.
         import writing_defaults
+        from test_blog_runner import manuscript
 
         self.skill()
         made = self.profile()
@@ -279,47 +299,27 @@ class BrandSkillTests(unittest.TestCase):
             ]
         )
         writing_defaults.command(self.root, args)
-        start = {
-            'title': 'Default voice',
-            'goal': 'Explain a fictional system',
-            'audience': 'Authors',
-            'research': 'none',
-            'brand': 'fictional',
-            'variant': 'dark',
-        }
+        # A manuscript registered with the default voice on takes it; its run hands it on.
+        ident = manuscript(self.root, 'A synthetic article.', 'Default voice')
         with patch.dict(os.environ, {'SYNTHETIC_VOICE_SEEN': str(self.base / 'voice-seen.json')}):
-            blog_runner.create(self.root, start)
+            self.review(ident)
         self.assertEqual(self.seen()['voice']['id'], made['id'])
 
     def test_brand_refusal_of_a_profile_is_shown(self):
+        from test_blog_runner import manuscript
+
         self.skill()
         made = self.profile(guide='', status='provisional')
-        start = {
-            'title': 'Refused voice',
-            'goal': 'Explain a fictional system',
-            'audience': 'Authors',
-            'research': 'none',
-            'brand': 'fictional',
-            'variant': 'dark',
-            'profile': made['id'],
-        }
-        before = (
-            sorted(path.name for path in (self.root / 'articles').glob('*'))
-            if (self.root / 'articles').exists()
-            else []
-        )
+        ident = manuscript(self.root, 'A synthetic article.', 'Refused voice')
+        self.voice(ident, '--profile', made['id'])
         with self.assertRaises(ValueError) as refused:
-            blog_runner.create(self.root, start)
+            self.review(ident)
         self.assertIn(
             'Portable voice needs id, guide and explicit provisional|confirmed status',
             str(refused.exception),
         )
-        after = (
-            sorted(path.name for path in (self.root / 'articles').glob('*'))
-            if (self.root / 'articles').exists()
-            else []
-        )
-        self.assertEqual(after, before, 'no blog folder is made')
+        directory, _ = studio.item(self.root, 'articles', ident)
+        self.assertFalse((directory / blog_runner.STATE).exists(), 'no run is made')
 
     def test_no_brand_keeps_writing_available_and_shared_default_is_optional(self):
         self.assertIsNone(brands.snapshot(''))
@@ -533,23 +533,12 @@ class BrandSkillTests(unittest.TestCase):
 
     def test_installation_blocks_new_writing_until_finished(self):
         _, found = self.checked()
-        run = blog_runner.create(
-            self.root,
-            {
-                'title': 'Waiting blog',
-                'goal': 'A fixture',
-                'audience': 'Authors',
-                'research': 'none',
-                'brand': '',
-            },
-            'page',
-        )
-        # Runner code the manuscript editor's own runs still use: this run is marked as the
-        # editor's, the only saved runs the runner goes on with.
-        directory, _, state = blog_runner.load(self.root, run['id'])
-        state['editor_check'] = 'revise'
-        studio.write_json(directory / blog_runner.STATE, state)
-        worker = unittest.mock.Mock(return_value={'content': '# Synthetic outline', 'notes': ''})
+        from test_blog_runner import editor_check, manuscript
+
+        # The manuscript editor's own runs are the only saved runs the runner goes on with.
+        ident = manuscript(self.root, 'A synthetic waiting draft.', 'Waiting blog')
+        run = editor_check(self.root, ident, 'revise')
+        worker = unittest.mock.Mock(return_value={'content': '# Synthetic draft', 'notes': ''})
         engine = blog_runner.Engine(self.root, worker)
         engine.control(run['id'], 'resume')
         entered, finish = threading.Event(), threading.Event()

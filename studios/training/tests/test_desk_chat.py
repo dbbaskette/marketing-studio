@@ -354,8 +354,8 @@ class ConversationTeamTests(TeamCase):
                 desk_chat.take(self.blake.engine, theirs, context['expected_basis'], ['outline'])
             self.assertEqual(desk_chat._files(theirs), before)
 
-    def test_person_ready_and_both_helper_routes_refuse_another_driver(self):
-        import desk
+    def test_person_ready_refuses_another_driver(self):
+        # The helper's page decisions refused here too went with them (GitHub issue #547).
         with self.be(self.alex):
             root = Path(desk_chat.create(self.alex.engine, {**FORM, 'materials': [], 'scope': ['outline']})['path'])
             self.alex.engine.share()
@@ -365,10 +365,6 @@ class ConversationTeamTests(TeamCase):
             before = desk_chat._files(theirs)
             with self.assertRaises(WorkspaceError):
                 self.blake.engine.mark_ready(theirs, 'blueprint', 'unseen')
-            for route, payload in [('/api/decide', {'artifact': 'blueprint', 'decision': 'approve', 'seen': 'unseen'}),
-                                   ('/api/approval', {'mode': 'chat'})]:
-                with self.subTest(route=route), self.assertRaises(WorkspaceError):
-                    desk.Page(0).write(route, {'path': str(theirs), **payload})
             self.assertEqual(desk_chat._files(theirs), before)
 
 
@@ -827,17 +823,6 @@ class ConversationCompletionTests(ConversationReviewFixTests):
             studio.desk_command(args, make=lambda: self.engine, out=io.StringIO())
         self.assertEqual(workspace.person_statuses(other, workspace.load(other))['document'], 'approved')
 
-    def test_retained_helper_handlers_refuse_conversation_decisions_and_mode(self):
-        import desk
-        root = self.guide()
-        before = desk_chat._files(root)
-        for route, payload in [('/api/decide', {'artifact': 'document', 'decision': 'skip'}),
-                               ('/api/decide', {'artifact': 'document', 'decision': 'approve', 'seen': workspace.sha256_file(root / 'document.md')}),
-                               ('/api/approval', {'mode': 'chat'})]:
-            with self.subTest(route=route, payload=payload), self.assertRaises(WorkspaceError):
-                desk.Page(0).write(route, {'path': str(root), **payload})
-            self.assertEqual(desk_chat._files(root), before)
-
     def pending(self):
         self.slides.design, self.slides.judges = True, True
         self.slides.have['local'] = True
@@ -969,22 +954,6 @@ class ConversationCompletionTests(ConversationReviewFixTests):
                 self.assertEqual({key: data for key, data in after.items() if key != 'blueprint.md'},
                                  {key: data for key, data in before.items() if key != 'blueprint.md'})
 
-    def test_retained_handlers_preserve_runner_and_standalone_saved_behavior(self):
-        import desk
-        root = self.guide()
-        record = self.record(root)
-        record['execution'] = 'runner'
-        self.engine._store(root, record)
-        result = desk.Page(0).write('/api/decide', {'path': str(root), 'artifact': 'document',
-                                  'decision': 'approve', 'seen': workspace.sha256_file(root / 'document.md')})
-        self.assertEqual(result[0], 200)
-        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['document'], 'approved')
-        desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'chat'})
-        self.assertEqual(workspace.load(root)['settings']['approval'], 'chat')
-        (root / '.training-studio/run.json').unlink()
-        desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'page'})
-        self.assertEqual(workspace.load(root)['settings']['approval'], 'page')
-
     def test_legacy_helper_can_borrow_only_the_exact_owned_workspace_lock(self):
         import home
         import write_guard
@@ -1006,74 +975,12 @@ class ConversationCompletionTests(ConversationReviewFixTests):
             with write_guard.admitted(root, held=wrong):
                 self.fail('A different workspace lock cannot authorize this write.')
 
-    def test_legacy_helper_handlers_wait_for_real_shared_process_lock(self):
-        import os
-        import subprocess
-        import sys
-        import threading
-        import desk
-        from studio_core.process_lock import workspace_lock_path
-        import home
-        root = self.guide()
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join((str(helpers.REPO), str(helpers.SCRIPTS))))
-        code = '''from pathlib import Path
-import sys
-import workspace
-from studio_core.process_lock import ProcessRLock
-with ProcessRLock(lambda: Path(sys.argv[1]), refusal=ValueError):
-    print('locked', flush=True)
-    sys.stdin.read(1)
-'''
-        for route, sent in [('/api/decide', {'artifact': 'document', 'decision': 'skip'}), ('/api/approval', {'mode': 'chat'})]:
-            with self.subTest(route=route):
-                child = subprocess.Popen([sys.executable, '-c', code, str(workspace_lock_path(self.engine.space().repo, home.data_root()))], env=env,
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                finished, started, errors = threading.Event(), threading.Event(), []
-                def call():
-                    started.set()
-                    try:
-                        desk.Page(0).write(route, {'path': str(root), **sent})
-                    except WorkspaceError as error:
-                        errors.append(str(error))
-                    finally:
-                        finished.set()
-                thread = threading.Thread(target=call)
-                try:
-                    self.assertEqual(child.stdout.readline().strip(), 'locked')
-                    before = desk_chat._files(root)
-                    thread.start()
-                    self.assertTrue(started.wait(2))
-                    self.assertFalse(finished.wait(.15))
-                    self.assertEqual(desk_chat._files(root), before)
-                    child.communicate('x', timeout=5)
-                    thread.join(5)
-                    self.assertTrue(finished.is_set())
-                    self.assertTrue(errors)
-                    self.assertEqual(desk_chat._files(root), before)
-                finally:
-                    if child.poll() is None:
-                        child.kill()
-                        child.communicate()
-                    if thread.ident:
-                        thread.join(5)
-
-    def test_completion_and_helper_routes_refuse_worker_and_unknown_saved_jobs(self):
-        import desk
+    def test_completion_refuses_while_a_saved_worker_is_in_hand(self):
+        # The helper's page decisions refused here too went with them (GitHub issue #547).
         root = self.guide()
         marker = root / self.engines.IN_HAND
         marker.write_text('synthetic saved worker')
         before = desk_chat._files(root)
         with self.assertRaises(WorkspaceError):
             self.engine.mark_ready(root, 'document', workspace.sha256_file(root / 'document.md'))
-        for route, payload in [('/api/decide', {'artifact': 'document', 'decision': 'skip'}), ('/api/approval', {'mode': 'chat'})]:
-            with self.subTest(route=route), self.assertRaises(WorkspaceError):
-                desk.Page(0).write(route, {'path': str(root), **payload})
-        self.assertEqual(desk_chat._files(root), before)
-        marker.unlink()
-        record = self.record(root)
-        record['drafts']['jobs'] = 'unknown'
-        self.engine._store(root, record)
-        before = desk_chat._files(root)
-        with self.assertRaises(WorkspaceError):
-            desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'chat'})
         self.assertEqual(desk_chat._files(root), before)

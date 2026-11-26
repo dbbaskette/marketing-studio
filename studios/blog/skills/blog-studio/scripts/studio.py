@@ -1347,7 +1347,11 @@ def parser():
 
 def main():
     p = parser()
-    args = p.parse_args()
+    args, unknown = p.parse_known_args()
+    # `run create` takes no options any more: whatever it is given, it says where new work
+    # starts (below). Every other command refuses what it does not know, as before.
+    if unknown and not (args.group == 'run' and getattr(args, 'action', None) == 'create'):
+        p.error('unrecognized arguments: ' + ' '.join(unknown))
     root = Path(args.root).expanduser()
     if not root.is_absolute():
         p.error('--root must be absolute')

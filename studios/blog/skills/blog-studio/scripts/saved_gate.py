@@ -19,6 +19,8 @@ What a decision allows:
   the team repository, Polish or edit through the manuscript editor, repurposing).
 - TAKE: Take or Take over, only where the blog would open on the desk once taken.
 - RUNNING: Pause or Stop, only for a step this process is running now.
+- WAITING: discarding a ready tool task's result, only for an unfinished saved-flow blog
+  that waits on that ready task (its result can be neither saved to it nor cancelled).
 - NEVER: refused for every saved-flow blog (Hand over among them).
 
 The editor's own runs, a registered manuscript with no run, and desk blogs are not
@@ -32,6 +34,7 @@ import re
 import studio
 
 READS, ANY, FINISHED, TAKE, RUNNING, NEVER = 'reads', 'any', 'finished', 'take', 'running', 'never'
+WAITING = 'waiting-task'
 
 # What every page action may do to a saved-flow blog. Tool actions are keyed
 # 'tool-action:<action>'.
@@ -100,6 +103,10 @@ PAGE = {
     **dict.fromkeys(
         ('desk-migrate', 'blog-delete', 'blog-restore', 'tool-action:job-control'), ANY
     ),
+    # Discarding a ready task's result that was never saved: an unfinished saved blog that
+    # waits on it can neither apply nor cancel it, so this is its one way out. Only for that
+    # blog (waits_on_ready_task); it writes only the task's own record.
+    'tool-action:job-discard': WAITING,
     # A finished one: what its Done card offered.
     **dict.fromkeys(
         (
@@ -427,7 +434,29 @@ def refusal(root, decision, ident, found):
         import blog_runner
 
         return None if blog_runner.engine(root).current == ident else NOT_RUNNING
+    if decision == WAITING:
+        return None if found == 'unfinished' and waits_on_ready_task(root, ident) else SAVED_FLOW
     return SAVED_FLOW
+
+
+def waits_on_ready_task(root, ident, job=None):
+    """Whether this saved blog waits on a ready tool task (`job`, when named): its saved
+    record's outcome is waiting, and what clears it is that task, ready for the person."""
+    import desk_migration
+
+    try:
+        said = desk_migration.classify(root, ident)
+        if said['outcome'] != 'wait':
+            return False
+        clear, task = desk_migration._clears(root, ident, said['reason'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return (
+        clear == 'job'
+        and isinstance(task, dict)
+        and task.get('status') == 'ready'
+        and (job is None or task.get('id') == job)
+    )
 
 
 def check(root, decision, data):

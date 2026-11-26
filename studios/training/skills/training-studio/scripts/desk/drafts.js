@@ -4007,6 +4007,11 @@ function savedHistory(saved) {
     said.push('A worker asked: “' + saved.question.text + '” It was not answered, and that '
       + 'step stays unfinished.');
   }
+  // What the saved work holds that did not open on the desk, each kept as it is: an outline
+  // that could not be read, a file written but never saved, what was never made (#547).
+  for (const note of Array.isArray(saved.notes) ? saved.notes : []) {
+    if (typeof note === 'string' && note) said.push(note);
+  }
   return add(card('Saved runner history'), ...said.map((text) => make('p', '', text)),
     make('p', 'quiet', 'This remains in the original saved records; no work was resumed.'));
 }

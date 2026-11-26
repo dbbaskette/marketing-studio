@@ -176,6 +176,7 @@ def dispatch(root, data):
         'interview-start',
         'voice-apply',
         'job-control',
+        'job-discard',
     ):
         import article_tools
         import blog_runner
@@ -192,6 +193,11 @@ def dispatch(root, data):
             return tool_jobs.control(
                 root, data.get('job'), data.get('control'), blog_runner.engine(root)
             )
+        if action == 'job-discard':
+            # The person's own act, from the task's sheet: its ready result is let go.
+            if set(data) - {'action', 'job'}:
+                raise ValueError('Name the task whose result to discard.')
+            return tool_jobs.discard(root, data.get('job'))
         if action == 'profile-save':
             return article_tools.save_profile(root, data)
         if action == 'profile-retire':

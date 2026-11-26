@@ -10,11 +10,9 @@ What a caller needs to know
     engine.act(path, 'pause')                # or 'resume', 'stop', 'retry', 'more-time'
     engine.answer(path, question_id, text)   # a person answers a worker's question
     engine.supply(path, 'add', name, data)   # a document of theirs; or 'remove', or 'done'
-    engine.whose(path, 'scenario:main')      # who wrote a scenario: 'runner' or 'you'
     engine.copies_again(path)                # make the copies that are not made, again
     engine.outline(path, level, 'approve')   # a person's decision about what a deck says
     engine.picture(path, number, artifact=)  # one slide's picture, as PNG bytes
-    engine.deck_gate(path, 'deck')           # what gate 6 adds for a deck the runner made
     engine.deck_decided(path, 'deck', 'approve', note, seen)   # sent to the slides tool first
     engine.redesign(path, level)             # draw an older deck again from a design
     engine.deck_needs()                      # what this computer has for making a deck
@@ -300,6 +298,33 @@ HOLDS_WORKSPACE = ('That folder holds the workspace itself, so it cannot be brou
                    'Bring in a training folder that is outside the workspace.')
 IN_REPOSITORY = ("That folder is inside the workspace's repository, so it cannot be brought "
                  'into it. Bring in a training folder that is outside the workspace.')
+ALREADY_IN = 'This training is already in the workspace.'
+# The one refusal of Bring in that the person can clear: say how.
+NAME_TAKEN = ('The workspace already has a training in {where}. If that is the copy made of this '
+              'one, work on it there; if it is another training, this one can be brought in once '
+              'that one is deleted from the workspace.')
+# A file or folder of a conversation's training that cannot be read: Bring in would fail on it,
+# so it is refused first, naming it inside the training's folder (GitHub issue #547).
+UNREADABLE_FILE = ('This training cannot be brought into the workspace: {name} in its folder '
+                   'cannot be read on this computer.')
+UNREADABLE_FOLDER = ('This training cannot be brought into the workspace: the folder {name} in '
+                     'it cannot be read on this computer.')
+# Bring in that failed while it copied: nothing is kept of the copy, and the folder it came
+# from is as it was.
+COPY_FAILED = ('This training could not be brought into the workspace: {name} could not be '
+               'copied. Nothing was kept of the copy, and its own folder is as it was.')
+# A conversation's training that Bring in refuses: a read-only record where it is, saying why
+# (`Engine.bring_refusal`, GitHub issue #547).
+CONVERSATION_KEPT = ('This training was made in a conversation and cannot be brought into the '
+                     'workspace, so it is kept where it is to read.')
+# On a phone through the private link nothing of this computer's folders is read, so Bring in
+# is not offered there (GitHub issue #539).
+BRING_ON_COMPUTER = ('Bringing a training into the workspace is done on the computer that runs '
+                     'Training Studio, not from a phone.')
+# One that Bring in would refuse, on a phone: its record says why, and that it is only read
+# there.
+KEPT_ON_COMPUTER = ('From a phone it is only read here; anything more is done on the computer '
+                    'that runs Training Studio.')
 # Where a desk training stood when its run had made what it could and it was not finished:
 # not every material was marked ready, or something else kept it from being used.
 UNFINISHED_THEN = 'Then, it had made what it could, and was not finished yet.'
@@ -467,6 +492,15 @@ SAVED_WAITING = ('This training was saved by the earlier step-by-step flow, whic
                  'continues. It opens on the desk once what it waits for clears.')
 SAVED_BRIEF = 'Saved by the earlier step-by-step flow. Open it to see what can be done with it.'
 UNREAD_BRIEF = 'Its run record cannot be read. Open it to read its saved files.'
+# A training a conversation keeps outside the workspace, whose record cannot be read: it can
+# be neither brought in nor opened on the desk (GitHub issue #547).
+CONVERSATION_UNREAD = ('This training was made in a conversation, and its record cannot be '
+                       'read, so it can be neither brought into the workspace nor opened on '
+                       'the desk. Its files are kept as they are.')
+CONVERSATION_UNREAD_WHY = ('Its record cannot be read, so what it holds and how far it got '
+                           'cannot be told.')
+CONVERSATION_UNREAD_BRIEF = ('Made in a conversation, and its record cannot be read. Open it '
+                             'to read its files.')
 # Said by every route that continued a saved-flow training: what is left to do with it.
 SAVED_ONLY = ('This training was saved by the earlier step-by-step flow, which no longer '
               'continues. Open it on the desk, or start new work from it.')
@@ -491,8 +525,6 @@ WAITS_FOR = {
                'then check again.'),
     'other': (None, 'Put that right in the workspace, then check again.')}
 # The shared files a read-only record may list and read, by name (`Engine._saved_files`).
-SAVED_FILES = ('intake.md', 'research-report.md', 'blueprint.md', 'document.md',
-               'product-brief.md', 'competitive-brief.md', 'scenario.md', 'deck-link.md')
 DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
          'doc': 'Google Doc'}
 
@@ -3391,12 +3423,8 @@ class Engine(Reviewing):
                    if drafts.on_desk(self._load(root)) and rounds else {}),
                 'audit_findings': blocked, 'audit_warnings': noticed,
                 **({'auditNote': audit_note} if audit_note else {})})
-            # What the screens and the brand's check send back is drawn again before anyone
-            # reviews it, within the rounds a deck has: the last round is always reviewed.
-            back = deck.sent_back(screens) + blocked
-            if back and not drafts.on_desk(self._load(root)) and len(rounds) <= deck.REPAIRS:
-                rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
-                                        'by': 'screen', 'at': home.now()}
+            # What the screens and the brand's check find goes to the round's review, which
+            # sends it back (`_review`). The earlier flow's screen-only round went with it.
             self._note(root, level, rounds=rounds)
             self._done(root, it, clock, f'put {workspace.label(it.artifact)} together: '
                        f"{len(slides)} slide{'' if len(slides) == 1 else 's'}")
@@ -4255,11 +4283,6 @@ class Engine(Reviewing):
             raise FileNotFoundError(NO_PICTURE)
         return page.read_bytes()
 
-    def deck_gate(self, path, artifact: str) -> dict:
-        """What gate 6 adds for a deck: its slides whose pictures are here, what the
-        review still finds, the brand's audit and the coverage."""
-        root = Path(path)
-        return pipeline.deck_gate(root, workspace.load(root), artifact)
 
     # --- limits --------------------------------------------------------------------------
 
@@ -7322,14 +7345,6 @@ class Engine(Reviewing):
         self.wake(root)
         return self.view(root)
 
-    def whose(self, path, artifact: str) -> str | None:
-        """Who wrote a scenario's file: 'runner' for one the runner drafted, else 'you'.
-        None when no run is driving the training, which cannot tell."""
-        root = self.driven(path)
-        if root is None:
-            return None
-        return 'runner' if artifact in (self._load(root).get('drafted') or ()) else 'you'
-
     # --- sharing -------------------------------------------------------------------------
 
     def _step(self, space: gitstate.Workspace, push: bool) -> dict:
@@ -7899,24 +7914,47 @@ class Engine(Reviewing):
 
     @staticmethod
     def _saved_files(root: Path) -> list[str]:
-        """The shared files a read-only record lists: each of SAVED_FILES, at the top or in
-        a level's folder, that is an ordinary file inside the training's folder, so
+        """The shared files a read-only record lists (`desk.saved_files`), so
         `/api/saved-file` serves every name listed and nothing else."""
-        inside = root.resolve()
-        found = []
-        for level in ('', *(name + '/' for name in ('101', '201', '301', '401'))):
-            for name in SAVED_FILES:
-                if level and name in ('intake.md', 'research-report.md'):
-                    continue
-                path = root / (level + name)
-                try:
-                    real = path.resolve()
-                except (OSError, RuntimeError):
-                    continue
-                if not path.is_symlink() and not path.parent.is_symlink() \
-                        and inside in real.parents and real.is_file():
-                    found.append(level + name)
-        return found
+        import desk
+        return desk.saved_files(root)
+
+    # Where a folder lies, as a saved record says it: outside the workspace, in it, elsewhere in
+    # its repository, or holding it (GitHub issue #547).
+    WHERE = ('outside', 'in-workspace', 'in-repository', 'holds-workspace')
+
+    def where(self, path) -> str:
+        """Where `path` lies, one of WHERE, compared as folders the way Bring in compares
+        them (`team.overlaps`). Only paths are compared: nothing in the folder is read. With
+        no workspace set up, every folder is outside it."""
+        space = self.workspace
+        if space is None:
+            return 'outside'
+        top = Path(path)
+        found = team.overlaps(top, space.root)
+        if found == 'inside':
+            return 'in-workspace'
+        found = found or team.overlaps(top, space.repo)
+        return {'inside': 'in-repository', 'holds': 'holds-workspace'}.get(found, 'outside')
+
+    def conversation_unread(self, path) -> bool:
+        """Whether `path` holds a training a conversation keeps outside the workspace whose
+        session record this version cannot read: one no run drives, with a session record and
+        no run record. Reads that record only."""
+        folder = Path(path)
+        if self.driven(folder) is not None:
+            return False
+        session = folder / workspace.STATE_DIR / 'session.json'
+        try:
+            if session.is_symlink() or not session.is_file() \
+                    or (folder / RECORD).exists() or (folder / RECORD).is_symlink():
+                return False
+            workspace.load(folder)
+        except WorkspaceError:
+            return True
+        except (OSError, ValueError):
+            return True
+        return False
 
     def saved_kind(self, root: Path) -> str | None:
         """'saved' for a training the earlier gated flow saved and nobody opened on the desk,
@@ -8009,14 +8047,16 @@ class Engine(Reviewing):
         if found['outcome'] == 'finished':
             # A finished training keeps what it could do before: published as it stands,
             # read by a teammate, its files read and downloaded in place.
+            # Only what the runner's own survey calls finished is classed so
+            # (`desk_migration.outcome` asks `unfinished`): anything else with a plan opens on
+            # the desk through the explicit migration, so no saved record is ever told to wait
+            # for a finish that nothing will make (GitHub issue #547).
             finished = self._finished_shown(root)
             if not mine:
                 shown.update(outcome='waiting', waits=[self._waits('owner')])
                 sentence = SAVED_WAITING
-            elif self._finished_here(root):
-                sentence, can_open = SAVED_FINISHED, True
             else:
-                shown.update(outcome='read-only', why=drafts.NOT_FINISHED)
+                sentence, can_open = SAVED_FINISHED, True
         elif found['outcome'] == 'migrates':
             preview = desk_migration.migration_preview(self, root)
             if preview.get('outcome', {}).get('outcome') not in (None, 'migrates'):
@@ -8100,6 +8140,21 @@ class Engine(Reviewing):
             except OSError:
                 pass
         return 'copy' if desk_migration._start_form(small) else 'new'
+
+    def unfinished(self, root: Path) -> list[str] | None:
+        """For a saved training whose session says it is finished: None where the runner's
+        own survey agrees (`_finished_here`), else the limitations its checks accepted it
+        with, in the page's words, which History keeps once it opens on the desk (GitHub
+        issue #547). Only reads."""
+        if self._finished_here(root):
+            return None
+        import assess
+        import desk
+        try:
+            said = assess.run_checks(root)['limitations']
+        except (WorkspaceError, OSError, ValueError, KeyError, TypeError):
+            said = []
+        return [desk.plainly(reason) for reason in said]
 
     def _finished_here(self, root: Path) -> bool:
         """Whether a finished saved training opens on the desk as `open_on_desk` asks: its
@@ -8275,11 +8330,6 @@ class Engine(Reviewing):
         looks = pipeline.research_of(record)
         return {**looks, 'summary': pipeline.research_words(record),
                 'outside': outside_words(record)}
-
-    def research_from(self, path) -> dict | None:
-        """`_research_view` for a training a run drives; None for any other."""
-        root = self.driven(path)
-        return None if root is None else self._research_view(self._load(root))
 
     @staticmethod
     def _yoodli(root, session):
@@ -8788,11 +8838,42 @@ class Engine(Reviewing):
         carries on from wherever its files say it is."""
         space, chosen, top = self.space(), settings.load(), Path(path)
         gitstate.identity(space.repo)
+        session, root = self._bringing(space, top)
+        with self.files:
+            copied = False
+            try:
+                team.copy_in(top, root)
+                copied = True
+                if session['settings']['approval'] != 'page':
+                    workspace.checkpoint(root, approval='page', by='page')
+                self._store(root, self._brought(root, chosen, space))
+                home.remember(root, session['title'], session['levels'])
+                self._commit(root, 'bring the training in from a conversation')
+            except BaseException as failure:  # a training is brought in whole or not at all
+                # Only the copy this made is removed: a folder of that name that appeared
+                # meanwhile is someone else's and is left alone.
+                if copied:
+                    shutil.rmtree(root, ignore_errors=True)
+                    try:
+                        gitstate.discard(space, root)
+                    except (OSError, WorkspaceError):
+                        pass
+                if isinstance(failure, OSError):
+                    raise self._copy_failed(space, top, root, failure, copied) from None
+                raise
+            self._claimed(root, space)
+        self.wake(root)
+        return {'path': str(root), 'id': root.name}
+
+    def _bringing(self, space: gitstate.Workspace, top: Path) -> tuple[dict, Path]:
+        """Every check Bring in makes before it copies anything, in its order: its session
+        record and the folder its copy would take, or the WorkspaceError that refuses it.
+        Only reads: nothing is copied or written."""
         # Folders compared as folders, before anything is read: a folder holding the
         # workspace would be copied into itself (GitHub issue #544).
         where = team.overlaps(top, space.root)
         if where == 'inside':
-            raise WorkspaceError('This training is already in the workspace.')
+            raise WorkspaceError(ALREADY_IN)
         # The workspace's repository as a whole, too: a folder elsewhere in it, or one that
         # holds it, is never copied into it.
         where = where or team.overlaps(top, space.repo)
@@ -8807,28 +8888,82 @@ class Engine(Reviewing):
                                  f'brought into the workspace. {refusal}')
         root = space.training(workspace.slugify(session['title']))
         if root.exists():
-            raise WorkspaceError(f'The workspace already has a training in {space.folder}/'
-                                 f'{root.name}. If that is the copy made of this one, work '
-                                 'on it there.')
+            raise WorkspaceError(NAME_TAKEN.format(where=f'{space.folder}/{root.name}'))
+        # Everything the copy needs can be read: a file or folder that cannot be is said as
+        # that, before the copy could fail on it.
+        unread = self._unreadable(top)
+        if unread:
+            raise WorkspaceError(unread)
         why = team.unacceptable(top)
         if why:
             raise WorkspaceError('This training cannot be brought into the workspace. '
                                  + why)
-        with self.files:
+        return session, root
+
+    @staticmethod
+    def _copy_failed(space, top: Path, root: Path, failure: OSError,
+                     copied: bool) -> WorkspaceError:
+        """What Bring in says when its copy failed: one plain sentence naming the file by its
+        name inside the training's folder, never a path of this computer or the operating
+        system's own words."""
+        if not copied and root.exists():
+            return WorkspaceError(NAME_TAKEN.format(where=f'{space.folder}/{root.name}'))
+        names = []
+        if isinstance(failure, shutil.Error) and failure.args and isinstance(failure.args[0], list):
+            names = [entry[0] for entry in failure.args[0] if entry]
+        names += [failure.filename, failure.filename2]
+        for name in names:
+            if not name:
+                continue
+            found = Path(str(name))
+            for base in (top, *root.parent.glob('.bringing-*'), root):
+                try:
+                    return WorkspaceError(COPY_FAILED.format(
+                        name=found.relative_to(base).as_posix()))
+                except ValueError:
+                    continue
+        return WorkspaceError(COPY_FAILED.format(name='a file in it'))
+
+    @staticmethod
+    def _unreadable(top: Path) -> str | None:
+        """The sentence for the first file or folder Bring in would copy that cannot be read
+        on this computer, named inside the training's folder, or None when every one can be.
+        Links are left to `team.unacceptable`, which refuses them without following them."""
+        pending = [top]
+        while pending:
+            folder = pending.pop()
             try:
-                team.copy_in(top, root)
-                if session['settings']['approval'] != 'page':
-                    workspace.checkpoint(root, approval='page', by='page')
-                self._store(root, self._brought(root, chosen, space))
-                home.remember(root, session['title'], session['levels'])
-                self._commit(root, 'bring the training in from a conversation')
-            except BaseException:  # a training is brought in whole or not at all
-                shutil.rmtree(root, ignore_errors=True)
-                gitstate.discard(space, root)
-                raise
-            self._claimed(root, space)
-        self.wake(root)
-        return {'path': str(root), 'id': root.name}
+                entries = sorted(folder.iterdir())
+            except OSError:
+                return UNREADABLE_FOLDER.format(name=folder.relative_to(top).as_posix() or '.')
+            for path in entries:
+                if team._left_out(top, path) or path.is_symlink():
+                    continue
+                if path.is_dir():
+                    pending.append(path)
+                elif path.is_file():
+                    try:
+                        with path.open('rb') as handle:
+                            handle.read(1)
+                    except OSError:
+                        return UNREADABLE_FILE.format(name=path.relative_to(top).as_posix())
+        return None
+
+    def bring_refusal(self, path) -> str | None:
+        """Why a training made in a conversation cannot be brought into the workspace: the
+        sentence Bring in refuses it with, from the same checks (`_bringing`), or None when it
+        can be. Nothing is copied or written. With no workspace set up, None: the page says
+        that itself, and offers nothing until one is."""
+        space = self.workspace
+        if space is None or gitstate.marker(space.repo, space.folder) is None:
+            return None
+        try:
+            self._bringing(space, Path(path))
+        except WorkspaceError as refusal:
+            return str(refusal)
+        except OSError:  # a folder that cannot be looked at is not brought in
+            return UNREADABLE_FOLDER.format(name='.')
+        return None
 
     def _brought(self, root: Path, chosen: settings.Settings,
                  space: gitstate.Workspace) -> dict:
@@ -8868,12 +9003,31 @@ class Engine(Reviewing):
 
     # --- what saved trainings still need -----------------------------------------------
 
+    # What `studio saved-work` reports of Training Studio's saved work, by kind (GitHub issue
+    # #547): what becomes of each, now that nothing continues saved work.
+    SAVED_KINDS = ('opens-on-desk', 'finished-earlier', 'waiting-to-open', 'read-only-record',
+                   'bring-in-first')
+    SAVED_KIND_OF = {'migrates': 'opens-on-desk', 'finished': 'finished-earlier',
+                     'read-only': 'read-only-record'}
+    SAVED_WHY = {'opens-on-desk': 'It has a plan, outline or draft; it opens on the desk '
+                                  'through the explicit migration.',
+                 'finished-earlier': 'It was finished; it keeps its finished Open on the desk.',
+                 'waiting-to-open': 'Its opening on the desk was interrupted; finishing the '
+                                    'opening completes it.',
+                 'bring-in-first': 'It was made in a conversation and is brought into the '
+                                   'workspace first.'}
+
     def saved_work(self, folders=()) -> dict:
-        """Which saved trainings still need each older path, as `saved_work.report` says:
-        every training in the workspace a run drives, each of `folders` that holds a run,
-        and the conversation trainings this computer remembers. Only read: no lock is
-        taken, nothing is written and nothing is asked online. Unreadable records are reported as unresolved."""
+        """What saved training there is, as `saved_work.report` says it, by what becomes of
+        each: it opens on the desk, it is finished, its opening waits to be finished, it is
+        a read-only record, or it was made in a conversation and is brought in first. It
+        looks at every training in the workspace, each of `folders`, and the trainings this
+        computer remembers; desk work is not saved work and is left out. Only read: no lock
+        is taken, nothing is written and nothing is asked online. A candidate that cannot be
+        looked at is reported as unresolved."""
         from studio_core import saved_work
+        from runner import desk_migration
+        from runner.desk_chat import _files
         found: dict[str, list[dict]] = {}
         issues = []
         roots = saved_work.workspace_roots(gitstate.settings_path(), gitstate.MARKER, issues)
@@ -8898,43 +9052,58 @@ class Engine(Reviewing):
             seen.add(root.absolute())
             try:
                 saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
+                conversation = not (root / RECORD).exists() \
+                    and (root / workspace.STATE_DIR / 'session.json').exists()
+                if conversation and not (root / RECORD).is_symlink():
+                    # What Bring in could not read is said as Bring in says it, before
+                    # anything else is read; links are then excluded as for any folder.
+                    unread = self._unreadable(root)
+                    if unread:
+                        found.setdefault('read-only-record', []).append(
+                            saved_work.needs(root, root.name, unread))
+                        continue
                 saved_work.checked_tree(root)
-                if not (root / RECORD).exists() and (root / workspace.STATE_DIR / 'session.json').exists():
-                    saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
-                    session = workspace.load(root)
-                    if session.get('flow') != 'desk':
-                        found.setdefault('gated-flow', []).append(saved_work.needs(
-                            root, session['title'] or root.name, 'Saved guided creation flow.'))
-                    started = workspace.statuses(root, session).get('research', 'not-started')
-                    if not session.get('research_contract') and started == 'not-started':
-                        found.setdefault('research-queue', []).append(saved_work.needs(
+                if conversation:
+                    try:
+                        session = workspace.load(root)
+                    except WorkspaceError:
+                        # A conversation's training whose record cannot be read.
+                        found.setdefault('read-only-record', []).append(saved_work.needs(
+                            root, root.name, 'Its record cannot be read; it is kept to read.'))
+                        continue
+                    if not workspace.on_desk(session):
+                        refusal = self.bring_refusal(root)
+                        found.setdefault('read-only-record' if refusal else 'bring-in-first',
+                                         []).append(saved_work.needs(
                             root, session['title'] or root.name,
-                            'A conversation training whose research has not started.'))
+                            refusal or self.SAVED_WHY['bring-in-first']))
                     continue
                 saved_work.checked_path(root / RECORD)
-                read_record(root)  # validate effective migration state without erasing raw compatibility
-                record = json.loads((root / RECORD).read_bytes())
-                if record is None:
-                    raise ValueError('Saved run record is missing.')
-                survey = self._survey_files(root, record)
-                done, title = survey.done, survey.session['title'] or root.name
-                level = review_policy.level(record)
+                kind = self.saved_kind(root)
+                if kind is None:
+                    continue   # desk work
+                try:
+                    title = json.loads((root / workspace.STATE_DIR / 'session.json')
+                                       .read_bytes()).get('title') or root.name
+                except (OSError, ValueError, AttributeError):
+                    title = root.name
+                if kind == 'opening':
+                    ident, why = 'waiting-to-open', self.SAVED_WHY['waiting-to-open']
+                elif kind == 'unread':
+                    ident, why = 'read-only-record', desk_migration.UNREAD
+                else:
+                    files = _files(root)
+                    outcome = desk_migration.classify(
+                        files, desk_migration._unfinished(self, root, files))
+                    if outcome['outcome'] == 'desk':
+                        continue
+                    ident = self.SAVED_KIND_OF[outcome['outcome']]
+                    why = outcome.get('reason') or self.SAVED_WHY[ident]
             except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError) as exc:
                 saved_work.issue(issues, root, str(exc))
                 continue
-            if record.get('flow') != 'desk':
-                found.setdefault('gated-flow', []).append(saved_work.needs(root, title, 'Saved guided creation flow.'))
-            if not record.get('research_contract') and 'research' not in done:
-                found.setdefault('research-queue', []).append(saved_work.needs(
-                    root, title, 'Its research has not run, and it was started before '
-                    'Harness Research could synthesize.'))
-            if 'review_layout' not in record and level != 'step_by_step' \
-                    and 'review:final' not in done:
-                found.setdefault('review-layout-1', []).append(saved_work.needs(
-                    root, title, 'It began before the current review layout, and its final '
-                    'review is still to come.'))
-        return saved_work.report(('research-queue', 'review-layout-1', 'old-harness-slides', 'gated-flow'),
-                                 found, scope=scope, issues=issues)
+            found.setdefault(ident, []).append(saved_work.needs(root, title, why))
+        return saved_work.report(self.SAVED_KINDS, found, scope=scope, issues=issues)
 
 def _assets_said(problem: dict, recorded: dict) -> str:
     """One problem the slides tool found with a deck's assets, as the person is told it. A

@@ -284,13 +284,12 @@ class StreamedRunsTests(Case):
 
 
 class EngineTests(Case):
-    # Runner code the manuscript editor's own runs still use: its runs are marked as the
-    # editor's (RunnerCase.EDITOR), the only saved runs the runner goes on with.
-    EDITOR = 'revise'
+    # Runner code the manuscript editor's own runs use, on the run its revision makes (the
+    # only saved runs the runner goes on with): its first step writes the draft.
 
     def test_a_run_stage_is_a_job_of_its_blog_in_a_log_git_ignores(self):
         self.agent()
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         engine = runner.Engine(self.root)
         self.addCleanup(engine.close)
         engine.control(found['id'], 'resume')
@@ -305,7 +304,7 @@ class EngineTests(Case):
         shown = management.activity_view(self.root, {'id': [found['id']]})
         [job] = shown['jobs']
         self.assertEqual(
-            (job['label'], job['outcome'], job['steps']), ('Writing the outline', 'finished', 3)
+            (job['label'], job['outcome'], job['steps']), ('Writing the draft', 'finished', 3)
         )
         self.assertNotIn('lines', job)
         lines = management.activity_view(self.root, {'id': [found['id']], 'entry': [job['id']]})
@@ -314,7 +313,7 @@ class EngineTests(Case):
         self.assertEqual(management.activity_view(self.root, {'id': ['another']})['jobs'], [])
 
     def test_the_run_view_shows_the_job_while_it_runs(self):
-        found = self.create(page=True)
+        found = self.editor_run('revise')
         seen = []
 
         def worker(*args, stop=None, **kwargs):
@@ -328,7 +327,7 @@ class EngineTests(Case):
         engine.control(found['id'], 'resume')
         engine.once(found['id'])
         [[worker_shown]] = seen
-        self.assertEqual(worker_shown['label'], 'Writing the outline')
+        self.assertEqual(worker_shown['label'], 'Writing the draft')
         self.assertEqual(worker_shown['now']['text'], 'Started on synthetic-model')
         self.assertEqual(engine.describe(found['id'])['activity'], [])
         self.assertNotIn('activity', engine.describe(found['id'], listing=True))

@@ -16,10 +16,8 @@ An installed copy reads a small entry first, which finds the guidance: 331 estim
 | --- | ---: |
 | `SKILL.md` | 970 |
 | `references/desk.md` | 449 |
-| `references/gates.md` | 823 |
 | `references/google.md` | 982 |
 | `references/hub.md` | 927 |
-| `references/intake.md` | 799 |
 | `references/levels.md` | 759 |
 | `references/modes/pitch.md` | 438 |
 | `references/modes/questionnaire.md` | 393 |
@@ -27,7 +25,6 @@ An installed copy reads a small entry first, which finds the guidance: 331 estim
 | `references/modes/tutor.md` | 454 |
 | `references/privacy.md` | 319 |
 | `references/profiles/yoodli.md` | 997 |
-| `references/short-commands.md` | 392 |
 | `references/stages/blueprint.md` | 861 |
 | `references/stages/brief.md` | 810 |
 | `references/stages/deck-handoff.md` | 840 |
@@ -48,8 +45,6 @@ An installed copy reads a small entry first, which finds the guidance: 331 estim
 
 | Loading set | Estimated tokens | Budget |
 | --- | ---: | ---: |
-| `short-command` | 1,362 | 2,000 |
-| `start` | 1,769 | 2,000 |
 | `google` | 1,952 | 2,000 |
 | `desk` | 1,419 | 2,000 |
 | `hub` | 1,897 | 2,000 |
@@ -70,6 +65,5 @@ An installed copy reads a small entry first, which finds the guidance: 331 estim
 | `scenario:questionnaire` | 3,346 | 4,000 |
 | `yoodli:questionnaire` | 5,242 | 6,000 |
 
-A loading set is what one operation reads. `stage:<name>` is resuming at that stage and reaching its gate: the entry, the stage reference, the gates reference and the stage template. The `yoodli:<mode>` sets apply only when the optional Yoodli stage is on. The whole library is never loaded at once.
+A loading set is what one operation reads. `stage:<name>` is the entry, the stage reference and the stage template. The gates, intake and short-commands references went with the conversation-guided way of working (GitHub issue #547); the figures above were measured before, so the whole library and the stage sets are now smaller. The `yoodli:<mode>` sets apply only when the optional Yoodli stage is on. The whole library is never loaded at once.
 
-When a training's gates are decided on the page, the assistant also reads the desk reference once in a session, on top of the stage's loading set. No loading set measures that sum.

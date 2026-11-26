@@ -240,8 +240,6 @@ class DriverTests(Team):
                            lambda: engine.outline(theirs, None, 'approve'),
                            lambda: engine.publish(theirs),
                            lambda: engine.mark_ready(theirs, 'blueprint', 'abc'),
-                           lambda: page.RunnerPage(1, engine).move_approval(str(theirs),
-                                                                            'chat'),
                            lambda: engine.drive(theirs, 'hand-over')):
                 with self.assertRaisesRegex(engines.Elsewhere, 'Alex has been running this '
                                             'training from another computer since'):
@@ -291,7 +289,7 @@ class DriverTests(Team):
         # driver. Everything else is refused until someone takes it.
         self.assertEqual(self.ask(self.alex, 'publish', {'path': path})['revision'], 1)
         for endpoint, sent in (
-                ('run', {'action': 'resume'}), ('copies', {}), ('approval', {'mode': 'chat'}),
+                ('run', {'action': 'resume'}), ('copies', {}),
                 ('drafts/ready', {'name': 'blueprint', 'seen': 'abc'})):
             said = self.ask(self.alex, endpoint, {'path': path, **sent}, 409)['error']
             self.assertEqual(said, team.NOBODY, endpoint)
@@ -1176,7 +1174,7 @@ class PageTests(Team):
                 ('run', {'action': 'stop'}), ('answer', {'id': 'abc', 'answer': 'Yes'}),
                 ('documents', {'action': 'done'}), ('copies', {}), ('drive',
                                                                     {'action': 'hand-over'}),
-                ('approval', {'mode': 'chat'}), ('publish', {}),
+                ('publish', {}),
                 ('drafts/ready', {'name': 'blueprint', 'seen': 'abc'})):
             said = self.ask(self.blake, endpoint, {'path': theirs, **sent}, 409)['error']
             self.assertIn('Alex has been running this training from another computer since',

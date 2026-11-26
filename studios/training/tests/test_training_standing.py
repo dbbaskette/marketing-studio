@@ -140,8 +140,6 @@ class StandingTests(DeckCase):
         self.assertEqual(stages['deck'], 'review')
         self.assertEqual(stages['package'], 'not-started')
         self.assertEqual({stages[name] for name in drafts.ORDER if name in stages}, {'review'})
-        # The next thing that needs the person, after any decision, is this training.
-        self.assertEqual(desk.next_up(listing)['path'], str(root))
         # Reading every screen started nothing and changed nothing.
         self.assertEqual(len(self.workers.jobs), jobs)
         self.assertEqual(self.log(), commits)

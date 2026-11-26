@@ -746,7 +746,7 @@ what becomes of it, with one main action:
 | --- | --- | --- |
 | Saved an outline, a draft, a review or a handoff | It continues on the writing desk | **Open on the desk**, which shows what stays with it before anything changes |
 | Finished | It is edited on the desk from here on | **Open on the desk** in its Done card, beside copy, download, a Google Doc, pre-publish and repurposing |
-| Would open on the desk but waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), the waiting tool task, **Finish opening on the desk**, or new work from it while nothing here clears it |
+| Would open on the desk but waits on something | What it waits on and what clears it | **Stop the step**, **Take this blog** (or **Take over**), the waiting tool task (cancel it, or **Discard this result** once it is ready: a result cannot be saved to a saved blog), **Finish opening on the desk**, or new work from it while nothing here clears it |
 | Stopped before an outline or draft, or cannot be read | Why it is read-only | **Start new work from this**: a new blog from its title, point and audience; nothing it researched is carried |
 
 Each record lists its saved files to read in place. **Blogs** and Home say only that a blog
@@ -766,7 +766,12 @@ one is opening it on the desk, Delete, and taking it in a team only so that it c
 the desk; a finished one also keeps what its Done card offers. It is never handed over.
 
 The manuscript editor's own checks still run as review and revise runs: **Edit
-manuscript** starts and reads them. A finished one reads on its run and its review pages.
+manuscript** starts and reads them. A check goes on through its steps (its research plan
+and research, or its claims map, and a revision's draft) to its review by itself, and the
+editor screen says which step is under way; it stops before then only for **Stop this
+pass**, a failure, or a step that changed under it, each said there with how to start the
+pass again. These are the only runs the runner makes. A finished one reads on its run and
+its review pages.
 
 **Blogs** shows every blog, on the desk, saved step by step, and saved writing. Each card
 has **Delete**, as each blog in Home's lists does, which asks for the blog's title, stops
@@ -797,14 +802,12 @@ links and quoted claims need review: the browser runner does not independently
 fetch and validate every citation. An approved review does not mark all existing
 Blog Studio factual checks as passed.
 
-**Pause after this step** lets the current job finish and prevents another.
-**Stop** ends its process. Failed jobs retain previous writing and offer
-**Try again**, which makes that step again in a new job. No job approves its own
-result or publishes a blog. **Finish**, at the last step, always opens its
+**Stop** ends a job's process. A failed job retains previous writing. No job approves
+its own result or publishes a blog. **Finish**, on a run's last step, always opens its
 confirmation, whatever the review level: it approves the shown version and keeps
 the draft in the team library as a reference and an example of its kind of post.
 
-A stopped run says what to do next beside the error:
+A stopped desk step says what to do next beside the error:
 
 - **A CLI failure** names **Status → Check this computer** and offers **Open
   Status**, including for an assistant that is not installed or cannot start.

@@ -99,9 +99,17 @@ class SynthesisAtStartTests(StudioCase):
         self.assertNotIn('research_contract', self.engine._load(Path(made['path'])))
 
 
+class RemovedTests(StudioCase):
+    def test_what_nothing_in_the_runner_called_is_gone(self):
+        """`deck_gate`, `whose` and `research_from` had no caller in the runner once the gate
+        screen went (GitHub issue #547); the desk reads `pipeline.deck_gate` itself."""
+        for name in ('deck_gate', 'whose', 'research_from'):
+            self.assertFalse(hasattr(self.engine, name), name)
+
+
 class SavedWorkTests(StudioCase):
-    """`studio saved-work`: which saved trainings still need each older path. Each run is
-    begun on the legacy queue, as a saved one was, and its record set as the case needs."""
+    """`studio saved-work`: what saved trainings there are, and what becomes of each now that
+    nothing continues saved work (GitHub issue #547)."""
 
     def test_inventory_reports_unresolved_candidates_without_writing(self):
         missing = self.base / 'missing-inventory-folder'
@@ -132,6 +140,11 @@ class SavedWorkTests(StudioCase):
             self.assertEqual(said['unused'], [])
             self.assertEqual(record.read_text(), content)
 
+    def test_a_saved_training_whose_run_record_cannot_be_read_is_a_read_only_record(self):
+        root = self.stored('blueprint-gate')
+        (root / '.training-studio/run.json').write_text('{not a run record')
+        self.assertIn(str(root), self.needed(self.engine.saved_work(), 'read-only-record'))
+
     def test_registered_missing_training_is_not_filtered_out(self):
         missing = self.base / 'remembered-missing'
         home.write_json(home.registry_path(), {'schema': 1, 'trainings': {str(missing): {}}})
@@ -161,12 +174,43 @@ class SavedWorkTests(StudioCase):
         self.assertTrue(any(entry['path'] == str(self.space.root / gitstate.MARKER)
                             for entry in said['issues']))
 
-    def test_session_only_conversation_training_needs_gated_flow(self):
+    def test_an_interrupted_opening_waits_to_be_opened(self):
+        """A saved training whose opening on the desk was interrupted is reported as waiting
+        to open, from a stored tree, and nothing about it is changed by asking."""
+        from unittest import mock
+        from runner import desk_chat, desk_migration
+        root = self.stored('blueprint-gate')
+        shown = desk_chat.migration_preview(self.engine, root)
+        pending = root / desk_migration.format.PENDING
+        real = Path.unlink
+
+        def interrupted(path, *args, **kwargs):
+            if path == pending:
+                raise OSError('Interrupted by the test.')
+            return real(path, *args, **kwargs)
+        with mock.patch.object(Path, 'unlink', interrupted), self.assertRaises(OSError):
+            desk_chat.migrate(self.engine, root, shown['expected'])
+        self.assertTrue(pending.is_file())
+        before = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'waiting-to-open'),
+                         {str(root): self.engine.SAVED_WHY['waiting-to-open']})
+        for kind in ('opens-on-desk', 'finished-earlier', 'read-only-record', 'bring-in-first'):
+            self.assertNotIn(str(root), self.needed(said, kind))
+        self.assertEqual({path: path.read_bytes() for path in root.rglob('*') if path.is_file()},
+                         before)
+
+    def test_a_conversation_training_is_brought_in_first(self):
         root = self.chat()
         said = self.engine.saved_work()
-        self.assertIn(str(root), self.needed(said, 'gated-flow'))
-        self.assertEqual(next(entry['status'] for entry in said['paths']
-                              if entry['id'] == 'gated-flow'), 'needed')
+        self.assertEqual(self.needed(said, 'bring-in-first'),
+                         {str(root): self.engine.SAVED_WHY['bring-in-first']})
+        self.assertEqual(next((entry['status'], entry['asks']) for entry in said['paths']
+                              if entry['id'] == 'bring-in-first'),
+                         ('found', 'Bring it in on the Training Studio page.'))
+        (root / '.training-studio' / 'session.json').write_text('{not json')
+        self.assertEqual(self.needed(self.engine.saved_work(), 'read-only-record'),
+                         {str(root): 'Its record cannot be read; it is kept to read.'})
 
     def test_inventory_excludes_session_and_material_links_before_reading(self):
         for conversation in (False, True):
@@ -211,38 +255,9 @@ class SavedWorkTests(StudioCase):
                     self.assertTrue(any(entry['path'] == str(root) for entry in said['issues']))
                     self.assertEqual({path: path.read_bytes() for path in outside.iterdir() if path.is_file()}, before)
 
-    QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
-    CHAT = 'A conversation training whose research has not started.'
-    LAYOUT = 'It began before the current review layout, and its final review is still to come.'
-
     def needed(self, said, ident):
         return {entry['path']: entry['why'] for entry in
                 next(found for found in said['paths'] if found['id'] == ident)['needed_by']}
-
-    # Saved trainings the earlier flow left at their research plan or before research ran,
-    # each a stored copy (saved_fixtures.py); a test takes the next one for each it needs.
-    STORED = ('research-plan-gate', 'question-before-plan', 'failure-before-plan',
-              'research-gate')
-
-    def saved(self, title, **changes):
-        """A saved training begun on the legacy queue whose research has not run (a stored
-        copy; `title` names it in the test only), its run record then changed as `changes`
-        says: a value of None takes the key out."""
-        import saved_fixtures
-        taken = self.__dict__.setdefault('taken', [])
-        state = next(name for name in self.STORED if name not in taken)
-        taken.append(state)
-        return self.changed(saved_fixtures.load(self, state), **changes)
-
-    def changed(self, root, **changes):
-        record = self.engine._load(root)
-        for key, value in changes.items():
-            if value is None:
-                record.pop(key, None)
-            else:
-                record[key] = value
-        self.engine._store(root, record)
-        return root
 
     def chat(self, title='Started in a chat'):
         root = self.base / workspace.slugify(title)
@@ -251,75 +266,59 @@ class SavedWorkTests(StudioCase):
         home.remember(root, title, [])
         return root
 
-    def done(self, *steps):
-        """The engine's survey, with `steps` done as well."""
-        survey = self.engine._survey_files
-        return mock.patch.object(self.engine, '_survey_files', lambda root, record: replace(
-            survey(root, record), done=survey(root, record).done | set(steps)))
+    # Saved trainings the earlier flow left at their research plan or before research ran,
+    # each a stored copy (saved_fixtures.py); a test takes the next one for each it needs.
+    STORED = ('research-plan-gate', 'question-before-plan', 'failure-before-plan',
+              'research-gate')
 
-    def test_nothing_is_run_or_asked_online_to_answer(self):
-        # Seeing what this computer has for a deck runs the slides tool and the brand skill,
-        # and may ask Google Drive; the answer needs only the files.
-        waiting = self.saved('Waiting training')
-        asked = mock.Mock(side_effect=AssertionError('the computer was looked at'))
-        with mock.patch.object(pipeline, 'wanted', lambda found: {'deck'}), \
-                mock.patch.object(self.engine, 'deck_needs', asked):
-            with self.assertRaises(AssertionError):
-                self.engine._survey(waiting, self.engine._load(waiting))
-            said = self.engine.saved_work()
-        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
-        asked.assert_called_once()
+    def saved(self, title):
+        """A stored saved training stopped before its plan (`title` names it in the test
+        only)."""
+        import saved_fixtures
+        taken = self.__dict__.setdefault('taken', [])
+        state = next(name for name in self.STORED if name not in taken)
+        taken.append(state)
+        return saved_fixtures.load(self, state)
 
-    def test_a_run_begun_on_the_queue_needs_it_until_its_research_has_run(self):
-        waiting = self.saved('Waiting training')
-        said = self.engine.saved_work()
-        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
-        self.assertEqual(said['paths'][0]['needed_by'][0]['title'], 'Stop research-plan')
-        with self.done('research'):
-            self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
-        # A training folder given outside the workspace is looked at too.
-        import shutil
-        outside = self.base / 'elsewhere' / 'waiting-training'
-        shutil.copytree(waiting, outside)
-        self.assertEqual(self.needed(self.engine.saved_work(folders=(outside,)),
-                                     'research-queue'),
-                         {str(waiting): self.QUEUE, str(outside): self.QUEUE})
-        self.changed(waiting, research_contract={'schema': 2, 'version': '1.0.0',
-                                                 'digest': 'abc'}, schema=3)
-        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+    def stored(self, state):
+        import saved_fixtures
+        return saved_fixtures.load(self, state)
 
-    def test_a_conversation_training_whose_research_has_not_started_needs_it(self):
+    def test_each_saved_training_is_reported_by_what_becomes_of_it(self):
+        from runner import desk_migration
+        early = self.stored('research-plan-gate')
+        planned = self.stored('blueprint-gate')
+        finished = self.stored('finished')
         chat = self.chat()
         said = self.engine.saved_work()
-        self.assertEqual(self.needed(said, 'research-queue'), {str(chat): self.CHAT})
-        session = workspace.load(chat)
-        session['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        workspace.store(chat, session)
-        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+        self.assertEqual([entry['id'] for entry in said['paths']],
+                         ['opens-on-desk', 'finished-earlier', 'waiting-to-open',
+                          'read-only-record', 'bring-in-first'])
+        self.assertEqual(self.needed(said, 'opens-on-desk'),
+                         {str(planned): self.engine.SAVED_WHY['opens-on-desk']})
+        self.assertEqual(self.needed(said, 'finished-earlier'),
+                         {str(finished): self.engine.SAVED_WHY['finished-earlier']})
+        self.assertEqual(self.needed(said, 'read-only-record'),
+                         {str(early): desk_migration.NOTHING_MADE})
+        self.assertEqual(set(self.needed(said, 'bring-in-first')), {str(chat)})
+        # Opened on the desk, it is desk work, no longer saved work.
+        from runner import desk_chat
+        preview = desk_chat.migration_preview(self.engine, planned)
+        desk_chat.migrate(self.engine, planned, preview['expected'])
+        self.assertEqual(self.needed(self.engine.saved_work(), 'opens-on-desk'), {})
 
-    def test_a_balanced_run_with_no_layout_needs_layout_1_until_its_final_review(self):
-        balanced = {'schema': 1, 'level': 'balanced'}
-        older = self.saved('Older layout', review_layout=None, review_policy=balanced,
-                           schema=2)
-        self.saved('Current layout', review_policy=balanced, schema=2)
-        self.saved('Step by step', review_layout=None)
-        said = self.engine.saved_work()
-        self.assertEqual(self.needed(said, 'review-layout-1'), {str(older): self.LAYOUT})
-        with self.done('review:final'):
-            self.assertEqual(self.needed(self.engine.saved_work(), 'review-layout-1'), {})
-
-    def test_the_old_slides_branches_are_always_unused_and_nothing_changes(self):
-        self.saved('Waiting training')
+    def test_nothing_is_run_or_asked_online_and_nothing_changes(self):
+        self.stored('research-plan-gate')
         chat = self.chat()
         outside = self.base / 'elsewhere'
         before = (self.git('status', '--porcelain'),
                   {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
                    if path.is_file() and '.git' not in path.parts})
+        jobs = len(self.workers.jobs)
         said = self.engine.saved_work(folders=(chat, outside))
-        self.assertEqual([entry['id'] for entry in said['paths']],
-                         ['research-queue', 'review-layout-1', 'old-harness-slides', 'gated-flow'])
         self.assertEqual(said['unused'], [])
         self.assertFalse(said['complete'])
+        self.assertEqual(len(self.workers.jobs), jobs)
         self.assertEqual((self.git('status', '--porcelain'),
                           {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
                            if path.is_file() and '.git' not in path.parts}), before)
@@ -1720,7 +1719,6 @@ class ResearchAccountTests(StudioCase):
         from synthesis_fixture import research_stop
         from studio_core import research_contract, research_view
         from types import SimpleNamespace
-        import desk
         root = self.start()
         research_stop(root / research_contract.CASE / 'research')
         record = self.engine._load(root); record['research_contract'] = {'schema': 2}
@@ -1729,7 +1727,9 @@ class ResearchAccountTests(StudioCase):
         with mock.patch.object(research_contract, 'matching', return_value=tool):
             step = next(s for s in pipeline.steps([]) if s.id == 'research-report')
             self.engine._report(root, step)
-        note = desk.latest_review(root, 'research')
+        # The latest entry of the research's review file: from its last `## ` heading.
+        text = (root / workspace.review_file('research')).read_text(encoding='utf-8')
+        note = '## ' + text.rpartition('\n## ')[2] if '\n## ' in text else text
         self.assertIn(research_view.CHECKED + ' An honest account.', note)
         self.assertNotIn('Digest', note)
         self.assertNotIn('synthetic-digest', note)

@@ -13,6 +13,7 @@ import shutil
 import helpers
 import saved_fixtures
 from runner_support import StudioCase
+import desk
 import home
 import workspace
 from runner import desk_chat, desk_migration, engine as engines, gitstate, page
@@ -596,16 +597,11 @@ class NothingContinuesTests(SavedStopTests):
                     native.apply(target, sent)
                 self.assertEqual((caught.exception.status, str(caught.exception)),
                                  (409, engines.SAVED_ONLY))
-        session = workspace.load(root)
-        seen = workspace.sha256_file(root / workspace.artifact(root, session, 'blueprint')['file'])
-        with self.assertRaises(page.desk.Refusal) as caught:
-            native.decide(path, 'blueprint', 'approve', None, seen)
-        self.assertEqual(str(caught.exception), engines.SAVED_ONLY)
-        with self.assertRaises(page.desk.Refusal):
-            native.read('/api/gate', lambda key: {'path': path, 'artifact': 'blueprint'}[key])
-        # The combined review and the look gate of the earlier flow are no longer routes.
-        for gone in ('/api/review', '/api/look'):
+        # The combined review and the look gate of the earlier flow are no longer routes,
+        # nor the conversation's gate and its decisions (GitHub issue #547).
+        for gone in ('/api/review', '/api/look', '/api/decide', '/api/approval'):
             self.assertNotIn(gone, native.writes)
+        self.assertNotIn('/api/gate', native.reads)
         self.engine.wake(root)
         self.engine.resume()
         self.assertEqual(len(self.workers.jobs), jobs)
@@ -692,6 +688,23 @@ class CarriedOverTests(SavedStopTests):
             with self.subTest(root=root.name):
                 self.assertEqual(listing[str(root)]['run']['state'], 'failed')
                 self.assertIn(said, listing[str(root)]['sentence'])
+
+
+class SavedStageTests(SavedStopTests):
+    """GitHub issue #547: a saved record's row of stages says what is true of the work it
+    saved: a teaching plan saved and waiting for review is neither "not started" nor in
+    progress, but saved, waiting for a review that no longer happens here."""
+
+    def test_a_saved_stage_says_it_was_saved_and_is_not_reviewed_here(self):
+        root = saved_fixtures.load(self, 'blueprint-gate')
+        self.assertTrue((root / 'blueprint.md').is_file())
+        native = page.RunnerPage(8765, self.engine)
+        listed = {item['path']: item for item in native.trainings()}[str(root)]
+        for stages in (listed['stages'], native.detail(str(root))['stages']):
+            said = {stage['name']: (stage['state'], stage['words']) for stage in stages}
+            self.assertEqual(said['Blueprint'], ('kept', desk.STAGE_STATES['kept']))
+            self.assertEqual(said['Guide'], ('not-started', 'not started'))
+            self.assertFalse({'current', 'review'} & {state for state, _ in said.values()})
 
 
 from runner_support import TeamCase  # noqa: E402
@@ -920,16 +933,41 @@ class DeckStopTests(DeckCase):
                 self.assertEqual((found['outcome'], found['why']),
                                  ('read-only', desk_migration.MISSING + ' ' + str(failure)))
 
-    def test_unreadable_deck_outline_is_a_read_only_record(self):
+    def test_unreadable_deck_outline_opens_on_the_desk_without_it(self):
+        """A saved deck outline that cannot be read, beside an intact plan, guide and brief
+        (GitHub issue #547): the training opens on the desk with those, the outline's bytes
+        are kept as they are, the deck is not made yet on the desk, and History says the
+        saved outline could not be read. Nothing is invented."""
         root = self.saved('deck-outline-waiting')
         outline = json.loads((root / pipeline.OUTLINE).read_text())
         outline['slides'][0]['title'] = 7
         (root / pipeline.OUTLINE).write_text(json.dumps(outline))
-        said = 'The shared saved deck outline cannot be read losslessly.'
-        shown = self.assert_refused(root, said)
-        self.assertEqual(shown['outcome'], {'outcome': 'read-only', 'next': 'copy',
-                                            'reason': desk_migration.MISSING + ' ' + said})
-        SavedStopTests.assert_read_only(self, root, desk_migration.MISSING + ' ' + said, 'copy')
+        gitstate.commit(self.space, 'an outline that cannot be read', [root])
+        kept = (root / pipeline.OUTLINE).read_bytes()
+        said = desk_migration.OUTLINE_UNREAD.format(level='')
+        before = self.record(root)
+        self.assertIn(said, self.record_of(root)['saved_record']['retained'])
+        shown = self.assert_migrates(root, self.MADE)
+        self.assertNotIn(pipeline.OUTLINE, shown['required'])
+        self.assertIn(said, shown['retained'])
+        self.assertEqual(shown['notes'], [said])
+        self.migrated_deck_record(root, before)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), kept)
+        from runner import drafts
+        desk = drafts.view(self.engine, root)
+        self.assertEqual(desk['saved_status'], {'notes': [said]})
+        cards = {card['name']: card['state'] for card in desk['cards']}
+        self.assertNotIn(cards['deck'], ('ready', 'draft'))
+        self.assertNotIn('deck', workspace.load(root)['artifacts'])
+
+    def test_an_outline_that_reads_but_breaks_the_rules_is_still_refused(self):
+        root = self.saved('deck-outline-waiting')
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        outline['delivery'] = 'live'
+        (root / pipeline.OUTLINE).write_text(json.dumps(outline))
+        shown = self.preview(root)
+        self.assertTrue(any(said.startswith('The saved deck outline needs attention')
+                            for said in shown['blockers']))
 
 
 import unittest  # noqa: E402
@@ -1008,6 +1046,113 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                     self.assertEqual([name for name in shot['buttons'] if name.startswith('Read ')],
                                      reads)
                     self.assertIn('Rolling restarts', result['snapshots']['read']['text'])
+
+    def test_a_conversation_training_bring_in_would_refuse_offers_only_what_works(self):
+        """GitHub issue #547: a conversation's training kept in the workspace's repository is a
+        read-only record: why, in Bring in's own sentence, and Start a new training. On a phone
+        through the private link, Bring it in is never offered: the record says it is done on
+        the computer, and offers nothing that would be refused."""
+        from studio_core.shared_runner import caller
+        top = self.space.repo / 'notes' / 'kept-here'
+        saved_fixtures.place('conversation-blueprint-gate', top)
+        self.root = top   # the page plan is written beside it
+        said = engines.IN_REPOSITORY if self.space.repo != self.space.root else engines.ALREADY_IN
+        path = str(top)
+        here = {'GET /api/capabilities': [RUNNER], 'GET /api/setup': [ok(SET_UP)],
+                'GET /api/trainings': [ok(self.get('trainings'))],
+                'GET /api/training': [ok(self.get('training', path=path))],
+                'GET /api/computer': [ok({'items': []})], 'GET /api/agents': [ok(AGENTS_FOUND)],
+                **MODELS}
+        for narrow in (False, True):
+            with self.subTest(narrow=narrow):
+                result = self.run_page(here, [{'snapshot': 'record'}],
+                                       state={'screen': 'training', 'path': path}, narrow=narrow)
+                shot = result['snapshots']['record']
+                self.assertEqual(shot['filled'], ['Start a new training'])
+                self.assertNotIn('Bring it in', shot['buttons'])
+                for shown in (engines.CONVERSATION_KEPT, said, 'Read teaching plan',
+                              'Start a new training opens an empty start form.'):
+                    self.assertIn(shown, shot['text'])
+                self.assert_no_continuing(shot, result)
+        outside = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        with caller.answering({caller.VIA_HEADER: caller.NETWORK}):
+            phone = page.RunnerPage(8765, self.engine).detail(str(outside))
+        answers = {**here, 'GET /api/training': [ok(phone)],
+                   'GET /api/trainings': [ok(self.get('trainings'))]}
+        result = self.run_page(answers, [{'snapshot': 'record'}],
+                               state={'screen': 'training', 'path': str(outside)}, narrow=True)
+        shot = result['snapshots']['record']
+        self.assertEqual(shot['filled'], [])
+        for absent in ('Bring it in', 'Start a new training', 'Start new work from this'):
+            self.assertNotIn(absent, shot['buttons'])
+        self.assertIn(engines.BRING_ON_COMPUTER, shot['text'])
+        self.assert_no_continuing(shot, result)
+
+    def test_an_open_conversation_record_is_not_read_again_on_a_timer(self):
+        """GitHub issue #547: deciding a conversation's record reads its whole folder, so the
+        open record is decided once; the page's own refresh asks for it again only when its
+        small records, as the list says them, change."""
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.root = top
+        path = str(top)
+        listing = self.get('trainings')
+        detail = self.get('training', path=path)
+        changed = json.loads(json.dumps(listing))
+        for item in changed['trainings']:
+            if item['path'] == path:
+                item['touched_at'] = '2099-01-01T00:00:00+00:00'
+        answers = {'GET /api/capabilities': [RUNNER], 'GET /api/setup': [ok(SET_UP)],
+                   'GET /api/trainings': [ok(listing), ok(listing), ok(listing), ok(changed)],
+                   'GET /api/training': [ok(detail)],
+                   'GET /api/computer': [ok({'items': []})], 'GET /api/agents': [ok(AGENTS_FOUND)],
+                   **MODELS}
+        result = self.run_page(answers, [{'snapshot': 'open'}, {'poll': True}, {'poll': True},
+                                         {'snapshot': 'polled'}, {'poll': True},
+                                         {'snapshot': 'changed'}],
+                               state={'screen': 'training', 'path': path})
+        asked = [r for r in result['requests'] if r['address'].startswith('/api/training?')]
+        self.assertIn('Read teaching plan', result['snapshots']['polled']['buttons'])
+        # Opened once, then asked again only after the list said its records changed.
+        self.assertEqual(len(asked), 2, [r['address'] for r in asked])
+
+    def test_bring_in_over_the_page_never_fails_raw(self):
+        """GitHub issue #547: `/api/adopt` of a conversation's training with a file it cannot
+        read, and of one whose copy fails half-way, answers one plain sentence, with no path
+        of this computer and no operating-system words, and leaves the workspace as it was."""
+        import os
+        import shutil
+        from unittest import mock
+        top = saved_fixtures.conversation(self, 'conversation-blueprint-gate')
+        self.root = top
+        notes = top / 'notes.txt'
+        notes.write_text('Synthetic notes.\n')
+        os.chmod(notes, 0)
+        self.addCleanup(os.chmod, notes, 0o644)
+        before = sorted(path.name for path in self.space.root.iterdir())
+        said = self.post('adopt', {'path': str(top)}, expect=409)
+        self.assertEqual(said['error'], engines.UNREADABLE_FILE.format(name='notes.txt'))
+        os.chmod(notes, 0o644)
+        real_tree, copied = shutil.copytree, []
+
+        def failing(source, target, *args, **kwargs):
+            if copied:
+                raise PermissionError(13, 'Permission denied', str(source))
+            copied.append(source)
+            return shutil.copy2(source, target, *args, **kwargs)
+
+        def tree(source, target, symlinks=False, ignore=None, copy_function=None,
+                 ignore_dangling_symlinks=False, dirs_exist_ok=False):
+            return real_tree(source, target, symlinks, ignore, failing,
+                             ignore_dangling_symlinks, dirs_exist_ok)
+        with mock.patch.object(shutil, 'copytree', tree):
+            failed = self.post('adopt', {'path': str(top)}, expect=409)
+        for answer in (said, failed):
+            text = json.dumps(answer)
+            self.assertNotIn(str(self.base), text)
+            for words in ('Errno', 'Permission denied', '.bringing-', 'shutil'):
+                self.assertNotIn(words, text)
+        self.assertIn('could not be copied', failed['error'])
+        self.assertEqual(sorted(path.name for path in self.space.root.iterdir()), before)
 
     def test_a_record_that_opens_on_the_desk_offers_the_preview(self):
         fixture = self.fixture('blueprint-gate')
@@ -1123,6 +1268,30 @@ class ReadOnlyPageTests(ScriptedPage, PageCase):
                          [('/api/publish', {'path': fixture['path']})])
         sent = next(r for r in result['requests'] if r['address'].startswith('/api/download?'))
         self.assertIn('artifact=document', sent['address'])
+
+    def test_a_download_carries_the_key_and_takes_the_name_the_runner_gives(self):
+        """Moved from PageScriptTests.test_every_deliverable_can_be_downloaded and
+        test_a_download_takes_the_name_the_runner_gives, which went with the gate screen: a
+        material is asked for with the page's key, saved under the name the runner sends in
+        Content-Disposition, and, where the runner sends none, under the file's own name."""
+        import desk
+        fixture = self.fixture('finished')
+        named = {'status': 200, 'picture': 'IyBHdWlkZQo=', 'type': 'text/markdown',
+                 'headers': {'Content-Disposition':
+                             'attachment; filename="finished-saved-guide.md"'}}
+        plain = {'status': 200, 'picture': 'IyBHdWlkZQo=', 'type': 'text/markdown'}
+        result = self.run_page({**self.answers(fixture), 'GET /api/download': [named, plain]}, [
+            {'click': 'Download the learner guide'}, {'snapshot': 'named'},
+            {'click': 'Download the learner guide'}, {'snapshot': 'plain'}],
+            state={'screen': 'run', 'path': fixture['path']})
+        shots = result['snapshots']
+        self.assertIn('Downloaded finished-saved-guide.md.', shots['named']['toasts'])
+        self.assertIn('Downloaded document.md.', shots['plain']['toasts'])
+        sent = [r for r in result['requests'] if r['address'].startswith('/api/download?')]
+        self.assertEqual(len(sent), 2)
+        for request in sent:
+            self.assertEqual(request['headers'], {desk.TOKEN_HEADER: 'the-test-key'})
+            self.assertIn('artifact=document', request['address'])
 
     def test_a_teammates_finished_saved_record_is_read_and_taken_over_to_open_it(self):
         """Moved from TeamScreenTests.test_open_a_finished_saved_training_after_taking_it and

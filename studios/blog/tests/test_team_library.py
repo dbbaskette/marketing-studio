@@ -1364,26 +1364,6 @@ class LibraryPickTests(RunnerCase):
         self.assertEqual(
             [(s['source_id'], s['purposes']) for s in record['sources']], [(facts, ['reference'])]
         )
-        args = studio.parser().parse_args(
-            [
-                '--root',
-                str(self.root),
-                'run',
-                'create',
-                '--title',
-                'T',
-                '--audience',
-                'A',
-                '--goal',
-                'G',
-                '--research',
-                'none',
-                '--example',
-                facts,
-            ]
-        )
-        with self.assertRaisesRegex(ValueError, 'desk create --input'):
-            runner.command(self.root, args)
         chat = desk_chat.create(
             self.root,
             {
@@ -1434,12 +1414,6 @@ class LibraryPickTests(RunnerCase):
             self.root, {'role': 'messaging', 'files': [encoded_file('brief.md', b'The brief.')]}
         )
         self.assertEqual(found['purposes'], ['reference', 'messaging'])
-        args = studio.parser().parse_args(
-            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
-            + ['--title', 'T', '--research', 'none', '--messaging', facts]
-        )
-        with self.assertRaisesRegex(ValueError, 'desk create --input'):
-            runner.command(self.root, args)
         chat = desk_chat.create(
             self.root,
             {
@@ -1490,9 +1464,9 @@ class DefaultVoiceTests(RunnerCase):
         self.assertEqual((self.root / '.writing-defaults.json').stat().st_mode & 0o777, 0o600)
         self.assertEqual(runner.options(self.root)['default_voice']['profile'], mine['id'])
         # A new blog takes it; None removes it; a provisional or unknown voice is refused.
-        found = self.create()
+        ident = self.article()
         self.assertEqual(
-            studio.item(self.root, 'articles', found['id'])[1]['voice'],
+            studio.item(self.root, 'articles', ident)[1]['voice'],
             {'mode': 'profile', 'profile_id': mine['id'], 'revision': 1},
         )
         self.assertIsNone(
@@ -1801,11 +1775,11 @@ class FinishTests(RunnerCase):
     def draft_of(self, found):
         return (studio.inside(self.root, 'articles', found['id']) / 'DRAFT.md').read_text()
 
-    def finish(self, found, page=False):
-        """A saved step-by-step run approved to its end (the saved flow's own Finish)."""
-        while found['next']:
-            found = self.approve(self.submit(found, page=page), page=page)
-        return found
+    def finish(self, found):
+        """A run the manuscript editor's check made, approved at its review (Finish)."""
+        while found['next'] != found['stages'][-1]['stage']:
+            found = self.submit(found)
+        return self.approve(self.submit(found))
 
     def kept(self):
         return [
@@ -1944,11 +1918,10 @@ class FinishTests(RunnerCase):
             self.assertIn('could not be saved', done['library']['reason'])
         self.assertEqual([type(exc).__name__ for exc in noted], ['RuntimeError'])
 
-    def test_a_stop_without_a_draft_keeps_nothing_and_a_draft_stop_keeps_the_draft(self):
-        self.finish(self.create(mode='ideas'))
-        self.assertEqual(self.kept(), [])
-        found = self.finish(self.create(stop='draft'))
-        self.assertEqual(found['stages'][-1]['stage'], 'draft')
+    def test_a_finished_run_keeps_its_draft(self):
+        found = self.finish(self.editor_run('revise'))
+        self.assertTrue(found['complete'])
+        self.assertEqual(found['stages'][-1]['stage'], 'review')
         self.assertEqual(len(self.kept()), 1)
         self.assertNotIn('kind', self.kept()[0]['library'])
 

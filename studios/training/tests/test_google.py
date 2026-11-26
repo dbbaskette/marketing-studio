@@ -724,6 +724,15 @@ class ConnectorTests(SyncCase):
 # --- the command line -----------------------------------------------------------------
 
 class CommandCase(SyncCase):
+    """The `google` commands on a training on the desk: one a conversation made is never
+    changed by the helper (GitHub issue #547, `write_guard`)."""
+
+    def setUp(self):
+        super().setUp()
+        session = workspace.load(self.root)
+        session['flow'] = 'desk'
+        workspace.store(self.root, session)
+
     def cli(self, *args, expect=0) -> dict:
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
@@ -833,9 +842,11 @@ class ContractTests(TrainingCase):
         self.assertEqual(self.run_cli('google', 'status', '--offline'),
                          {'docs': {}, 'offline': True})
         self.assertEqual(self.run_cli('google', 'status'), {'docs': {}, 'offline': False})
-        self.assertIn('document.md does not exist',
-                      self.run_cli('google', 'push', 'document', '--prepare',
-                                   str(self.root.parent / 'send.md'), expect=2)['error'])
+        # A training a conversation made is read, never changed (GitHub issue #547).
+        import write_guard
+        self.assertEqual(self.run_cli('google', 'push', 'document', '--prepare',
+                                      str(self.root.parent / 'send.md'), expect=2),
+                         {'error': write_guard.SAVED_CONVERSATION})
 
 
 # --- the gcloud transport, against a stubbed token command and HTTP layer ------------------

@@ -12,6 +12,8 @@ from pathlib import Path
 
 import helpers
 from helpers import TrainingCase
+import stored_builders
+from stored_builders import builder
 import gdocs
 from test_google import FakeTransport
 import training
@@ -49,21 +51,29 @@ class Flow(TrainingCase):
     """Drives the helper the way the assistant does, in process."""
 
     def cli(self, *args, expect=0) -> dict:
-        captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
-            try:
-                code = training.main(['--dir', str(self.root), *args])
-            except SystemExit as stopped:
-                code = stopped.code
-        self.assertEqual(code, expect, captured.getvalue())
-        return json.loads(captured.getvalue())
+        """Run the helper. A command that continued a training (they are gone) reaches the
+        state it made from its stored copy (`stored_builders.command`)."""
+        if args and args[0] in stored_builders.CONTINUING:
+            code, output = stored_builders.command(self.root, list(args))
+        else:
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                try:
+                    code = training.main(['--dir', str(self.root), *args])
+                except SystemExit as stopped:
+                    code = stopped.code
+            output = captured.getvalue()
+        self.assertEqual(code, expect, output)
+        return json.loads(output)
 
+    @builder
     def make(self, artifact: str, relative: str, text: str) -> None:
         """Write an artifact's file, save it as built and approve it."""
         self.write(relative, text)
         self.cli('save', artifact, '--built')
         self.cli('approve', artifact)
 
+    @builder
     def research(self, *init_args, yoodli: bool = True, copies=('word',)) -> None:
         helpers.saved_init(self.root, '--title', 'Rolling restarts', *init_args,
                  *(['--yoodli'] if yoodli else []), *(['--copies', *copies] if copies else []))
@@ -73,6 +83,7 @@ class Flow(TrainingCase):
         self.write('.harness-research/research.json', json.dumps(helpers.RESEARCH))
         self.make('research', '.harness-research/research-report.md', '# Research brief\n')
 
+    @builder
     def content(self, level: str | None = None, blueprint: str | None = None,
                 document: str | None = None) -> None:
         """Blueprint, document and brief for one level, with the two exports."""
@@ -89,6 +100,7 @@ class Flow(TrainingCase):
         self.cli('export', f'document{at}', '--file', f'{folder}document.docx')
         self.cli('export', f'brief{at}', '--file', f'{folder}product-brief.docx')
 
+    @builder
     def deck(self, level: str | None = None, objectives=('O1', 'O2', 'O3')) -> None:
         at = f'@{level}' if level else ''
         folder = f'{level}/' if level else ''
@@ -98,6 +110,7 @@ class Flow(TrainingCase):
         self.cli('save', f'deck{at}', '--built', '--coverage', str(coverage))
         self.cli('approve', f'deck{at}')
 
+    @builder
     def scenario(self, level: str | None = None, yoodli: bool = True) -> None:
         at = f'@{level}' if level else ''
         folder = f'{level}/' if level else ''
@@ -105,6 +118,7 @@ class Flow(TrainingCase):
         if yoodli:
             self.make(f'yoodli:main{at}', f'{folder}yoodli/main.md', example('yoodli.md'))
 
+    @builder
     def complete(self, level: str | None = None) -> None:
         self.content(level)
         self.deck(level)
@@ -159,21 +173,42 @@ class ContractTests(TrainingCase):
         helpers.saved_init(self.root, '--title', 'Topic')
         record = self.root / '.training-studio' / 'session.json'
         record.write_text('{not json')
-        for command in (('status',), ('check',), ('save', 'intake')):
+        for command in (('status',), ('check',)):
             self.assertIn('not valid JSON', self.run_cli(*command, expect=2)['error'])
         self.assertEqual(record.read_text(), '{not json')
 
-    def test_usage_errors_are_json_too(self):
-        self.assertIn('artifact', self.run_cli('save', expect=2)['error'])
-        self.assertIn('invalid choice', self.run_cli('publish', expect=2)['error'])
-
-    def test_unreadable_input_is_a_structured_error(self):
+    def test_a_command_that_continued_a_training_answers_that_it_ended_and_changes_nothing(self):
+        """GitHub issue #547: nothing continues a training a conversation made. Each command
+        that did answers one plain sentence, with what to do instead, and changes nothing."""
         helpers.saved_init(self.root, '--title', 'Topic')
-        self.write('deck.pptx', helpers.DECK)
-        bad = self.write('coverage.json', '{not json')
-        self.assertIn('error', self.run_cli('save', 'deck', '--coverage', str(bad), expect=2))
-        missing = self.run_cli('save', 'deck', '--coverage', 'nowhere.json', expect=2)
-        self.assertIn('FileNotFoundError', missing['error'])
+        self.write('intake.md', '# Intake\n')
+        def files():
+            return {path.relative_to(self.root): path.read_bytes()
+                    for path in self.root.rglob('*') if path.is_file()}
+        before = files()
+        for command in (('save', 'intake', '--built'), ('approve', 'intake'),
+                        ('skip', 'deck', '--reason', 'Later'), ('checkpoint', '--stage', 'done'),
+                        ('pin', 'harness-research', '--task', 't-1'),
+                        ('export', 'document', '--unavailable', '--reason', 'None'),
+                        ('research-import', '--case', str(self.root.parent))):
+            with self.subTest(command=command[0]):
+                self.assertEqual(self.run_cli(*command, expect=2), {'error': training.ENDED})
+        self.assertEqual({*training.ENDED_COMMANDS, *training.DESK_COMMANDS},
+                         {'save', 'approve', 'skip', 'checkpoint', 'pin', 'export',
+                          'research-import'})
+        self.assertEqual(files(), before)
+
+    def test_status_says_a_conversation_training_is_a_saved_record(self):
+        """GitHub issue #547: status says what such a training is and its way on."""
+        import workspace
+        helpers.saved_init(self.root, '--title', 'Topic')
+        self.assertEqual(self.run_cli('status')['saved_record'],
+                         {'said': workspace.CONVERSATION_SAID,
+                          'next': workspace.CONVERSATION_NEXT})
+
+    def test_usage_errors_are_json_too(self):
+        self.assertIn('unrecognized', self.run_cli('check', '--soon', expect=2)['error'])
+        self.assertIn('invalid choice', self.run_cli('publish', expect=2)['error'])
 
 
 class FoundationTests(TrainingCase):
@@ -221,67 +256,6 @@ class FoundationTests(TrainingCase):
         self.assertIn('guidance', report)
         self.assertEqual(self.run_at(CLI, 'status')['guidance'], report['guidance'])
 
-
-class CommandTests(Flow):
-    def test_approving_research_warns_about_pending_questions(self):
-        helpers.saved_init(self.root, '--title', 'Rolling restarts')
-        self.make('intake', 'intake.md', 'v1\n')
-        self.make('research-plan', '.training-studio/research-plan.json', '{}')
-        self.write('.harness-research/research.json', json.dumps(helpers.RESEARCH))
-        self.write('.harness-research/research-report.md', '# Research brief\n')
-        self.cli('save', 'research', '--built')
-        approved = self.cli('approve', 'research')
-        self.assertEqual(approved['warnings'], ['Research questions still pending: rollback'])
-
-    def test_save_from_replaces_the_file_and_makes_dependents_stale(self):
-        self.research()
-        self.content()
-        revised = self.root.parent / 'revised.md'
-        revised.write_text(example('blueprint.md') + '\nRevised.\n')
-        self.assertEqual(self.cli('save', 'blueprint', '--from', str(revised))['status'], 'draft')
-        self.assertEqual(self.cli('status')['stale'], ['document', 'brief'])
-
-    def test_a_stale_artifact_needs_the_users_reason(self):
-        self.research()
-        self.content()
-        revised = self.root.parent / 'revised.md'
-        revised.write_text(example('blueprint.md') + '\nRevised.\n')
-        self.cli('save', 'blueprint', '--from', str(revised))
-        self.cli('approve', 'blueprint')
-        self.assertIn('older version', self.cli('approve', 'document', expect=2)['error'])
-        self.cli('approve', 'document', '--accept-stale', 'Only a note was added')
-        self.assertEqual(self.cli('status')['artifacts']['document'], 'approved')
-
-    def test_settings_skips_pins_and_checkpoints_round_trip(self):
-        helpers.saved_init(self.root, '--title', 'Topic', '--levels', '101')
-        self.cli('skip', 'deck', '--reason', 'Not needed')
-        self.cli('checkpoint', '--stage', 'blueprint', '--level', '101', '--next', 'Draft it',
-                 '--question', 'Approve?', '--brand', 'Acme', '--deck-target', 'google',
-                 '--levels', '101,201')
-        # The runtime is still taken, for guidance saved with a training, and is not kept.
-        self.assertEqual(self.cli('pin', 'harness-research', '--task', 't-1', '--runtime',
-                                  '/opt/r'), {'harness-research': {'task': 't-1'}})
-        report = self.cli('status')
-        self.assertEqual((report['stage'], report['level'], report['levels']),
-                         ('blueprint', '101', ['101', '201']))
-        self.assertEqual(report['pending_question'], 'Approve?')
-        self.assertEqual(report['settings']['brand'], 'Acme')
-        self.assertEqual(report['files']['deck@201'], '201/deck-link.md')
-        self.assertEqual(report['artifacts']['deck@101'], 'skipped')
-        self.assertEqual(report['pins'], {'harness-research': {'task': 't-1'}})
-        self.assertEqual(self.cli('pin', 'harness-research', '--task', 't-1', '--run', 'r-1'),
-                         {'harness-research': {'task': 't-1', 'run': 'r-1'}})
-        self.assertNotIn('/opt/r', (self.root / '.training-studio' / 'session.json').read_text())
-        self.assertIn('Only these stages', self.cli('skip', 'research', '--reason', 'x',
-                                                    expect=2)['error'])
-
-    def test_exports_are_recorded_and_reported(self):
-        self.research()
-        self.content()
-        self.assertEqual(self.cli('status')['exports'],
-                         {'document': 'current', 'brief': 'current'})
-        self.cli('export', 'document', '--unavailable', 'No converter')
-        self.assertEqual(self.cli('status')['exports']['document'], 'unavailable')
 
 
 class CheckTests(Flow):
@@ -440,6 +414,7 @@ class CheckTests(Flow):
 class OptionalYoodliTests(Flow):
     """Yoodli is an optional stage, off unless asked for (matrix rows 58 to 62)."""
 
+    @builder
     def without_yoodli(self) -> None:
         self.research(yoodli=False)
         self.content()
@@ -490,6 +465,7 @@ class OptionalYoodliTests(Flow):
 class CopiesTests(Flow):
     """Word copies and Google Docs are kept only when asked for (matrix rows 64, 67 and 68)."""
 
+    @builder
     def built(self, *copies: str) -> None:
         """Everything approved, Yoodli off, and no copy of anything made yet."""
         self.research(yoodli=False, copies=copies)
@@ -507,21 +483,6 @@ class CopiesTests(Flow):
         status = self.cli('status')
         self.assertEqual((status['settings']['copies'], status['exports'],
                           status['google_docs']), ([], {}, {}))
-
-    def test_an_export_is_refused_from_the_command_line_while_word_is_off(self):
-        self.built()
-        self.write('document.docx', 'exported')
-        refusal = self.cli('export', 'document', expect=2)
-        self.assertIn('checkpoint --copies', refusal['error'])
-
-    def test_copies_are_chosen_at_init_and_changed_at_a_checkpoint(self):
-        self.built('google', 'word')
-        self.assertEqual(self.cli('status')['settings']['copies'], ['google', 'word'])
-        self.assertEqual(self.cli('checkpoint', '--copies', 'word')['settings']['copies'],
-                         ['word'])
-        self.assertEqual(self.cli('checkpoint', '--copies')['settings']['copies'], [])
-        self.assertIn('invalid choice', self.cli('checkpoint', '--copies', 'pdf',
-                                                 expect=2)['error'])
 
     def test_row_67_a_wanted_google_doc_that_is_not_made_is_a_limitation(self):
         self.built('google')
@@ -549,6 +510,7 @@ class CopiesTests(Flow):
         self.assertNotIn('The Google Doc of document is behind its file',
                          self.check()['blocking'])
 
+    @builder
     def with_yoodli_and_google_docs(self) -> None:
         """Everything approved with Yoodli on and Google Docs kept, and no Doc made yet."""
         self.research(copies=('google',))
@@ -630,25 +592,6 @@ class DryRunFindingTests(Flow):
         failed = self.by_name(self.check(expect=1))['research-plan.items']
         self.assertEqual(failed['problems'], ['The plan is not valid JSON.'])
 
-    def test_row_54_a_placeholder_cannot_stand_in_for_the_deck(self):
-        self.research()
-        self.content()
-        self.write('deck.pptx', 'A placeholder until the real deck is built.')
-        refusal = self.cli('save', 'deck', '--built', expect=2)
-        self.assertIn('is not a PowerPoint file', refusal['error'])
-        self.assertEqual(self.cli('status')['artifacts']['deck'], 'draft')
-
-    def test_row_55_each_level_pins_its_own_deck_task(self):
-        helpers.saved_init(self.root, '--title', 'Topic', '--levels', '101,201')
-        self.cli('pin', 'harness-slides', '--task', 'a', '--level', '101')
-        pins = self.cli('pin', 'harness-slides', '--task', 'b', '--runtime', '/r',
-                        '--level', '201')
-        self.assertEqual(pins, {'harness-slides@101': {'task': 'a'},
-                                'harness-slides@201': {'task': 'b'}})
-        self.assertIn('The level is one of', self.cli(
-            'pin', 'harness-slides', '--task', 'c', '--runtime', '/r', '--level', '301',
-            expect=2)['error'])
-
     def test_row_57_scenario_files_that_were_passed_over_are_named(self):
         self.research('--levels', '101')
         self.write('scenarios/keys-quiz.md', example('scenario.md'))
@@ -664,15 +607,6 @@ class DryRunFindingTests(Flow):
         warnings = self.check()['warnings']
         self.assertIn('The practice plan lists scenario:main as tutor; its scenario file '
                       'says roleplay. The scenario file decides.', warnings)
-
-    def test_approving_says_which_checks_are_failing(self):
-        self.research()
-        self.content()
-        self.write('deck.pptx', helpers.DECK)
-        coverage = self.root.parent / 'coverage.json'
-        coverage.write_text(json.dumps({'O1': [2], 'O2': [3], 'O3': []}))
-        self.cli('save', 'deck', '--built', '--coverage', str(coverage))
-        self.assertEqual(self.cli('approve', 'deck')['failing_checks'], ['deck.coverage'])
 
     def test_status_summarises_the_approved_research(self):
         helpers.saved_init(self.root, '--title', 'Rolling restarts')
@@ -718,137 +652,6 @@ class DryRunFindingTests(Flow):
         self.make('research', '.harness-research/research-report.md', '# Research brief\n')
 
 
-class PageApprovalTests(Flow):
-    """Approval that only the page can give, seen from the command line (matrix rows 75 to
-    80 and 95)."""
-
-    REFUSAL = 'decided on the page for this training, not on the command line'
-
-    def on_the_page(self) -> None:
-        """Research approved in the conversation, then approval moved to the page."""
-        self.research()
-        self.write('blueprint.md', example('blueprint.md'))
-        self.cli('save', 'blueprint', '--built')
-        self.assertEqual(self.cli('checkpoint', '--approval', 'page')['settings']['approval'],
-                         'page')
-
-    def record(self) -> dict:
-        path = self.root / '.training-studio' / 'session.json'
-        return json.loads(path.read_text(encoding='utf-8'))
-
-    def test_row_77_approve_is_refused_and_says_how_the_user_opens_the_page(self):
-        self.on_the_page()
-        for extra in ((), ('--accept-stale', 'It is fine')):
-            refusal = self.cli('approve', 'blueprint', *extra, expect=2)['error']
-            self.assertIn('Approval of the blueprint is ' + self.REFUSAL, refusal)
-            self.assertIn('running `training.py desk` in a terminal of their own', refusal)
-        report = self.cli('status')
-        self.assertEqual((report['artifacts']['blueprint'], report['approval']),
-                         ('draft', 'page'))
-
-    def test_row_79_skip_and_restore_are_refused_and_unavailable_is_not(self):
-        self.on_the_page()
-        for stage in ('deck', 'yoodli'):
-            refusal = self.cli('skip', stage, '--reason', 'Not needed', expect=2)['error']
-            self.assertIn(self.REFUSAL, refusal)
-            self.assertIn('training.py desk', refusal)
-        self.cli('skip', 'yoodli', '--unavailable', '--reason', 'No account yet')
-        report = self.cli('status')
-        self.assertEqual(report['settings']['stages'],
-                         ['document', 'brief', 'deck', 'scenario', 'yoodli'])
-        self.assertEqual(report['unavailable_stages'], {'yoodli': 'No account yet'})
-        self.cli('skip', 'yoodli', '--clear')
-        self.assertEqual(self.cli('status')['unavailable_stages'], {})
-
-    def test_row_79_a_stage_left_out_is_not_restored_from_the_command_line(self):
-        self.research()
-        self.cli('skip', 'deck', '--reason', 'Not needed')
-        self.cli('checkpoint', '--approval', 'page')
-        refusal = self.cli('skip', 'deck', '--clear', expect=2)['error']
-        self.assertIn(self.REFUSAL, refusal)
-        self.assertEqual(self.cli('status')['artifacts']['deck'], 'skipped')
-
-    def test_row_76_the_command_line_cannot_move_approval_back(self):
-        self.on_the_page()
-        refusal = self.cli('checkpoint', '--approval', 'chat', '--stage', 'document',
-                           expect=2)['error']
-        self.assertIn('only the page can move it back', refusal)
-        self.assertIn('training.py desk', refusal)
-        report = self.cli('status')
-        self.assertEqual((report['approval'], report['stage']), ('page', 'blueprint'))
-        self.assertIn('invalid choice', self.cli('checkpoint', '--approval', 'email',
-                                                 expect=2)['error'])
-
-    def test_row_78_a_training_started_on_the_page_still_approves_intake_in_chat(self):
-        report = helpers.saved_init(self.root, '--title', 'Rolling restarts', '--approval', 'page')
-        self.assertEqual(report['approval'], 'page')
-        self.write('intake.md', '# Intake\n')
-        self.cli('save', 'intake', '--built')
-        approved = self.cli('approve', 'intake')
-        self.assertEqual((approved['by'], approved['approved']['by']), ('chat', 'chat'))
-        self.write('.training-studio/research-plan.json', json.dumps(helpers.PLAN))
-        self.cli('save', 'research-plan', '--built')
-        self.assertIn(self.REFUSAL, self.cli('approve', 'research-plan', expect=2)['error'])
-
-    def test_row_82_a_decision_from_the_command_line_is_recorded_as_made_in_chat(self):
-        self.research()
-        record = self.record()
-        self.assertEqual(record['artifacts']['research']['approved']['by'], 'chat')
-        approvals = [event for event in record['events'] if event['event'] == 'approve']
-        self.assertEqual([event['by'] for event in approvals], ['chat'] * 3)
-        self.cli('skip', 'yoodli', '--reason', 'Not using it')
-        self.assertEqual(self.record()['events'][-1],
-                         {'at': self.record()['events'][-1]['at'], 'event': 'skip',
-                          'stage': 'yoodli', 'reason': 'Not using it', 'by': 'chat'})
-
-    def test_row_88_a_decision_in_chat_answers_the_question_and_is_written_down(self):
-        self.research()
-        self.write('blueprint.md', example('blueprint.md'))
-        self.cli('save', 'blueprint', '--built')
-        gate = self.cli('checkpoint', '--question', 'Approve the blueprint?',
-                        '--gate', 'blueprint', '--next', 'Waiting for approval of blueprint')
-        self.assertEqual(gate['gate'], 'blueprint')
-        waiting = self.cli('status')
-        self.assertEqual((waiting['gate'], waiting['pending_question']),
-                         ('blueprint', 'Approve the blueprint?'))
-        approved = self.cli('approve', 'blueprint')
-        self.assertEqual((approved['decision'], approved['failing_checks']), ('approve', []))
-        self.assertEqual(approved['said'], 'The blueprint was approved in the conversation.')
-        report = self.cli('status')
-        self.assertEqual((report['gate'], report['pending_question'], report['stage'],
-                          report['next_step']),
-                         (None, None, 'document', 'Write the learner guide'))
-        review = (self.root / 'reviews' / 'blueprint.md').read_text(encoding='utf-8')
-        self.assertIn('## Decision: approved in the conversation, ', review)
-
-    def test_row_93_the_gate_is_cleared_with_the_question(self):
-        self.research()
-        self.write('blueprint.md', example('blueprint.md'))
-        self.cli('checkpoint', '--gate', 'blueprint', '--question', 'Approve?')
-        self.assertEqual(self.cli('checkpoint', '--no-question')['gate'], None)
-        refusal = self.cli('checkpoint', '--gate', 'poster', expect=2)['error']
-        self.assertIn('cannot be at the gate', refusal)
-
-    def test_row_95_a_change_that_was_asked_for_blocks_readiness_until_it_is_made(self):
-        import workspace
-        self.research()
-        self.complete()
-        self.assertTrue(self.check('--complete')['ready'])
-        self.cli('checkpoint', '--approval', 'page')
-        workspace.decide(self.root, 'document', 'revise', 'Add a summary', by='page')
-        report = self.check('--complete', expect=1)
-        self.assertEqual(report['blocking'], ['The user asked for changes to document, and '
-                                              'that is still to do'])
-        self.assertEqual(self.cli('status')['artifacts']['document'], 'approved')
-        workspace.decide(self.root, 'deck', 'rebuild', by='page')
-        self.assertIn('The user asked for a rebuild to deck, and that is still to do',
-                      self.check(expect=0)['blocking'])
-        revised = self.root.parent / 'revised.md'
-        revised.write_text(example('document.md') + '\n## Summary\n\nIn short.\n')
-        self.cli('save', 'document', '--from', str(revised))
-        self.assertEqual([item['artifact'] for item in self.cli('status')['requests']],
-                         ['deck'])
-
 
 class LevelCheckTests(Flow):
     def test_row_48_one_unfinished_level_blocks_the_training(self):
@@ -879,27 +682,6 @@ class LevelCheckTests(Flow):
         overlap = [text for text in report['warnings'] if text.startswith('Levels 101 and 301')]
         self.assertEqual(len(overlap), 3)
 
-    def test_rows_105_and_107_a_level_is_added_and_never_dropped_with_work_in_it(self):
-        self.research('--levels', '101')
-        self.make('blueprint@101', '101/blueprint.md', levelled(example('blueprint.md'), '101'))
-        refusal = self.cli('checkpoint', '--levels', '301', expect=2)['error']
-        self.assertIn('Level 101 has work in it (101/blueprint.md)', refusal)
-        self.assertIn('checkpoint --add-level', refusal)
-        self.assertEqual(self.cli('status')['levels'], ['101'])
-        added = self.cli('checkpoint', '--add-level', '301')
-        self.assertEqual(added['levels'], ['101', '301'])
-        report = self.cli('status')
-        self.assertEqual((report['artifacts']['blueprint@101'],
-                          report['artifacts']['blueprint@301']), ('approved', 'not-started'))
-        self.assertIn('not allowed with argument', self.cli(
-            'checkpoint', '--levels', '101', '--add-level', '201', expect=2)['error'])
-
-    def test_row_108_the_gate_names_its_review_file(self):
-        self.research('--levels', '101')
-        self.write('101/blueprint.md', levelled(example('blueprint.md'), '101'))
-        gate = self.cli('checkpoint', '--gate', 'blueprint@101', '--question', 'Approve?')
-        self.assertEqual(gate['review'], 'reviews/blueprint-101.md')
-
     def test_row_50_a_blueprint_in_the_wrong_folder_fails(self):
         self.research('--levels', '101,301')
         self.write('301/blueprint.md', levelled(example('blueprint.md'), '201'))
@@ -908,88 +690,6 @@ class LevelCheckTests(Flow):
         self.assertEqual(failed['problems'],
                          ['The frame must say "Level: 301", the level of its folder.'])
 
-
-class FlagTests(Flow):
-    """One spelling for each kind of flag, with the old spellings kept for guidance already
-    fetched."""
-
-    def stale_document(self) -> None:
-        self.research()
-        self.content()
-        revised = self.root.parent / 'revised.md'
-        revised.write_text(example('blueprint.md') + '\nRevised.\n')
-        self.cli('save', 'blueprint', '--from', str(revised))
-        self.cli('approve', 'blueprint')
-
-    def test_a_reason_is_given_with_reason(self):
-        self.stale_document()
-        refusal = self.cli('approve', 'document', expect=2)['error']
-        self.assertIn('older version of the blueprint', refusal)
-        self.assertIn('approve document --accept-stale --reason', refusal)
-        self.assertIn('--reason', self.cli('approve', 'document', '--accept-stale',
-                                           expect=2)['error'])
-        accepted = self.cli('approve', 'document', '--accept-stale', '--reason', 'A note only')
-        self.assertEqual(accepted['decision'], 'accept')
-        self.assertEqual(self.cli('status')['artifacts']['document'], 'approved')
-        self.cli('export', 'document', '--unavailable', '--reason', 'No converter')
-        self.assertEqual(self.cli('status')['exports']['document'], 'unavailable')
-        self.cli('skip', 'deck', '--unavailable', '--reason', 'No slides tool')
-        self.assertEqual(self.cli('status')['unavailable_stages'], {'deck': 'No slides tool'})
-
-    def test_the_old_spellings_of_a_reason_still_work(self):
-        self.stale_document()
-        self.cli('approve', 'document', '--accept-stale', 'A note only')
-        self.cli('export', 'brief', '--unavailable', 'No converter')
-        self.cli('skip', 'deck', '--unavailable', 'No slides tool')
-        report = self.cli('status')
-        self.assertEqual((report['artifacts']['document'], report['exports']['brief'],
-                          report['unavailable_stages']),
-                         ('approved', 'unavailable', {'deck': 'No slides tool'}))
-
-    def test_a_reason_is_given_once_and_only_where_it_belongs(self):
-        self.stale_document()
-        self.assertIn('Give the reason once', self.cli(
-            'approve', 'document', '--accept-stale', 'One', '--reason', 'Two',
-            expect=2)['error'])
-        self.assertIn('--reason goes with --accept-stale', self.cli(
-            'approve', 'document', '--reason', 'Why', expect=2)['error'])
-        self.assertIn('--reason goes with --unavailable', self.cli(
-            'export', 'document', '--reason', 'Why', expect=2)['error'])
-        self.assertIn('Give a reason: add `--reason', self.cli(
-            'export', 'document', '--unavailable', expect=2)['error'])
-        self.assertEqual(self.cli('status')['artifacts']['document'], 'stale')
-
-    def test_lists_are_space_separated_and_commas_still_work(self):
-        report = helpers.saved_init(self.root, '--title', 'Topic', '--levels', '301', '101',
-                          '--copies', 'word', 'google')
-        self.assertEqual((report['levels'], report['settings']['copies']),
-                         (['101', '301'], ['google', 'word']))
-        self.assertEqual(self.cli('checkpoint', '--add-level', '201', '401')['levels'],
-                         ['101', '201', '301', '401'])
-        self.assertEqual(self.cli('checkpoint', '--levels', '101,201')['levels'],
-                         ['101', '201'])
-        self.assertEqual(self.cli('checkpoint', '--copies', 'google,word')['settings']['copies'],
-                         ['google', 'word'])
-        self.assertEqual(self.cli('checkpoint', '--add-level', '301,401')['levels'],
-                         ['101', '201', '301', '401'])
-        self.assertIn("invalid choice: '501'", self.cli('checkpoint', '--add-level', '501',
-                                                        expect=2)['error'])
-
-    def test_a_word_copy_is_one_command(self):
-        self.research()
-        self.make('blueprint', 'blueprint.md', example('blueprint.md'))
-        self.make('document', 'document.md', example('document.md'))
-        self.make('brief', 'product-brief.md', example('product-brief.md'))
-        tools = self.root.parent / 'tools'
-        helpers.fake_pandoc(tools)
-        with mock.patch.dict(os.environ, {'PATH': str(tools)}):
-            made = self.cli('export', 'document')
-        self.assertEqual(made['file'], 'document.docx')
-        self.assertEqual(self.cli('status')['exports']['document'], 'current')
-        with mock.patch.dict(os.environ, {'PATH': str(self.root.parent / 'nothing')}):
-            missing = self.cli('export', 'brief')
-        self.assertIn('pandoc', missing['unavailable'])
-        self.assertEqual(self.cli('status')['exports']['brief'], 'unavailable')
 
 
 class HelpTests(unittest.TestCase):
@@ -1010,7 +710,7 @@ class HelpTests(unittest.TestCase):
 
     def test_every_flag_and_command_has_one_line_of_help(self):
         found = list(self.everything(training.parser()))
-        self.assertGreater(len(found), 100)
+        self.assertGreater(len(found), 60)
         for path, name, text in found:
             with self.subTest(command=' '.join(path), argument=name):
                 self.assertTrue(text and text.strip(), 'no help')
@@ -1024,13 +724,10 @@ class HelpTests(unittest.TestCase):
 
     def test_help_lists_the_values_each_flag_takes(self):
         import workspace
-        for command in (('init',), ('checkpoint',)):
-            text = self.help_of(*command)
-            for values in (workspace.BRIEF_KINDS, workspace.DECK_TARGETS, workspace.COPIES,
-                           workspace.LEVELS, workspace.APPROVAL):
-                self.assertIn('{' + ','.join(values) + '}', text)
-        self.assertIn('{' + ','.join(workspace.STAGES) + '}', self.help_of('checkpoint'))
-        self.assertIn('{' + ','.join(workspace.PINNABLE) + '}', self.help_of('pin'))
+        text = self.help_of('init')
+        for values in (workspace.BRIEF_KINDS, workspace.DECK_TARGETS, workspace.COPIES,
+                       workspace.LEVELS, workspace.APPROVAL):
+            self.assertIn('{' + ','.join(values) + '}', text)
 
     def test_an_unknown_value_is_refused_by_the_command_line(self):
         for flag, value in (('--brief-kind', 'battlecard'), ('--deck-target', 'keynote')):

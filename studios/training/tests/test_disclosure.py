@@ -27,7 +27,7 @@ class DisclosureTests(unittest.TestCase):
 
     def test_the_entry_is_one_file_within_its_budget(self):
         self.assertLessEqual(SIZES['SKILL.md'], validate_package.BUDGET['skill'])
-        self.assertEqual(SETS['start'][0][0], 'SKILL.md')
+        self.assertTrue(all(files[0] == 'SKILL.md' for files, _ in SETS.values()))
 
     def test_the_installed_entry_is_small_and_describes_the_same_skill(self):
         bootstrap = (helpers.REPO / 'bootstrap' / 'training-studio' / 'SKILL.md').read_text()

@@ -17,22 +17,20 @@ from synthesis_fixture import TEXT, dossier, review
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
 
 
-def saved_selected_research(root, data, approval, editor=None):
-    """A pre-claims-map run whose saved supplied-only synthesis still continues. `editor`
-    marks it as the manuscript editor's (its check), the only saved runs the runner goes on
-    with, for the tests of the runner's own research code those runs still use."""
-    shown = blog_runner.create(root, data, approval)
-    directory, record, run = blog_runner.load(root, shown['id'])
-    if editor:
-        run['editor_check'] = editor
-    run['pipeline'] = ['research-plan', 'research'] + [
-        name for name in run['pipeline'] if name != 'claims-map'
-    ]
-    run['research_contract'] = research_contract.snapshot()
-    run['schema'] = 3
-    run.pop('research_execution', None)
-    __import__('studio').write_json(directory / blog_runner.STATE, run)
-    return blog_runner.survey(root, shown['id'])
+def saved_selected_research(root, data):
+    """The manuscript editor's check of a saved manuscript's facts against the selected
+    material, on a blog whose run it made before: a supplied-only synthesis (its research
+    plan, then reviewed research) comes before its review. Only the editor's own runs go on,
+    so the runner's own research code is tested on what it makes."""
+    from test_blog_runner import editor_check, manuscript
+
+    ident = manuscript(root, 'Synthetic manuscript. ' + data['goal'] + '.', data['title'])
+    editor_check(root, ident, 'proofread')
+    shown = editor_check(
+        root, ident, 'factual-support', research='supplied-only', sources=data['sources']
+    )
+    assert shown['stages'][0]['stage'] == 'research-plan', shown['stages']
+    return shown
 
 
 @unittest.skipUnless(RUNTIME, 'Set STUDIO_TEST_RESEARCH_RUNTIME for helper integration.')
@@ -54,7 +52,6 @@ class SynthesisIntegrationTests(Fixture):
                 'sources': [source['id']],
                 'research': 'supplied-only',
             },
-            'page',
         )
         ident = shown['id']
         directory, record, run = blog_runner.load(self.root, ident)
@@ -68,7 +65,7 @@ class SynthesisIntegrationTests(Fixture):
             shown['expected'],
             page=True,
         )
-        # Default Balanced review continues the research plan automatically.
+        # The editor's check goes on from its research plan by itself.
         self.assertEqual(shown['next'], 'research')
         _, payload, _ = blog_runner.job(self.root, ident)
         calls = []
@@ -88,7 +85,7 @@ class SynthesisIntegrationTests(Fixture):
         shown = blog_runner.submit(
             self.root, ident, 'research', result, shown['expected'], page=True
         )
-        self.assertEqual(shown['next'], 'outline')
+        self.assertEqual(shown['next'], 'review')
         self.assertEqual(len(calls), 2)
         self.assertNotEqual(calls[0][0], calls[1][0])
         self.assertFalse(any(c[1]['web'] for c in calls))
@@ -132,8 +129,6 @@ class SynthesisIntegrationTests(Fixture):
                 'sources': [source['id']],
                 'research': 'supplied-only',
             },
-            'page',
-            editor='revise',
         )
         ident = shown['id']
         blog_runner.submit(
@@ -156,7 +151,7 @@ class SynthesisIntegrationTests(Fixture):
         engine = blog_runner.Engine(self.root, worker)
         engine.control(ident, 'resume')
         engine._once(ident)
-        self.assertEqual(engine.describe(ident)['next'], 'outline', engine.local(ident))
+        self.assertEqual(engine.describe(ident)['next'], 'review', engine.local(ident))
         directory, _, _ = blog_runner.load(self.root, ident)
         research_contract.read_bundle(directory / 'research')
 
@@ -171,8 +166,6 @@ class SynthesisIntegrationTests(Fixture):
                 'sources': [source['id']],
                 'research': 'supplied-only',
             },
-            'page',
-            editor='revise',
         )
         ident = shown['id']
         blog_runner.submit(
@@ -216,7 +209,7 @@ class SynthesisIntegrationTests(Fixture):
         blog_runner.dispatch(self.root, 'retry', {'id': ident, 'expected': found['expected']})
         engine._once(ident)
         found = engine.describe(ident)
-        self.assertEqual(found['next'], 'outline', found['error'])
+        self.assertEqual(found['next'], 'review', found['error'])
         # The first author of the retry corrected the kept dossier against the kept review.
         self.assertIsNotNone(authors[3]['previous_dossier'])
         self.assertEqual(authors[3]['previous_review']['facts'][0]['verdict'], 'narrow')
@@ -246,7 +239,6 @@ class SynthesisIntegrationTests(Fixture):
                 'sources': [source['id']],
                 'research': 'supplied-only',
             },
-            'page',
         )
         ident = shown['id']
         blog_runner.submit(

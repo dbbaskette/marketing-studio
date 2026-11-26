@@ -2,8 +2,7 @@
 
 This stage runs only when the user asked for it, which shows as `yoodli` in `settings.stages`.
 
-- Turn it on: `training.py skip yoodli --clear`. It needs the brief and the scenarios, so restore those first if they were skipped.
-- Turn it off: `training.py skip yoodli --reason "<why>"`. Files already written stay where they are and are no longer tracked.
+- Turn it on or off at the person's request with `studio desk scope` and `"yoodli": true` or `false`, as the requests reference describes. It needs the brief and the scenarios. Files already written stay where they are.
 
 For each approved scenario it writes `yoodli/<id>.md` (`yoodli:<id>`): the scenario laid out in the fields of Yoodli's roleplay Builder, with the brief as the AI's knowledge.
 
@@ -18,18 +17,20 @@ Under each goal, outside the pasteable blocks:
 - `<!-- criterion: 2 -->` names the success criterion the goal carries. Every criterion in the scenario file needs a goal; one goal may carry several.
 - `<!-- assesses: O3 -->` names the objective it assesses, where one applies.
 
-`training.py save yoodli:<id> --built`, then `training.py check --all`. With this stage on, the `practice` report is taken from the goals' `assesses` comments.
+Read `studio desk context --folder PATH --target yoodli:<id>` and submit kind `text`, as the conversation reference describes; then `training.py check --all`. With this stage on, the `practice` report is taken from the goals' `assesses` comments.
 
-## Gate 8
+## Present
 
-For each, present the scenario and its Yoodli file together as the gates reference describes:
+For each, present the scenario and its Yoodli file together:
 
 - which goal carries each success criterion,
 - the counts against Yoodli's limits, and that the limits are provisional while `check` says so,
 - whether the brief's Google Doc or export is `current`, since it is the file the user uploads,
 - your judgment of whether the context and goals agree with the brief.
 
-On approval, for each: `training.py approve yoodli:<id>`. If `exports` in `training.py status` lists `yoodli:<id>`, run `training.py export yoodli:<id>`, as the workspace reference describes. The last approval moves the training on: to the next level if one remains, otherwise to the package.
+Each is Ready only when the person marks it so, as the completion reference describes. Marking it ready makes no copies, and no checked operation in a conversation makes them; the workspace reference says how a training the runner runs keeps them.
+
+A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.
 
 ## Afterwards
 

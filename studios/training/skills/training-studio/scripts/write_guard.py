@@ -1,4 +1,6 @@
-"""Admission for independently runnable Training Studio helper/page writes."""
+"""Admission for independently runnable Training Studio helper writes. A saved record,
+whichever flow made it, is refused: one the earlier step-by-step flow saved, and one a
+conversation made with this helper (GitHub issue #547)."""
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -10,6 +12,10 @@ from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 SAVED_RUNNER = ('This training was saved by the earlier step-by-step flow, which no longer '
                 'continues. Open it on the desk, or start new work from it.')
+# A training a conversation made with this helper: nothing continues it any more (GitHub
+# issue #547), and no helper write changes it.
+SAVED_CONVERSATION = ('This training was made in a conversation, which no longer continues '
+                      'it. ' + workspace.CONVERSATION_NEXT)
 
 
 @contextmanager
@@ -43,6 +49,8 @@ def admitted(root, *, held=None):
         # Validate migration evidence even when the raw run was removed.
         workspace.read_run(root)
         path = root / workspace.STATE_DIR / 'run.json'
+        if not path.exists() and not workspace.on_desk(workspace.load(root)):
+            raise workspace.WorkspaceError(SAVED_CONVERSATION)
         if path.exists():
             record = workspace.read_run(root)
             if not isinstance(record, dict):

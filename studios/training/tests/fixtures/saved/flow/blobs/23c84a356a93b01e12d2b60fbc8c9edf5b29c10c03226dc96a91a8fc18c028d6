@@ -1,0 +1,107 @@
+{
+  "artifacts": {
+    "intake": {
+      "approved": {
+        "at": "2026-11-26T09:34:20Z",
+        "by": "chat",
+        "inputs": {},
+        "sha256": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf"
+    },
+    "research": {
+      "built_from": {
+        "research-plan": "39a9ea1a6ba0ad5a1f60b16820bf33a74333874994dfbe8db4a5164a24b6dc65"
+      },
+      "file": ".harness-research/research-report.md",
+      "sha256": "d312c68f18ed8f01b701953b360bbd801c11329650113b28d933846b92d683f7"
+    },
+    "research-plan": {
+      "approved": {
+        "at": "2026-11-26T09:34:20Z",
+        "by": "chat",
+        "inputs": {
+          "intake": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf"
+        },
+        "sha256": "39a9ea1a6ba0ad5a1f60b16820bf33a74333874994dfbe8db4a5164a24b6dc65"
+      },
+      "built_from": {
+        "intake": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf"
+      },
+      "file": ".training-studio/research-plan.json",
+      "sha256": "39a9ea1a6ba0ad5a1f60b16820bf33a74333874994dfbe8db4a5164a24b6dc65"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-26T09:34:20Z",
+      "event": "init"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-26T09:34:20Z",
+      "event": "save",
+      "sha256": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-26T09:34:20Z",
+      "by": "chat",
+      "event": "approve",
+      "sha256": "2d27fbdf4e8ca207afbfa388ca9172fbcc6c70e534af2476b3b704f87debadcf"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-26T09:34:20Z",
+      "event": "save",
+      "sha256": "39a9ea1a6ba0ad5a1f60b16820bf33a74333874994dfbe8db4a5164a24b6dc65"
+    },
+    {
+      "artifact": "research-plan",
+      "at": "2026-11-26T09:34:20Z",
+      "by": "chat",
+      "event": "approve",
+      "sha256": "39a9ea1a6ba0ad5a1f60b16820bf33a74333874994dfbe8db4a5164a24b6dc65"
+    },
+    {
+      "artifact": "research",
+      "at": "2026-11-26T09:34:20Z",
+      "event": "save",
+      "sha256": "d312c68f18ed8f01b701953b360bbd801c11329650113b28d933846b92d683f7"
+    }
+  ],
+  "exports": {},
+  "findings": null,
+  "gate": null,
+  "id": "rolling-restarts",
+  "level": null,
+  "levels": [],
+  "next_step": "Run the research",
+  "pending_question": null,
+  "pins": {},
+  "requests": [],
+  "research": null,
+  "schema": 1,
+  "settings": {
+    "approval": "chat",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "live",
+    "stages": [
+      "document",
+      "brief",
+      "deck",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {},
+  "stage": "research",
+  "title": "Rolling restarts",
+  "unavailable": {}
+}

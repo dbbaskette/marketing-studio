@@ -1,0 +1,66 @@
+{
+  "artifacts": {
+    "intake": {
+      "approved": {
+        "at": "2026-11-26T09:11:55Z",
+        "by": "chat",
+        "inputs": {},
+        "sha256": "9331d8e65239f97a550527c66388fc23d5dc7f680202cb33c1e16d95df0cbfad"
+      },
+      "built_from": {},
+      "file": "intake.md",
+      "sha256": "9331d8e65239f97a550527c66388fc23d5dc7f680202cb33c1e16d95df0cbfad"
+    }
+  },
+  "decisions": [],
+  "events": [
+    {
+      "at": "2026-11-26T09:11:55Z",
+      "event": "init"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-26T09:11:55Z",
+      "event": "save",
+      "sha256": "9331d8e65239f97a550527c66388fc23d5dc7f680202cb33c1e16d95df0cbfad"
+    },
+    {
+      "artifact": "intake",
+      "at": "2026-11-26T09:11:55Z",
+      "by": "chat",
+      "event": "approve",
+      "sha256": "9331d8e65239f97a550527c66388fc23d5dc7f680202cb33c1e16d95df0cbfad"
+    }
+  ],
+  "exports": {},
+  "findings": null,
+  "gate": null,
+  "id": "rolling-restarts",
+  "level": null,
+  "levels": [],
+  "next_step": "Draft the research questions",
+  "pending_question": null,
+  "pins": {},
+  "requests": [],
+  "research": null,
+  "schema": 1,
+  "settings": {
+    "approval": "chat",
+    "brand": null,
+    "brief_kind": "product",
+    "copies": [],
+    "deck_target": null,
+    "delivery": "live",
+    "stages": [
+      "document",
+      "brief",
+      "deck",
+      "scenario"
+    ],
+    "walkthrough": false
+  },
+  "sizing": {},
+  "stage": "research-plan",
+  "title": "Rolling restarts",
+  "unavailable": {}
+}

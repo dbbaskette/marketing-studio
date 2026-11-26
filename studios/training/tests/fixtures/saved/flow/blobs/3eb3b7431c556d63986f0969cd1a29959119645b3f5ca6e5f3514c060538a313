@@ -1,0 +1,57 @@
+{
+  "docs": {
+    "brief": {
+      "anchors": [
+        [
+          "2. What it is and where it fits",
+          "<!-- findings: availability -->"
+        ],
+        [
+          "3. Capabilities",
+          "<!-- findings: availability health-checks -->"
+        ],
+        [
+          "4. Limitations",
+          "<!-- findings: instance-min -->"
+        ],
+        [
+          "5. Qualification questions",
+          "<!-- findings: instance-min -->"
+        ],
+        [
+          "6. Objections and responses",
+          "<!-- findings: instance-min zero-downtime -->"
+        ]
+      ],
+      "file_id": "doc2",
+      "local_sha256": "179d2511e1bbe752a635b6d4cddd3e18aa969979c5eb053129d47d218078a5bf",
+      "remote_sha256": "68f6a68174c299a6a743bbe6cb00fc6a8d4968b7437fdcf0ac9901981a65d874",
+      "synced_at": "2026-11-26T09:34:24Z",
+      "title": "Rolling restarts: product brief",
+      "url": "https://docs.example.com/d/doc2/edit"
+    },
+    "document": {
+      "anchors": [
+        [
+          "Why this matters",
+          "<!-- covers: O3 -->"
+        ],
+        [
+          "What a rolling restart does",
+          "<!-- covers: O1 K1.1 K1.3 -->"
+        ],
+        [
+          "When capacity holds",
+          "<!-- covers: O2 K1.2 -->"
+        ]
+      ],
+      "file_id": "doc1",
+      "local_sha256": "67a1e7f84527cdf380d99093010ee6c05f7d5f8ae38352be5070de36979dc2f9",
+      "remote_sha256": "db962cff8e10b60ba8aace36dacc6d7bba17360d23eb591e9c89dab65ee52dda",
+      "synced_at": "2026-11-26T09:34:24Z",
+      "title": "Rolling restarts: learner guide",
+      "url": "https://docs.example.com/d/doc1/edit"
+    }
+  },
+  "schema": 1
+}

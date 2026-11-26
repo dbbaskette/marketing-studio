@@ -27,6 +27,8 @@ Under Practice plan use `- <scenario-id>: <mode>. Objectives: O2, O3. <role>`. M
 
 Under Open gaps name every unresolved question affecting instruction, unsupported key point ID and resulting omission.
 
-## Gate 3
+## On the desk
 
-Save with `training.py save blueprint --built`. Run `training.py check`. After approval use `training.py approve blueprint` per level.
+Read `studio desk context --folder PATH --target blueprint` (`blueprint@<level>` with levels) and follow its requirements. Submit it as kind `outline` with `studio desk submit`, as the conversation reference describes; its checks run there, and `training.py check` reports them too. It is Ready only when the person marks it so, as the completion reference describes.
+
+A saved record is not continued here: if `training.py status` or the page says the training is one, use Bring it in, Open on the desk or Start new work from this, as its page offers.
